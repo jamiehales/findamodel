@@ -19,10 +19,14 @@ const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 const MAX_BODY_HALF_PX = (CANVAS_PX * 0.65) / 2 // cap body half-extent
 const LAYOUT_KEY = 'findamodel.printingListLayout'
 
-// Each physics body is inflated by this amount on every side so that when two
-// bodies are touching they have a 2 mm visual gap between them.
-const BODY_GAP_MM = 2
-const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM // 1 mm per body side
+// Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
+const BODY_GAP_MM = 4
+const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM // 2 mm per body side
+
+// Overlap-detection hull inflation — bodies within BODY_OVERLAP_MM of each other
+// are considered overlapping and rendered darker.
+const BODY_OVERLAP_MM = 1
+const BODY_OVERLAP_PX = (BODY_OVERLAP_MM / 2) * PX_PER_MM // 1 mm per body side
 
 const PALETTE = [
   0x818cf8, // indigo
@@ -62,6 +66,8 @@ interface Entry {
   color: number
   /** Original (non-inflated) hull vertices in body-local space, for rendering. */
   visualLocalVerts: Vec2[]
+  /** Hull inflated by BODY_OVERLAP_PX per side, for overlap detection. */
+  overlapLocalVerts: Vec2[]
 }
 
 interface Props {
@@ -145,14 +151,15 @@ function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Bod
 }
 
 /**
- * Returns the physics body (inflated by BODY_MARGIN_PX per side) and the
- * visual local vertices (original size, for rendering without the gap margin).
+ * Returns the physics body (inflated by BODY_MARGIN_PX per side), the visual
+ * local vertices (original size), and the overlap-detection vertices (inflated
+ * by BODY_OVERLAP_PX per side).
  */
 function makeRectBody(
   model: Model,
   cx: number,
   cy: number,
-): { body: Matter.Body; visualLocalVerts: Vec2[] } {
+): { body: Matter.Body; visualLocalVerts: Vec2[]; overlapLocalVerts: Vec2[] } {
   const w = Math.min(Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
   const h = Math.min(Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
   const body = Matter.Bodies.rectangle(
@@ -170,7 +177,15 @@ function makeRectBody(
     { x: hw, y: hh },
     { x: -hw, y: hh },
   ]
-  return { body, visualLocalVerts }
+  const ohw = hw + BODY_OVERLAP_PX
+  const ohh = hh + BODY_OVERLAP_PX
+  const overlapLocalVerts: Vec2[] = [
+    { x: -ohw, y: -ohh },
+    { x: ohw, y: -ohh },
+    { x: ohw, y: ohh },
+    { x: -ohw, y: ohh },
+  ]
+  return { body, visualLocalVerts, overlapLocalVerts }
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -184,12 +199,12 @@ function darkenColor(color: number, factor: number): number {
 
 // ── Overlap helpers ───────────────────────────────────────────────────────────
 
-/** Transform visual local-space vertices to world space using body pose. */
-function getWorldVerts(entry: Entry): Vec2[] {
-  const cos = Math.cos(entry.body.angle)
-  const sin = Math.sin(entry.body.angle)
-  const { x: px, y: py } = entry.body.position
-  return entry.visualLocalVerts.map(v => ({
+/** Transform local-space vertices to world space using a body's pose. */
+function toWorldVerts(body: Matter.Body, localVerts: Vec2[]): Vec2[] {
+  const cos = Math.cos(body.angle)
+  const sin = Math.sin(body.angle)
+  const { x: px, y: py } = body.position
+  return localVerts.map(v => ({
     x: v.x * cos - v.y * sin + px,
     y: v.x * sin + v.y * cos + py,
   }))
@@ -217,10 +232,10 @@ function satOverlap(a: Vec2[], b: Vec2[]): boolean {
   return true
 }
 
-/** Returns the set of body IDs whose visual polygons overlap any other entry. */
+/** Returns the set of body IDs whose overlap-detection hulls intersect any other entry. */
 function computeOverlapping(entries: Entry[]): Set<number> {
   const overlapping = new Set<number>()
-  const worldVerts = entries.map(getWorldVerts)
+  const worldVerts = entries.map(e => toWorldVerts(e.body, e.overlapLocalVerts))
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       if (satOverlap(worldVerts[i], worldVerts[j])) {
@@ -353,15 +368,17 @@ export default function PrintingListCanvas({ models, items }: Props) {
         // Create physics body (inflated) + keep original verts for rendering
         let body: Matter.Body
         let visualLocalVerts: Vec2[]
+        let overlapLocalVerts: Vec2[]
         if (localVerts && localVerts.length >= 3) {
           try {
             body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX))
             visualLocalVerts = localVerts
+            overlapLocalVerts = inflateVerts(localVerts, BODY_OVERLAP_PX)
           } catch {
-            ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
+            ;({ body, visualLocalVerts, overlapLocalVerts } = makeRectBody(model, spawnX, spawnY))
           }
         } else {
-          ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
+          ;({ body, visualLocalVerts, overlapLocalVerts } = makeRectBody(model, spawnX, spawnY))
         }
 
         // If there's a saved position for this instance, move the body there
@@ -397,7 +414,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
         label.anchor.set(0.5)
         app.stage.addChild(label)
 
-        entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts })
+        entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts, overlapLocalVerts })
       }
     }
 
