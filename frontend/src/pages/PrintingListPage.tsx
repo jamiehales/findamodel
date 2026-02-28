@@ -1,12 +1,15 @@
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { generatePlate } from '../lib/api'
 import { useModels } from '../lib/queries'
 import { usePrintingList } from '../lib/printingList'
 import ModelCard from '../components/ModelCard'
-import PrintingListCanvas from '../components/PrintingListCanvas'
+import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas'
 
 const gridSx = {
   display: 'grid',
@@ -18,8 +21,42 @@ function PrintingListPage() {
   const navigate = useNavigate()
   const { items } = usePrintingList()
   const { data: allModels, isPending } = useModels()
+  const [savingPlate, setSavingPlate] = useState(false)
 
   const listedModels = allModels?.filter(m => items[m.id] != null) ?? []
+
+  async function handleSavePlate() {
+    setSavingPlate(true)
+    try {
+      // Read the settled layout from localStorage (written by PrintingListCanvas when bodies stop moving)
+      let placements: Parameters<typeof generatePlate>[0] = []
+      try {
+        const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY)
+        if (raw) {
+          const layout = JSON.parse(raw) as {
+            positions: { modelId: string; instanceIndex: number; xMm: number; yMm: number; angle: number }[]
+          }
+          placements = layout.positions.map(p => ({
+            modelId: p.modelId,
+            instanceIndex: p.instanceIndex,
+            xMm: p.xMm,
+            yMm: p.yMm,
+            angleRad: p.angle,
+          }))
+        }
+      } catch { /* proceed with empty placements if layout is unavailable */ }
+
+      const blob = await generatePlate(placements)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'plate.stl'
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setSavingPlate(false)
+    }
+  }
 
   const backButton = (
     <Button
@@ -63,18 +100,45 @@ function PrintingListPage() {
           gap: '1.5rem',
         }}
       >
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: '2rem', sm: '2.5rem' },
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            color: '#f1f5f9',
-            lineHeight: 1.2,
-          }}
-        >
-          Printing list
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: '2rem', sm: '2.5rem' },
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+              color: '#f1f5f9',
+              lineHeight: 1.2,
+            }}
+          >
+            Printing list
+          </Typography>
+
+          {listedModels.length > 0 && (
+            <Button
+              onClick={handleSavePlate}
+              disabled={savingPlate}
+              startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+              sx={{
+                background: 'rgba(99,102,241,0.85)',
+                backdropFilter: 'blur(8px)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '999px',
+                px: '1.25rem',
+                py: '0.5rem',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                textTransform: 'none',
+                minWidth: 0,
+                '&:hover': { background: 'rgba(79,82,211,0.9)' },
+                '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
+              }}
+            >
+              {savingPlate ? 'Preparing…' : 'Save plate'}
+            </Button>
+          )}
+        </Box>
 
         {isPending ? (
           <Box sx={gridSx}>

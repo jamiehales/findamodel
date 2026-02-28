@@ -46,3 +46,21 @@ export async function fetchGeometry(id: string): Promise<GeometryResponse> {
   if (!r.ok) throw new Error('Failed to fetch geometry')
   return r.json()
 }
+
+export interface PlatePlacement {
+  modelId: string
+  instanceIndex: number
+  xMm: number
+  yMm: number
+  angleRad: number
+}
+
+export async function generatePlate(placements: PlatePlacement[]): Promise<Blob> {
+  const r = await fetch('/api/plate/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ placements }),
+  })
+  if (!r.ok) throw new Error('Failed to generate plate')
+  return r.blob()
+}

@@ -17,7 +17,7 @@ const SPEED_THRESH = 0.12
 const ANGULAR_THRESH = 0.008
 const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 const MAX_BODY_HALF_PX = (CANVAS_PX * 0.65) / 2 // cap body half-extent
-const LAYOUT_KEY = 'findamodel.printingListLayout'
+export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
 const BODY_GAP_MM = 4
@@ -51,8 +51,8 @@ interface SavedLayout {
   positions: {
     modelId: string
     instanceIndex: number
-    x: number
-    y: number
+    xMm: number
+    yMm: number
     angle: number
   }[]
 }
@@ -339,7 +339,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     // ── Saved layout ───────────────────────────────────────────────────────
     let savedLayout: SavedLayout | null = null
     try {
-      const raw = localStorage.getItem(LAYOUT_KEY)
+      const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY)
       if (raw) {
         const parsed: SavedLayout = JSON.parse(raw)
         if (parsed.itemsKey === itemsKey) savedLayout = parsed
@@ -386,7 +386,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
           p => p.modelId === model.id && p.instanceIndex === inst,
         )
         if (saved) {
-          Matter.Body.setPosition(body, { x: saved.x, y: saved.y })
+          Matter.Body.setPosition(body, { x: saved.xMm * PX_PER_MM, y: saved.yMm * PX_PER_MM })
           Matter.Body.setAngle(body, saved.angle)
           Matter.Body.setVelocity(body, { x: 0, y: 0 })
           Matter.Body.setAngularVelocity(body, 0)
@@ -440,12 +440,12 @@ export default function PrintingListCanvas({ models, items }: Props) {
         positions: entries.map(e => ({
           modelId: e.modelId,
           instanceIndex: e.instanceIndex,
-          x: e.body.position.x,
-          y: e.body.position.y,
+          xMm: e.body.position.x / PX_PER_MM,
+          yMm: e.body.position.y / PX_PER_MM,
           angle: e.body.angle,
         })),
       }
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout))
+      localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, JSON.stringify(layout))
     }
 
     // ── Drag interaction ───────────────────────────────────────────────────
