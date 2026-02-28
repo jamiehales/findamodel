@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(yarn add react-router-dom)",
+      "Bash(yarn build)",
+      "Bash(dotnet build)"
+    ]
+  }
+}

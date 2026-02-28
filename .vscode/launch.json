@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: .NET Launch",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "backend: build",
+      "program": "${workspaceFolder}/backend/bin/Debug/net9.0/findamodel.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend",
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      }
+    },
+    {
+      "name": "Frontend: Vite Dev Server",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": ["dev"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "serverReadyAction": {
+        "pattern": "Local:.*http://localhost:([0-9]+)",
+        "uriFormat": "http://localhost:%s",
+        "action": "openExternally"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Backend + Frontend",
+      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server"],
+      "stopAll": true
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/dist
+**/*.user
+**/*.suo
+**/bin
+**/obj
+**/.vs
+**/.vscode
