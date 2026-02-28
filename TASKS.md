@@ -31,3 +31,19 @@
 * This should be a grid view, with a card for folders and a card per model, same as the model explorer
 * Folders should be shown first, alphabetically, followed by all the models also sorted alphabetically
 * There should be editable fields for the metadata (findamodel.json) in each of these folders, it should show both the local value, or the inherited value. If you edit a field it should update the json file with this data, and the corresponding database entry. Making sure to update all the children with the new calculated values.
+
+* If there is an image in a directory, allow setting this as the collection preview, author preview
+
+* findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name
+
+* Allow rules section in a config, this allow specifying rules for how values are calculated, the value passed into the regex is specified by the source, in the example below it would be the full path of the file (relative to the root)
+  - name:
+      regex:
+        source: path
+        expression: s|.*/([^/]*)/[^/]*$|\1|
+
+* Switch json configuration files to yaml
+
+* Determine if db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;"); is needed
+
+* Allow overriding path to models database via config variable
