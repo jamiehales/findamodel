@@ -35,7 +35,7 @@ public class HullCalculationService(
             }
 
             var convexCoords  = CalculateConvexHull(points2D);
-            var concaveCoords = CalculateConcaveHull(points2D);
+            var concaveCoords = new Coordinate[0]; //CalculateConcaveHull(points2D);
 
             logger.LogInformation(
                 "Hull calculation complete: {ConvexCount} convex vertices, {ConcaveCount} concave vertices",
