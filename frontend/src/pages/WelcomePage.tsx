@@ -1,8 +1,14 @@
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
+import { useNavigate } from 'react-router-dom'
 import ModelGrid from '../components/ModelGrid'
+import { usePrintingList } from '../lib/printingList'
 
 function WelcomePage() {
+  const navigate = useNavigate()
+  const { totalCount } = usePrintingList()
+
   return (
     <Box
       sx={{
@@ -22,6 +28,7 @@ function WelcomePage() {
           pt: { xs: '3.5rem', sm: '5rem' },
           px: 2,
           textAlign: 'center',
+          gap: '0.75rem',
         }}
       >
         <Typography
@@ -43,6 +50,25 @@ function WelcomePage() {
         <Typography sx={{ fontSize: '1.1rem', color: 'text.secondary' }}>
           Find your next mini
         </Typography>
+        {totalCount > 0 && (
+          <Button
+            onClick={() => navigate('/printing-list')}
+            variant="outlined"
+            sx={{
+              borderRadius: '999px',
+              px: '1.25rem',
+              py: '0.4rem',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              textTransform: 'none',
+              borderColor: 'rgba(99,102,241,0.5)',
+              color: '#818cf8',
+              '&:hover': { borderColor: '#818cf8', background: 'rgba(99,102,241,0.08)' },
+            }}
+          >
+            View printing list ({totalCount})
+          </Button>
+        )}
       </Box>
 
       <ModelGrid />

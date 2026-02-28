@@ -2,11 +2,13 @@ import React from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useModel } from '../lib/queries'
 import ModelViewer from '../components/ModelViewer'
 import HullPreview from '../components/HullPreview'
+import { usePrintingList } from '../lib/printingList'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -25,6 +27,8 @@ function ModelPage() {
   const decodedId = decodeURIComponent(id ?? '')
 
   const { data: model, isPending, isError } = useModel(decodedId)
+  const { items, addItem, removeItem, setQuantity } = usePrintingList()
+  const qty = model ? (items[model.id] ?? 0) : 0
 
   const backButton = (
     <Button
@@ -218,6 +222,77 @@ function ModelPage() {
 
         {(model.convexHull || model.concaveHull) && (
           <HullPreview convexHull={model.convexHull} concaveHull={model.concaveHull} label="Hull Projections" />
+        )}
+
+        {qty === 0 ? (
+          <Button
+            onClick={() => addItem(model.id)}
+            variant="outlined"
+            sx={{
+              borderRadius: '12px',
+              py: '0.875rem',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              textTransform: 'none',
+              borderColor: 'rgba(99,102,241,0.5)',
+              color: '#818cf8',
+              '&:hover': { borderColor: '#818cf8', background: 'rgba(99,102,241,0.08)' },
+            }}
+          >
+            Add to printing list
+          </Button>
+        ) : (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '12px',
+              border: '1px solid rgba(99,102,241,0.4)',
+              overflow: 'hidden',
+            }}
+          >
+            <IconButton
+              onClick={() => setQuantity(model.id, qty - 1)}
+              aria-label="Decrease quantity"
+              sx={{
+                borderRadius: 0,
+                px: '1.25rem',
+                py: '0.75rem',
+                color: '#818cf8',
+                fontSize: '1.25rem',
+                '&:hover': { background: 'rgba(99,102,241,0.1)' },
+              }}
+            >
+              −
+            </IconButton>
+            <Typography
+              sx={{
+                flex: 1,
+                textAlign: 'center',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: '#e2e8f0',
+                userSelect: 'none',
+                minWidth: '3rem',
+              }}
+            >
+              {qty}
+            </Typography>
+            <IconButton
+              onClick={() => setQuantity(model.id, qty + 1)}
+              aria-label="Increase quantity"
+              sx={{
+                borderRadius: 0,
+                px: '1.25rem',
+                py: '0.75rem',
+                color: '#818cf8',
+                fontSize: '1.25rem',
+                '&:hover': { background: 'rgba(99,102,241,0.1)' },
+              }}
+            >
+              +
+            </IconButton>
+          </Box>
         )}
 
         <Button
