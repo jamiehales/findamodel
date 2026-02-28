@@ -1,0 +1,1 @@
+* When exporting a plate or downloading a model, allow downloading the model and supports separately
