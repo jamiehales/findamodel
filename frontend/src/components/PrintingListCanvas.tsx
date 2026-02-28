@@ -427,7 +427,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     // ── Render helper ──────────────────────────────────────────────────────
     function renderEntries(overlapping: Set<number>) {
       for (const { body, gfx, label, color, visualLocalVerts } of entries) {
-        const renderColor = overlapping.has(body.id) ? darkenColor(color, 0.45) : color
+        const renderColor = overlapping.has(body.id) ? color : darkenColor(color, 0.45)
         drawBody(gfx, body, visualLocalVerts, renderColor)
         label.position.set(body.position.x, body.position.y)
       }
