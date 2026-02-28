@@ -50,6 +50,11 @@ export default function HullPreview({ convexHull, concaveHull, label }: HullPrev
     const maxZ = Math.max(...zs)
     const rangeX = maxX - minX || 1
     const rangeZ = maxZ - minZ || 1
+    const scale = Math.max(rangeX, rangeZ)
+    const centerX = (minX + maxX) / 2
+    const centerZ = (minZ + maxZ) / 2
+    const offsetX = centerX - scale / 2
+    const offsetZ = centerZ - scale / 2
 
     // Normalize to SVG space (200x200 with padding)
     const svgSize = 200
@@ -57,8 +62,8 @@ export default function HullPreview({ convexHull, concaveHull, label }: HullPrev
     const viewSize = svgSize - padding * 2
 
     const normalize = (x: number, z: number): [number, number] => {
-      const nx = ((x - minX) / rangeX) * viewSize + padding
-      const nz = ((z - minZ) / rangeZ) * viewSize + padding
+      const nx = ((x - offsetX) / scale) * viewSize + padding
+      const nz = ((z - offsetZ) / scale) * viewSize + padding
       return [nx, nz]
     }
 
