@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect } from 'react'
 import { Canvas, useLoader, useFrame } from '@react-three/fiber'
-import { OrbitControls, Bounds, Center, Html } from '@react-three/drei'
+import { OrbitControls, Bounds, Html } from '@react-three/drei'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import * as THREE from 'three'
@@ -59,9 +59,9 @@ function ConvexHullLine({ coordinates }: ConvexHullLineProps) {
   const geometry = new THREE.BufferGeometry().setFromPoints(points)
   
   return (
-    <line geometry={geometry} position={[0, 0.01, 0]}>
+    <lineSegments geometry={geometry} position={[0, 0.01, 0]}>
       <lineBasicMaterial color="#818cf8" linewidth={2} />
-    </line>
+    </lineSegments>
   )
 }
 

@@ -134,7 +134,7 @@ function ModelPage() {
       <Box
         sx={{
           pt: '5rem',
-          pb: { xs: '3rem', '@supports (padding-bottom: env(safe-area-inset-bottom))': 'calc(3rem + env(safe-area-inset-bottom))' },
+          pb: { xs: '3rem', '@supports (paddingBottom: env(safeAreaInsetBottom))': 'calc(3rem + env(safeAreaInsetBottom))' },
           px: '1.25rem',
           maxWidth: 600,
           mx: 'auto',
@@ -189,8 +189,7 @@ function ModelPage() {
             sx={{
               display: 'grid',
               gridTemplateColumns: 'auto 1fr',
-              columnGap: '1.5rem',
-              rowGap: '0.625rem',
+              gap: '0.625rem 1.5rem',
               borderRadius: '12px',
               border: '1px solid rgba(255,255,255,0.07)',
               bgcolor: 'background.paper',

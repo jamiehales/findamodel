@@ -1,4 +1,3 @@
-import React from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
@@ -8,7 +7,7 @@ interface HullPreviewProps {
   label: string
 }
 
-export default function HullPreview({ convexHull, concaveHull, label }: HullPreviewProps) {
+export default function HullPreview({ convexHull, concaveHull }: HullPreviewProps) {
   const parseHull = (hullJson: string | null): Array<[number, number]> | null => {
     if (!hullJson) return null
     try {

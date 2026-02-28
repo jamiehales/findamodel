@@ -8,6 +8,7 @@ obj/
 # Node / Frontend
 node_modules/
 dist/
+frontend/tsconfig.app.tsbuildinfo
 .yarn/cache
 .yarn/unplugged
 .yarn/build-state.yml
