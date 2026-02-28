@@ -218,7 +218,7 @@ function ModelPage() {
             border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
-          <ModelViewer fileUrl={model.fileUrl} fileType={model.fileType} convexHull={model.convexHull} />
+          <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} />
         </Box>
 
         {(model.convexHull || model.concaveHull) && (

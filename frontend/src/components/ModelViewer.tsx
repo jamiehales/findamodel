@@ -1,9 +1,9 @@
-import React, { Suspense, useEffect } from 'react'
-import { Canvas, useLoader, useFrame } from '@react-three/fiber'
+import React, { useMemo } from 'react'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Bounds, Html } from '@react-three/drei'
-import { STLLoader } from 'three/addons/loaders/STLLoader.js'
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import * as THREE from 'three'
+import { fetchGeometry } from '../lib/api'
 
 const ACCENT: Record<string, string> = {
   stl: '#818cf8',
@@ -23,15 +23,8 @@ function Lighting() {
 
 function Grid() {
   return (
-    <gridHelper args={[20, 20, '#3a4559', '#1e293b']} position={[0, 0, 0]} rotation={[0, 0, 0]} />
+    <gridHelper args={[20, 20, '#3a4559', '#1e293b']} position={[0, 0, 0]} />
   )
-}
-
-function CameraController() {
-  useFrame(({ camera }) => {
-    camera.lookAt(0, 0, 0)
-  })
-  return null
 }
 
 interface ConvexHullLineProps {
@@ -41,26 +34,17 @@ interface ConvexHullLineProps {
 function ConvexHullLine({ coordinates }: ConvexHullLineProps) {
   if (!coordinates || coordinates.length < 2) return null
 
-  // Calculate center of hull points to apply same offset as model
-  let transformedCoords = coordinates.map(([x, z]) => [x, z] as [number, number])
-  if (transformedCoords.length > 0) {
-    const centerX = transformedCoords.reduce((sum, [x]) => sum + x, 0) / transformedCoords.length
-    const centerZ = transformedCoords.reduce((sum, [, z]) => sum + z, 0) / transformedCoords.length
-    // Offset coordinates to center at origin
-    transformedCoords = transformedCoords.map(([x, z]) => [x - centerX, z - centerZ] as [number, number])
-  }
-  
-  const points = transformedCoords.map(([x, z]) => new THREE.Vector3(x, 0, z))
-  // Close the polygon
-  if (points.length > 0 && (points[0].x !== points[points.length - 1].x || points[0].z !== points[points.length - 1].z)) {
+  const points = coordinates.map(([x, z]) => new THREE.Vector3(x, 0, z))
+  // Close the polygon if not already closed
+  if (points[0].distanceTo(points[points.length - 1]) > 0.001) {
     points.push(points[0].clone())
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points)
-  
+
   return (
     <lineSegments geometry={geometry} position={[0, 0.01, 0]}>
-      <lineBasicMaterial color="#818cf8" linewidth={2} />
+      <lineBasicMaterial color="#818cf8" />
     </lineSegments>
   )
 }
@@ -72,26 +56,16 @@ interface ConvexHullPolygonProps {
 function ConvexHullPolygon({ coordinates }: ConvexHullPolygonProps) {
   if (!coordinates || coordinates.length < 3) return null
 
-  // Calculate center of hull points to apply same offset as model
-  let transformedCoords = coordinates.map(([x, z]) => [x, z] as [number, number])
-  if (transformedCoords.length > 0) {
-    const centerX = transformedCoords.reduce((sum, [x]) => sum + x, 0) / transformedCoords.length
-    const centerZ = transformedCoords.reduce((sum, [, z]) => sum + z, 0) / transformedCoords.length
-    // Offset coordinates to center at origin
-    transformedCoords = transformedCoords.map(([x, z]) => [x - centerX, z - centerZ] as [number, number])
-  }
-  
   const shape = new THREE.Shape()
-  shape.moveTo(transformedCoords[0][0], transformedCoords[0][1])
-  for (let i = 1; i < transformedCoords.length; i++) {
-    shape.lineTo(transformedCoords[i][0], transformedCoords[i][1])
+  shape.moveTo(coordinates[0][0], coordinates[0][1])
+  for (let i = 1; i < coordinates.length; i++) {
+    shape.lineTo(coordinates[i][0], coordinates[i][1])
   }
-  shape.lineTo(transformedCoords[0][0], transformedCoords[0][1])
+  shape.lineTo(coordinates[0][0], coordinates[0][1])
 
   const geometry = new THREE.ShapeGeometry(shape)
-  // Rotate geometry from XY plane to XZ plane (rotateX by 90 degrees)
   geometry.rotateX(Math.PI / 2)
-  
+
   return (
     <mesh geometry={geometry} position={[0, 0.005, 0]}>
       <meshBasicMaterial color="#818cf8" transparent opacity={0.15} side={THREE.DoubleSide} />
@@ -99,87 +73,39 @@ function ConvexHullPolygon({ coordinates }: ConvexHullPolygonProps) {
   )
 }
 
-function StlModel({ url, color, convexHull }: { url: string; color: string; convexHull: string | null }) {
-  const geometry = useLoader(STLLoader, url)
-  let convexHullCoordinates: Array<[number, number]> | null = null
-  
-  try {
-    if (convexHull) {
-      convexHullCoordinates = JSON.parse(convexHull)
-    }
-  } catch {
-    convexHullCoordinates = null
-  }
-
-  // Convert from Z-up to Y-up
-  useEffect(() => {
-    geometry.rotateX(Math.PI / 2)
-    geometry.rotateZ(Math.PI)
-    geometry.computeBoundingBox()
-    geometry.computeBoundingSphere()
-    
-    // Center the geometry at the origin in X and Z, keep Y at 0
-    const sphere = geometry.boundingSphere
-    if (sphere) {
-      geometry.translate(-sphere.center.x, 0, -sphere.center.z)
-      console.log('Translated STL to origin')
-    }
-  }, [geometry])
-
-  return (
-    <Bounds fit clip observe>
-      <group position={[0, 0, 0]}>
-        <mesh geometry={geometry}>
-          <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
-        </mesh>
-        <ConvexHullPolygon coordinates={convexHullCoordinates} />
-        <ConvexHullLine coordinates={convexHullCoordinates} />
-      </group>
-    </Bounds>
-  )
+interface GeometryModelProps {
+  modelId: string
+  color: string
+  convexHull: string | null
 }
 
-function ObjModel({ url, color, convexHull }: { url: string; color: string; convexHull: string | null }) {
-  const obj = useLoader(OBJLoader, url)
-  let convexHullCoordinates: Array<[number, number]> | null = null
-  
-  try {
-    if (convexHull) {
-      convexHullCoordinates = JSON.parse(convexHull)
-    }
-  } catch {
-    convexHullCoordinates = null
-  }
+function GeometryModel({ modelId, color, convexHull }: GeometryModelProps) {
+  const { data } = useSuspenseQuery({
+    queryKey: ['geometry', modelId],
+    queryFn: () => fetchGeometry(modelId),
+  })
 
-  useEffect(() => {
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15 })
-    obj.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        (child as THREE.Mesh).material = mat
-        // Convert from Z-up to Y-up by rotating around X axis
-        ;(child as THREE.Mesh).geometry.rotateX(Math.PI / 2)
-        ;(child as THREE.Mesh).geometry.rotateZ(Math.PI)
-        ;(child as THREE.Mesh).geometry.computeBoundingBox()
-        ;(child as THREE.Mesh).geometry.computeBoundingSphere()
-        
-        // Center the geometry at the origin in X and Z, keep Y at 0
-        const mesh = child as THREE.Mesh
-        const sphere = mesh.geometry.boundingSphere
-        if (sphere) {
-          mesh.geometry.translate(-sphere.center.x, 0, -sphere.center.z)
-          console.log('Translated OBJ mesh to origin')
-        }
-      }
-    })
-    return () => mat.dispose()
-  }, [obj, color])
+  const bufferGeometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3))
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3))
+    return geo
+  }, [data])
+
+  const hullCoords = useMemo((): Array<[number, number]> | null => {
+    if (!convexHull) return null
+    try { return JSON.parse(convexHull) }
+    catch { return null }
+  }, [convexHull])
 
   return (
     <Bounds fit clip observe>
-      <group position={[0, 0, 0]}>
-        <primitive object={obj} />
-        <ConvexHullPolygon coordinates={convexHullCoordinates} />
-        <ConvexHullLine coordinates={convexHullCoordinates} />
+      <group>
+        <mesh geometry={bufferGeometry}>
+          <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
+        </mesh>
+        <ConvexHullPolygon coordinates={hullCoords} />
+        <ConvexHullLine coordinates={hullCoords} />
       </group>
     </Bounds>
   )
@@ -205,14 +131,13 @@ class ViewerErrorBoundary extends React.Component<
 }
 
 interface ModelViewerProps {
-  fileUrl: string
-  fileType: string
+  modelId: string
+  fileType: string   // used for accent colour only
   convexHull?: string | null
 }
 
-export default function ModelViewer({ fileUrl, fileType, convexHull }: ModelViewerProps) {
-  const type = fileType.toLowerCase()
-  const color = ACCENT[type] ?? '#94a3b8'
+export default function ModelViewer({ modelId, fileType, convexHull }: ModelViewerProps) {
+  const color = ACCENT[fileType.toLowerCase()] ?? '#94a3b8'
 
   const errorFallback = (
     <div style={containerStyle}>
@@ -230,8 +155,7 @@ export default function ModelViewer({ fileUrl, fileType, convexHull }: ModelView
       >
         <Lighting />
         <Grid />
-        <CameraController />
-        <Suspense
+        <React.Suspense
           fallback={
             <Html center>
               <span style={{ fontSize: '0.85rem', color: '#64748b', whiteSpace: 'nowrap' }}>
@@ -240,9 +164,8 @@ export default function ModelViewer({ fileUrl, fileType, convexHull }: ModelView
             </Html>
           }
         >
-          {type === 'stl' && <StlModel url={fileUrl} color={color} convexHull={convexHull ?? null} />}
-          {type === 'obj' && <ObjModel url={fileUrl} color={color} convexHull={convexHull ?? null} />}
-        </Suspense>
+          <GeometryModel modelId={modelId} color={color} convexHull={convexHull ?? null} />
+        </React.Suspense>
         <OrbitControls
           enableDamping
           dampingFactor={0.08}

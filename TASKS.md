@@ -12,10 +12,6 @@
 
 * Fix popping when the model viewer loads
 
-* Add a new endpoint that instead of directly returning the stl file has the backend load the model with all transformations applied, and returned in a format that threejs can read easily
-* Update model viewer to use this new transformed API call, and remove all specific handling of obj and stl. Remove all transformations and modifications of the vertices as they should now already be transformed by the backend before receiving the vertex data.
-* Refactor all the frontend api calls to use react-query
-
 * Fix concave hull calculation
 
 * Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data
