@@ -9,14 +9,15 @@ public class ModelService(
     IConfiguration config,
     ILogger<ModelService> logger,
     IDbContextFactory<ModelCacheContext> dbFactory,
-    ModelPreviewService previewService)
+    ModelPreviewService previewService,
+    MetadataConfigService metadataConfigService)
 {
     private static readonly string[] ModelExtensions = [".stl", ".obj"];
 
     public async Task<List<ModelDto>> GetModelsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        // Project to avoid loading the PreviewImage BLOB into memory for list queries
+        // Project to avoid loading the PreviewImage BLOB; EF Core generates a LEFT JOIN for DirectoryConfig
         var rows = await db.Models
             .OrderBy(m => m.Directory)
             .ThenBy(m => m.FileName)
@@ -27,7 +28,13 @@ public class ModelService(
                 m.Directory,
                 m.FileType,
                 m.FileSize,
-                HasPreview = m.PreviewImage != null
+                HasPreview = m.PreviewImage != null,
+                Author        = m.DirectoryConfig != null ? m.DirectoryConfig.Author        : null,
+                Collection    = m.DirectoryConfig != null ? m.DirectoryConfig.Collection    : null,
+                Subcollection = m.DirectoryConfig != null ? m.DirectoryConfig.Subcollection : null,
+                Category      = m.DirectoryConfig != null ? m.DirectoryConfig.Category      : null,
+                Type       = m.DirectoryConfig != null ? m.DirectoryConfig.Type       : null,
+                Supported  = m.DirectoryConfig != null ? m.DirectoryConfig.Supported  : null
             })
             .ToListAsync();
 
@@ -40,7 +47,13 @@ public class ModelService(
             FileSize = m.FileSize,
             FileUrl = $"/api/models/{m.Id}/file",
             HasPreview = m.HasPreview,
-            PreviewUrl = m.HasPreview ? $"/api/models/{m.Id}/preview" : null
+            PreviewUrl = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
+            Author = m.Author,
+            Collection = m.Collection,
+            Subcollection = m.Subcollection,
+            Category = m.Category,
+            Type = m.Type,
+            Supported = m.Supported
         }).ToList();
     }
 
@@ -74,11 +87,22 @@ public class ModelService(
             return;
         }
 
+        // Phase 1: Discover all model files
+        var files = Directory.EnumerateFiles(modelsPath, "*.*", SearchOption.AllDirectories)
+            .Where(f => ModelExtensions.Contains(Path.GetExtension(f).ToLower()))
+            .ToList();
+
+        var relativeDirectories = files
+            .Select(f => (Path.GetDirectoryName(Path.GetRelativePath(modelsPath, f)) ?? "").Replace('\\', '/'))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        // Phase 2: Sync DirectoryConfig records (root-first, hash-detected changes)
+        var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
+
+        // Phase 3: Process new model files
         await using var db = await dbFactory.CreateDbContextAsync();
         var existingChecksums = (await db.Models.Select(m => m.Checksum).ToListAsync()).ToHashSet();
-
-        var files = Directory.EnumerateFiles(modelsPath, "*.*", SearchOption.AllDirectories)
-            .Where(f => ModelExtensions.Contains(Path.GetExtension(f).ToLower()));
 
         var newCount = 0;
         foreach (var file in files)
@@ -92,9 +116,11 @@ public class ModelService(
             var info = new FileInfo(file);
             var fileType = Path.GetExtension(file).TrimStart('.').ToLower();
 
-            logger.LogInformation("Discovereddddd {FileType} model: {FilePath}", fileType.ToUpper(), file);
+            logger.LogInformation("Discovered {FileType} model: {FilePath}", fileType.ToUpper(), file);
 
             var preview = await previewService.GeneratePreviewAsync(file, fileType);
+
+            directoryConfigs.TryGetValue(directory, out var dirConfig);
 
             var entity = new CachedModel
             {
@@ -107,7 +133,8 @@ public class ModelService(
                 FileModifiedAt = info.LastWriteTimeUtc,
                 CachedAt = DateTime.UtcNow,
                 PreviewImage = preview,
-                PreviewGeneratedAt = preview != null ? DateTime.UtcNow : null
+                PreviewGeneratedAt = preview != null ? DateTime.UtcNow : null,
+                DirectoryConfigId = dirConfig?.Id
             };
 
             db.Models.Add(entity);

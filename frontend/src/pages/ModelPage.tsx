@@ -1,3 +1,4 @@
+import React from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -96,6 +97,34 @@ function ModelPage() {
 
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
 
+  const metaRows: { label: string; value: React.ReactNode }[] = [
+    model.author       && { label: 'Author',        value: model.author },
+    model.collection   && { label: 'Collection',    value: model.collection },
+    model.subcollection && { label: 'Subcollection', value: model.subcollection },
+    model.category     && { label: 'Category',      value: model.category },
+    model.type         && { label: 'Type',           value: model.type },
+    model.supported != null && {
+      label: 'Supported',
+      value: (
+        <Box
+          component="span"
+          sx={{
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            px: '0.5rem',
+            py: '0.2rem',
+            borderRadius: '4px',
+            background: model.supported ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+            color: model.supported ? '#34d399' : '#f87171',
+          }}
+        >
+          {model.supported ? 'YES' : 'NO'}
+        </Box>
+      ),
+    },
+  ].filter(Boolean) as { label: string; value: React.ReactNode }[]
+
   return (
     <Box sx={{ minHeight: '100vh', overflow: 'hidden' }}>
       {backButton}
@@ -152,6 +181,33 @@ function ModelPage() {
             {formatBytes(model.fileSize)}
           </Typography>
         </Box>
+
+        {metaRows.length > 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'auto 1fr',
+              columnGap: '1.5rem',
+              rowGap: '0.625rem',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.07)',
+              bgcolor: 'background.paper',
+              px: '1.25rem',
+              py: '1rem',
+            }}
+          >
+            {metaRows.map(({ label, value }) => (
+              <React.Fragment key={label}>
+                <Typography sx={{ fontSize: '0.8rem', color: '#475569', whiteSpace: 'nowrap', pt: '0.1rem' }}>
+                  {label}
+                </Typography>
+                <Typography component="div" sx={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                  {value}
+                </Typography>
+              </React.Fragment>
+            ))}
+          </Box>
+        )}
 
         <Box
           sx={{

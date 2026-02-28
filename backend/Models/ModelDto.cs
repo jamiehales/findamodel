@@ -10,4 +10,12 @@ public class ModelDto
     public string FileUrl { get; set; } = "";
     public bool HasPreview { get; set; }
     public string? PreviewUrl { get; set; }
+
+    // Resolved metadata from DirectoryConfig ancestry
+    public string? Author { get; set; }
+    public string? Collection { get; set; }
+    public string? Subcollection { get; set; }
+    public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
+    public string? Type { get; set; }        // "Whole" | "Part" | null
+    public bool? Supported { get; set; }
 }

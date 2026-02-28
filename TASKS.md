@@ -1,8 +1,9 @@
-* During scanning update the database on every discovered file, instead of all at the end as there may be tens of thousands of files
+* Add the following field to the model metadata - size (dimensions of the object in mm)
 
-* Create a json based metadata configuration file that can be placed at any level above the model file to the top of the directory - this will populate the metadata for each model
-* The configuration should be composed by starting at the closest file, then iterating through parent directories and combining the data until all required fields are full. The first value found takes priority for that field.
-* The fields that should be stored are.... Author, Collection,  ????
-* Any fields that aren't set by the time the root is filled are null/empty (as relevant for the field type)
-* Cache the hash of these configuration files, and if any have changed then add a function stub for handling updates of these
+* Add a 3D preview to each model page (use threejs)
 
+* Move the model preview images out of the database and into a cache/renders folder, with the images being labelled with the hash of the model file
+
+* Add a search page that can search by any of the fields on a model
+
+* Expand the main page to fill the whole width of the screen

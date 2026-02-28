@@ -12,4 +12,8 @@ public class CachedModel
     public DateTime CachedAt { get; set; }
     public byte[]? PreviewImage { get; set; }    // PNG preview render (null = not yet generated)
     public DateTime? PreviewGeneratedAt { get; set; }
+
+    // FK to the DirectoryConfig record for this model's containing directory
+    public Guid? DirectoryConfigId { get; set; }
+    public DirectoryConfig? DirectoryConfig { get; set; }
 }
