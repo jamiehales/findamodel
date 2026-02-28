@@ -1,11 +1,15 @@
+import Box from '@mui/material/Box'
+import Skeleton from '@mui/material/Skeleton'
+import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { fetchModels } from '../lib/api'
-import styles from './ModelGrid.module.css'
+import ModelCard from './ModelCard'
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+const gridSx = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+  gap: '0.875rem',
 }
 
 function ModelGrid() {
@@ -17,41 +21,60 @@ function ModelGrid() {
 
   if (isPending) {
     return (
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Models</h2>
-        <div className={styles.grid}>
-          {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className={styles.skeleton} />)}
-        </div>
-      </div>
+      <Box sx={{ width: '100%', maxWidth: 900, px: 2, boxSizing: 'border-box' }}>
+        <Typography
+          sx={{
+            fontSize: '1.1rem',
+            fontWeight: 600,
+            color: '#94a3b8',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            mb: '0.75rem',
+            ml: '0.25rem',
+          }}
+        >
+          Models
+        </Typography>
+        <Box sx={gridSx}>
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <Skeleton
+              key={i}
+              variant="rectangular"
+              sx={{ aspectRatio: '3 / 4', borderRadius: '14px', height: 'auto' }}
+            />
+          ))}
+        </Box>
+      </Box>
     )
   }
 
   if (isError || !models || models.length === 0) return null
 
   return (
-    <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>Models</h2>
-      <div className={styles.grid}>
+    <Box sx={{ width: '100%', maxWidth: 900, px: 2, boxSizing: 'border-box' }}>
+      <Typography
+        sx={{
+          fontSize: '1.1rem',
+          fontWeight: 600,
+          color: '#94a3b8',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          mb: '0.75rem',
+          ml: '0.25rem',
+        }}
+      >
+        Models
+      </Typography>
+      <Box sx={gridSx}>
         {models.map(model => (
-          <button
+          <ModelCard
             key={model.id}
-            className={styles.card}
+            model={model}
             onClick={() => navigate(`/model/${encodeURIComponent(model.id)}`)}
-          >
-            {model.previewUrl && (
-              <img src={model.previewUrl} className={styles.preview} alt="" />
-            )}
-            <div className={styles.cardBody}>
-              <span className={`${styles.typeBadge} ${styles[model.fileType]}`}>
-                {model.fileType.toUpperCase()}
-              </span>
-              <p className={styles.cardTitle}>{model.name}</p>
-              <p className={styles.cardMeta}>{formatBytes(model.fileSize)}</p>
-            </div>
-          </button>
+          />
         ))}
-      </div>
-    </div>
+      </Box>
+    </Box>
   )
 }
 

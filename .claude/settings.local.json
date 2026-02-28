@@ -3,7 +3,8 @@
     "allow": [
       "Bash(yarn add react-router-dom)",
       "Bash(yarn build)",
-      "Bash(dotnet build)"
+      "Bash(dotnet build)",
+      "Bash(yarn add @mui/material @emotion/react @emotion/styled @mui/icons-material)"
     ]
   }
 }
