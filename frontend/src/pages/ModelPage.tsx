@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { fetchModels } from '../lib/api'
+import ModelViewer from '../components/ModelViewer'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -211,21 +212,13 @@ function ModelPage() {
 
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.75rem',
-            height: 240,
+            height: 380,
             borderRadius: '16px',
-            border: '1px dashed rgba(255,255,255,0.1)',
-            bgcolor: 'background.paper',
-            color: '#475569',
-            fontSize: '0.9rem',
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
-          <Box component="span" sx={{ fontSize: '2.5rem', opacity: 0.3 }}>⬡</Box>
-          <Typography sx={{ color: '#475569', fontSize: '0.9rem' }}>3D viewer coming soon</Typography>
+          <ModelViewer fileUrl={model.fileUrl} fileType={model.fileType} />
         </Box>
 
         <Button
