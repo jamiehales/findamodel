@@ -173,6 +173,65 @@ function makeRectBody(
   return { body, visualLocalVerts }
 }
 
+// ── Color helpers ─────────────────────────────────────────────────────────────
+
+function darkenColor(color: number, factor: number): number {
+  const r = Math.round(((color >> 16) & 0xff) * factor)
+  const g = Math.round(((color >> 8) & 0xff) * factor)
+  const b = Math.round((color & 0xff) * factor)
+  return (r << 16) | (g << 8) | b
+}
+
+// ── Overlap helpers ───────────────────────────────────────────────────────────
+
+/** Transform visual local-space vertices to world space using body pose. */
+function getWorldVerts(entry: Entry): Vec2[] {
+  const cos = Math.cos(entry.body.angle)
+  const sin = Math.sin(entry.body.angle)
+  const { x: px, y: py } = entry.body.position
+  return entry.visualLocalVerts.map(v => ({
+    x: v.x * cos - v.y * sin + px,
+    y: v.x * sin + v.y * cos + py,
+  }))
+}
+
+/**
+ * Separating Axis Theorem overlap test for two convex polygons.
+ * Returns true if they overlap (no separating axis found).
+ */
+function satOverlap(a: Vec2[], b: Vec2[]): boolean {
+  for (const poly of [a, b]) {
+    const n = poly.length
+    for (let i = 0; i < n; i++) {
+      const p1 = poly[i]
+      const p2 = poly[(i + 1) % n]
+      const nx = -(p2.y - p1.y)
+      const ny = p2.x - p1.x
+      let minA = Infinity, maxA = -Infinity
+      let minB = Infinity, maxB = -Infinity
+      for (const v of a) { const d = v.x * nx + v.y * ny; minA = Math.min(minA, d); maxA = Math.max(maxA, d) }
+      for (const v of b) { const d = v.x * nx + v.y * ny; minB = Math.min(minB, d); maxB = Math.max(maxB, d) }
+      if (maxA < minB || maxB < minA) return false
+    }
+  }
+  return true
+}
+
+/** Returns the set of body IDs whose visual polygons overlap any other entry. */
+function computeOverlapping(entries: Entry[]): Set<number> {
+  const overlapping = new Set<number>()
+  const worldVerts = entries.map(getWorldVerts)
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      if (satOverlap(worldVerts[i], worldVerts[j])) {
+        overlapping.add(entries[i].body.id)
+        overlapping.add(entries[j].body.id)
+      }
+    }
+  }
+  return overlapping
+}
+
 // ── Draw helper ───────────────────────────────────────────────────────────────
 
 /**
@@ -349,9 +408,10 @@ export default function PrintingListCanvas({ models, items }: Props) {
     let drag: { body: Matter.Body; ox: number; oy: number } | null = null
 
     // ── Render helper ──────────────────────────────────────────────────────
-    function renderEntries() {
+    function renderEntries(overlapping: Set<number>) {
       for (const { body, gfx, label, color, visualLocalVerts } of entries) {
-        drawBody(gfx, body, visualLocalVerts, color)
+        const renderColor = overlapping.has(body.id) ? darkenColor(color, 0.45) : color
+        drawBody(gfx, body, visualLocalVerts, renderColor)
         label.position.set(body.position.x, body.position.y)
       }
     }
@@ -413,7 +473,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
         Matter.Engine.update(engine, deltaMs)
       }
 
-      renderEntries()
+      renderEntries(computeOverlapping(entries))
 
       // Settling detection (skip when dragging or already paused)
       if (!paused && !drag && dynamicBodies.length > 0) {
