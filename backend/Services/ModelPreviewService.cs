@@ -31,6 +31,10 @@ public class ModelPreviewService(ILogger<ModelPreviewService> logger)
                 return null;
             }
 
+            // Models are stored in Z-up (common in CAD / 3-D printing tools).
+            // Convert to Y-up so the renderer's worldUp = (0,1,0) is correct.
+            triangles = ConvertZUpToYUp(triangles);
+
             logger.LogInformation("Rendering preview for {FilePath} ({Count} triangles)", filePath, triangles.Count);
             return await Task.Run(() => MeshRenderer.Render(triangles, RenderWidth, RenderHeight));
         }
@@ -219,6 +223,18 @@ public class ModelPreviewService(ILogger<ModelPreviewService> logger)
 
         return triangles;
     }
+
+    // Convert Z-up (CAD/3-D printing convention) to Y-up by rotating −90° around X:
+    //   x' = x,  y' = z,  z' = −y
+    private static List<Triangle3D> ConvertZUpToYUp(List<Triangle3D> triangles)
+    {
+        var result = new List<Triangle3D>(triangles.Count);
+        foreach (var tri in triangles)
+            result.Add(new Triangle3D(ZUpToYUp(tri.V0), ZUpToYUp(tri.V1), ZUpToYUp(tri.V2), ZUpToYUp(tri.Normal)));
+        return result;
+    }
+
+    private static Vec3 ZUpToYUp(Vec3 v) => new(v.X, v.Z, -v.Y);
 
     private static (int vi, int ni) ParseFaceVertex(string token, int vCount, int nCount)
     {
