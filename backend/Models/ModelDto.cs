@@ -18,4 +18,8 @@ public class ModelDto
     public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? Type { get; set; }        // "Whole" | "Part" | null
     public bool? Supported { get; set; }
+
+    // Hull coordinates as JSON: [[x,z],[x,z],...] projected onto X-Z plane (bird's eye with Y-up)
+    public string? ConvexHull { get; set; }
+    public string? ConcaveHull { get; set; }
 }

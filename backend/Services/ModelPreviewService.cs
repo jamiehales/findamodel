@@ -234,7 +234,11 @@ public class ModelPreviewService(ILogger<ModelPreviewService> logger)
         return result;
     }
 
-    private static Vec3 ZUpToYUp(Vec3 v) => new(v.X, v.Z, -v.Y);
+    // Transform from Z-up to Y-up: applies rotateX(π/2) then rotateZ(π)
+    // rotateX(π/2): [x, y, z] -> [x, -z, y]
+    // rotateZ(π): [x, y, z] -> [-x, -y, z]
+    // Combined: [x, y, z] -> [-x, z, y]
+    private static Vec3 ZUpToYUp(Vec3 v) => new(-v.X, v.Z, v.Y);
 
     private static (int vi, int ni) ParseFaceVertex(string token, int vCount, int nCount)
     {

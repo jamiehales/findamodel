@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from 'react'
-import { Canvas, useLoader } from '@react-three/fiber'
+import { Canvas, useLoader, useFrame } from '@react-three/fiber'
 import { OrbitControls, Bounds, Center, Html } from '@react-three/drei'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
@@ -21,33 +21,166 @@ function Lighting() {
   )
 }
 
-function StlModel({ url, color }: { url: string; color: string }) {
+function Grid() {
+  return (
+    <gridHelper args={[20, 20, '#3a4559', '#1e293b']} position={[0, 0, 0]} rotation={[0, 0, 0]} />
+  )
+}
+
+function CameraController() {
+  useFrame(({ camera }) => {
+    camera.lookAt(0, 0, 0)
+  })
+  return null
+}
+
+interface ConvexHullLineProps {
+  coordinates: Array<[number, number]> | null
+}
+
+function ConvexHullLine({ coordinates }: ConvexHullLineProps) {
+  if (!coordinates || coordinates.length < 2) return null
+
+  // Calculate center of hull points to apply same offset as model
+  let transformedCoords = coordinates.map(([x, z]) => [x, z] as [number, number])
+  if (transformedCoords.length > 0) {
+    const centerX = transformedCoords.reduce((sum, [x]) => sum + x, 0) / transformedCoords.length
+    const centerZ = transformedCoords.reduce((sum, [, z]) => sum + z, 0) / transformedCoords.length
+    // Offset coordinates to center at origin
+    transformedCoords = transformedCoords.map(([x, z]) => [x - centerX, z - centerZ] as [number, number])
+  }
+  
+  const points = transformedCoords.map(([x, z]) => new THREE.Vector3(x, 0, z))
+  // Close the polygon
+  if (points.length > 0 && (points[0].x !== points[points.length - 1].x || points[0].z !== points[points.length - 1].z)) {
+    points.push(points[0].clone())
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points)
+  
+  return (
+    <line geometry={geometry} position={[0, 0.01, 0]}>
+      <lineBasicMaterial color="#818cf8" linewidth={2} />
+    </line>
+  )
+}
+
+interface ConvexHullPolygonProps {
+  coordinates: Array<[number, number]> | null
+}
+
+function ConvexHullPolygon({ coordinates }: ConvexHullPolygonProps) {
+  if (!coordinates || coordinates.length < 3) return null
+
+  // Calculate center of hull points to apply same offset as model
+  let transformedCoords = coordinates.map(([x, z]) => [x, z] as [number, number])
+  if (transformedCoords.length > 0) {
+    const centerX = transformedCoords.reduce((sum, [x]) => sum + x, 0) / transformedCoords.length
+    const centerZ = transformedCoords.reduce((sum, [, z]) => sum + z, 0) / transformedCoords.length
+    // Offset coordinates to center at origin
+    transformedCoords = transformedCoords.map(([x, z]) => [x - centerX, z - centerZ] as [number, number])
+  }
+  
+  const shape = new THREE.Shape()
+  shape.moveTo(transformedCoords[0][0], transformedCoords[0][1])
+  for (let i = 1; i < transformedCoords.length; i++) {
+    shape.lineTo(transformedCoords[i][0], transformedCoords[i][1])
+  }
+  shape.lineTo(transformedCoords[0][0], transformedCoords[0][1])
+
+  const geometry = new THREE.ShapeGeometry(shape)
+  // Rotate geometry from XY plane to XZ plane (rotateX by 90 degrees)
+  geometry.rotateX(Math.PI / 2)
+  
+  return (
+    <mesh geometry={geometry} position={[0, 0.005, 0]}>
+      <meshBasicMaterial color="#818cf8" transparent opacity={0.15} side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
+
+function StlModel({ url, color, convexHull }: { url: string; color: string; convexHull: string | null }) {
   const geometry = useLoader(STLLoader, url)
+  let convexHullCoordinates: Array<[number, number]> | null = null
+  
+  try {
+    if (convexHull) {
+      convexHullCoordinates = JSON.parse(convexHull)
+    }
+  } catch {
+    convexHullCoordinates = null
+  }
+
+  // Convert from Z-up to Y-up
+  useEffect(() => {
+    geometry.rotateX(Math.PI / 2)
+    geometry.rotateZ(Math.PI)
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    
+    // Center the geometry at the origin in X and Z, keep Y at 0
+    const sphere = geometry.boundingSphere
+    if (sphere) {
+      geometry.translate(-sphere.center.x, 0, -sphere.center.z)
+      console.log('Translated STL to origin')
+    }
+  }, [geometry])
+
   return (
     <Bounds fit clip observe>
-      <Center>
+      <group position={[0, 0, 0]}>
         <mesh geometry={geometry}>
           <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
         </mesh>
-      </Center>
+        <ConvexHullPolygon coordinates={convexHullCoordinates} />
+        <ConvexHullLine coordinates={convexHullCoordinates} />
+      </group>
     </Bounds>
   )
 }
 
-function ObjModel({ url, color }: { url: string; color: string }) {
+function ObjModel({ url, color, convexHull }: { url: string; color: string; convexHull: string | null }) {
   const obj = useLoader(OBJLoader, url)
+  let convexHullCoordinates: Array<[number, number]> | null = null
+  
+  try {
+    if (convexHull) {
+      convexHullCoordinates = JSON.parse(convexHull)
+    }
+  } catch {
+    convexHullCoordinates = null
+  }
+
   useEffect(() => {
     const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15 })
     obj.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).material = mat
+      if ((child as THREE.Mesh).isMesh) {
+        (child as THREE.Mesh).material = mat
+        // Convert from Z-up to Y-up by rotating around X axis
+        ;(child as THREE.Mesh).geometry.rotateX(Math.PI / 2)
+        ;(child as THREE.Mesh).geometry.rotateZ(Math.PI)
+        ;(child as THREE.Mesh).geometry.computeBoundingBox()
+        ;(child as THREE.Mesh).geometry.computeBoundingSphere()
+        
+        // Center the geometry at the origin in X and Z, keep Y at 0
+        const mesh = child as THREE.Mesh
+        const sphere = mesh.geometry.boundingSphere
+        if (sphere) {
+          mesh.geometry.translate(-sphere.center.x, 0, -sphere.center.z)
+          console.log('Translated OBJ mesh to origin')
+        }
+      }
     })
     return () => mat.dispose()
   }, [obj, color])
+
   return (
     <Bounds fit clip observe>
-      <Center>
+      <group position={[0, 0, 0]}>
         <primitive object={obj} />
-      </Center>
+        <ConvexHullPolygon coordinates={convexHullCoordinates} />
+        <ConvexHullLine coordinates={convexHullCoordinates} />
+      </group>
     </Bounds>
   )
 }
@@ -74,9 +207,10 @@ class ViewerErrorBoundary extends React.Component<
 interface ModelViewerProps {
   fileUrl: string
   fileType: string
+  convexHull?: string | null
 }
 
-export default function ModelViewer({ fileUrl, fileType }: ModelViewerProps) {
+export default function ModelViewer({ fileUrl, fileType, convexHull }: ModelViewerProps) {
   const type = fileType.toLowerCase()
   const color = ACCENT[type] ?? '#94a3b8'
 
@@ -90,11 +224,13 @@ export default function ModelViewer({ fileUrl, fileType }: ModelViewerProps) {
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <Canvas
-        camera={{ position: [0, 0, 5], fov: 45 }}
+        camera={{ position: [0, 5, -5], fov: 45 }}
         gl={{ antialias: true }}
         style={containerStyle}
       >
         <Lighting />
+        <Grid />
+        <CameraController />
         <Suspense
           fallback={
             <Html center>
@@ -104,8 +240,8 @@ export default function ModelViewer({ fileUrl, fileType }: ModelViewerProps) {
             </Html>
           }
         >
-          {type === 'stl' && <StlModel url={fileUrl} color={color} />}
-          {type === 'obj' && <ObjModel url={fileUrl} color={color} />}
+          {type === 'stl' && <StlModel url={fileUrl} color={color} convexHull={convexHull ?? null} />}
+          {type === 'obj' && <ObjModel url={fileUrl} color={color} convexHull={convexHull ?? null} />}
         </Suspense>
         <OrbitControls
           enableDamping

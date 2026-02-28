@@ -10,6 +10,7 @@ public class ModelService(
     ILogger<ModelService> logger,
     IDbContextFactory<ModelCacheContext> dbFactory,
     ModelPreviewService previewService,
+    HullCalculationService hullCalculationService,
     MetadataConfigService metadataConfigService)
 {
     private static readonly string[] ModelExtensions = [".stl", ".obj"];
@@ -34,7 +35,9 @@ public class ModelService(
                 Subcollection = m.DirectoryConfig != null ? m.DirectoryConfig.Subcollection : null,
                 Category      = m.DirectoryConfig != null ? m.DirectoryConfig.Category      : null,
                 Type       = m.DirectoryConfig != null ? m.DirectoryConfig.Type       : null,
-                Supported  = m.DirectoryConfig != null ? m.DirectoryConfig.Supported  : null
+                Supported  = m.DirectoryConfig != null ? m.DirectoryConfig.Supported  : null,
+                m.ConvexHullCoordinates,
+                m.ConcaveHullCoordinates
             })
             .ToListAsync();
 
@@ -53,7 +56,9 @@ public class ModelService(
             Subcollection = m.Subcollection,
             Category = m.Category,
             Type = m.Type,
-            Supported = m.Supported
+            Supported = m.Supported,
+            ConvexHull = m.ConvexHullCoordinates,
+            ConcaveHull = m.ConcaveHullCoordinates
         }).ToList();
     }
 
@@ -119,6 +124,7 @@ public class ModelService(
             logger.LogInformation("Discovered {FileType} model: {FilePath}", fileType.ToUpper(), file);
 
             var preview = await previewService.GeneratePreviewAsync(file, fileType);
+            var (convexHull, concaveHull) = await hullCalculationService.CalculateHullsAsync(file, fileType);
 
             directoryConfigs.TryGetValue(directory, out var dirConfig);
 
@@ -134,6 +140,9 @@ public class ModelService(
                 CachedAt = DateTime.UtcNow,
                 PreviewImage = preview,
                 PreviewGeneratedAt = preview != null ? DateTime.UtcNow : null,
+                ConvexHullCoordinates = convexHull,
+                ConcaveHullCoordinates = concaveHull,
+                HullGeneratedAt = convexHull != null || concaveHull != null ? DateTime.UtcNow : null,
                 DirectoryConfigId = dirConfig?.Id
             };
 

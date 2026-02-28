@@ -13,6 +13,8 @@ export interface Model {
   category: string | null
   type: string | null
   supported: boolean | null
+  convexHull: string | null
+  concaveHull: string | null
 }
 
 export async function fetchModels(): Promise<Model[]> {

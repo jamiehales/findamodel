@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { fetchModels } from '../lib/api'
 import ModelViewer from '../components/ModelViewer'
+import HullPreview from '../components/HullPreview'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -218,8 +219,12 @@ function ModelPage() {
             border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
-          <ModelViewer fileUrl={model.fileUrl} fileType={model.fileType} />
+          <ModelViewer fileUrl={model.fileUrl} fileType={model.fileType} convexHull={model.convexHull} />
         </Box>
+
+        {(model.convexHull || model.concaveHull) && (
+          <HullPreview convexHull={model.convexHull} concaveHull={model.concaveHull} label="Hull Projections" />
+        )}
 
         <Button
           component="a"
