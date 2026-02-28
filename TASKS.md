@@ -16,8 +16,6 @@
 
 * Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data
 
-* Modify the scale of the grid in the model viewer, one square should be one inch, with quarter inch subdivisions
-
 * Add a file explorer, where you can navigate through the file structure
 * This should be a grid view, with a card for folders and a card per model, same as the model explorer
 * Folders should be shown first, alphabetically, followed by all the models also sorted alphabetically

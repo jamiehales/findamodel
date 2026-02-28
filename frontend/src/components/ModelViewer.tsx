@@ -23,7 +23,7 @@ function Lighting() {
 
 function Grid() {
   return (
-    <gridHelper args={[20, 20, '#3a4559', '#1e293b']} position={[0, 0, 0]} />
+    <gridHelper args={[25.4 * 2, 2, '#3a4559', '#1e293b']} position={[0, 0, 0]} />
   )
 }
 
