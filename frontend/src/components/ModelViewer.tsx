@@ -1,9 +1,8 @@
 import React, { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Bounds, Html } from '@react-three/drei'
-import { useSuspenseQuery } from '@tanstack/react-query'
 import * as THREE from 'three'
-import { fetchGeometry } from '../lib/api'
+import { useGeometry } from '../lib/queries'
 
 const ACCENT: Record<string, string> = {
   stl: '#818cf8',
@@ -80,10 +79,7 @@ interface GeometryModelProps {
 }
 
 function GeometryModel({ modelId, color, convexHull }: GeometryModelProps) {
-  const { data } = useSuspenseQuery({
-    queryKey: ['geometry', modelId],
-    queryFn: () => fetchGeometry(modelId),
-  })
+  const { data } = useGeometry(modelId)
 
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry()

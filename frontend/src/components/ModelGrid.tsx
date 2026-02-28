@@ -1,9 +1,8 @@
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { fetchModels } from '../lib/api'
+import { useModels } from '../lib/queries'
 import ModelCard from './ModelCard'
 
 const gridSx = {
@@ -14,10 +13,7 @@ const gridSx = {
 
 function ModelGrid() {
   const navigate = useNavigate()
-  const { data: models, isPending, isError } = useQuery({
-    queryKey: ['models'],
-    queryFn: fetchModels,
-  })
+  const { data: models, isPending, isError } = useModels()
 
   if (isPending) {
     return (

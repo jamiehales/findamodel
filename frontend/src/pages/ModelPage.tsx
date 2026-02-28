@@ -3,9 +3,8 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchModels } from '../lib/api'
+import { useModel } from '../lib/queries'
 import ModelViewer from '../components/ModelViewer'
 import HullPreview from '../components/HullPreview'
 
@@ -25,11 +24,7 @@ function ModelPage() {
 
   const decodedId = decodeURIComponent(id ?? '')
 
-  const { data: model, isPending, isError } = useQuery({
-    queryKey: ['models'],
-    queryFn: fetchModels,
-    select: models => models.find(m => m.id === decodedId) ?? null,
-  })
+  const { data: model, isPending, isError } = useModel(decodedId)
 
   const backButton = (
     <Button
