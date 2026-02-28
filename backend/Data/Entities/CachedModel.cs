@@ -22,4 +22,14 @@ public class CachedModel
     public string? ConvexHullCoordinates { get; set; }   // Outer boundary hull (JSON)
     public string? ConcaveHullCoordinates { get; set; }  // Concave/alpha hull (JSON)
     public DateTime? HullGeneratedAt { get; set; }
+
+    // Geometry metadata — Y-up, mm, centred (X/Z at origin, base at Y=0)
+    public float? DimensionXMm       { get; set; }
+    public float? DimensionYMm       { get; set; }
+    public float? DimensionZMm       { get; set; }
+    public float? SphereCentreX      { get; set; }
+    public float? SphereCentreY      { get; set; }
+    public float? SphereCentreZ      { get; set; }
+    public float? SphereRadius       { get; set; }
+    public DateTime? GeometryCalculatedAt { get; set; }
 }

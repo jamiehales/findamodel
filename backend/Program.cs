@@ -8,6 +8,7 @@ builder.Services.AddControllers();
 builder.Services.AddDbContextFactory<ModelCacheContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("ModelCache") ?? "Data Source=models_cache.db"));
 
+builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.ModelPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataConfigService>();

@@ -22,4 +22,13 @@ public class ModelDto
     // Hull coordinates as JSON: [[x,z],[x,z],...] projected onto X-Z plane (bird's eye with Y-up)
     public string? ConvexHull { get; set; }
     public string? ConcaveHull { get; set; }
+
+    // Geometry metadata (mm, Y-up centred coordinate system: X/Z at origin, base at Y=0)
+    public float? DimensionXMm  { get; set; }
+    public float? DimensionYMm  { get; set; }
+    public float? DimensionZMm  { get; set; }
+    public float? SphereCentreX { get; set; }
+    public float? SphereCentreY { get; set; }
+    public float? SphereCentreZ { get; set; }
+    public float? SphereRadius  { get; set; }
 }

@@ -12,14 +12,9 @@
 
 * Fix popping when the model viewer loads
 
-* Use a y-up coordinate system, the model loading service should transform all models into this space
-* Create a service for model loading, coordinate system transformation and other metadata, and use that in the modelpreviewservice and hullcalculationservice
-* This vertex transformation calculation should be done when the model is loaded, so that the transformed coordinates are used in the model preview server, hull calculation service and the data returned to the frontend
-* The vertex transformation applied within each model format load should include transforming vertices into the y up plane when loading the model and transform to a mm scale.
-* After the model is loaded by each individual model format loader, apply additional transformations and calculations: calculate the spherical bounds of the model, calculate the x/y/z dimensions of the object in mm, transform all the vertices so that model is centered around the origin with the base of the model sitting at y=0
-
 * Add a new endpoint that instead of directly returning the stl file has the backend load the model with all transformations applied, and returned in a format that threejs can read easily
 * Update model viewer to use this new transformed API call, and remove all specific handling of obj and stl. Remove all transformations and modifications of the vertices as they should now already be transformed by the backend before receiving the vertex data.
+* Refactor all the frontend api calls to use react-query
 
 * Fix concave hull calculation
 
@@ -31,6 +26,10 @@
 * This should be a grid view, with a card for folders and a card per model, same as the model explorer
 * Folders should be shown first, alphabetically, followed by all the models also sorted alphabetically
 * There should be editable fields for the metadata (findamodel.json) in each of these folders, it should show both the local value, or the inherited value. If you edit a field it should update the json file with this data, and the corresponding database entry. Making sure to update all the children with the new calculated values.
+
+* Add an author explorer, there should be a list of authors, then a list of collections, if there are subcollections then show those
+
+* Rename author to creator?
 
 * If there is an image in a directory, allow setting this as the collection preview, author preview
 

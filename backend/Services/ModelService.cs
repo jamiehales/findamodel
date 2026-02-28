@@ -9,6 +9,7 @@ public class ModelService(
     IConfiguration config,
     ILogger<ModelService> logger,
     IDbContextFactory<ModelCacheContext> dbFactory,
+    ModelLoaderService loaderService,
     ModelPreviewService previewService,
     HullCalculationService hullCalculationService,
     MetadataConfigService metadataConfigService)
@@ -37,7 +38,14 @@ public class ModelService(
                 Type       = m.DirectoryConfig != null ? m.DirectoryConfig.Type       : null,
                 Supported  = m.DirectoryConfig != null ? m.DirectoryConfig.Supported  : null,
                 m.ConvexHullCoordinates,
-                m.ConcaveHullCoordinates
+                m.ConcaveHullCoordinates,
+                m.DimensionXMm,
+                m.DimensionYMm,
+                m.DimensionZMm,
+                m.SphereCentreX,
+                m.SphereCentreY,
+                m.SphereCentreZ,
+                m.SphereRadius
             })
             .ToListAsync();
 
@@ -58,7 +66,14 @@ public class ModelService(
             Type = m.Type,
             Supported = m.Supported,
             ConvexHull = m.ConvexHullCoordinates,
-            ConcaveHull = m.ConcaveHullCoordinates
+            ConcaveHull = m.ConcaveHullCoordinates,
+            DimensionXMm  = m.DimensionXMm,
+            DimensionYMm  = m.DimensionYMm,
+            DimensionZMm  = m.DimensionZMm,
+            SphereCentreX = m.SphereCentreX,
+            SphereCentreY = m.SphereCentreY,
+            SphereCentreZ = m.SphereCentreZ,
+            SphereRadius  = m.SphereRadius
         }).ToList();
     }
 
@@ -123,8 +138,16 @@ public class ModelService(
 
             logger.LogInformation("Discovered {FileType} model: {FilePath}", fileType.ToUpper(), file);
 
-            var preview = await previewService.GeneratePreviewAsync(file, fileType);
-            var (convexHull, concaveHull) = await hullCalculationService.CalculateHullsAsync(file, fileType);
+            // Load geometry once — parsed, transformed, and centred
+            var geometry = await loaderService.LoadModelAsync(file, fileType);
+
+            // Generate preview and hulls from pre-loaded geometry to avoid re-parsing
+            var preview = geometry is not null
+                ? await previewService.GeneratePreviewAsync(geometry)
+                : null;
+            var (convexHull, concaveHull) = geometry is not null
+                ? await hullCalculationService.CalculateHullsAsync(geometry)
+                : (null, null);
 
             directoryConfigs.TryGetValue(directory, out var dirConfig);
 
@@ -143,7 +166,15 @@ public class ModelService(
                 ConvexHullCoordinates = convexHull,
                 ConcaveHullCoordinates = concaveHull,
                 HullGeneratedAt = convexHull != null || concaveHull != null ? DateTime.UtcNow : null,
-                DirectoryConfigId = dirConfig?.Id
+                DirectoryConfigId = dirConfig?.Id,
+                DimensionXMm        = geometry?.DimensionXMm,
+                DimensionYMm        = geometry?.DimensionYMm,
+                DimensionZMm        = geometry?.DimensionZMm,
+                SphereCentreX       = geometry?.SphereCentre.X,
+                SphereCentreY       = geometry?.SphereCentre.Y,
+                SphereCentreZ       = geometry?.SphereCentre.Z,
+                SphereRadius        = geometry?.SphereRadius,
+                GeometryCalculatedAt = geometry is not null ? DateTime.UtcNow : null
             };
 
             db.Models.Add(entity);
