@@ -27,7 +27,9 @@
 
 * findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name
 
-* Allow rules section in a config, this allow specifying rules for how values are calculated, the value passed into the regex is specified by the source, in the example below it would be the full path of the file (relative to the root)
+* Allow rules section in a config, this allow specifying rules for how values are calculated
+* Default rules should be 'folder' - the name of the parent folder, 'filename' - the filename (without the extension), 'regex' - see other details below
+* When a regex rule is used the value passed into the regex is specified by the source, in the example below it would be the full path of the file (relative to the root)
   - name:
       regex:
         source: path
