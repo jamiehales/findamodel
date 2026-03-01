@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as PIXI from 'pixi.js'
 import Matter from 'matter-js'
-import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
-import Button from '@mui/material/Button'
-import MenuItem from '@mui/material/MenuItem'
-import Select from '@mui/material/Select'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import { Stack, Typography, Button, MenuItem, Select, ToggleButton, ToggleButtonGroup, Checkbox, FormGroup, FormControlLabel } from '@mui/material'
 import type { Model } from '../lib/api'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -475,8 +469,7 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
       app.stage.addChild(gfx)
 
       // Label
-      const nameShort = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name
-      const labelStr = qty > 1 ? `${nameShort} #${inst + 1}` : nameShort
+      const labelStr = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name
       const label = new PIXI.Text(labelStr, {
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: 8,
@@ -708,9 +701,10 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
   }, [itemsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500 }}>
+    <Stack direction="column" spacing={1}>
+      <Stack direction="row" spacing={1} alignContent={"center"} alignItems="center">
+        <Typography variant="body2" color="text.secondary">
+          Printer: Uniformation GK2<br/>
           Print area: {CANVAS_WIDTH_MM} × {CANVAS_HEIGHT_MM} mm
         </Typography>
         <ToggleButtonGroup
@@ -724,16 +718,6 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
             }
           }}
           size="small"
-          sx={{
-            '& .MuiToggleButton-root': {
-              color: '#94a3b8',
-              borderColor: '#334155',
-              fontSize: '0.72rem',
-              padding: '2px 10px',
-              textTransform: 'none',
-              '&.Mui-selected': { color: '#e2e8f0', backgroundColor: '#1e293b' },
-            },
-          }}
         >
           <ToggleButton value="grouped">Grouped</ToggleButton>
           <ToggleButton value="random">Random</ToggleButton>
@@ -747,35 +731,12 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
             setHullMode(next)
           }}
           size="small"
-          sx={{
-            color: '#94a3b8',
-            fontSize: '0.72rem',
-            '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
-            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
-            '.MuiSelect-icon': { color: '#64748b' },
-            '.MuiSelect-select': { py: '2px', px: '10px' },
-          }}
-          MenuProps={{
-            PaperProps: {
-              sx: {
-                bgcolor: '#1e293b',
-                border: '1px solid #334155',
-                '& .MuiMenuItem-root': {
-                  fontSize: '0.72rem',
-                  color: '#94a3b8',
-                  '&.Mui-selected': { bgcolor: 'rgba(255,255,255,0.06)', color: '#e2e8f0' },
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
-                },
-              },
-            },
-          }}
         >
           <MenuItem value="convex">Convex hull</MenuItem>
           <MenuItem value="sansRaft">Sans raft hull</MenuItem>
         </Select>
         <Button
-          size="small"
+          size="large"
           variant="outlined"
           onClick={() => {
             pausedRef.current = true
@@ -783,59 +744,35 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
             saveLayoutRef.current?.()
           }}
           disabled={isPaused}
-          sx={{
-            color: '#94a3b8',
-            borderColor: '#334155',
-            fontSize: '0.72rem',
-            padding: '2px 10px',
-            textTransform: 'none',
-            minWidth: 0,
-            '&:hover': { borderColor: '#64748b', color: '#e2e8f0' },
-            '&.Mui-disabled': { color: 'rgba(148,163,184,0.4)', borderColor: 'rgba(51,65,85,0.5)' },
-          }}
         >
           Save
         </Button>
         <Button
-          size="small"
+          size="large"
           variant="outlined"
           onClick={() => {
             localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
             setResetCount(c => c + 1)
           }}
-          sx={{
-            color: '#94a3b8',
-            borderColor: '#334155',
-            fontSize: '0.72rem',
-            padding: '2px 10px',
-            textTransform: 'none',
-            minWidth: 0,
-            '&:hover': { borderColor: '#64748b', color: '#e2e8f0' },
-          }}
         >
           Reset
         </Button>
-        <ToggleButton
-          value="pauseOnDrag"
-          selected={pauseOnDrag}
-          onChange={() => {
-            const next = !pauseOnDrag
-            localStorage.setItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY, String(next))
-            setPauseOnDrag(next)
-          }}
-          size="small"
-          sx={{
-            color: '#94a3b8',
-            borderColor: '#334155',
-            fontSize: '0.72rem',
-            padding: '2px 10px',
-            textTransform: 'none',
-            '&.Mui-selected': { color: '#e2e8f0', backgroundColor: '#1e293b' },
-          }}
-        >
-          Pause on drag
-        </ToggleButton>
-      </Box>
+        <FormGroup>
+          <FormControlLabel
+            label="Pause on drag"
+            control={
+              <Checkbox
+                checked={pauseOnDrag}
+                onChange={() => {
+                  const next = !pauseOnDrag
+                  localStorage.setItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY, String(next))
+                  setPauseOnDrag(next)
+                }}
+              />
+            }
+          />
+        </FormGroup>
+      </Stack>
       <div
         ref={containerRef}
         style={{
@@ -847,6 +784,6 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
           cursor: 'default',
         }}
       />
-    </Box>
+    </Stack>
   )
 }

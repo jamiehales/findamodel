@@ -1,8 +1,4 @@
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import Skeleton from '@mui/material/Skeleton'
-import Typography from '@mui/material/Typography'
+import { Stack, Box, Button, CircularProgress, Skeleton, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { generatePlate } from '../lib/api'
@@ -110,7 +106,7 @@ function PrintingListPage() {
           gap: '1.5rem',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <Stack direction="column" spacing={2} alignItems="left">
           <Typography
             component="h1"
             sx={{
@@ -124,55 +120,10 @@ function PrintingListPage() {
             {listName}
           </Typography>
 
-          {list && !list.isActive && (
-            <Button
-              onClick={() => activateList(list.id)}
-              sx={{
-                background: 'rgba(255,255,255,0.06)',
-                backdropFilter: 'blur(8px)',
-                color: '#94a3b8',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: '999px',
-                px: '1.25rem',
-                py: '0.5rem',
-                fontSize: '0.9rem',
-                fontWeight: 500,
-                textTransform: 'none',
-                minWidth: 0,
-                '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
-              }}
-            >
-              Set active
-            </Button>
-          )}
-
-          {listedModels.length > 0 && (
-            <>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {list && !list.isActive && (
               <Button
-                onClick={handleSavePlate}
-                disabled={savingPlate || !simulationPaused}
-                startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
-                sx={{
-                  background: 'rgba(99,102,241,0.85)',
-                  backdropFilter: 'blur(8px)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '999px',
-                  px: '1.25rem',
-                  py: '0.5rem',
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  minWidth: 0,
-                  '&:hover': { background: 'rgba(79,82,211,0.9)' },
-                  '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
-                }}
-              >
-                {savingPlate ? 'Preparing…' : 'Export plate'}
-              </Button>
-
-              <Button
-                onClick={() => list && clearItems(list.id)}
+                onClick={() => activateList(list.id)}
                 sx={{
                   background: 'rgba(255,255,255,0.06)',
                   backdropFilter: 'blur(8px)',
@@ -188,11 +139,58 @@ function PrintingListPage() {
                   '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
                 }}
               >
-                Clear list
+                Set active
               </Button>
-            </>
-          )}
-        </Box>
+            )}
+
+            {listedModels.length > 0 && (
+              <>
+                <Button
+                  onClick={handleSavePlate}
+                  disabled={savingPlate || !simulationPaused}
+                  startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+                  sx={{
+                    background: 'rgba(99,102,241,0.85)',
+                    backdropFilter: 'blur(8px)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '999px',
+                    px: '1.25rem',
+                    py: '0.5rem',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    minWidth: 0,
+                    '&:hover': { background: 'rgba(79,82,211,0.9)' },
+                    '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
+                  }}
+                >
+                  {savingPlate ? 'Preparing…' : 'Export plate'}
+                </Button>
+
+                <Button
+                  onClick={() => list && clearItems(list.id)}
+                  sx={{
+                    background: 'rgba(255,255,255,0.06)',
+                    backdropFilter: 'blur(8px)',
+                    color: '#94a3b8',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    borderRadius: '999px',
+                    px: '1.25rem',
+                    py: '0.5rem',
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    textTransform: 'none',
+                    minWidth: 0,
+                    '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
+                  }}
+                >
+                  Clear list
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Stack>
 
         {isPending ? (
           <Box sx={gridSx}>
