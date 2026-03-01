@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { generatePlate } from '../lib/api'
 import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList } from '../lib/queries'
@@ -26,14 +26,18 @@ function PrintingListPage() {
   const { mutate: activateList } = useActivatePrintingList()
   const [savingPlate, setSavingPlate] = useState(false)
 
-  const items: Record<string, number> = list
-    ? Object.fromEntries(list.items.map(i => [i.modelId, i.quantity]))
-    : {}
+  const items = useMemo<Record<string, number>>(
+    () => list ? Object.fromEntries(list.items.map(i => [i.modelId, i.quantity])) : {},
+    [list],
+  )
+  const listedModels = useMemo(
+    () => allModels?.filter(m => items[m.id] != null) ?? [],
+    [allModels, items],
+  )
 
   const listName = list?.name ?? 'Printing list'
   const showControls = list?.isActive === true
   const isPending = modelsPending || listPending
-  const listedModels = allModels?.filter(m => items[m.id] != null) ?? []
 
   async function handleSavePlate() {
     setSavingPlate(true)
