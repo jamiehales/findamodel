@@ -8,6 +8,8 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
     public DbSet<CachedModel> Models { get; set; }
     public DbSet<DirectoryConfig> DirectoryConfigs { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<PrintingList> PrintingLists { get; set; }
+    public DbSet<PrintingListItem> PrintingListItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +31,18 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();
+
+        modelBuilder.Entity<PrintingList>()
+            .HasOne(l => l.Owner)
+            .WithMany()
+            .HasForeignKey(l => l.OwnerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PrintingListItem>()
+            .HasOne(i => i.PrintingList)
+            .WithMany(l => l.Items)
+            .HasForeignKey(i => i.PrintingListId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Self-referential: DirectoryConfig → Parent (Restrict to prevent cascade-deleting ancestor records)
         modelBuilder.Entity<DirectoryConfig>()

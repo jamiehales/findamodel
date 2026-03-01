@@ -140,3 +140,96 @@ export async function generatePlate(placements: PlatePlacement[]): Promise<Blob>
   if (!r.ok) throw new Error('Failed to generate plate')
   return r.blob()
 }
+
+// ---- Printing Lists ----
+
+export interface PrintingListSummary {
+  id: string
+  name: string
+  isActive: boolean
+  isDefault: boolean
+  createdAt: string
+  ownerUsername: string | null
+  itemCount: number
+}
+
+export interface PrintingListItem {
+  id: string
+  modelId: string
+  quantity: number
+}
+
+export interface PrintingListDetail {
+  id: string
+  name: string
+  isActive: boolean
+  isDefault: boolean
+  createdAt: string
+  ownerUsername: string | null
+  items: PrintingListItem[]
+}
+
+export async function fetchPrintingLists(): Promise<PrintingListSummary[]> {
+  const r = await fetch('/api/printing-lists')
+  if (!r.ok) throw new Error('Failed to fetch printing lists')
+  return r.json()
+}
+
+export async function fetchActivePrintingList(): Promise<PrintingListDetail | null> {
+  const r = await fetch('/api/printing-lists/active')
+  if (r.status === 204) return null
+  if (!r.ok) throw new Error('Failed to fetch active printing list')
+  return r.json()
+}
+
+export async function fetchPrintingList(id: string): Promise<PrintingListDetail> {
+  const r = await fetch(`/api/printing-lists/${id}`)
+  if (!r.ok) throw new Error(`Failed to fetch printing list ${id}`)
+  return r.json()
+}
+
+export async function createPrintingList(name: string): Promise<PrintingListSummary> {
+  const r = await fetch('/api/printing-lists', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!r.ok) throw new Error('Failed to create printing list')
+  return r.json()
+}
+
+export async function renamePrintingList(id: string, name: string): Promise<PrintingListSummary> {
+  const r = await fetch(`/api/printing-lists/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!r.ok) throw new Error('Failed to rename printing list')
+  return r.json()
+}
+
+export async function deletePrintingList(id: string): Promise<void> {
+  const r = await fetch(`/api/printing-lists/${id}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error('Failed to delete printing list')
+}
+
+export async function activatePrintingList(id: string): Promise<void> {
+  const r = await fetch(`/api/printing-lists/${id}/activate`, { method: 'POST' })
+  if (!r.ok) throw new Error('Failed to activate printing list')
+}
+
+export async function upsertPrintingListItem(listId: string, modelId: string, quantity: number): Promise<PrintingListDetail> {
+  const r = await fetch(`/api/printing-lists/${listId}/items/${modelId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quantity }),
+  })
+  if (!r.ok) throw new Error('Failed to update printing list item')
+  return r.json()
+}
+
+export async function clearPrintingListItems(listId: string): Promise<PrintingListDetail> {
+  const r = await fetch(`/api/printing-lists/${listId}/items`, { method: 'DELETE' })
+  if (!r.ok) throw new Error('Failed to clear printing list items')
+  return r.json()
+}

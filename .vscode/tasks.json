@@ -37,14 +37,22 @@
     },
     {
       "label": "data: clear database",
-      "type": "shell",
-      "command": "rm -f ${workspaceFolder}/debug/data/findamodel.db*",
+      "type": "process",
+      "command": "bash",
+      "args": ["-c", "rm -f debug/data/findamodel.db*"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": []
     },
     {
       "label": "data: clear cache",
-      "type": "shell",
-      "command": "rm -rf ${workspaceFolder}/debug/data/cache",
+      "type": "process",
+      "command": "bash",
+      "args": ["-c", "rm -rf debug/data/cache"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": []
     },
     {

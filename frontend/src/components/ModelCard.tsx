@@ -17,9 +17,10 @@ const badgeColors: Record<string, { bg: string; color: string }> = {
 interface ModelCardProps {
   model: Model
   href: string
+  showControls?: boolean
 }
 
-function ModelCard({ model, href }: ModelCardProps) {
+function ModelCard({ model, href, showControls = true }: ModelCardProps) {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
 
   return (
@@ -103,7 +104,7 @@ function ModelCard({ model, href }: ModelCardProps) {
         </Typography>
       </Box>
 
-      <PrintingListControls modelId={model.id} />
+      {showControls && <PrintingListControls modelId={model.id} />}
     </AppCard>
   )
 }

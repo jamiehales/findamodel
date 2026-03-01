@@ -30,6 +30,7 @@ builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataConfigService>();
 builder.Services.AddSingleton<findamodel.Services.ModelService>();
 builder.Services.AddSingleton<findamodel.Services.ExplorerService>();
+builder.Services.AddSingleton<findamodel.Services.PrintingListService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();
 
 if (builder.Environment.IsDevelopment())
@@ -59,6 +60,11 @@ using (var scope = app.Services.CreateScope())
 
     var userService = scope.ServiceProvider.GetRequiredService<findamodel.Services.UserService>();
     await userService.SeedAdminUserAsync();
+
+    var printingListService = scope.ServiceProvider.GetRequiredService<findamodel.Services.PrintingListService>();
+    var adminUser = await userService.GetAdminUserAsync();
+    if (adminUser != null)
+        await printingListService.EnsureDefaultListAsync(adminUser.Id);
 }
 
 if (app.Environment.IsDevelopment())

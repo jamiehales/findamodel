@@ -1,8 +1,12 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useContext, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useActivePrintingList, queryKeys } from './queries'
+import { clearPrintingListItems, upsertPrintingListItem } from './api'
 
 export type PrintingList = Record<string, number> // modelId → quantity
 
 interface PrintingListContextValue {
+  activeListId: string | null
   items: PrintingList
   addItem: (id: string) => void
   removeItem: (id: string) => void
@@ -11,65 +15,47 @@ interface PrintingListContextValue {
   totalCount: number
 }
 
-const STORAGE_KEY = 'findamodel.printingList'
-
-function load(): PrintingList {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as PrintingList) : {}
-  } catch {
-    return {}
-  }
-}
-
-function save(items: PrintingList) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-}
-
 const PrintingListContext = createContext<PrintingListContextValue | null>(null)
 
 export function PrintingListProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<PrintingList>(load)
+  const { data: activeList } = useActivePrintingList()
+  const queryClient = useQueryClient()
+
+  const activeListId = activeList?.id ?? null
+
+  const items: PrintingList = React.useMemo(() => {
+    if (!activeList) return {}
+    return Object.fromEntries(activeList.items.map(i => [i.modelId, i.quantity]))
+  }, [activeList])
+
+  const setQuantity = useCallback((modelId: string, qty: number) => {
+    if (!activeListId) return
+    upsertPrintingListItem(activeListId, modelId, qty).then(updated => {
+      queryClient.setQueryData(queryKeys.activePrintingList, updated)
+      queryClient.setQueryData(queryKeys.printingList(updated.id), updated)
+    })
+  }, [activeListId, queryClient])
 
   const addItem = useCallback((id: string) => {
-    setItems(prev => {
-      const next = { ...prev, [id]: 1 }
-      save(next)
-      return next
-    })
-  }, [])
+    setQuantity(id, (items[id] ?? 0) + 1)
+  }, [setQuantity, items])
 
   const removeItem = useCallback((id: string) => {
-    setItems(prev => {
-      const next = { ...prev }
-      delete next[id]
-      save(next)
-      return next
-    })
-  }, [])
-
-  const setQuantity = useCallback((id: string, qty: number) => {
-    setItems(prev => {
-      const next = { ...prev }
-      if (qty <= 0) {
-        delete next[id]
-      } else {
-        next[id] = qty
-      }
-      save(next)
-      return next
-    })
-  }, [])
+    setQuantity(id, 0)
+  }, [setQuantity])
 
   const clearList = useCallback(() => {
-    setItems({})
-    save({})
-  }, [])
+    if (!activeListId) return
+    clearPrintingListItems(activeListId).then(updated => {
+      queryClient.setQueryData(queryKeys.activePrintingList, updated)
+      queryClient.setQueryData(queryKeys.printingList(updated.id), updated)
+    })
+  }, [activeListId, queryClient])
 
   const totalCount = Object.values(items).reduce((a, b) => a + b, 0)
 
   return (
-    <PrintingListContext.Provider value={{ items, addItem, removeItem, setQuantity, clearList, totalCount }}>
+    <PrintingListContext.Provider value={{ activeListId, items, addItem, removeItem, setQuantity, clearList, totalCount }}>
       {children}
     </PrintingListContext.Provider>
   )

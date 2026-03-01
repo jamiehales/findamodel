@@ -4,12 +4,14 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { generatePlate } from '../lib/api'
-import { useModels } from '../lib/queries'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { generatePlate, clearPrintingListItems } from '../lib/api'
+import { useModels, usePrintingListDetail, queryKeys } from '../lib/queries'
 import { usePrintingList } from '../lib/printingList'
 import ModelCard from '../components/ModelCard'
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas'
+import type { PrintingList } from '../lib/printingList'
 
 const gridSx = {
   display: 'grid',
@@ -19,16 +21,40 @@ const gridSx = {
 
 function PrintingListPage() {
   const navigate = useNavigate()
-  const { items, clearList } = usePrintingList()
-  const { data: allModels, isPending } = useModels()
+  const { listId = 'active' } = useParams<{ listId: string }>()
+  const queryClient = useQueryClient()
+
+  const isActiveView = listId === 'active'
+
+  // Active-list data comes from the context (shared with model cards)
+  const ctx = usePrintingList()
+
+  // Specific-list data is fetched directly when not using the active alias
+  const { data: specificList, isPending: specificPending } = usePrintingListDetail(
+    isActiveView ? '' : listId
+  )
+
+  const { data: allModels, isPending: modelsPending } = useModels()
   const [savingPlate, setSavingPlate] = useState(false)
 
+  // Resolve items and list name depending on view mode
+  const items: PrintingList = isActiveView
+    ? ctx.items
+    : specificList
+      ? Object.fromEntries(specificList.items.map(i => [i.modelId, i.quantity]))
+      : {}
+
+  const listName = isActiveView ? 'Printing list' : (specificList?.name ?? 'Printing list')
+
+  // Controls (+/−) only make sense on the active list; non-active views are read-only
+  const showControls = isActiveView || specificList?.isActive === true
+
+  const isPending = modelsPending || (!isActiveView && specificPending)
   const listedModels = allModels?.filter(m => items[m.id] != null) ?? []
 
   async function handleSavePlate() {
     setSavingPlate(true)
     try {
-      // Read the settled layout from localStorage (written by PrintingListCanvas when bodies stop moving)
       let placements: Parameters<typeof generatePlate>[0] = []
       try {
         const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY)
@@ -44,7 +70,7 @@ function PrintingListPage() {
             angleRad: p.angle,
           }))
         }
-      } catch { /* proceed with empty placements if layout is unavailable */ }
+      } catch { /* proceed with empty placements */ }
 
       const blob = await generatePlate(placements)
       const url = URL.createObjectURL(blob)
@@ -58,36 +84,42 @@ function PrintingListPage() {
     }
   }
 
-  const backButton = (
-    <Button
-      onClick={() => navigate('/')}
-      sx={{
-        position: 'fixed',
-        top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
-        left: '1rem',
-        background: 'rgba(15,23,42,0.7)',
-        backdropFilter: 'blur(8px)',
-        color: '#e2e8f0',
-        border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: '999px',
-        px: '1rem',
-        py: '0.5rem',
-        fontSize: '0.9rem',
-        fontWeight: 500,
-        textTransform: 'none',
-        zIndex: 10,
-        minWidth: 0,
-        '&:hover': { background: 'rgba(30,41,59,0.9)' },
-        '&:active': { background: 'rgba(30,41,59,0.9)' },
-      }}
-    >
-      ← Back
-    </Button>
-  )
+  function handleClear() {
+    if (isActiveView) {
+      ctx.clearList()
+    } else {
+      clearPrintingListItems(listId).then(updated => {
+        queryClient.setQueryData(queryKeys.printingList(listId), updated)
+      })
+    }
+  }
 
   return (
     <Box sx={{ minHeight: '100vh', pb: '3rem' }}>
-      {backButton}
+      <Button
+        onClick={() => navigate(-1)}
+        sx={{
+          position: 'fixed',
+          top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+          left: '1rem',
+          background: 'rgba(15,23,42,0.7)',
+          backdropFilter: 'blur(8px)',
+          color: '#e2e8f0',
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: '999px',
+          px: '1rem',
+          py: '0.5rem',
+          fontSize: '0.9rem',
+          fontWeight: 500,
+          textTransform: 'none',
+          zIndex: 10,
+          minWidth: 0,
+          '&:hover': { background: 'rgba(30,41,59,0.9)' },
+          '&:active': { background: 'rgba(30,41,59,0.9)' },
+        }}
+      >
+        ← Back
+      </Button>
 
       <Box
         sx={{
@@ -111,7 +143,7 @@ function PrintingListPage() {
               lineHeight: 1.2,
             }}
           >
-            Printing list
+            {listName}
           </Typography>
 
           {listedModels.length > 0 && (
@@ -140,10 +172,7 @@ function PrintingListPage() {
               </Button>
 
               <Button
-                onClick={() => {
-                  clearList()
-                  localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
-                }}
+                onClick={handleClear}
                 sx={{
                   background: 'rgba(255,255,255,0.06)',
                   backdropFilter: 'blur(8px)',
@@ -187,6 +216,7 @@ function PrintingListPage() {
                   key={model.id}
                   model={model}
                   href={`/model/${encodeURIComponent(model.id)}`}
+                  showControls={showControls}
                 />
               ))}
             </Box>

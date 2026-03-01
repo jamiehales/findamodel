@@ -70,7 +70,7 @@ function WelcomePage() {
           </Button>
           {totalCount > 0 && (
             <Button
-              onClick={() => navigate('/printing-list')}
+              onClick={() => navigate('/printing-list/active')}
               variant="outlined"
               sx={{
                 borderRadius: '999px',
@@ -87,6 +87,23 @@ function WelcomePage() {
               View printing list ({totalCount})
             </Button>
           )}
+          <Button
+            onClick={() => navigate('/printing-lists')}
+            variant="outlined"
+            sx={{
+              borderRadius: '999px',
+              px: '1.25rem',
+              py: '0.4rem',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              textTransform: 'none',
+              borderColor: 'rgba(255,255,255,0.15)',
+              color: '#94a3b8',
+              '&:hover': { borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: '#e2e8f0' },
+            }}
+          >
+            Manage printing lists
+          </Button>
         </Box>
       </Box>
 
