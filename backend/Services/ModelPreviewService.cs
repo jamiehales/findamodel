@@ -15,26 +15,48 @@ public class ModelPreviewService(
 {
     private const int RenderWidth  = 512;
     private const int RenderHeight = 512;
+    private string? _cacheRendersPath;
 
     /// <summary>
-    /// Renders a preview from pre-loaded geometry. Preferred overload — avoids re-parsing the file.
+    /// Sets the directory where preview images should be cached on disk.
     /// </summary>
-    public Task<byte[]?> GeneratePreviewAsync(LoadedGeometry geometry)
+    public void SetCacheDirectory(string path)
+    {
+        _cacheRendersPath = path;
+    }
+
+    /// <summary>
+    /// Renders a preview from pre-loaded geometry and saves to disk if cache path is set.
+    /// Returns the relative filename if saved, null otherwise.
+    /// </summary>
+    public Task<string?> GeneratePreviewAsync(LoadedGeometry geometry, string modelFileHash)
     {
         if (geometry.Triangles.Count == 0)
         {
             logger.LogWarning("GeneratePreviewAsync called with empty geometry");
-            return Task.FromResult<byte[]?>(null);
+            return Task.FromResult<string?>(null);
         }
 
         logger.LogInformation("Rendering preview ({Count} triangles)", geometry.Triangles.Count);
-        return Task.Run<byte[]?>(() => MeshRenderer.Render(geometry.Triangles, RenderWidth, RenderHeight));
+        return Task.Run<string?>(() =>
+        {
+            var png = MeshRenderer.Render(geometry.Triangles, RenderWidth, RenderHeight);
+            if (png == null || _cacheRendersPath == null) return null;
+
+            // Save to disk with hash-based filename
+            var filename = $"{modelFileHash}.png";
+            var fullPath = Path.Combine(_cacheRendersPath, filename);
+            File.WriteAllBytes(fullPath, png);
+            logger.LogInformation("Saved preview to {Path}", fullPath);
+            return filename;
+        });
     }
 
     /// <summary>
-    /// Loads the file via ModelLoaderService then renders a preview.
+    /// Loads the file via ModelLoaderService then renders and saves a preview.
+    /// Returns the relative filename if saved, null otherwise.
     /// </summary>
-    public async Task<byte[]?> GeneratePreviewAsync(string filePath, string fileType)
+    public async Task<string?> GeneratePreviewAsync(string filePath, string fileType, string modelFileHash)
     {
         try
         {
@@ -45,7 +67,7 @@ public class ModelPreviewService(
                 return null;
             }
             logger.LogInformation("Rendering preview for {FilePath} ({Count} triangles)", filePath, geometry.Triangles.Count);
-            return await Task.Run(() => MeshRenderer.Render(geometry.Triangles, RenderWidth, RenderHeight));
+            return await GeneratePreviewAsync(geometry, modelFileHash);
         }
         catch (Exception ex)
         {

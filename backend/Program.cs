@@ -8,9 +8,14 @@ builder.Services.AddControllers();
 var dataPath = builder.Configuration["Configuration:DataPath"] ?? "data";
 var resolvedDataPath = Path.GetFullPath(dataPath);
 Directory.CreateDirectory(resolvedDataPath);
+
 var dbPath = Path.Combine(resolvedDataPath, "findamodel.db");
 builder.Services.AddDbContextFactory<ModelCacheContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
+
+var cacheRendersPath = Path.Combine(resolvedDataPath, "cache", "renders");
+Directory.CreateDirectory(cacheRendersPath);
+builder.Configuration["Cache:RendersPath"] = cacheRendersPath;
 
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
@@ -37,6 +42,9 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var previewService = scope.ServiceProvider.GetRequiredService<findamodel.Services.ModelPreviewService>();
+    previewService.SetCacheDirectory(cacheRendersPath);
+
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ModelCacheContext>>();
     using var db = dbFactory.CreateDbContext();
     db.Database.EnsureCreated();

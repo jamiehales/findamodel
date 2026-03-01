@@ -42,9 +42,18 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
     [HttpGet("{id:guid}/preview")]
     public async Task<IActionResult> GetPreview(Guid id)
     {
-        var png = await modelService.GetPreviewImageAsync(id);
-        if (png == null) return NotFound();
-        return File(png, "image/png");
+        var previewPath = await modelService.GetPreviewImagePathAsync(id);
+        if (string.IsNullOrEmpty(previewPath)) return NotFound();
+
+        // Compute cache path the same way as Program.cs
+        var dataPath = config["Configuration:DataPath"] ?? "data";
+        var resolvedDataPath = Path.GetFullPath(dataPath);
+        var cacheRendersPath = Path.Combine(resolvedDataPath, "cache", "renders");
+
+        var fullPath = Path.Combine(cacheRendersPath, previewPath);
+        if (!System.IO.File.Exists(fullPath)) return NotFound();
+
+        return PhysicalFile(fullPath, "image/png");
     }
 
     /// <summary>

@@ -1,5 +1,3 @@
-* Move the model preview images out of the database and into a cache/renders folder, with the images being labelled with the hash of the model file
-
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
 
 * Add a search page that can search by any of the fields on a model

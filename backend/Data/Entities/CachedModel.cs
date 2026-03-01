@@ -10,7 +10,7 @@ public class CachedModel
     public long FileSize { get; set; }
     public DateTime FileModifiedAt { get; set; }
     public DateTime CachedAt { get; set; }
-    public byte[]? PreviewImage { get; set; }    // PNG preview render (null = not yet generated)
+    public string? PreviewImagePath { get; set; }  // Path to PNG preview render relative to cache/renders folder (null = not yet generated)
     public DateTime? PreviewGeneratedAt { get; set; }
 
     // FK to the DirectoryConfig record for this model's containing directory

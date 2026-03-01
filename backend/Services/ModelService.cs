@@ -19,38 +19,15 @@ public class ModelService(
     public async Task<List<ModelDto>> GetModelsAsync(int? limit = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        // Project to avoid loading the PreviewImage BLOB; EF Core generates a LEFT JOIN for DirectoryConfig
-        var query = db.Models
+        // Include DirectoryConfig to avoid N+1 queries
+        var modelsQuery = db.Models
+            .Include(m => m.DirectoryConfig)
             .OrderBy(m => m.Directory)
-            .ThenBy(m => m.FileName)
-            .Select(m => new
-            {
-                m.Id,
-                m.FileName,
-                m.Directory,
-                m.FileType,
-                m.FileSize,
-                HasPreview = m.PreviewImage != null,
-                Author        = m.DirectoryConfig != null ? m.DirectoryConfig.Author        : null,
-                Collection    = m.DirectoryConfig != null ? m.DirectoryConfig.Collection    : null,
-                Subcollection = m.DirectoryConfig != null ? m.DirectoryConfig.Subcollection : null,
-                Category      = m.DirectoryConfig != null ? m.DirectoryConfig.Category      : null,
-                Type       = m.DirectoryConfig != null ? m.DirectoryConfig.Type       : null,
-                Supported  = m.DirectoryConfig != null ? m.DirectoryConfig.Supported  : null,
-                m.ConvexHullCoordinates,
-                m.ConcaveHullCoordinates,
-                m.DimensionXMm,
-                m.DimensionYMm,
-                m.DimensionZMm,
-                m.SphereCentreX,
-                m.SphereCentreY,
-                m.SphereCentreZ,
-                m.SphereRadius
-            });
+            .ThenBy(m => m.FileName);
 
-        var rows = await (limit.HasValue ? query.Take(limit.Value) : query).ToListAsync();
+        var models = await (limit.HasValue ? modelsQuery.Take(limit.Value) : modelsQuery).ToListAsync();
 
-        return rows.Select(m => new ModelDto
+        return models.Select(m => new ModelDto
         {
             Id = m.Id,
             Name = Path.GetFileNameWithoutExtension(m.FileName),
@@ -58,14 +35,14 @@ public class ModelService(
             FileType = m.FileType,
             FileSize = m.FileSize,
             FileUrl = $"/api/models/{m.Id}/file",
-            HasPreview = m.HasPreview,
-            PreviewUrl = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
-            Author = m.Author,
-            Collection = m.Collection,
-            Subcollection = m.Subcollection,
-            Category = m.Category,
-            Type = m.Type,
-            Supported = m.Supported,
+            HasPreview = m.PreviewImagePath != null,
+            PreviewUrl = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
+            Author = m.DirectoryConfig?.Author,
+            Collection = m.DirectoryConfig?.Collection,
+            Subcollection = m.DirectoryConfig?.Subcollection,
+            Category = m.DirectoryConfig?.Category,
+            Type = m.DirectoryConfig?.Type,
+            Supported = m.DirectoryConfig?.Supported,
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
             DimensionXMm  = m.DimensionXMm,
@@ -84,12 +61,12 @@ public class ModelService(
         return await db.Models.FirstOrDefaultAsync(m => m.Id == id);
     }
 
-    public async Task<byte[]?> GetPreviewImageAsync(Guid id)
+    public async Task<string?> GetPreviewImagePathAsync(Guid id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.Models
             .Where(m => m.Id == id)
-            .Select(m => m.PreviewImage)
+            .Select(m => m.PreviewImagePath)
             .FirstOrDefaultAsync();
     }
 
@@ -143,8 +120,8 @@ public class ModelService(
             var geometry = await loaderService.LoadModelAsync(file, fileType);
 
             // Generate preview and hulls from pre-loaded geometry to avoid re-parsing
-            var preview = geometry is not null
-                ? await previewService.GeneratePreviewAsync(geometry)
+            var previewImagePath = geometry is not null
+                ? await previewService.GeneratePreviewAsync(geometry, checksum)
                 : null;
             var (convexHull, concaveHull) = geometry is not null
                 ? await hullCalculationService.CalculateHullsAsync(geometry)
@@ -162,8 +139,8 @@ public class ModelService(
                 FileSize = info.Length,
                 FileModifiedAt = info.LastWriteTimeUtc,
                 CachedAt = DateTime.UtcNow,
-                PreviewImage = preview,
-                PreviewGeneratedAt = preview != null ? DateTime.UtcNow : null,
+                PreviewImagePath = previewImagePath,
+                PreviewGeneratedAt = previewImagePath != null ? DateTime.UtcNow : null,
                 ConvexHullCoordinates = convexHull,
                 ConcaveHullCoordinates = concaveHull,
                 HullGeneratedAt = convexHull != null || concaveHull != null ? DateTime.UtcNow : null,
