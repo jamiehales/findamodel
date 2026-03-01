@@ -557,6 +557,14 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
     app.stage.on('pointerup', endDrag)
     app.stage.on('pointerupoutside', endDrag)
 
+    const canvas = app.view as HTMLCanvasElement
+    const onWheel = (e: WheelEvent) => {
+      if (!drag) return
+      e.preventDefault()
+      Matter.Body.setAngle(drag.body, drag.body.angle + e.deltaY * 0.003)
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+
     // ── Ticker ─────────────────────────────────────────────────────────────
     app.ticker.add(() => {
       if (!pausedRef.current) {
@@ -587,6 +595,7 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
 
     // ── Cleanup ────────────────────────────────────────────────────────────
     return () => {
+      canvas.removeEventListener('wheel', onWheel)
       appRef.current = null
       engineRef.current = null
       entriesRef.current = []
