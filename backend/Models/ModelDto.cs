@@ -12,7 +12,7 @@ public class ModelDto
     public string? PreviewUrl { get; set; }
 
     // Resolved metadata from DirectoryConfig ancestry
-    public string? Author { get; set; }
+    public string? Creator { get; set; }
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
     public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null

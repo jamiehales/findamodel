@@ -7,7 +7,7 @@ export interface Model {
   fileUrl: string
   hasPreview: boolean
   previewUrl: string | null
-  author: string | null
+  creator: string | null
   collection: string | null
   subcollection: string | null
   category: string | null
@@ -65,7 +65,7 @@ export interface PlatePlacement {
 // ---- Explorer ----
 
 export interface MetadataFields {
-  author: string | null
+  creator: string | null
   collection: string | null
   subcollection: string | null
   category: string | null

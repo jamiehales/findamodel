@@ -2,7 +2,7 @@ namespace findamodel.Models;
 
 /// <summary>Request body for creating or replacing a directory's local metadata config.</summary>
 public record UpdateDirectoryConfigRequest(
-    string? Author,
+    string? Creator,
     string? Collection,
     string? Subcollection,
     string? Category,
@@ -11,7 +11,7 @@ public record UpdateDirectoryConfigRequest(
 
 /// <summary>A snapshot of raw or resolved metadata fields for a directory.</summary>
 public record ConfigFieldsDto(
-    string? Author,
+    string? Creator,
     string? Collection,
     string? Subcollection,
     string? Category,

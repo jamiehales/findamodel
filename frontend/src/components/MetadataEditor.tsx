@@ -35,7 +35,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const mutation = useUpdateDirectoryConfig(path)
 
   const [fields, setFields] = useState<MetadataFields>({
-    author: null, collection: null, subcollection: null,
+    creator: null, collection: null, subcollection: null,
     category: null, type: null, supported: null,
   })
   const [savedIndicator, setSavedIndicator] = useState(false)
@@ -73,18 +73,18 @@ export default function MetadataEditor({ path, onClose }: Props) {
         Metadata — local values override inherited ones
       </Typography>
 
-      {/* Author */}
+      {/* Creator */}
       <Box>
         <TextField
-          label="Author"
+          label="Creator"
           size="small"
           fullWidth
-          value={fields.author ?? ''}
-          placeholder={p?.author ?? undefined}
-          onChange={e => set('author', e.target.value || null)}
+          value={fields.creator ?? ''}
+          placeholder={p?.creator ?? undefined}
+          onChange={e => set('creator', e.target.value || null)}
           slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
         />
-        <InheritedHint value={p?.author} />
+        <InheritedHint value={p?.creator} />
       </Box>
 
       {/* Collection */}

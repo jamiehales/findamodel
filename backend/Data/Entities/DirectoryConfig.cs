@@ -11,7 +11,7 @@ public class DirectoryConfig
     public List<DirectoryConfig> Children { get; set; } = [];
 
     // Raw (local) values — sourced exclusively from THIS directory's findamodel.yaml
-    public string? RawAuthor { get; set; }
+    public string? RawCreator { get; set; }
     public string? RawCollection { get; set; }
     public string? RawCategory { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? RawType { get; set; }        // "Whole" | "Part" | null
@@ -19,7 +19,7 @@ public class DirectoryConfig
     public string? RawSubcollection { get; set; }
 
     // Resolved (composed) values — computed at scan time by walking ancestors; closest non-null wins
-    public string? Author { get; set; }
+    public string? Creator { get; set; }
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
     public string? Category { get; set; }

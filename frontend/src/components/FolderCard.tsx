@@ -107,7 +107,7 @@ export default function FolderCard({ folder, href }: Props) {
 
         {/* Resolved metadata badges */}
         <Box sx={{ px: 1, mt: '4px', textAlign: 'center', width: '100%' }}>
-          <MetaBadge value={rv.author} />
+          <MetaBadge value={rv.creator} />
           <MetaBadge value={rv.collection} />
         </Box>
       </AppCard>

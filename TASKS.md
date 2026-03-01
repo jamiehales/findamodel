@@ -13,11 +13,9 @@
 
 * Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data
 
-* Add an author explorer, there should be a list of authors, then a list of collections, if there are subcollections then show those
+* Add a creator explorer, there should be a list of creators, then a list of collections, if there are subcollections then show those
 
-* Rename author to creator?
-
-* If there is an image in a directory, allow setting this as the collection preview, author preview
+* If there is an image in a directory, allow setting this as the collection preview, creator preview
 
 * findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name
 

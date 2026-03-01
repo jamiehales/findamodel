@@ -33,7 +33,7 @@ public class MetadataConfigService(
         all.TryGetValue(dirPath, out var record);
 
         var localValues = record != null
-            ? new ConfigFieldsDto(record.RawAuthor, record.RawCollection, record.RawSubcollection,
+            ? new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
                                   record.RawCategory, record.RawType, record.RawSupported)
             : new ConfigFieldsDto(null, null, null, null, null, null);
 
@@ -41,7 +41,7 @@ public class MetadataConfigService(
         ConfigFieldsDto? parentResolved = null;
         if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
         {
-            parentResolved = new ConfigFieldsDto(parentRecord.Author, parentRecord.Collection,
+            parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
                 parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
         }
 
@@ -79,7 +79,7 @@ public class MetadataConfigService(
             all[dirPath] = record;
         }
 
-        var rawFields = new RawConfigFields(req.Author, req.Collection, req.Subcollection,
+        var rawFields = new RawConfigFields(req.Creator, req.Collection, req.Subcollection,
                                             req.Category, req.Type, req.Supported);
         ApplyRawFields(record, rawFields);
         record.LocalConfigFileHash = newHash;
@@ -94,13 +94,13 @@ public class MetadataConfigService(
         ConfigFieldsDto? parentResolved = null;
         if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
         {
-            parentResolved = new ConfigFieldsDto(parentRecord.Author, parentRecord.Collection,
+            parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
                 parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
         }
 
         return new DirectoryConfigDetailDto(
             dirPath,
-            new ConfigFieldsDto(record.RawAuthor, record.RawCollection, record.RawSubcollection,
+            new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
                                  record.RawCategory, record.RawType, record.RawSupported),
             parentResolved,
             parentPath);
@@ -224,7 +224,7 @@ public class MetadataConfigService(
 
         // Build ordered dictionary of fields that are explicitly set (non-null)
         var data = new Dictionary<string, object>();
-        if (req.Author != null)      data["author"] = req.Author;
+        if (req.Creator != null)      data["creator"] = req.Creator;
         if (req.Collection != null)  data["collection"] = req.Collection;
         if (req.Subcollection != null) data["subcollection"] = req.Subcollection;
         if (req.Category != null)    data["category"] = req.Category;
@@ -293,7 +293,7 @@ public class MetadataConfigService(
     /// </summary>
     private static void ResolveFields(DirectoryConfig record, Dictionary<string, DirectoryConfig> allRecords)
     {
-        string? author = record.RawAuthor;
+        string? creator = record.RawCreator;
         string? collection = record.RawCollection;
         string? subcollection = record.RawSubcollection;
         string? category = record.RawCategory;
@@ -301,9 +301,9 @@ public class MetadataConfigService(
         bool? supported = record.RawSupported;
 
         var current = GetParentRecord(record.DirectoryPath, allRecords);
-        while (current != null && (author == null || collection == null || subcollection == null || category == null || type == null || supported == null))
+        while (current != null && (creator == null || collection == null || subcollection == null || category == null || type == null || supported == null))
         {
-            author ??= current.RawAuthor;
+            creator ??= current.RawCreator;
             collection ??= current.RawCollection;
             subcollection ??= current.RawSubcollection;
             category ??= current.RawCategory;
@@ -312,7 +312,7 @@ public class MetadataConfigService(
             current = GetParentRecord(current.DirectoryPath, allRecords);
         }
 
-        record.Author = author;
+        record.Creator = creator;
         record.Collection = collection;
         record.Subcollection = subcollection;
         record.Category = category;
@@ -322,7 +322,7 @@ public class MetadataConfigService(
 
     private static void ApplyRawFields(DirectoryConfig record, RawConfigFields? fields)
     {
-        record.RawAuthor = fields?.Author;
+        record.RawCreator = fields?.Creator;
         record.RawCollection = fields?.Collection;
         record.RawSubcollection = fields?.Subcollection;
         record.RawCategory = fields?.Category;
@@ -346,7 +346,7 @@ public class MetadataConfigService(
             var parsed = YamlDeserializer.Deserialize<Dictionary<string, object>>(yaml) ?? new Dictionary<string, object>();
 
             return new RawConfigFields(
-                Author: TryGetString(parsed, "author"),
+                Creator: TryGetString(parsed, "creator"),
                 Collection: TryGetString(parsed, "collection"),
                 Subcollection: TryGetString(parsed, "subcollection"),
                 Category: ValidateEnum(TryGetString(parsed, "category"), ["Bust", "Miniature", "Uncategorized"]),
@@ -392,5 +392,5 @@ public class MetadataConfigService(
         return null;
     }
 
-    private sealed record RawConfigFields(string? Author, string? Collection, string? Subcollection, string? Category, string? Type, bool? Supported);
+    private sealed record RawConfigFields(string? Creator, string? Collection, string? Subcollection, string? Category, string? Type, bool? Supported);
 }

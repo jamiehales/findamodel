@@ -73,7 +73,7 @@ public class ExplorerService(
 
             dirConfigs.TryGetValue(childPath, out var dc);
             var resolved = dc != null
-                ? new ConfigFieldsDto(dc.Author, dc.Collection, dc.Subcollection,
+                ? new ConfigFieldsDto(dc.Creator, dc.Collection, dc.Subcollection,
                                       dc.Category, dc.Type, dc.Supported)
                 : new ConfigFieldsDto(null, null, null, null, null, null);
 
