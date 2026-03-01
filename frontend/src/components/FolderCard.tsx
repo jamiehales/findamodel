@@ -8,14 +8,16 @@ import type { ExplorerFolder } from '../lib/api'
 import MetadataEditor from './MetadataEditor'
 import AppCard from './AppCard'
 import styles from './FolderCard.module.css'
+import { Stack } from '@mui/material'
 
 interface Props {
   folder: ExplorerFolder
   href: string
 }
 
-function MetaBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return null
+function MetaBadge({ type, value }: { type: string,value: string | null | undefined }) {
+  const color = value ? 'rgba(99,102,241,0.18)' : 'rgba(0,0,0,0.1)';
+
   return (
     <Box
       component="span"
@@ -26,7 +28,7 @@ function MetaBadge({ value }: { value: string | null | undefined }) {
         borderRadius: '4px',
         fontSize: '0.65rem',
         fontWeight: 600,
-        bgcolor: 'rgba(99,102,241,0.18)',
+        bgcolor: color,
         color: '#a5b4fc',
         mr: '4px',
         mb: '2px',
@@ -36,7 +38,7 @@ function MetaBadge({ value }: { value: string | null | undefined }) {
         maxWidth: '100%',
       }}
     >
-      {value}
+      <div style={{ color: value ? '#a5b4fc' : 'rgba(131, 143, 202, 0.53)' }}>{value ?? "Unknown " + type.toLowerCase()}</div>
     </Box>
   )
 }
@@ -92,6 +94,7 @@ export default function FolderCard({ folder, href }: Props) {
             overflow: 'hidden',
             px: 1,
             width: '100%',
+            height: '2.6em', // 2 lines of text
           }}
         >
           {folder.name}
@@ -106,10 +109,14 @@ export default function FolderCard({ folder, href }: Props) {
         </Typography>
 
         {/* Resolved metadata badges */}
-        <Box sx={{ px: 1, mt: '4px', textAlign: 'center', width: '100%' }}>
-          <MetaBadge value={rv.creator} />
-          <MetaBadge value={rv.collection} />
-        </Box>
+          <Stack direction="column" spacing={1} textAlign="center" width="100%">
+            <MetaBadge type="Creator" value={rv.creator} />
+            <MetaBadge type="Collection" value={rv.collection} />
+            <MetaBadge type="Subcollection" value={rv.subcollection} />
+            <MetaBadge type="Category" value={rv.category} />
+            <MetaBadge type="Type" value={rv.type} />
+            <MetaBadge type="Supports" value={rv.supported == null ? null : rv.supported ? "Supported" : "Unsupported"} />
+          </Stack>
       </AppCard>
 
       {/* Collapsible metadata editor */}
