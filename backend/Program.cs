@@ -1,4 +1,6 @@
+using findamodel.Auth;
 using findamodel.Data;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +18,10 @@ builder.Services.AddDbContextFactory<ModelCacheContext>(options =>
 var cacheRendersPath = Path.Combine(resolvedDataPath, "cache", "renders");
 Directory.CreateDirectory(cacheRendersPath);
 builder.Configuration["Cache:RendersPath"] = cacheRendersPath;
+
+builder.Services.AddSingleton<findamodel.Services.UserService>();
+builder.Services.AddAuthentication("AutoAdmin")
+    .AddScheme<AuthenticationSchemeOptions, AutoAdminAuthHandler>("AutoAdmin", null);
 
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
@@ -50,6 +56,9 @@ using (var scope = app.Services.CreateScope())
     using var db = dbFactory.CreateDbContext();
     db.Database.EnsureCreated();
     db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+
+    var userService = scope.ServiceProvider.GetRequiredService<findamodel.Services.UserService>();
+    await userService.SeedAdminUserAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -59,6 +68,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

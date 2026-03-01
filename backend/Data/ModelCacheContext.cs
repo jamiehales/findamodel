@@ -7,6 +7,7 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
 {
     public DbSet<CachedModel> Models { get; set; }
     public DbSet<DirectoryConfig> DirectoryConfigs { get; set; }
+    public DbSet<User> Users { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -23,6 +24,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
 
         modelBuilder.Entity<DirectoryConfig>()
             .HasIndex(d => d.DirectoryPath)
+            .IsUnique();
+
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Username)
             .IsUnique();
 
         // Self-referential: DirectoryConfig → Parent (Restrict to prevent cascade-deleting ancestor records)
