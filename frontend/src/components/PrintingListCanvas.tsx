@@ -11,21 +11,23 @@ import type { PrintingList } from '../lib/printingList'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CANVAS_MM = 150
+const CANVAS_WIDTH_MM = 228
+const CANVAS_HEIGHT_MM = 128
 const PX_PER_MM = 4
-const CANVAS_PX = CANVAS_MM * PX_PER_MM // 600 px
+const CANVAS_WIDTH_PX = CANVAS_WIDTH_MM * PX_PER_MM
+const CANVAS_HEIGHT_PX = CANVAS_HEIGHT_MM * PX_PER_MM
 
 const WALL_THICKNESS = 200
 const SPEED_THRESH = 0.12
 const ANGULAR_THRESH = 0.008
 const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
-const MAX_BODY_HALF_PX = (CANVAS_PX * 0.65) / 2 // cap body half-extent
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
 const SPAWN_ORDER_LOCALSTORAGE_KEY = 'findamodel.printingListSpawnOrder'
+const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag'
 const DEBUG_PHYSICS_WIREFRAME = false
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
-const BODY_GAP_MM = 1
+const BODY_GAP_MM = 2
 const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM
 
 const PALETTE = [
@@ -77,7 +79,7 @@ interface Props {
 
 /**
  * Parse a JSON hull string ("[[x,z],[x,z],...]") into local-space pixel
- * vertices centred at the origin and clamped to MAX_BODY_HALF_PX.
+ * vertices centred at the origin
  */
 function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
   if (!hullJson) return null
@@ -106,11 +108,7 @@ function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
     cy /= 6 * area
     const centred = pts.map(p => ({ x: p.x - cx, y: p.y - cy }))
 
-    // Scale down if any vertex exceeds the allowed half-extent.
-    const maxHalf = Math.max(...centred.flatMap(p => [Math.abs(p.x), Math.abs(p.y)]), 1)
-    const scale = maxHalf > MAX_BODY_HALF_PX ? MAX_BODY_HALF_PX / maxHalf : 1
-
-    return scale === 1 ? centred : centred.map(p => ({ x: p.x * scale, y: p.y * scale }))
+    return centred
   } catch {
     return null
   }
@@ -146,7 +144,7 @@ function inflateVerts(verts: Vec2[], amount: number): Vec2[] {
 
 // ── Body factory helpers ──────────────────────────────────────────────────────
 
-const BODY_MASS = 1
+const BODY_MASS = 0.01
 
 const BODY_OPTIONS: Matter.IChamferableBodyDefinition = {
   restitution: 0.05,
@@ -174,8 +172,9 @@ function makeRectBody(
   cx: number,
   cy: number,
 ): { body: Matter.Body; visualLocalVerts: Vec2[] } {
-  const w = Math.min(Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
-  const h = Math.min(Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
+  // TODO: There is a minimum body size set here, check what we want to happen if this condition is met
+  const w = Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16)
+  const h = Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16)
   const body = Matter.Bodies.rectangle(
     cx,
     cy,
@@ -300,6 +299,11 @@ export default function PrintingListCanvas({ models, items }: Props) {
     return saved === 'random' ? 'random' : 'grouped'
   })
   const [resetCount, setResetCount] = useState(0)
+  const [pauseOnDrag, setPauseOnDrag] = useState(
+    () => localStorage.getItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY) === 'true',
+  )
+  const pauseOnDragRef = useRef(pauseOnDrag)
+  useEffect(() => { pauseOnDragRef.current = pauseOnDrag }, [pauseOnDrag])
 
   useEffect(() => {
     const container = containerRef.current
@@ -307,8 +311,8 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     // ── Pixi application ───────────────────────────────────────────────────
     const app = new PIXI.Application({
-      width: CANVAS_PX,
-      height: CANVAS_PX,
+      width: CANVAS_WIDTH_PX,
+      height: CANVAS_HEIGHT_PX,
       backgroundColor: 0x0f172a,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -316,30 +320,30 @@ export default function PrintingListCanvas({ models, items }: Props) {
     })
     container.appendChild(app.view as HTMLCanvasElement)
     app.stage.eventMode = 'static'
-    app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_PX, CANVAS_PX)
+    app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX)
 
     // ── Matter.js engine ───────────────────────────────────────────────────
     const engine = Matter.Engine.create({ gravity: { x: 0, y: 1 } })
 
     const ground = Matter.Bodies.rectangle(
-      CANVAS_PX / 2,
-      CANVAS_PX + WALL_THICKNESS / 2,
-      CANVAS_PX + WALL_THICKNESS * 2,
+      CANVAS_WIDTH_PX / 2,
+      CANVAS_HEIGHT_PX + WALL_THICKNESS / 2,
+      CANVAS_WIDTH_PX + WALL_THICKNESS * 2,
       WALL_THICKNESS,
       { isStatic: true },
     )
     const wallLeft = Matter.Bodies.rectangle(
       -WALL_THICKNESS / 2,
-      CANVAS_PX / 2,
+      CANVAS_HEIGHT_PX / 2,
       WALL_THICKNESS,
-      CANVAS_PX + WALL_THICKNESS * 2,
+      CANVAS_HEIGHT_PX + WALL_THICKNESS * 2,
       { isStatic: true },
     )
     const wallRight = Matter.Bodies.rectangle(
-      CANVAS_PX + WALL_THICKNESS / 2,
-      CANVAS_PX / 2,
+      CANVAS_WIDTH_PX + WALL_THICKNESS / 2,
+      CANVAS_HEIGHT_PX / 2,
       WALL_THICKNESS,
-      CANVAS_PX + WALL_THICKNESS * 2,
+      CANVAS_HEIGHT_PX + WALL_THICKNESS * 2,
       { isStatic: true },
     )
     Matter.Composite.add(engine.world, [ground, wallLeft, wallRight])
@@ -348,13 +352,13 @@ export default function PrintingListCanvas({ models, items }: Props) {
     const GRID_PX = 10 * PX_PER_MM
     const gridGfx = new PIXI.Graphics()
     gridGfx.lineStyle(0.5, 0x334155, 0.6)
-    for (let x = GRID_PX; x < CANVAS_PX; x += GRID_PX) gridGfx.moveTo(x, 0).lineTo(x, CANVAS_PX)
-    for (let y = GRID_PX; y < CANVAS_PX; y += GRID_PX) gridGfx.moveTo(0, y).lineTo(CANVAS_PX, y)
+    for (let x = GRID_PX; x < CANVAS_WIDTH_PX; x += GRID_PX) gridGfx.moveTo(x, 0).lineTo(x, CANVAS_HEIGHT_PX)
+    for (let y = GRID_PX; y < CANVAS_HEIGHT_PX; y += GRID_PX) gridGfx.moveTo(0, y).lineTo(CANVAS_WIDTH_PX, y)
     app.stage.addChild(gridGfx)
 
     const borderGfx = new PIXI.Graphics()
     borderGfx.lineStyle(2, 0x64748b, 1)
-    borderGfx.drawRect(0, 0, CANVAS_PX, CANVAS_PX)
+    borderGfx.drawRect(0, 0, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX)
     app.stage.addChild(borderGfx)
 
     // ── Saved layout ───────────────────────────────────────────────────────
@@ -395,7 +399,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     for (const { model, inst, qty } of spawnSequence) {
       const color = modelColor.get(model.id) ?? PALETTE[0]
       const localVerts = parseHullLocalPx(model.convexHull)
-      const spawnX = CANVAS_PX * 0.2 + Math.random() * CANVAS_PX * 0.6
+      const spawnX = CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6
 
       // Create physics body (inflated) + keep original verts for rendering
       let body: Matter.Body
@@ -491,6 +495,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
         const hit = hits[0]
         drag = { body: hit, ox: x - hit.position.x, oy: y - hit.position.y }
         Matter.Body.setStatic(hit, true)
+        if (pauseOnDragRef.current) paused = true
       }
     })
 
@@ -506,6 +511,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
       Matter.Body.setVelocity(drag.body, { x: 0, y: 0 })
       Matter.Body.setAngularVelocity(drag.body, 0)
       drag = null
+      paused = false
       settleFrames = 0
     }
     app.stage.on('pointerup', endDrag)
@@ -549,7 +555,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500 }}>
-          Print area: {CANVAS_MM} × {CANVAS_MM} mm &nbsp;·&nbsp; Click to restart simulation &nbsp;·&nbsp; Drag to reposition
+          Print area: {CANVAS_WIDTH_MM} × {CANVAS_HEIGHT_MM} mm
         </Typography>
         <ToggleButtonGroup
           value={spawnOrder}
@@ -595,13 +601,32 @@ export default function PrintingListCanvas({ models, items }: Props) {
         >
           Reset
         </Button>
+        <ToggleButton
+          value="pauseOnDrag"
+          selected={pauseOnDrag}
+          onChange={() => {
+            const next = !pauseOnDrag
+            localStorage.setItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY, String(next))
+            setPauseOnDrag(next)
+          }}
+          size="small"
+          sx={{
+            color: '#94a3b8',
+            borderColor: '#334155',
+            fontSize: '0.72rem',
+            padding: '2px 10px',
+            textTransform: 'none',
+            '&.Mui-selected': { color: '#e2e8f0', backgroundColor: '#1e293b' },
+          }}
+        >
+          Pause on drag
+        </ToggleButton>
       </Box>
       <div
         ref={containerRef}
         style={{
-          width: CANVAS_PX,
-          maxWidth: '100%',
-          aspectRatio: '1',
+          width: CANVAS_WIDTH_PX,
+          height: CANVAS_HEIGHT_PX,
           borderRadius: 12,
           overflow: 'hidden',
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
