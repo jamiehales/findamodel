@@ -9,8 +9,10 @@ namespace findamodel.Services;
 
 public class MetadataConfigService(
     ILogger<MetadataConfigService> logger,
-    IDbContextFactory<ModelCacheContext> dbFactory)
+    IDbContextFactory<ModelCacheContext> dbFactory,
+    IConfiguration configuration)
 {
+    private int DirectoryBatchSize => configuration.GetValue("Indexing:DirectoryBatchSize", 1000);
     private const string ConfigFileName = "findamodel.yaml";
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder().Build();
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
@@ -109,6 +111,75 @@ public class MetadataConfigService(
     // -------------------------------------------------------------------------
     // Scan-time API — called by ModelService
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Syncs DirectoryConfig records by processing directories in streaming order.
+    /// Directories must be in depth-first pre-order (parents before children) so that
+    /// inheritance resolves correctly in a single pass — no ResolveDescendants needed.
+    /// Returns the count of directories processed.
+    /// </summary>
+    public async Task<int> SyncDirectoryConfigsStreamingAsync(
+        string modelsRootPath,
+        IEnumerable<string> directories)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var existing = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+
+        var count = 0;
+        foreach (var dirPath in directories)
+        {
+            var fullPath = GetFullDirPath(modelsRootPath, dirPath);
+            var configFilePath = Path.Combine(fullPath, ConfigFileName);
+            var configExists = File.Exists(configFilePath);
+            var currentHash = configExists ? await ComputeFileHashAsync(configFilePath) : null;
+
+            if (existing.TryGetValue(dirPath, out var record))
+            {
+                if (record.LocalConfigFileHash != currentHash)
+                {
+                    logger.LogInformation(
+                        "Config file changed for directory '{Dir}': {Old} → {New}",
+                        dirPath, record.LocalConfigFileHash ?? "(none)", currentHash ?? "(none)");
+
+                    var rawFields = configExists ? await ParseConfigFileAsync(configFilePath) : null;
+                    ApplyRawFields(record, rawFields);
+                    record.LocalConfigFileHash = currentHash;
+                    record.UpdatedAt = DateTime.UtcNow;
+                }
+                // Always re-resolve: parent's resolved values may have changed upstream.
+                // Safe because DFS pre-order guarantees the parent is already current in `existing`.
+                ResolveFields(record, existing);
+            }
+            else
+            {
+                var rawFields = configExists ? await ParseConfigFileAsync(configFilePath) : null;
+                var parent = GetParentRecord(dirPath, existing);
+                var newRecord = new DirectoryConfig
+                {
+                    Id = Guid.NewGuid(),
+                    DirectoryPath = dirPath,
+                    ParentId = parent?.Id,
+                    LocalConfigFileHash = currentHash,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                ApplyRawFields(newRecord, rawFields);
+                ResolveFields(newRecord, existing);
+                db.DirectoryConfigs.Add(newRecord);
+                existing[dirPath] = newRecord;
+            }
+
+            count++;
+
+            if (count % DirectoryBatchSize == 0)
+            {
+                logger.LogInformation("SyncDirectoryConfigsStreamingAsync: processed {Count} directories so far...", count);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return count;
+    }
 
     /// <summary>
     /// Ensures DirectoryConfig records exist for every directory in the given set (plus all

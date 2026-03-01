@@ -67,3 +67,6 @@
 * Setup prettier, and have claude run it after frontend changes
 
 * Add model name to metadata - allowing a model with multiple parts to be marked as one model
+
+* Draw sans raft hull Xmm (where X = however many the raft vertical offset was set to) in the air within the viewport. Use the same colors as the sans raft dialog below
+* Remove the convex hull card, and replace it with the sans raft one below. Then rename the title to say just "Convex"

@@ -153,13 +153,34 @@ public class ModelService(
             return;
         }
 
-        var relativeDirectories = Directory
-            .EnumerateFiles(modelsPath, "findamodel.yaml", SearchOption.AllDirectories)
-            .Select(f => (Path.GetDirectoryName(Path.GetRelativePath(modelsPath, f)) ?? "").Replace('\\', '/'))
-            .ToList();
+        var count = await metadataConfigService.SyncDirectoryConfigsStreamingAsync(
+            modelsPath, EnumerateDepthFirst(modelsPath));
+        logger.LogInformation("Directory config sync complete: {Count} directories processed.", count);
+    }
 
-        await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
-        logger.LogInformation("Directory config sync complete: {Count} directories processed.", relativeDirectories.Count);
+    /// <summary>
+    /// Yields the root ("") followed by all subdirectories in depth-first pre-order,
+    /// so every parent is emitted before its children.
+    /// </summary>
+    private static IEnumerable<string> EnumerateDepthFirst(string rootPath)
+    {
+        yield return "";
+
+        var stack = new Stack<string>();
+        foreach (var d in Directory.GetDirectories(rootPath).OrderByDescending(d => d, StringComparer.Ordinal))
+            stack.Push(d);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            yield return Path.GetRelativePath(rootPath, current).Replace('\\', '/');
+            try
+            {
+                foreach (var d in Directory.GetDirectories(current).OrderByDescending(d => d, StringComparer.Ordinal))
+                    stack.Push(d);
+            }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)

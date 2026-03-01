@@ -11,7 +11,7 @@ public class ModelIndexerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // _ = SyncMetadataSafely();
+        _ = SyncMetadataSafely();
 
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
