@@ -312,6 +312,22 @@ export default function PrintingListCanvas({ models, items }: Props) {
   const pauseOnDragRef = useRef(pauseOnDrag)
   useEffect(() => { pauseOnDragRef.current = pauseOnDrag }, [pauseOnDrag])
 
+  // Refs that let the incremental-update effect reach into the running simulation
+  const appRef = useRef<PIXI.Application | null>(null)
+  const engineRef = useRef<Matter.Engine | null>(null)
+  const entriesRef = useRef<Entry[]>([])
+  const dynamicBodiesRef = useRef<Matter.Body[]>([])
+  const modelColorRef = useRef<Map<string, number>>(new Map())
+  const pausedRef = useRef(false)
+  const prevItemsRef = useRef<Record<string, number>>({})
+  // Always-current mirrors updated every render
+  const itemsKeyRef = useRef(itemsKey)
+  itemsKeyRef.current = itemsKey
+  const modelsRef = useRef(models)
+  modelsRef.current = models
+  const hullModeRef = useRef(hullMode)
+  hullModeRef.current = hullMode
+
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -325,12 +341,14 @@ export default function PrintingListCanvas({ models, items }: Props) {
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       autoDensity: true,
     })
+    appRef.current = app
     container.appendChild(app.view as HTMLCanvasElement)
     app.stage.eventMode = 'static'
     app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX)
 
     // ── Matter.js engine ───────────────────────────────────────────────────
     const engine = Matter.Engine.create({ gravity: { x: 0, y: 1 } })
+    engineRef.current = engine
 
     const ground = Matter.Bodies.rectangle(
       CANVAS_WIDTH_PX / 2,
@@ -380,9 +398,12 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     // ── Build bodies + graphics ────────────────────────────────────────────
     const entries: Entry[] = []
+    entriesRef.current = entries
     const dynamicBodies: Matter.Body[] = []
+    dynamicBodiesRef.current = dynamicBodies
 
     const modelColor = new Map<string, number>()
+    modelColorRef.current = modelColor
     models.forEach((m, i) => modelColor.set(m.id, PALETTE[i % PALETTE.length]))
 
     let spawnY = -40 // bodies spawn above the canvas and fall in
@@ -463,7 +484,9 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     // ── Simulation state ───────────────────────────────────────────────────
     // Start paused if positions were restored from storage; user clicks to resume.
-    let paused = savedLayout !== null
+    pausedRef.current = savedLayout !== null
+    // Record which items are now in the simulation (for incremental updates)
+    prevItemsRef.current = { ...items }
     let settleFrames = 0
     let drag: { body: Matter.Body; ox: number; oy: number } | null = null
 
@@ -479,7 +502,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     // ── Layout persistence ─────────────────────────────────────────────────
     function saveLayout() {
       const layout: SavedLayout = {
-        itemsKey,
+        itemsKey: itemsKeyRef.current,
         positions: entries.map(e => ({
           modelId: e.modelId,
           instanceIndex: e.instanceIndex,
@@ -494,8 +517,8 @@ export default function PrintingListCanvas({ models, items }: Props) {
     // ── Drag interaction ───────────────────────────────────────────────────
     app.stage.on('pointerdown', (e: PIXI.FederatedPointerEvent) => {
       // Resume simulation on any click when paused
-      if (paused) {
-        paused = false
+      if (pausedRef.current) {
+        pausedRef.current = false
         settleFrames = 0
       }
 
@@ -505,7 +528,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
         const hit = hits[0]
         drag = { body: hit, ox: x - hit.position.x, oy: y - hit.position.y }
         Matter.Body.setStatic(hit, true)
-        if (pauseOnDragRef.current) paused = true
+        if (pauseOnDragRef.current) pausedRef.current = true
       }
     })
 
@@ -521,7 +544,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
       Matter.Body.setVelocity(drag.body, { x: 0, y: 0 })
       Matter.Body.setAngularVelocity(drag.body, 0)
       drag = null
-      paused = false
+      pausedRef.current = false
       settleFrames = 0
     }
     app.stage.on('pointerup', endDrag)
@@ -529,7 +552,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     // ── Ticker ─────────────────────────────────────────────────────────────
     app.ticker.add(() => {
-      if (!paused) {
+      if (!pausedRef.current) {
         // Cap delta to avoid physics explosion after tab becomes active again
         const deltaMs = Math.min(app.ticker.deltaMS, 50)
         Matter.Engine.update(engine, deltaMs)
@@ -538,14 +561,14 @@ export default function PrintingListCanvas({ models, items }: Props) {
       renderEntries(computeOverlapping(entries))
 
       // Settling detection (skip when dragging or already paused)
-      if (!paused && !drag && dynamicBodies.length > 0) {
+      if (!pausedRef.current && !drag && dynamicBodies.length > 0) {
         const allSlow = dynamicBodies.every(
           b => b.speed < SPEED_THRESH && Math.abs(b.angularSpeed) < ANGULAR_THRESH,
         )
         if (allSlow) {
           settleFrames++
           if (settleFrames >= SETTLE_FRAMES) {
-            paused = true
+            pausedRef.current = true
             saveLayout()
           }
         } else {
@@ -556,10 +579,117 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     // ── Cleanup ────────────────────────────────────────────────────────────
     return () => {
+      appRef.current = null
+      engineRef.current = null
+      entriesRef.current = []
+      dynamicBodiesRef.current = []
+      modelColorRef.current = new Map()
       app.destroy(true, { children: true, texture: true, baseTexture: true })
       Matter.Engine.clear(engine)
     }
-  }, [models, itemsKey, spawnOrder, hullMode, resetCount])
+  }, [spawnOrder, hullMode, resetCount])
+
+  // ── Incremental effect: add/remove bodies when item counts change ──────────
+  useEffect(() => {
+    const app = appRef.current
+    const engine = engineRef.current
+    if (!app || !engine) return // simulation not yet initialised
+
+    const prevItems = prevItemsRef.current
+    const currItems = items
+    const currentModels = modelsRef.current
+
+    const allModelIds = new Set([...Object.keys(prevItems), ...Object.keys(currItems)])
+
+    for (const modelId of allModelIds) {
+      const prevQty = prevItems[modelId] ?? 0
+      const currQty = currItems[modelId] ?? 0
+      if (prevQty === currQty) continue
+
+      const model = currentModels.find(m => m.id === modelId)
+      if (!model) continue
+
+      if (currQty > prevQty) {
+        // ── Add new instances (from prevQty up to currQty-1) ───────────────
+        // Assign a palette colour if this model hasn't appeared before
+        if (!modelColorRef.current.has(modelId)) {
+          modelColorRef.current.set(modelId, PALETTE[modelColorRef.current.size % PALETTE.length])
+        }
+        let spawnY = -80
+        for (let inst = prevQty; inst < currQty; inst++) {
+          const color = modelColorRef.current.get(modelId)!
+          const hullJson = hullModeRef.current === 'sansRaft'
+            ? (model.convexSansRaftHull ?? model.convexHull)
+            : model.convexHull
+          const localVerts = parseHullLocalPx(hullJson)
+          const spawnX = CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6
+
+          let body: Matter.Body
+          let visualLocalVerts: Vec2[]
+          if (localVerts && localVerts.length >= 3) {
+            try {
+              body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX))
+              visualLocalVerts = localVerts
+            } catch {
+              ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
+            }
+          } else {
+            ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
+          }
+
+          spawnY -= 50 + (localVerts ? Math.max(...localVerts.map(v => Math.abs(v.y))) * 2 : 60)
+
+          Matter.Composite.add(engine.world, body)
+          dynamicBodiesRef.current.push(body)
+
+          const gfx = new PIXI.Graphics()
+          app.stage.addChild(gfx)
+
+          const label = new PIXI.Text(model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name, {
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            fontSize: 8,
+            fill: 0xffffff,
+            align: 'center',
+          })
+          label.anchor.set(0.5)
+          app.stage.addChild(label)
+
+          entriesRef.current.push({ body, gfx, label, modelId, instanceIndex: inst, color, visualLocalVerts })
+        }
+
+        pausedRef.current = false // let new bodies fall in
+
+      } else {
+        // ── Remove top-most instances (highest instanceIndex first) ────────
+        for (let i = prevQty; i > currQty; i--) {
+          let maxInst = -1
+          let toRemove: Entry | null = null
+          for (const e of entriesRef.current) {
+            if (e.modelId === modelId && e.instanceIndex > maxInst) {
+              maxInst = e.instanceIndex
+              toRemove = e
+            }
+          }
+          if (!toRemove) break
+
+          Matter.Composite.remove(engine.world, toRemove.body)
+          const dynIdx = dynamicBodiesRef.current.indexOf(toRemove.body)
+          if (dynIdx >= 0) dynamicBodiesRef.current.splice(dynIdx, 1)
+
+          app.stage.removeChild(toRemove.gfx)
+          toRemove.gfx.destroy()
+          app.stage.removeChild(toRemove.label)
+          toRemove.label.destroy()
+
+          const eIdx = entriesRef.current.indexOf(toRemove)
+          if (eIdx >= 0) entriesRef.current.splice(eIdx, 1)
+        }
+
+      }
+    }
+
+    prevItemsRef.current = { ...currItems }
+  }, [itemsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>

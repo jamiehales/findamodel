@@ -1,6 +1,7 @@
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
 
-* Add a search page that can search by any of the fields on a model, it should update the results in real time
+* Add a filters section to the main page that can search by any of the fields on a model, it should update the shown model results in real time
+* 
 
 * Expand the main page to fill the whole width of the screen
 
@@ -41,8 +42,6 @@
 * Fix bug where the layout resets if save plate is clicked
 
 * Add option to show or hide labels
-
-* When adding additional copies of models, don't reset the simulation just add them to the top, same with removing models - just remove the top-most one of that type
 
 * Right align the reset button
 
