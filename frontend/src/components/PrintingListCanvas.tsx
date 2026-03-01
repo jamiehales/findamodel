@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as PIXI from 'pixi.js'
 import Matter from 'matter-js'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import type { Model } from '../lib/api'
 import type { PrintingList } from '../lib/printingList'
 
@@ -18,6 +21,7 @@ const ANGULAR_THRESH = 0.008
 const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 const MAX_BODY_HALF_PX = (CANVAS_PX * 0.65) / 2 // cap body half-extent
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
+const SPAWN_ORDER_LOCALSTORAGE_KEY = 'findamodel.printingListSpawnOrder'
 const DEBUG_PHYSICS_WIREFRAME = false
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
@@ -286,9 +290,16 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+type SpawnOrder = 'grouped' | 'random'
+
 export default function PrintingListCanvas({ models, items }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const itemsKey = useMemo(() => JSON.stringify(items), [items])
+  const [spawnOrder, setSpawnOrder] = useState<SpawnOrder>(() => {
+    const saved = localStorage.getItem(SPAWN_ORDER_LOCALSTORAGE_KEY)
+    return saved === 'random' ? 'random' : 'grouped'
+  })
+  const [resetCount, setResetCount] = useState(0)
 
   useEffect(() => {
     const container = containerRef.current
@@ -365,65 +376,75 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     let spawnY = -40 // bodies spawn above the canvas and fall in
 
+    // Build the flat spawn sequence, then reorder based on algorithm.
+    const spawnSequence: { model: Model; inst: number; qty: number }[] = []
     for (const model of models) {
       const qty = items[model.id] ?? 0
       if (qty === 0) continue
+      for (let inst = 0; inst < qty; inst++) {
+        spawnSequence.push({ model, inst, qty })
+      }
+    }
+    if (spawnOrder === 'random') {
+      for (let i = spawnSequence.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[spawnSequence[i], spawnSequence[j]] = [spawnSequence[j], spawnSequence[i]]
+      }
+    }
 
+    for (const { model, inst, qty } of spawnSequence) {
       const color = modelColor.get(model.id) ?? PALETTE[0]
       const localVerts = parseHullLocalPx(model.convexHull)
+      const spawnX = CANVAS_PX * 0.2 + Math.random() * CANVAS_PX * 0.6
 
-      for (let inst = 0; inst < qty; inst++) {
-        const spawnX = CANVAS_PX * 0.2 + Math.random() * CANVAS_PX * 0.6
-
-        // Create physics body (inflated) + keep original verts for rendering
-        let body: Matter.Body
-        let visualLocalVerts: Vec2[]
-        if (localVerts && localVerts.length >= 3) {
-          try {
-            body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX))
-            visualLocalVerts = localVerts;
-          } catch {
-            ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
-          }
-        } else {
+      // Create physics body (inflated) + keep original verts for rendering
+      let body: Matter.Body
+      let visualLocalVerts: Vec2[]
+      if (localVerts && localVerts.length >= 3) {
+        try {
+          body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX))
+          visualLocalVerts = localVerts;
+        } catch {
           ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
         }
-
-        // If there's a saved position for this instance, move the body there
-        const saved = savedLayout?.positions.find(
-          p => p.modelId === model.id && p.instanceIndex === inst,
-        )
-        if (saved) {
-          Matter.Body.setPosition(body, { x: saved.xMm * PX_PER_MM, y: saved.yMm * PX_PER_MM })
-          Matter.Body.setAngle(body, saved.angle)
-          Matter.Body.setVelocity(body, { x: 0, y: 0 })
-          Matter.Body.setAngularVelocity(body, 0)
-        }
-
-        Matter.Composite.add(engine.world, body)
-        dynamicBodies.push(body)
-
-        // Spread spawn points above canvas so bodies don't all overlap
-        spawnY -= 50 + (localVerts ? Math.max(...localVerts.map(v => Math.abs(v.y))) * 2 : 60)
-
-        // Pixi graphics (drawn in world-space each frame)
-        const gfx = new PIXI.Graphics()
-        app.stage.addChild(gfx)
-
-        // Label
-        const nameShort = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name
-        const labelStr = qty > 1 ? `${nameShort} #${inst + 1}` : nameShort
-        const label = new PIXI.Text(labelStr, {
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: 8,
-          fill: 0xffffff,
-          align: 'center',
-        })
-        label.anchor.set(0.5)
-        app.stage.addChild(label)
-
-        entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts })
+      } else {
+        ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
       }
+
+      // If there's a saved position for this instance, move the body there
+      const saved = savedLayout?.positions.find(
+        p => p.modelId === model.id && p.instanceIndex === inst,
+      )
+      if (saved) {
+        Matter.Body.setPosition(body, { x: saved.xMm * PX_PER_MM, y: saved.yMm * PX_PER_MM })
+        Matter.Body.setAngle(body, saved.angle)
+        Matter.Body.setVelocity(body, { x: 0, y: 0 })
+        Matter.Body.setAngularVelocity(body, 0)
+      }
+
+      Matter.Composite.add(engine.world, body)
+      dynamicBodies.push(body)
+
+      // Spread spawn points above canvas so bodies don't all overlap
+      spawnY -= 50 + (localVerts ? Math.max(...localVerts.map(v => Math.abs(v.y))) * 2 : 60)
+
+      // Pixi graphics (drawn in world-space each frame)
+      const gfx = new PIXI.Graphics()
+      app.stage.addChild(gfx)
+
+      // Label
+      const nameShort = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name
+      const labelStr = qty > 1 ? `${nameShort} #${inst + 1}` : nameShort
+      const label = new PIXI.Text(labelStr, {
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontSize: 8,
+        fill: 0xffffff,
+        align: 'center',
+      })
+      label.anchor.set(0.5)
+      app.stage.addChild(label)
+
+      entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts })
     }
 
     // ── Simulation state ───────────────────────────────────────────────────
@@ -522,13 +543,59 @@ export default function PrintingListCanvas({ models, items }: Props) {
       app.destroy(true, { children: true, texture: true, baseTexture: true })
       Matter.Engine.clear(engine)
     }
-  }, [models, itemsKey])
+  }, [models, itemsKey, spawnOrder, resetCount])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
-      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500 }}>
-        Print area: {CANVAS_MM} × {CANVAS_MM} mm &nbsp;·&nbsp; Click to restart simulation &nbsp;·&nbsp; Drag to reposition
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500 }}>
+          Print area: {CANVAS_MM} × {CANVAS_MM} mm &nbsp;·&nbsp; Click to restart simulation &nbsp;·&nbsp; Drag to reposition
+        </Typography>
+        <ToggleButtonGroup
+          value={spawnOrder}
+          exclusive
+          onChange={(_e, v: SpawnOrder | null) => {
+            if (v) {
+              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
+              localStorage.setItem(SPAWN_ORDER_LOCALSTORAGE_KEY, v)
+              setSpawnOrder(v)
+            }
+          }}
+          size="small"
+          sx={{
+            '& .MuiToggleButton-root': {
+              color: '#94a3b8',
+              borderColor: '#334155',
+              fontSize: '0.72rem',
+              padding: '2px 10px',
+              textTransform: 'none',
+              '&.Mui-selected': { color: '#e2e8f0', backgroundColor: '#1e293b' },
+            },
+          }}
+        >
+          <ToggleButton value="grouped">Grouped</ToggleButton>
+          <ToggleButton value="random">Random</ToggleButton>
+        </ToggleButtonGroup>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => {
+            localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
+            setResetCount(c => c + 1)
+          }}
+          sx={{
+            color: '#94a3b8',
+            borderColor: '#334155',
+            fontSize: '0.72rem',
+            padding: '2px 10px',
+            textTransform: 'none',
+            minWidth: 0,
+            '&:hover': { borderColor: '#64748b', color: '#e2e8f0' },
+          }}
+        >
+          Reset
+        </Button>
+      </Box>
       <div
         ref={containerRef}
         style={{
