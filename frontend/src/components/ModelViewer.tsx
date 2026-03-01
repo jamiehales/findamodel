@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Bounds, Html } from '@react-three/drei'
+import React, { useEffect, useMemo } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { useGeometry } from '../lib/queries'
+import { useGeometry, useModel } from '../lib/queries'
 
 const ACCENT: Record<string, string> = {
   stl: '#818cf8',
@@ -72,6 +72,15 @@ function ConvexHullPolygon({ coordinates }: ConvexHullPolygonProps) {
   )
 }
 
+function CameraInit({ position, target }: { position: THREE.Vector3Tuple; target: THREE.Vector3Tuple }) {
+  const camera = useThree(state => state.camera)
+  useEffect(() => {
+    camera.position.set(...position)
+    camera.lookAt(...target)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
 interface GeometryModelProps {
   modelId: string
   color: string
@@ -95,15 +104,13 @@ function GeometryModel({ modelId, color, convexHull }: GeometryModelProps) {
   }, [convexHull])
 
   return (
-    <Bounds fit clip observe>
-      <group>
-        <mesh geometry={bufferGeometry}>
-          <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
-        </mesh>
-        <ConvexHullPolygon coordinates={hullCoords} />
-        <ConvexHullLine coordinates={hullCoords} />
-      </group>
-    </Bounds>
+    <group>
+      <mesh geometry={bufferGeometry}>
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
+      </mesh>
+      <ConvexHullPolygon coordinates={hullCoords} />
+      <ConvexHullLine coordinates={hullCoords} />
+    </group>
   )
 }
 
@@ -133,6 +140,7 @@ interface ModelViewerProps {
 }
 
 export default function ModelViewer({ modelId, fileType, convexHull }: ModelViewerProps) {
+  const { data: model, isPending, isError } = useModel(modelId)
   const color = ACCENT[fileType.toLowerCase()] ?? '#94a3b8'
 
   const errorFallback = (
@@ -142,13 +150,40 @@ export default function ModelViewer({ modelId, fileType, convexHull }: ModelView
     </div>
   )
 
+  if (isError) return errorFallback
+
+  if (isPending || model.dimensionXMm == null || model.dimensionYMm == null || model.dimensionZMm == null) {
+    return (
+      <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+          {isPending ? 'Loading model…' : 'Model dimensions not yet available'}
+        </span>
+      </div>
+    )
+  }
+
+  const maxDimension = Math.max(model.dimensionXMm, model.dimensionYMm, model.dimensionZMm)
+
+  const orbitTarget: [number, number, number] = [
+    model.sphereCentreX ?? 0,
+    (model.sphereCentreY ?? model.dimensionYMm) / 2,
+    model.sphereCentreZ ?? 0,
+  ]
+
+  const cameraPos: [number, number, number] = [
+    orbitTarget[0] + maxDimension,
+    orbitTarget[1] + maxDimension,
+    orbitTarget[2] - maxDimension,
+  ]
+
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <Canvas
-        camera={{ position: [0, 5, -5], fov: 45 }}
+        camera={{ fov: 45 }}
         gl={{ antialias: true }}
         style={containerStyle}
       >
+        <CameraInit position={cameraPos} target={orbitTarget} />
         <Lighting />
         <Grid />
         <React.Suspense
@@ -163,6 +198,7 @@ export default function ModelViewer({ modelId, fileType, convexHull }: ModelView
           <GeometryModel modelId={modelId} color={color} convexHull={convexHull ?? null} />
         </React.Suspense>
         <OrbitControls
+          target={orbitTarget}
           enableDamping
           dampingFactor={0.08}
           minDistance={0.5}

@@ -27,6 +27,13 @@ export function useModel(id: string) {
   })
 }
 
+export function useSuspenseModel(id: string) {
+  return useSuspenseQuery({
+    queryKey: queryKeys.model(id),
+    queryFn: () => fetchModel(id),
+  })
+}
+
 export function useGeometry(id: string) {
   return useSuspenseQuery({
     queryKey: queryKeys.geometry(id),
