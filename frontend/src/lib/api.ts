@@ -15,6 +15,7 @@ export interface Model {
   supported: boolean | null
   convexHull: string | null
   concaveHull: string | null
+  convexSansRaftHull: string | null
   dimensionXMm: number | null
   dimensionYMm: number | null
   dimensionZMm: number | null

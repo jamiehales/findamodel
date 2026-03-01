@@ -4,6 +4,8 @@ import Matter from 'matter-js'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import type { Model } from '../lib/api'
@@ -23,6 +25,7 @@ const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
 const SPAWN_ORDER_LOCALSTORAGE_KEY = 'findamodel.printingListSpawnOrder'
 const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag'
+const HULL_MODE_LOCALSTORAGE_KEY = 'findamodel.printingListHullMode'
 const DEBUG_PHYSICS_WIREFRAME = false
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
@@ -289,6 +292,7 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type SpawnOrder = 'grouped' | 'random'
+type HullMode = 'convex' | 'sansRaft'
 
 export default function PrintingListCanvas({ models, items }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -298,6 +302,10 @@ export default function PrintingListCanvas({ models, items }: Props) {
     return saved === 'random' ? 'random' : 'grouped'
   })
   const [resetCount, setResetCount] = useState(0)
+  const [hullMode, setHullMode] = useState<HullMode>(() => {
+    const saved = localStorage.getItem(HULL_MODE_LOCALSTORAGE_KEY)
+    return saved === 'sansRaft' ? 'sansRaft' : 'convex'
+  })
   const [pauseOnDrag, setPauseOnDrag] = useState(
     () => localStorage.getItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY) === 'true',
   )
@@ -397,7 +405,10 @@ export default function PrintingListCanvas({ models, items }: Props) {
 
     for (const { model, inst, qty } of spawnSequence) {
       const color = modelColor.get(model.id) ?? PALETTE[0]
-      const localVerts = parseHullLocalPx(model.convexHull)
+      const hullJson = hullMode === 'sansRaft'
+        ? (model.convexSansRaftHull ?? model.convexHull)
+        : model.convexHull
+      const localVerts = parseHullLocalPx(hullJson)
       const spawnX = CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6
 
       // Create physics body (inflated) + keep original verts for rendering
@@ -548,7 +559,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
       app.destroy(true, { children: true, texture: true, baseTexture: true })
       Matter.Engine.clear(engine)
     }
-  }, [models, itemsKey, spawnOrder, resetCount])
+  }, [models, itemsKey, spawnOrder, hullMode, resetCount])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
@@ -581,6 +592,42 @@ export default function PrintingListCanvas({ models, items }: Props) {
           <ToggleButton value="grouped">Grouped</ToggleButton>
           <ToggleButton value="random">Random</ToggleButton>
         </ToggleButtonGroup>
+        <Select
+          value={hullMode}
+          onChange={e => {
+            const next = e.target.value as HullMode
+            localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
+            localStorage.setItem(HULL_MODE_LOCALSTORAGE_KEY, next)
+            setHullMode(next)
+          }}
+          size="small"
+          sx={{
+            color: '#94a3b8',
+            fontSize: '0.72rem',
+            '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
+            '.MuiSelect-icon': { color: '#64748b' },
+            '.MuiSelect-select': { py: '2px', px: '10px' },
+          }}
+          MenuProps={{
+            PaperProps: {
+              sx: {
+                bgcolor: '#1e293b',
+                border: '1px solid #334155',
+                '& .MuiMenuItem-root': {
+                  fontSize: '0.72rem',
+                  color: '#94a3b8',
+                  '&.Mui-selected': { bgcolor: 'rgba(255,255,255,0.06)', color: '#e2e8f0' },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
+                },
+              },
+            },
+          }}
+        >
+          <MenuItem value="convex">Convex hull</MenuItem>
+          <MenuItem value="sansRaft">Sans raft hull</MenuItem>
+        </Select>
         <Button
           size="small"
           variant="outlined"

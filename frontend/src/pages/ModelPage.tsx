@@ -221,8 +221,13 @@ function ModelPage() {
           <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} />
         </Box>
 
-        {(model.convexHull || model.concaveHull) && (
-          <HullPreview convexHull={model.convexHull} concaveHull={model.concaveHull} label="Hull Projections" />
+        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
+          <HullPreview
+            convexHull={model.convexHull}
+            concaveHull={model.concaveHull}
+            convexSansRaftHull={model.convexSansRaftHull}
+            label="Hull Projections"
+          />
         )}
 
         {qty === 0 ? (

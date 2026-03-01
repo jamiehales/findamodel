@@ -45,6 +45,7 @@ public class ModelService(
             Supported = m.DirectoryConfig?.Supported,
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
+            ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
             DimensionXMm  = m.DimensionXMm,
             DimensionYMm  = m.DimensionYMm,
             DimensionZMm  = m.DimensionZMm,
@@ -82,6 +83,7 @@ public class ModelService(
                 Supported     = m.DirectoryConfig != null ? m.DirectoryConfig.Supported     : null,
                 m.ConvexHullCoordinates,
                 m.ConcaveHullCoordinates,
+                m.ConvexSansRaftHullCoordinates,
                 m.DimensionXMm,
                 m.DimensionYMm,
                 m.DimensionZMm,
@@ -110,9 +112,10 @@ public class ModelService(
             Category      = m.Category,
             Type          = m.Type,
             Supported     = m.Supported,
-            ConvexHull    = m.ConvexHullCoordinates,
-            ConcaveHull   = m.ConcaveHullCoordinates,
-            DimensionXMm  = m.DimensionXMm,
+            ConvexHull         = m.ConvexHullCoordinates,
+            ConcaveHull        = m.ConcaveHullCoordinates,
+            ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
+            DimensionXMm       = m.DimensionXMm,
             DimensionYMm  = m.DimensionYMm,
             DimensionZMm  = m.DimensionZMm,
             SphereCentreX = m.SphereCentreX,
@@ -184,9 +187,9 @@ public class ModelService(
             var previewImagePath = geometry is not null
                 ? await previewService.GeneratePreviewAsync(geometry, checksum)
                 : null;
-            var (convexHull, concaveHull) = geometry is not null
+            var (convexHull, concaveHull, convexSansRaftHull) = geometry is not null
                 ? await hullCalculationService.CalculateHullsAsync(geometry)
-                : (null, null);
+                : (null, null, null);
 
             directoryConfigs.TryGetValue(directory, out var dirConfig);
 
@@ -204,7 +207,8 @@ public class ModelService(
                 PreviewGeneratedAt = previewImagePath != null ? DateTime.UtcNow : null,
                 ConvexHullCoordinates = convexHull,
                 ConcaveHullCoordinates = concaveHull,
-                HullGeneratedAt = convexHull != null || concaveHull != null ? DateTime.UtcNow : null,
+                ConvexSansRaftHullCoordinates = convexSansRaftHull,
+                HullGeneratedAt = convexHull != null || concaveHull != null || convexSansRaftHull != null ? DateTime.UtcNow : null,
                 DirectoryConfigId = dirConfig?.Id,
                 DimensionXMm        = geometry?.DimensionXMm,
                 DimensionYMm        = geometry?.DimensionYMm,

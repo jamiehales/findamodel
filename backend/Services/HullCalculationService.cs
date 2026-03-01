@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.Algorithm.Hull;
 
 namespace findamodel.Services;
 
@@ -12,18 +11,20 @@ public class HullCalculationService(
     private static readonly GeometryFactory Factory = new();
 
     /// <summary>
-    /// Calculates convex and concave (alpha) hulls from pre-loaded geometry. Preferred overload.
+    /// Calculates convex, concave (alpha), and convex-sans-raft hulls from pre-loaded geometry. Preferred overload.
     /// Projects vertices onto the X-Z plane (bird's eye view with Y-up coordinate system).
-    /// Returns tuple of (convex hull JSON, concave hull JSON) as [[x,z],[x,z],...] arrays.
+    /// Returns tuple of (convex hull JSON, concave hull JSON, convex sans-raft hull JSON) as [[x,z],[x,z],...] arrays.
+    /// The sans-raft hull excludes vertices with Y &lt; 2mm before projection, removing raft/brim geometry.
     /// </summary>
-    public Task<(string? ConvexHull, string? ConcaveHull)> CalculateHullsAsync(LoadedGeometry geometry)
+    public Task<(string? ConvexHull, string? ConcaveHull, string? ConvexSansRaftHull)> CalculateHullsAsync(LoadedGeometry geometry)
     {
         try
         {
+            var allVertices = geometry.Triangles.SelectMany(t => new[] { t.V0, t.V1, t.V2 });
+
             // Extract unique X-Z coordinates from triangle vertices.
             // float → double widening is intentional: NTS uses double precision internally.
-            var points2D = geometry.Triangles
-                .SelectMany(t => new[] { t.V0, t.V1, t.V2 })
+            var points2D = allVertices
                 .Select(v => new Coordinate((double)v.X, (double)v.Z))
                 .Distinct()
                 .ToArray();
@@ -31,31 +32,43 @@ public class HullCalculationService(
             if (points2D.Length < 3)
             {
                 logger.LogWarning("Geometry has fewer than 3 unique X-Z points, skipping hull calculation");
-                return Task.FromResult<(string?, string?)>((null, null));
+                return Task.FromResult<(string?, string?, string?)>((null, null, null));
             }
 
             var convexCoords  = CalculateConvexHull(points2D);
             var concaveCoords = new Coordinate[0]; //CalculateConcaveHull(points2D);
 
-            logger.LogInformation(
-                "Hull calculation complete: {ConvexCount} convex vertices, {ConcaveCount} concave vertices",
-                convexCoords.Length, concaveCoords.Length);
+            // Sans-raft: exclude vertices at or below 2mm (Y-up, 1 unit = 1mm)
+            var sansRaftPoints2D = allVertices
+                .Where(v => v.Y >= 2f)
+                .Select(v => new Coordinate((double)v.X, (double)v.Z))
+                .Distinct()
+                .ToArray();
 
-            return Task.FromResult<(string?, string?)>((
+            var convexSansRaftCoords = sansRaftPoints2D.Length >= 3
+                ? CalculateConvexHull(sansRaftPoints2D)
+                : null;
+
+            logger.LogInformation(
+                "Hull calculation complete: {ConvexCount} convex vertices, {ConcaveCount} concave vertices, {SansRaftCount} sans-raft vertices",
+                convexCoords.Length, concaveCoords.Length, convexSansRaftCoords?.Length ?? 0);
+
+            return Task.FromResult<(string?, string?, string?)>((
                 ConvertCoordinatesToJson(convexCoords),
-                ConvertCoordinatesToJson(concaveCoords)));
+                ConvertCoordinatesToJson(concaveCoords),
+                convexSansRaftCoords is not null ? ConvertCoordinatesToJson(convexSansRaftCoords) : null));
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error calculating hull from geometry");
-            return Task.FromResult<(string?, string?)>((null, null));
+            return Task.FromResult<(string?, string?, string?)>((null, null, null));
         }
     }
 
     /// <summary>
     /// Loads the file via ModelLoaderService then calculates hulls.
     /// </summary>
-    public async Task<(string? ConvexHull, string? ConcaveHull)> CalculateHullsAsync(string filePath, string fileType)
+    public async Task<(string? ConvexHull, string? ConcaveHull, string? ConvexSansRaftHull)> CalculateHullsAsync(string filePath, string fileType)
     {
         try
         {
@@ -63,34 +76,15 @@ public class HullCalculationService(
             if (geometry is null)
             {
                 logger.LogWarning("Model {FilePath} could not be loaded, skipping hull calculation", filePath);
-                return (null, null);
+                return (null, null, null);
             }
 
-            var points2D = geometry.Triangles
-                .SelectMany(t => new[] { t.V0, t.V1, t.V2 })
-                .Select(v => new Coordinate((double)v.X, (double)v.Z))
-                .Distinct()
-                .ToArray();
-
-            if (points2D.Length < 3)
-            {
-                logger.LogWarning("Model {FilePath} has fewer than 3 unique X-Z points, skipping hull calculation", filePath);
-                return (null, null);
-            }
-
-            var convexCoords  = CalculateConvexHull(points2D);
-            var concaveCoords = CalculateConcaveHull(points2D);
-
-            logger.LogInformation(
-                "Hull calculation complete for {FilePath}: {ConvexCount} convex vertices, {ConcaveCount} concave vertices",
-                filePath, convexCoords.Length, concaveCoords.Length);
-
-            return (ConvertCoordinatesToJson(convexCoords), ConvertCoordinatesToJson(concaveCoords));
+            return await CalculateHullsAsync(geometry);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error calculating hull for {FilePath}", filePath);
-            return (null, null);
+            return (null, null, null);
         }
     }
 
@@ -99,30 +93,6 @@ public class HullCalculationService(
         var multiPoint = Factory.CreateMultiPointFromCoords(points);
         var convexHull = multiPoint.ConvexHull();
         return convexHull.Coordinates;
-    }
-
-    private Coordinate[] CalculateConcaveHull(Coordinate[] points)
-    {
-        try
-        {
-            var multiPoint = Factory.CreateMultiPointFromCoords(points);
-            var concaveHull = new ConcaveHull(multiPoint).GetHull();
-            var coords = concaveHull.Coordinates;
-
-            // Validate: if concave hull has too many points relative to input, fall back to convex
-            if (coords.Length > points.Length * 0.5)
-            {
-                logger.LogInformation("Concave hull has too many points ({Count}), using convex hull instead", coords.Length);
-                return CalculateConvexHull(points);
-            }
-
-            return coords;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to calculate concave hull, falling back to convex hull");
-            return CalculateConvexHull(points);
-        }
     }
 
     private string ConvertCoordinatesToJson(Coordinate[] coordinates)
