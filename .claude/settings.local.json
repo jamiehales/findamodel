@@ -1,10 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(yarn add react-router-dom)",
       "Bash(yarn build)",
       "Bash(dotnet build)",
-      "Bash(yarn add @mui/material @emotion/react @emotion/styled @mui/icons-material)"
+      "Bash(yarn add *)",
+      "Bash(python3 -c \":*)"
     ]
   }
 }

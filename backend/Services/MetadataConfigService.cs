@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using YamlDotNet.Serialization;
 using findamodel.Data;
 using findamodel.Data.Entities;
+using findamodel.Models;
 
 namespace findamodel.Services;
 
@@ -12,6 +13,102 @@ public class MetadataConfigService(
 {
     private const string ConfigFileName = "findamodel.yaml";
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder().Build();
+    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
+
+    // -------------------------------------------------------------------------
+    // Public API — used by ExplorerController
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the config detail for a directory: local raw values and the parent's
+    /// resolved values (so the UI can show inherited placeholders per field).
+    /// </summary>
+    public async Task<DirectoryConfigDetailDto> GetDirectoryConfigDetailAsync(string dirPath)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var all = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+
+        all.TryGetValue(dirPath, out var record);
+
+        var localValues = record != null
+            ? new ConfigFieldsDto(record.RawAuthor, record.RawCollection, record.RawSubcollection,
+                                  record.RawCategory, record.RawType, record.RawSupported)
+            : new ConfigFieldsDto(null, null, null, null, null, null);
+
+        var parentPath = GetParentPath(dirPath);
+        ConfigFieldsDto? parentResolved = null;
+        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
+        {
+            parentResolved = new ConfigFieldsDto(parentRecord.Author, parentRecord.Collection,
+                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
+        }
+
+        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath);
+    }
+
+    /// <summary>
+    /// Updates the findamodel.yaml for a directory, writes the new raw values to the DB,
+    /// re-resolves this directory's inherited fields, and propagates changes to all descendants.
+    /// Returns the updated config detail.
+    /// </summary>
+    public async Task<DirectoryConfigDetailDto> UpdateDirectoryConfigAsync(
+        string rootPath, string dirPath, UpdateDirectoryConfigRequest req)
+    {
+        await WriteConfigFileAsync(rootPath, dirPath, req);
+
+        var fullDirPath = GetFullDirPath(rootPath, dirPath);
+        var configFilePath = Path.Combine(fullDirPath, ConfigFileName);
+        var newHash = File.Exists(configFilePath) ? await ComputeFileHashAsync(configFilePath) : null;
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var all = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+
+        if (!all.TryGetValue(dirPath, out var record))
+        {
+            var parent = GetParentRecord(dirPath, all);
+            record = new DirectoryConfig
+            {
+                Id = Guid.NewGuid(),
+                DirectoryPath = dirPath,
+                ParentId = parent?.Id,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.DirectoryConfigs.Add(record);
+            all[dirPath] = record;
+        }
+
+        var rawFields = new RawConfigFields(req.Author, req.Collection, req.Subcollection,
+                                            req.Category, req.Type, req.Supported);
+        ApplyRawFields(record, rawFields);
+        record.LocalConfigFileHash = newHash;
+        ResolveFields(record, all);
+        record.UpdatedAt = DateTime.UtcNow;
+
+        ResolveDescendants(dirPath, all);
+
+        await db.SaveChangesAsync();
+
+        var parentPath = GetParentPath(dirPath);
+        ConfigFieldsDto? parentResolved = null;
+        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
+        {
+            parentResolved = new ConfigFieldsDto(parentRecord.Author, parentRecord.Collection,
+                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
+        }
+
+        return new DirectoryConfigDetailDto(
+            dirPath,
+            new ConfigFieldsDto(record.RawAuthor, record.RawCollection, record.RawSubcollection,
+                                 record.RawCategory, record.RawType, record.RawSupported),
+            parentResolved,
+            parentPath);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scan-time API — called by ModelService
+    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Ensures DirectoryConfig records exist for every directory in the given set (plus all
@@ -34,10 +131,7 @@ public class MetadataConfigService(
 
         foreach (var dirPath in sorted)
         {
-            var fullPath = dirPath == ""
-                ? modelsRootPath
-                : Path.Combine(modelsRootPath, dirPath.Replace('/', Path.DirectorySeparatorChar));
-
+            var fullPath = GetFullDirPath(modelsRootPath, dirPath);
             var configFilePath = Path.Combine(fullPath, ConfigFileName);
             var configExists = File.Exists(configFilePath);
 
@@ -55,12 +149,13 @@ public class MetadataConfigService(
                         record.LocalConfigFileHash ?? "(none)",
                         currentHash ?? "(none)");
 
-                    await OnConfigFileChangedAsync(dirPath, record, rawFields, db);
-
                     ApplyRawFields(record, rawFields);
                     record.LocalConfigFileHash = currentHash;
                     ResolveFields(record, existing);
                     record.UpdatedAt = DateTime.UtcNow;
+
+                    // Re-resolve all descendants so inherited values propagate
+                    ResolveDescendants(dirPath, existing);
                 }
                 // Unchanged hash → resolved fields are still valid, skip
             }
@@ -90,28 +185,77 @@ public class MetadataConfigService(
     }
 
     // -------------------------------------------------------------------------
-    // Stub: invoked when a previously-seen config file has a new hash
+    // Shared: descendant re-resolution
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Called when a config file's hash changes during a scan.
-    /// Extend to re-resolve descendant DirectoryConfig records, invalidate caches, etc.
+    /// Re-resolves all descendants of <paramref name="parentPath"/> using the provided
+    /// in-memory dictionary. Updates resolved fields and UpdatedAt in place.
+    /// Does NOT call SaveChanges — callers are responsible for saving.
     /// </summary>
-    private Task OnConfigFileChangedAsync(
-        string directoryPath,
-        DirectoryConfig existingRecord,
-        RawConfigFields? newFields,
-        ModelCacheContext db)
+    private static void ResolveDescendants(string parentPath, Dictionary<string, DirectoryConfig> all)
     {
-        // TODO: re-resolve all descendant DirectoryConfig records that inherited values from this directory
-        // TODO: notify any downstream consumers (audit log, SignalR hub, etc.)
-        logger.LogInformation("OnConfigFileChangedAsync stub called for '{Dir}'", directoryPath);
-        return Task.CompletedTask;
+        var prefix = parentPath == "" ? "" : parentPath + "/";
+
+        // Collect all descendants; sort ancestor-first so each child sees its parent already resolved
+        var descendants = all.Values
+            .Where(d => parentPath == ""
+                ? d.DirectoryPath != ""
+                : d.DirectoryPath.StartsWith(prefix, StringComparison.Ordinal))
+            .OrderBy(d => d.DirectoryPath.Length)
+            .ThenBy(d => d.DirectoryPath, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var desc in descendants)
+        {
+            ResolveFields(desc, all);
+            desc.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: YAML writing
+    // -------------------------------------------------------------------------
+
+    private async Task WriteConfigFileAsync(string rootPath, string dirPath, UpdateDirectoryConfigRequest req)
+    {
+        var fullDirPath = GetFullDirPath(rootPath, dirPath);
+        var configPath = Path.Combine(fullDirPath, ConfigFileName);
+
+        // Build ordered dictionary of fields that are explicitly set (non-null)
+        var data = new Dictionary<string, object>();
+        if (req.Author != null)      data["author"] = req.Author;
+        if (req.Collection != null)  data["collection"] = req.Collection;
+        if (req.Subcollection != null) data["subcollection"] = req.Subcollection;
+        if (req.Category != null)    data["category"] = req.Category;
+        if (req.Type != null)        data["type"] = req.Type;
+        if (req.Supported.HasValue)  data["supported"] = req.Supported.Value;
+
+        if (data.Count == 0)
+        {
+            if (File.Exists(configPath)) File.Delete(configPath);
+            return;
+        }
+
+        var yaml = YamlSerializer.Serialize(data);
+        await File.WriteAllTextAsync(configPath, yaml);
     }
 
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private static string GetFullDirPath(string rootPath, string dirPath) =>
+        dirPath == ""
+            ? rootPath
+            : Path.Combine(rootPath, dirPath.Replace('/', Path.DirectorySeparatorChar));
+
+    private static string? GetParentPath(string dirPath)
+    {
+        if (dirPath == "") return null;
+        var lastSlash = dirPath.LastIndexOf('/');
+        return lastSlash < 0 ? "" : dirPath[..lastSlash];
+    }
 
     /// <summary>
     /// Expands a set of relative directory paths to include all ancestor paths.
@@ -137,9 +281,8 @@ public class MetadataConfigService(
     /// </summary>
     private static DirectoryConfig? GetParentRecord(string dirPath, Dictionary<string, DirectoryConfig> existing)
     {
-        if (dirPath == "") return null;
-        var lastSlash = dirPath.LastIndexOf('/');
-        var parentPath = lastSlash < 0 ? "" : dirPath[..lastSlash];
+        var parentPath = GetParentPath(dirPath);
+        if (parentPath == null) return null;
         return existing.TryGetValue(parentPath, out var parent) ? parent : null;
     }
 

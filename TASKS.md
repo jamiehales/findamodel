@@ -1,6 +1,8 @@
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
 
-* Add a search page that can search by any of the fields on a model
+* Convert card to a link so you can middle click to open in new window / right click open in new window
+
+* Add a search page that can search by any of the fields on a model, it should update the results in real time
 
 * Expand the main page to fill the whole width of the screen
 
@@ -12,11 +14,6 @@
 * Fix concave hull calculation
 
 * Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data
-
-* Add a file explorer, where you can navigate through the file structure
-* This should be a grid view, with a card for folders and a card per model, same as the model explorer
-* Folders should be shown first, alphabetically, followed by all the models also sorted alphabetically
-* There should be editable fields for the metadata (findamodel.yaml) in each of these folders, it should show both the local value, or the inherited value. If you edit a field it should update the json file with this data, and the corresponding database entry. Making sure to update all the children with the new calculated values.
 
 * Add an author explorer, there should be a list of authors, then a list of collections, if there are subcollections then show those
 

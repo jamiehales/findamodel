@@ -50,9 +50,9 @@ function WelcomePage() {
         <Typography sx={{ fontSize: '1.1rem', color: 'text.secondary' }}>
           Find your next mini
         </Typography>
-        {totalCount > 0 && (
+        <Box sx={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
           <Button
-            onClick={() => navigate('/printing-list')}
+            onClick={() => navigate('/explore')}
             variant="outlined"
             sx={{
               borderRadius: '999px',
@@ -61,14 +61,33 @@ function WelcomePage() {
               fontSize: '0.875rem',
               fontWeight: 500,
               textTransform: 'none',
-              borderColor: 'rgba(99,102,241,0.5)',
+              borderColor: 'rgba(99,102,241,0.4)',
               color: '#818cf8',
               '&:hover': { borderColor: '#818cf8', background: 'rgba(99,102,241,0.08)' },
             }}
           >
-            View printing list ({totalCount})
+            Explore
           </Button>
-        )}
+          {totalCount > 0 && (
+            <Button
+              onClick={() => navigate('/printing-list')}
+              variant="outlined"
+              sx={{
+                borderRadius: '999px',
+                px: '1.25rem',
+                py: '0.4rem',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                textTransform: 'none',
+                borderColor: 'rgba(99,102,241,0.5)',
+                color: '#818cf8',
+                '&:hover': { borderColor: '#818cf8', background: 'rgba(99,102,241,0.08)' },
+              }}
+            >
+              View printing list ({totalCount})
+            </Button>
+          )}
+        </Box>
       </Box>
 
       <ModelGrid />
