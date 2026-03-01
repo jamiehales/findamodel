@@ -1,5 +1,3 @@
-* Allow overriding path to models data folder via config variable
-* Use findamodel.db instead of models_cache.db
 * Move the model preview images out of the database and into a cache/renders folder, with the images being labelled with the hash of the model file
 
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
@@ -12,6 +10,7 @@
 
 * Fix popping when the model viewer loads
 
+* Reduce complexity of convex hull
 * Fix concave hull calculation
 
 * Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data

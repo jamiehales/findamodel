@@ -19,5 +19,5 @@ frontend/tsconfig.app.tsbuildinfo
 .env.local
 .env.*.local
 
-# Cache
-backend/models_cache*
+# Database
+debug

@@ -5,8 +5,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
+var dataPath = builder.Configuration["Configuration:DataPath"] ?? "data";
+var resolvedDataPath = Path.GetFullPath(dataPath);
+Directory.CreateDirectory(resolvedDataPath);
+var dbPath = Path.Combine(resolvedDataPath, "findamodel.db");
 builder.Services.AddDbContextFactory<ModelCacheContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("ModelCache") ?? "Data Source=models_cache.db"));
+    options.UseSqlite($"Data Source={dbPath}"));
 
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
