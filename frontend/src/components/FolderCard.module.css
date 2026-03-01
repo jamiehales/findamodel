@@ -14,21 +14,15 @@
   background: #1e293b;
   border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 8px;
-  cursor: pointer;
-  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
   min-height: 160px;
   width: 100%;
   box-sizing: border-box;
 }
 
 .card:hover {
-  transform: scale(1.03);
   border-color: rgba(99, 102, 241, 0.5);
   background: #243049;
-}
-
-.card:active {
-  transform: scale(0.97);
 }
 
 .editBtn {

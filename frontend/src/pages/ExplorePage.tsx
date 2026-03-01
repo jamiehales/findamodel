@@ -61,7 +61,6 @@ function Breadcrumb({ path }: { path: string }) {
 }
 
 function ExplorePageInner({ path }: { path: string }) {
-  const navigate = useNavigate()
   const { data, isPending, isError } = useExplorer(path)
 
   if (isPending) {
@@ -116,7 +115,7 @@ function ExplorePageInner({ path }: { path: string }) {
               <FolderCard
                 key={folder.path}
                 folder={folder}
-                onNavigate={() => navigate(`/explore/${folder.path}`)}
+                href={`/explore/${folder.path}`}
               />
             ))}
           </Box>
@@ -143,9 +142,7 @@ function ExplorePageInner({ path }: { path: string }) {
               <ExplorerModelCard
                 key={model.relativePath}
                 model={model}
-                onClick={() => {
-                  if (model.id) navigate(`/model/${encodeURIComponent(model.id)}`)
-                }}
+                href={model.id ? `/model/${encodeURIComponent(model.id)}` : undefined}
               />
             ))}
           </Box>

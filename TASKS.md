@@ -1,7 +1,5 @@
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
 
-* Convert card to a link so you can middle click to open in new window / right click open in new window
-
 * Add a search page that can search by any of the fields on a model, it should update the results in real time
 
 * Expand the main page to fill the whole width of the screen

@@ -186,7 +186,7 @@ function PrintingListPage() {
                 <ModelCard
                   key={model.id}
                   model={model}
-                  onClick={() => navigate(`/model/${encodeURIComponent(model.id)}`)}
+                  href={`/model/${encodeURIComponent(model.id)}`}
                 />
               ))}
             </Box>

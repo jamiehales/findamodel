@@ -6,11 +6,12 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import type { ExplorerFolder } from '../lib/api'
 import MetadataEditor from './MetadataEditor'
+import AppCard from './AppCard'
 import styles from './FolderCard.module.css'
 
 interface Props {
   folder: ExplorerFolder
-  onNavigate: () => void
+  href: string
 }
 
 function MetaBadge({ value }: { value: string | null | undefined }) {
@@ -40,20 +41,21 @@ function MetaBadge({ value }: { value: string | null | undefined }) {
   )
 }
 
-export default function FolderCard({ folder, onNavigate }: Props) {
+export default function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const rv = folder.resolvedValues
 
   return (
     <Box className={styles.wrapper}>
       {/* Card face */}
-      <Box className={styles.card} onClick={onNavigate}>
+      <AppCard href={href} className={styles.card}>
         {/* Edit button — stops propagation so click doesn't navigate */}
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
             size="small"
             className={styles.editBtn}
             onClick={e => {
+              e.preventDefault()
               e.stopPropagation()
               setEditorOpen(v => !v)
             }}
@@ -108,7 +110,7 @@ export default function FolderCard({ folder, onNavigate }: Props) {
           <MetaBadge value={rv.author} />
           <MetaBadge value={rv.collection} />
         </Box>
-      </Box>
+      </AppCard>
 
       {/* Collapsible metadata editor */}
       <Collapse in={editorOpen} unmountOnExit>

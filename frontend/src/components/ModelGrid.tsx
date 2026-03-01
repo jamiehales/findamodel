@@ -1,7 +1,6 @@
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { useNavigate } from 'react-router-dom'
 import { useModels } from '../lib/queries'
 import ModelCard from './ModelCard'
 
@@ -12,7 +11,6 @@ const gridSx = {
 }
 
 function ModelGrid() {
-  const navigate = useNavigate()
   const { data: models, isPending, isError } = useModels(80)
 
   if (isPending) {
@@ -66,7 +64,7 @@ function ModelGrid() {
           <ModelCard
             key={model.id}
             model={model}
-            onClick={() => navigate(`/model/${encodeURIComponent(model.id)}`)}
+            href={`/model/${encodeURIComponent(model.id)}`}
           />
         ))}
       </Box>
