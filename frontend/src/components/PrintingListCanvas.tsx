@@ -147,7 +147,7 @@ function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Bod
   // fromVertices centres the body at (cx, cy) using the centroid of the passed
   // vertices. Since localVerts are already centred at origin, their centroid ≈ 0,
   // and Matter.js will correctly place the body at (cx, cy).
-  return Matter.Bodies.fromVertices(cx, cy, localVerts as Matter.Vector[], BODY_OPTIONS)
+  return Matter.Bodies.fromVertices(cx, cy, [localVerts as Matter.Vector[]], BODY_OPTIONS)
 }
 
 /**

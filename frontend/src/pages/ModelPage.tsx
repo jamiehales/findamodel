@@ -27,7 +27,7 @@ function ModelPage() {
   const decodedId = decodeURIComponent(id ?? '')
 
   const { data: model, isPending, isError } = useModel(decodedId)
-  const { items, addItem, removeItem, setQuantity } = usePrintingList()
+  const { items, addItem, setQuantity } = usePrintingList()
   const qty = model ? (items[model.id] ?? 0) : 0
 
   const backButton = (
