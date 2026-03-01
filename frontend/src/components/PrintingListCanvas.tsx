@@ -425,7 +425,7 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
       }
     }
 
-    for (const { model, inst, qty } of spawnSequence) {
+    for (const { model, inst } of spawnSequence) {
       const color = modelColor.get(model.id) ?? PALETTE[0]
       const hullJson = hullMode === 'sansRaft'
         ? (model.convexSansRaftHull ?? model.convexHull)
