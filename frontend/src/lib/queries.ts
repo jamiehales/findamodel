@@ -1,7 +1,8 @@
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchModels, fetchModel, fetchGeometry,
-  fetchExplorer, fetchDirectoryConfig, updateDirectoryConfig, triggerFolderIndex,
+  fetchExplorer, fetchDirectoryConfig, updateDirectoryConfig,
+  fetchIndexerStatus, enqueueIndex, IndexFlags,
   fetchPrintingLists, fetchActivePrintingList, fetchPrintingList,
   createPrintingList, renamePrintingList, deletePrintingList, activatePrintingList,
   upsertPrintingListItem, clearPrintingListItems,
@@ -14,6 +15,7 @@ export const queryKeys = {
   geometry: (id: string) => ['geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
+  indexerStatus: ['indexer', 'status'] as const,
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
@@ -77,16 +79,51 @@ export function useUpdateDirectoryConfig(path: string) {
   })
 }
 
-export function useIndexFolder(path: string) {
+// ---- Indexer ----
+
+export function useIndexerStatus() {
+  return useQuery({
+    queryKey: queryKeys.indexerStatus,
+    queryFn: fetchIndexerStatus,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+export function useEnqueueIndex() {
   const queryClient = useQueryClient()
-  const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : ''
   return useMutation({
-    mutationFn: () => triggerFolderIndex(path),
+    mutationFn: ({ directoryFilter, flags }: { directoryFilter: string | null; flags: number }) =>
+      enqueueIndex(directoryFilter, flags),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(path) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(parentPath) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
     },
   })
+}
+
+export function useIndexFolder(path: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => enqueueIndex(path || null, IndexFlags.Directories | IndexFlags.Models),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
+    },
+  })
+}
+
+/**
+ * Returns the indexing state for a specific folder path by reading from the live
+ * indexer status. 'running' means it is the current active request; 'queued' means
+ * it is waiting in the queue; null means it is not being indexed.
+ */
+export function useIsFolderIndexing(path: string): 'running' | 'queued' | null {
+  const { data: status } = useIndexerStatus()
+  if (!status) return null
+
+  const filter = path || null
+  if (status.currentRequest?.directoryFilter === filter) return 'running'
+  if (status.queue.some(r => r.directoryFilter === filter)) return 'queued'
+  return null
 }
 
 // ---- Printing Lists ----

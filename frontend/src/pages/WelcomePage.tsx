@@ -3,6 +3,7 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { useNavigate } from 'react-router-dom'
 import ModelGrid from '../components/ModelGrid'
+import IndexerStatus from '../components/IndexerStatus'
 import { useActivePrintingList } from '../lib/queries'
 
 function WelcomePage() {
@@ -11,6 +12,8 @@ function WelcomePage() {
   const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0
 
   return (
+    <>
+    <IndexerStatus />
     <Box
       sx={{
         display: 'flex',
@@ -110,6 +113,7 @@ function WelcomePage() {
 
       <ModelGrid />
     </Box>
+    </>
   )
 }
 

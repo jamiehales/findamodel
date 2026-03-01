@@ -9,7 +9,6 @@ namespace findamodel.Controllers;
 public class ExplorerController(
     ExplorerService explorerService,
     MetadataConfigService metadataConfigService,
-    ModelService modelService,
     IConfiguration configuration) : ControllerBase
 {
     /// <summary>
@@ -39,28 +38,6 @@ public class ExplorerController(
     {
         var result = await metadataConfigService.GetDirectoryConfigDetailAsync(path);
         return Ok(result);
-    }
-
-    /// <summary>
-    /// POST /api/explorer/index?path=some/relative/path
-    /// Immediately indexes new model files found in the given directory (and subdirectories).
-    /// </summary>
-    [HttpPost("index")]
-    public async Task<ActionResult<IndexResultDto>> IndexDirectory([FromQuery] string path = "")
-    {
-        var modelsRoot = configuration["Models:DirectoryPath"];
-        if (string.IsNullOrEmpty(modelsRoot))
-            return StatusCode(500, "Models:DirectoryPath is not configured.");
-
-        try
-        {
-            var indexed = await modelService.ScanAndCacheAsync(directoryFilter: string.IsNullOrEmpty(path) ? null : path);
-            return Ok(new IndexResultDto(indexed));
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return NotFound($"Directory not found: {path}");
-        }
     }
 
     /// <summary>

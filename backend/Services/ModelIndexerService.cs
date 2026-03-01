@@ -1,9 +1,10 @@
 using Cronos;
+using findamodel.Models;
 
 namespace findamodel.Services;
 
 public class ModelIndexerService(
-    ModelService modelService,
+    IndexerService indexerService,
     IConfiguration config,
     ILogger<ModelIndexerService> logger) : BackgroundService
 {
@@ -11,7 +12,7 @@ public class ModelIndexerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _ = SyncMetadataSafely();
+        indexerService.Enqueue(null, IndexFlags.Directories);
 
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
@@ -46,35 +47,11 @@ public class ModelIndexerService(
 
             if (!stoppingToken.IsCancellationRequested)
             {
-                logger.LogInformation("ModelIndexerService: running scheduled scan (limit: 100)");
-                await RunScanSafely(limit: 100);
+                logger.LogInformation("ModelIndexerService: enqueueing scheduled full scan");
+                indexerService.Enqueue(null, IndexFlags.Directories | IndexFlags.Models);
             }
         }
 
         logger.LogInformation("ModelIndexerService: stopped");
-    }
-
-    private async Task RunScanSafely(int? limit = null)
-    {
-        try
-        {
-            await modelService.ScanAndCacheAsync(limit: limit);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "ModelIndexerService: scan failed");
-        }
-    }
-
-    private async Task SyncMetadataSafely()
-    {
-        try
-        {
-            await modelService.SyncDirectoryConfigsAsync();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "ModelIndexerService: directory config sync failed");
-        }
     }
 }

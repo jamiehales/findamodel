@@ -56,5 +56,3 @@ public record ExplorerResponseDto(
     List<FolderItemDto> Folders,
     List<ExplorerModelItemDto> Models);
 
-/// <summary>Response for POST /api/explorer/index.</summary>
-public record IndexResultDto(int Indexed);

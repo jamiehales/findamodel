@@ -10,7 +10,7 @@ import MetadataEditor from './MetadataEditor'
 import AppCard from './AppCard'
 import styles from './FolderCard.module.css'
 import { Stack } from '@mui/material'
-import { useIndexFolder } from '../lib/queries'
+import { useIndexFolder, useIsFolderIndexing } from '../lib/queries'
 
 interface Props {
   folder: ExplorerFolder
@@ -49,29 +49,35 @@ export default function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const rv = folder.resolvedValues
   const indexFolder = useIndexFolder(folder.path)
+  const indexingState = useIsFolderIndexing(folder.path)
 
   return (
     <Box className={styles.wrapper}>
       {/* Card face */}
       <AppCard href={href} className={styles.card}>
-        {/* Index button — triggers model indexing for this folder */}
-        <Tooltip title={indexFolder.isPending ? 'Indexing…' : 'Index models'} placement="top">
+        {/* Index button — enqueues model indexing for this folder */}
+        <Tooltip
+          title={indexingState === 'running' ? 'Indexing…' : indexingState === 'queued' ? 'Queued…' : 'Index models'}
+          placement="top"
+        >
           <span>
             <IconButton
               size="small"
               className={styles.indexBtn}
-              disabled={indexFolder.isPending}
+              disabled={indexingState !== null}
               onClick={e => {
                 e.preventDefault()
                 e.stopPropagation()
                 indexFolder.mutate()
               }}
               sx={{
-                color: indexFolder.isSuccess ? '#34d399' : 'rgba(226,232,240,0.5)',
+                color: indexingState === 'queued'
+                  ? '#fbbf24'
+                  : 'rgba(226,232,240,0.5)',
                 '&:hover': { color: '#818cf8', bgcolor: 'rgba(99,102,241,0.15)' },
               }}
             >
-              {indexFolder.isPending ? (
+              {indexingState === 'running' ? (
                 <CircularProgress size={14} sx={{ color: '#818cf8' }} />
               ) : (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

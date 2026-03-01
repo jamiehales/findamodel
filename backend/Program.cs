@@ -29,6 +29,7 @@ builder.Services.AddSingleton<findamodel.Services.ModelPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataConfigService>();
 builder.Services.AddSingleton<findamodel.Services.ModelService>();
+builder.Services.AddSingleton<findamodel.Services.IndexerService>();
 builder.Services.AddSingleton<findamodel.Services.ExplorerService>();
 builder.Services.AddSingleton<findamodel.Services.PrintingListService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();

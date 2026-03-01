@@ -8,6 +8,7 @@ using findamodel.Models;
 namespace findamodel.Services;
 
 public class MetadataConfigService(
+    IConfiguration config,
     ILogger<MetadataConfigService> logger,
     IDbContextFactory<ModelCacheContext> dbFactory,
     IConfiguration configuration)
@@ -22,6 +23,55 @@ public class MetadataConfigService(
     // -------------------------------------------------------------------------
     // Public API — used by ExplorerController
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Scans the full models tree and syncs DirectoryConfig records from findamodel.yaml files.
+    /// Does not index any model files. Safe to call on startup.
+    /// </summary>
+    public async Task SyncDirectoryConfigsAsync()
+    {
+        var modelsPath = config["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsPath))
+        {
+            logger.LogWarning("Models:DirectoryPath is not configured");
+            return;
+        }
+
+        if (!Directory.Exists(modelsPath))
+        {
+            logger.LogWarning("Models directory not accessible: {Path}", modelsPath);
+            return;
+        }
+
+        var count = await SyncDirectoryConfigsStreamingAsync(
+            modelsPath, EnumerateDepthFirst(modelsPath));
+        logger.LogInformation("Directory config sync complete: {Count} directories processed.", count);
+    }
+
+    /// <summary>
+    /// Yields the root ("") followed by all subdirectories in depth-first pre-order,
+    /// so every parent is emitted before its children.
+    /// </summary>
+    private static IEnumerable<string> EnumerateDepthFirst(string rootPath)
+    {
+        yield return "";
+
+        var stack = new Stack<string>();
+        foreach (var d in Directory.GetDirectories(rootPath).OrderByDescending(d => d, StringComparer.Ordinal))
+            stack.Push(d);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            yield return Path.GetRelativePath(rootPath, current).Replace('\\', '/');
+            try
+            {
+                foreach (var d in Directory.GetDirectories(current).OrderByDescending(d => d, StringComparer.Ordinal))
+                    stack.Push(d);
+            }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
 
     /// <summary>
     /// Returns the config detail for a directory: local raw values and the parent's
