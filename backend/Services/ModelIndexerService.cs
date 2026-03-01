@@ -11,6 +11,8 @@ public class ModelIndexerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // _ = SyncMetadataSafely();
+
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
         try
@@ -61,6 +63,18 @@ public class ModelIndexerService(
         catch (Exception ex)
         {
             logger.LogError(ex, "ModelIndexerService: scan failed");
+        }
+    }
+
+    private async Task SyncMetadataSafely()
+    {
+        try
+        {
+            await modelService.SyncDirectoryConfigsAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "ModelIndexerService: directory config sync failed");
         }
     }
 }

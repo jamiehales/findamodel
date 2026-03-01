@@ -1,9 +1,15 @@
+* Add a "parent folder" folder to each explorer page, where it isn't the root
+
+* Fix metadata directory scan on startup to be asynchronous (and uncomment it in ModelIndexerService)
+* Add a boolean "index" field to findamodel.yaml which defines whether models found within that folder should be indexed, it should be possible for folders at a deeper level to be marked to be scanned which are excluded, so all files and folders still need scanning. If a model previously marked as indexable is removed and/or now marked as not to index, remove it from the database if it's not already
+* Add indexing requests to a queue - handle them asynchronously one by one in order, and add an icon to the top right when indexing is happening, clicking it should show all the indexing request
+* If an indexing request is already in the queue and is requested again, bump it to the top of the queue
+
 * Add database migration support
 
 * Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
 
-* Add a filters section to the main page that can search by any of the fields on a model, it should update the shown model results in real time
-* 
+* Add a filters section to the main page that can search by any of the fields on a model (based on the calculated values from findamodel.yaml), it should update the shown model results in real time
 
 * Expand the main page to fill the whole width of the screen
 
@@ -60,4 +66,4 @@
 
 * Setup prettier, and have claude run it after frontend changes
 
-* Add a "scan" metadata to findamodel.yaml which defines whether models found within that folder should be indexed, it should be possible for folders at a deeper level to be marked to be scanned which are excluded, so all files and folders still need scanning. If a model previously marked as indexable is removed and/or now marked as not to scan, remove it from the database if it's not already
+* Add model name to metadata - allowing a model with multiple parts to be marked as one model

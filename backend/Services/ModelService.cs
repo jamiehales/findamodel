@@ -134,6 +134,34 @@ public class ModelService(
             .FirstOrDefaultAsync();
     }
 
+    /// <summary>
+    /// Scans the full models tree and syncs DirectoryConfig records from findamodel.yaml files.
+    /// Does not index any model files. Safe to call on startup.
+    /// </summary>
+    public async Task SyncDirectoryConfigsAsync()
+    {
+        var modelsPath = config["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsPath))
+        {
+            logger.LogWarning("Models:DirectoryPath is not configured");
+            return;
+        }
+
+        if (!Directory.Exists(modelsPath))
+        {
+            logger.LogWarning("Models directory not accessible: {Path}", modelsPath);
+            return;
+        }
+
+        var relativeDirectories = Directory
+            .EnumerateFiles(modelsPath, "findamodel.yaml", SearchOption.AllDirectories)
+            .Select(f => (Path.GetDirectoryName(Path.GetRelativePath(modelsPath, f)) ?? "").Replace('\\', '/'))
+            .ToList();
+
+        await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
+        logger.LogInformation("Directory config sync complete: {Count} directories processed.", relativeDirectories.Count);
+    }
+
     public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)
     {
         var modelsPath = config["Models:DirectoryPath"];
