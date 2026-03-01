@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Select from '@mui/material/Select'
@@ -39,11 +39,14 @@ export default function MetadataEditor({ path, onClose }: Props) {
     category: null, type: null, supported: null,
   })
   const [savedIndicator, setSavedIndicator] = useState(false)
+  const committedRef = useRef(fields)
 
   // Populate form when data loads
   useEffect(() => {
     if (detail) {
-      setFields({ ...detail.localValues })
+      const loaded = { ...detail.localValues }
+      setFields(loaded)
+      committedRef.current = loaded
     }
   }, [detail])
 
@@ -51,10 +54,22 @@ export default function MetadataEditor({ path, onClose }: Props) {
     setFields(prev => ({ ...prev, [key]: value }))
   }
 
-  async function handleSave() {
-    await mutation.mutateAsync(fields)
+  async function saveFields(f: MetadataFields) {
+    if (mutation.isPending) return
+    await mutation.mutateAsync(f)
+    committedRef.current = f
     setSavedIndicator(true)
     setTimeout(() => setSavedIndicator(false), 2000)
+  }
+
+  function handleCommit() {
+    const c = committedRef.current
+    const changed = (Object.keys(fields) as (keyof MetadataFields)[]).some(k => fields[k] !== c[k])
+    if (changed) saveFields(fields)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') handleCommit()
   }
 
   const p = detail?.parentResolvedValues ?? null
@@ -82,6 +97,8 @@ export default function MetadataEditor({ path, onClose }: Props) {
           value={fields.creator ?? ''}
           placeholder={p?.creator ?? undefined}
           onChange={e => set('creator', e.target.value || null)}
+          onBlur={handleCommit}
+          onKeyDown={handleKeyDown}
           slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
         />
         <InheritedHint value={p?.creator} />
@@ -96,6 +113,8 @@ export default function MetadataEditor({ path, onClose }: Props) {
           value={fields.collection ?? ''}
           placeholder={p?.collection ?? undefined}
           onChange={e => set('collection', e.target.value || null)}
+          onBlur={handleCommit}
+          onKeyDown={handleKeyDown}
           slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
         />
         <InheritedHint value={p?.collection} />
@@ -110,6 +129,8 @@ export default function MetadataEditor({ path, onClose }: Props) {
           value={fields.subcollection ?? ''}
           placeholder={p?.subcollection ?? undefined}
           onChange={e => set('subcollection', e.target.value || null)}
+          onBlur={handleCommit}
+          onKeyDown={handleKeyDown}
           slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
         />
         <InheritedHint value={p?.subcollection} />
@@ -122,7 +143,12 @@ export default function MetadataEditor({ path, onClose }: Props) {
           <Select
             label="Category"
             value={fields.category ?? ''}
-            onChange={e => set('category', e.target.value || null)}
+            onChange={e => {
+              const val = e.target.value || null
+              const next = { ...fields, category: val }
+              setFields(next)
+              saveFields(next)
+            }}
             sx={{ fontSize: '0.875rem' }}
           >
             <MenuItem value=""><em>Not set</em></MenuItem>
@@ -139,7 +165,12 @@ export default function MetadataEditor({ path, onClose }: Props) {
           <Select
             label="Type"
             value={fields.type ?? ''}
-            onChange={e => set('type', e.target.value || null)}
+            onChange={e => {
+              const val = e.target.value || null
+              const next = { ...fields, type: val }
+              setFields(next)
+              saveFields(next)
+            }}
             sx={{ fontSize: '0.875rem' }}
           >
             <MenuItem value=""><em>Not set</em></MenuItem>
@@ -159,8 +190,10 @@ export default function MetadataEditor({ path, onClose }: Props) {
               indeterminate={fields.supported == null}
               onChange={() => {
                 // cycle: null → true → false → null
-                const next = fields.supported == null ? true : fields.supported ? false : null
-                set('supported', next)
+                const val = fields.supported == null ? true : fields.supported ? false : null
+                const next = { ...fields, supported: val }
+                setFields(next)
+                saveFields(next)
               }}
             />
           }
@@ -177,7 +210,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
         <Button
           size="small"
           variant="contained"
-          onClick={handleSave}
+          onClick={handleCommit}
           disabled={mutation.isPending}
           sx={{
             textTransform: 'none',
