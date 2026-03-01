@@ -5,59 +5,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useExplorer } from '../lib/queries'
 import FolderCard from '../components/FolderCard'
 import ExplorerModelCard from '../components/ExplorerModelCard'
+import PathBreadcrumb from '../components/PathBreadcrumb'
 
 const gridSx = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
   gap: '0.875rem',
   alignItems: 'start',
-}
-
-function Breadcrumb({ path }: { path: string }) {
-  const navigate = useNavigate()
-  const segments = path === '' ? [] : path.split('/')
-
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', mb: '1.5rem' }}>
-      <Typography
-        component="span"
-        onClick={() => navigate('/explore')}
-        sx={{
-          fontSize: '0.875rem',
-          color: '#818cf8',
-          cursor: 'pointer',
-          '&:hover': { textDecoration: 'underline' },
-        }}
-      >
-        findamodel
-      </Typography>
-
-      {segments.map((seg, i) => {
-        const segPath = segments.slice(0, i + 1).join('/')
-        const isLast = i === segments.length - 1
-        return (
-          <Box key={segPath} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Typography component="span" sx={{ color: '#475569', fontSize: '0.875rem' }}>
-              /
-            </Typography>
-            <Typography
-              component="span"
-              onClick={() => !isLast && navigate(`/explore/${segPath}`)}
-              sx={{
-                fontSize: '0.875rem',
-                color: isLast ? '#e2e8f0' : '#818cf8',
-                cursor: isLast ? 'default' : 'pointer',
-                fontWeight: isLast ? 600 : 400,
-                '&:hover': !isLast ? { textDecoration: 'underline' } : {},
-              }}
-            >
-              {seg}
-            </Typography>
-          </Box>
-        )
-      })}
-    </Box>
-  )
 }
 
 function ExplorePageInner({ path }: { path: string }) {
@@ -212,7 +166,9 @@ export default function ExplorePage() {
           </Box>
         </Typography>
 
-        <Breadcrumb path={path} />
+        <Box sx={{ mb: '1.5rem' }}>
+          <PathBreadcrumb path={path} />
+        </Box>
       </Box>
 
       <ExplorePageInner path={path} />

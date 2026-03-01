@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useModel, useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
 import ModelViewer from '../components/ModelViewer'
 import HullPreview from '../components/HullPreview'
+import PathBreadcrumb from '../components/PathBreadcrumb'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -175,9 +176,7 @@ function ModelPage() {
             {model.name}
           </Typography>
 
-          <Typography sx={{ fontSize: '0.85rem', color: 'text.secondary', wordBreak: 'break-all' }}>
-            {model.relativePath}
-          </Typography>
+          <PathBreadcrumb path={model.relativePath} />
 
           <Typography sx={{ fontSize: '0.85rem', color: '#475569' }}>
             {formatBytes(model.fileSize)}
