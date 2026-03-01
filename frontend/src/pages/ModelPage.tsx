@@ -184,52 +184,6 @@ function ModelPage() {
           </Typography>
         </Box>
 
-        {metaRows.length > 0 && (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'auto 1fr',
-              gap: '0.625rem 1.5rem',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.07)',
-              bgcolor: 'background.paper',
-              px: '1.25rem',
-              py: '1rem',
-            }}
-          >
-            {metaRows.map(({ label, value }) => (
-              <React.Fragment key={label}>
-                <Typography sx={{ fontSize: '0.8rem', color: '#475569', whiteSpace: 'nowrap', pt: '0.1rem' }}>
-                  {label}
-                </Typography>
-                <Typography component="div" sx={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                  {value}
-                </Typography>
-              </React.Fragment>
-            ))}
-          </Box>
-        )}
-
-        <Box
-          sx={{
-            height: 380,
-            borderRadius: '16px',
-            overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.07)',
-          }}
-        >
-          <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} />
-        </Box>
-
-        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
-          <HullPreview
-            convexHull={model.convexHull}
-            concaveHull={model.concaveHull}
-            convexSansRaftHull={model.convexSansRaftHull}
-            label="Hull Projections"
-          />
-        )}
-
         {qty === 0 ? (
           <Button
             onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })}
@@ -317,6 +271,52 @@ function ModelPage() {
         >
           Download .{model.fileType}
         </Button>
+
+        {metaRows.length > 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'auto 1fr',
+              gap: '0.625rem 1.5rem',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.07)',
+              bgcolor: 'background.paper',
+              px: '1.25rem',
+              py: '1rem',
+            }}
+          >
+            {metaRows.map(({ label, value }) => (
+              <React.Fragment key={label}>
+                <Typography sx={{ fontSize: '0.8rem', color: '#475569', whiteSpace: 'nowrap', pt: '0.1rem' }}>
+                  {label}
+                </Typography>
+                <Typography component="div" sx={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                  {value}
+                </Typography>
+              </React.Fragment>
+            ))}
+          </Box>
+        )}
+
+        <Box
+          sx={{
+            height: 380,
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.07)',
+          }}
+        >
+          <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} />
+        </Box>
+
+        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
+          <HullPreview
+            convexHull={model.convexHull}
+            concaveHull={model.concaveHull}
+            convexSansRaftHull={model.convexSansRaftHull}
+            label="Hull Projections"
+          />
+        )}
       </Box>
     </Box>
   )
