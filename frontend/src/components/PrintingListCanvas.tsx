@@ -21,12 +21,12 @@ export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
 const BODY_GAP_MM = 4
-const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM // 2 mm per body side
+const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM
 
 // Overlap-detection hull inflation — bodies within BODY_OVERLAP_MM of each other
-// are considered overlapping and rendered darker.
+// are considered overlapping and rendered brighter.
 const BODY_OVERLAP_MM = 1
-const BODY_OVERLAP_PX = (BODY_OVERLAP_MM / 2) * PX_PER_MM // 1 mm per body side
+const BODY_OVERLAP_PX = (BODY_OVERLAP_MM / 2) * PX_PER_MM
 
 const PALETTE = [
   0x818cf8, // indigo
@@ -140,7 +140,7 @@ const BODY_OPTIONS: Matter.IChamferableBodyDefinition = {
   restitution: 0.05,
   friction: 0.5,
   frictionAir: 0.025,
-  density: 0.001,
+  density: 0.00001,
 }
 
 function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Body {

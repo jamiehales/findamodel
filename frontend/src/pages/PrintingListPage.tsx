@@ -19,7 +19,7 @@ const gridSx = {
 
 function PrintingListPage() {
   const navigate = useNavigate()
-  const { items } = usePrintingList()
+  const { items, clearList } = usePrintingList()
   const { data: allModels, isPending } = useModels()
   const [savingPlate, setSavingPlate] = useState(false)
 
@@ -115,28 +115,53 @@ function PrintingListPage() {
           </Typography>
 
           {listedModels.length > 0 && (
-            <Button
-              onClick={handleSavePlate}
-              disabled={savingPlate}
-              startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
-              sx={{
-                background: 'rgba(99,102,241,0.85)',
-                backdropFilter: 'blur(8px)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: '999px',
-                px: '1.25rem',
-                py: '0.5rem',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                textTransform: 'none',
-                minWidth: 0,
-                '&:hover': { background: 'rgba(79,82,211,0.9)' },
-                '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
-              }}
-            >
-              {savingPlate ? 'Preparing…' : 'Save plate'}
-            </Button>
+            <>
+              <Button
+                onClick={handleSavePlate}
+                disabled={savingPlate}
+                startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+                sx={{
+                  background: 'rgba(99,102,241,0.85)',
+                  backdropFilter: 'blur(8px)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '999px',
+                  px: '1.25rem',
+                  py: '0.5rem',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  minWidth: 0,
+                  '&:hover': { background: 'rgba(79,82,211,0.9)' },
+                  '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
+                }}
+              >
+                {savingPlate ? 'Preparing…' : 'Save plate'}
+              </Button>
+
+              <Button
+                onClick={() => {
+                  clearList()
+                  localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
+                }}
+                sx={{
+                  background: 'rgba(255,255,255,0.06)',
+                  backdropFilter: 'blur(8px)',
+                  color: '#94a3b8',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: '999px',
+                  px: '1.25rem',
+                  py: '0.5rem',
+                  fontSize: '0.9rem',
+                  fontWeight: 500,
+                  textTransform: 'none',
+                  minWidth: 0,
+                  '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
+                }}
+              >
+                Clear list
+              </Button>
+            </>
           )}
         </Box>
 

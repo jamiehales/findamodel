@@ -7,6 +7,7 @@ interface PrintingListContextValue {
   addItem: (id: string) => void
   removeItem: (id: string) => void
   setQuantity: (id: string, qty: number) => void
+  clearList: () => void
   totalCount: number
 }
 
@@ -60,10 +61,15 @@ export function PrintingListProvider({ children }: { children: React.ReactNode }
     })
   }, [])
 
+  const clearList = useCallback(() => {
+    setItems({})
+    save({})
+  }, [])
+
   const totalCount = Object.values(items).reduce((a, b) => a + b, 0)
 
   return (
-    <PrintingListContext.Provider value={{ items, addItem, removeItem, setQuantity, totalCount }}>
+    <PrintingListContext.Provider value={{ items, addItem, removeItem, setQuantity, clearList, totalCount }}>
       {children}
     </PrintingListContext.Provider>
   )
