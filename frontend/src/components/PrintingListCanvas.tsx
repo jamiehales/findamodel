@@ -136,18 +136,21 @@ function inflateVerts(verts: Vec2[], amount: number): Vec2[] {
 
 // ── Body factory helpers ──────────────────────────────────────────────────────
 
+const BODY_MASS = 1
+
 const BODY_OPTIONS: Matter.IChamferableBodyDefinition = {
   restitution: 0.05,
   friction: 0.5,
   frictionAir: 0.025,
-  density: 0.00001,
 }
 
 function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Body {
   // fromVertices centres the body at (cx, cy) using the centroid of the passed
   // vertices. Since localVerts are already centred at origin, their centroid ≈ 0,
   // and Matter.js will correctly place the body at (cx, cy).
-  return Matter.Bodies.fromVertices(cx, cy, [localVerts as Matter.Vector[]], BODY_OPTIONS)
+  const body = Matter.Bodies.fromVertices(cx, cy, [localVerts as Matter.Vector[]], BODY_OPTIONS)
+  Matter.Body.setMass(body, BODY_MASS)
+  return body
 }
 
 /**
