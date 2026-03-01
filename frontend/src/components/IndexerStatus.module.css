@@ -33,32 +33,6 @@
   margin-top: 4px;
 }
 
-.sectionLabel {
-  font-weight: 600 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.08em !important;
-}
-
-.chipRunning {
-  background-color: rgba(52, 211, 153, 0.15) !important;
-  color: #34d399 !important;
-  font-weight: 600 !important;
-  font-size: 0.65rem !important;
-  height: 20px !important;
-}
-
-.chipQueued {
-  background-color: rgba(251, 191, 36, 0.15) !important;
-  color: #fbbf24 !important;
-  font-weight: 600 !important;
-  font-size: 0.65rem !important;
-  height: 20px !important;
-}
-
-.requestRow {
-  flex-wrap: wrap;
-}
-
 .elapsed {
   margin-left: auto !important;
 }

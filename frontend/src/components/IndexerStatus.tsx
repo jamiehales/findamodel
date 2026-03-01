@@ -38,11 +38,11 @@ function flagsLabel(flags: number): string {
 function RequestRow({ request, status }: { request: IndexRequest; status: 'running' | 'queued' }) {
   const elapsed = useElapsed(request.requestedAt)
   return (
-    <Stack direction="row" spacing={1} alignItems="center" className={styles.requestRow}>
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
       <Chip
         label={status === 'running' ? 'Running' : 'Queued'}
         size="small"
-        className={status === 'running' ? styles.chipRunning : styles.chipQueued}
+        variant={status === 'running' ? 'status-running' : 'status-queued'}
       />
       <Typography variant="caption">
         {request.directoryFilter ?? 'All directories'}
@@ -100,7 +100,7 @@ export default function IndexerStatus() {
         slotProps={{ paper: { className: styles.popoverPaper } }}
       >
         <Stack spacing={1}>
-          <Typography variant="caption" color="text.disabled" className={styles.sectionLabel}>
+          <Typography variant="overline" color="text.disabled">
             Indexer
           </Typography>
 
