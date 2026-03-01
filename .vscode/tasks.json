@@ -36,6 +36,18 @@
       "problemMatcher": []
     },
     {
+      "label": "data: clear database",
+      "type": "shell",
+      "command": "rm -f ${workspaceFolder}/debug/data/findamodel.db*",
+      "problemMatcher": []
+    },
+    {
+      "label": "data: clear cache",
+      "type": "shell",
+      "command": "rm -rf ${workspaceFolder}/debug/data/cache",
+      "problemMatcher": []
+    },
+    {
       "label": "frontend: dev",
       "type": "shell",
       "command": "yarn dev",
