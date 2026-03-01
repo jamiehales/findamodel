@@ -8,9 +8,9 @@ namespace findamodel.Controllers;
 public class ModelsController(ModelService modelService, ModelLoaderService loaderService, IConfiguration config) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetModels()
+    public async Task<IActionResult> GetModels([FromQuery] int? limit = null)
     {
-        var models = await modelService.GetModelsAsync();
+        var models = await modelService.GetModelsAsync(limit);
         return Ok(models);
     }
 

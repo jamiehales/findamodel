@@ -183,31 +183,11 @@ function PrintingListPage() {
           <>
             <Box sx={gridSx}>
               {listedModels.map(model => (
-                <Box key={model.id} sx={{ position: 'relative' }}>
-                  <ModelCard
-                    model={model}
-                    onClick={() => navigate(`/model/${encodeURIComponent(model.id)}`)}
-                  />
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: '0.5rem',
-                      right: '0.5rem',
-                      background: 'rgba(99,102,241,0.85)',
-                      backdropFilter: 'blur(4px)',
-                      color: '#fff',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      px: '0.5rem',
-                      py: '0.2rem',
-                      borderRadius: '6px',
-                      pointerEvents: 'none',
-                      zIndex: 2,
-                    }}
-                  >
-                    ×{items[model.id]}
-                  </Box>
-                </Box>
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  onClick={() => navigate(`/model/${encodeURIComponent(model.id)}`)}
+                />
               ))}
             </Box>
 

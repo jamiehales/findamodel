@@ -13,7 +13,7 @@ const gridSx = {
 
 function ModelGrid() {
   const navigate = useNavigate()
-  const { data: models, isPending, isError } = useModels()
+  const { data: models, isPending, isError } = useModels(80)
 
   if (isPending) {
     return (

@@ -24,8 +24,9 @@ export interface Model {
   sphereRadius: number | null
 }
 
-export async function fetchModels(): Promise<Model[]> {
-  const r = await fetch('/api/models')
+export async function fetchModels(limit?: number): Promise<Model[]> {
+  const url = limit !== undefined ? `/api/models?limit=${limit}` : '/api/models'
+  const r = await fetch(url)
   if (!r.ok) throw new Error('Failed to fetch models')
   return r.json()
 }

@@ -16,11 +16,11 @@ public class ModelService(
 {
     private static readonly string[] ModelExtensions = [".stl", ".obj"];
 
-    public async Task<List<ModelDto>> GetModelsAsync()
+    public async Task<List<ModelDto>> GetModelsAsync(int? limit = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         // Project to avoid loading the PreviewImage BLOB; EF Core generates a LEFT JOIN for DirectoryConfig
-        var rows = await db.Models
+        var query = db.Models
             .OrderBy(m => m.Directory)
             .ThenBy(m => m.FileName)
             .Select(m => new
@@ -46,8 +46,9 @@ public class ModelService(
                 m.SphereCentreY,
                 m.SphereCentreZ,
                 m.SphereRadius
-            })
-            .ToListAsync();
+            });
+
+        var rows = await (limit.HasValue ? query.Take(limit.Value) : query).ToListAsync();
 
         return rows.Select(m => new ModelDto
         {
