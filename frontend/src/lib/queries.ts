@@ -1,8 +1,9 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { fetchModels, fetchGeometry } from './api'
+import { fetchModels, fetchModel, fetchGeometry } from './api'
 
 export const queryKeys = {
   models: (limit?: number) => limit !== undefined ? ['models', limit] as const : ['models'] as const,
+  model: (id: string) => ['model', id] as const,
   geometry: (id: string) => ['geometry', id] as const,
 }
 
@@ -15,9 +16,8 @@ export function useModels(limit?: number) {
 
 export function useModel(id: string) {
   return useQuery({
-    queryKey: queryKeys.models(),
-    queryFn: () => fetchModels(),
-    select: models => models.find(m => m.id === id) ?? null,
+    queryKey: queryKeys.model(id),
+    queryFn: () => fetchModel(id),
   })
 }
 

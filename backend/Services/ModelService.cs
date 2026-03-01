@@ -61,6 +61,67 @@ public class ModelService(
         return await db.Models.FirstOrDefaultAsync(m => m.Id == id);
     }
 
+    public async Task<ModelDto?> GetModelDtoAsync(Guid id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var m = await db.Models
+            .Where(m => m.Id == id)
+            .Select(m => new
+            {
+                m.Id,
+                m.FileName,
+                m.Directory,
+                m.FileType,
+                m.FileSize,
+                HasPreview = m.PreviewImagePath != null,
+                Author        = m.DirectoryConfig != null ? m.DirectoryConfig.Author        : null,
+                Collection    = m.DirectoryConfig != null ? m.DirectoryConfig.Collection    : null,
+                Subcollection = m.DirectoryConfig != null ? m.DirectoryConfig.Subcollection : null,
+                Category      = m.DirectoryConfig != null ? m.DirectoryConfig.Category      : null,
+                Type          = m.DirectoryConfig != null ? m.DirectoryConfig.Type          : null,
+                Supported     = m.DirectoryConfig != null ? m.DirectoryConfig.Supported     : null,
+                m.ConvexHullCoordinates,
+                m.ConcaveHullCoordinates,
+                m.DimensionXMm,
+                m.DimensionYMm,
+                m.DimensionZMm,
+                m.SphereCentreX,
+                m.SphereCentreY,
+                m.SphereCentreZ,
+                m.SphereRadius
+            })
+            .FirstOrDefaultAsync();
+
+        if (m == null) return null;
+
+        return new ModelDto
+        {
+            Id            = m.Id,
+            Name          = Path.GetFileNameWithoutExtension(m.FileName),
+            RelativePath  = ComputeRelativePath(m.Directory, m.FileName),
+            FileType      = m.FileType,
+            FileSize      = m.FileSize,
+            FileUrl       = $"/api/models/{m.Id}/file",
+            HasPreview    = m.HasPreview,
+            PreviewUrl    = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
+            Author        = m.Author,
+            Collection    = m.Collection,
+            Subcollection = m.Subcollection,
+            Category      = m.Category,
+            Type          = m.Type,
+            Supported     = m.Supported,
+            ConvexHull    = m.ConvexHullCoordinates,
+            ConcaveHull   = m.ConcaveHullCoordinates,
+            DimensionXMm  = m.DimensionXMm,
+            DimensionYMm  = m.DimensionYMm,
+            DimensionZMm  = m.DimensionZMm,
+            SphereCentreX = m.SphereCentreX,
+            SphereCentreY = m.SphereCentreY,
+            SphereCentreZ = m.SphereCentreZ,
+            SphereRadius  = m.SphereRadius,
+        };
+    }
+
     public async Task<string?> GetPreviewImagePathAsync(Guid id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

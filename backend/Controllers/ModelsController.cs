@@ -14,6 +14,14 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
         return Ok(models);
     }
 
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetModel(Guid id)
+    {
+        var model = await modelService.GetModelDtoAsync(id);
+        if (model == null) return NotFound();
+        return Ok(model);
+    }
+
     [HttpGet("{id:guid}/file")]
     public async Task<IActionResult> GetFile(Guid id)
     {

@@ -31,6 +31,12 @@ export async function fetchModels(limit?: number): Promise<Model[]> {
   return r.json()
 }
 
+export async function fetchModel(id: string): Promise<Model> {
+  const r = await fetch(`/api/models/${id}`)
+  if (!r.ok) throw new Error(`Failed to fetch model ${id}`)
+  return r.json()
+}
+
 export interface GeometryResponse {
   positions: number[]
   normals: number[]
