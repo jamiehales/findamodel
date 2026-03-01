@@ -75,6 +75,7 @@ interface Entry {
 interface Props {
   models: Model[]
   items: Record<string, number>
+  onPausedChange?: (paused: boolean) => void
 }
 
 // ── Hull helpers ──────────────────────────────────────────────────────────────
@@ -294,7 +295,7 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
 type SpawnOrder = 'grouped' | 'random'
 type HullMode = 'convex' | 'sansRaft'
 
-export default function PrintingListCanvas({ models, items }: Props) {
+export default function PrintingListCanvas({ models, items, onPausedChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const itemsKey = useMemo(() => JSON.stringify(items), [items])
   const [spawnOrder, setSpawnOrder] = useState<SpawnOrder>(() => {
@@ -312,6 +313,8 @@ export default function PrintingListCanvas({ models, items }: Props) {
   const pauseOnDragRef = useRef(pauseOnDrag)
   useEffect(() => { pauseOnDragRef.current = pauseOnDrag }, [pauseOnDrag])
 
+  const [isPaused, setIsPaused] = useState(false)
+
   // Refs that let the incremental-update effect reach into the running simulation
   const appRef = useRef<PIXI.Application | null>(null)
   const engineRef = useRef<Matter.Engine | null>(null)
@@ -320,6 +323,10 @@ export default function PrintingListCanvas({ models, items }: Props) {
   const modelColorRef = useRef<Map<string, number>>(new Map())
   const pausedRef = useRef(false)
   const prevItemsRef = useRef<Record<string, number>>({})
+  // Lets the effect's ticker/handlers sync paused state back to React without stale closures
+  const notifyPausedRef = useRef<((v: boolean) => void) | null>(null)
+  notifyPausedRef.current = (v) => { setIsPaused(v); onPausedChange?.(v) }
+  const saveLayoutRef = useRef<(() => void) | null>(null)
   // Always-current mirrors updated every render
   const itemsKeyRef = useRef(itemsKey)
   itemsKeyRef.current = itemsKey
@@ -485,6 +492,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
     // ── Simulation state ───────────────────────────────────────────────────
     // Start paused if positions were restored from storage; user clicks to resume.
     pausedRef.current = savedLayout !== null
+    notifyPausedRef.current?.(pausedRef.current)
     // Record which items are now in the simulation (for incremental updates)
     prevItemsRef.current = { ...items }
     let settleFrames = 0
@@ -513,12 +521,14 @@ export default function PrintingListCanvas({ models, items }: Props) {
       }
       localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, JSON.stringify(layout))
     }
+    saveLayoutRef.current = saveLayout
 
     // ── Drag interaction ───────────────────────────────────────────────────
     app.stage.on('pointerdown', (e: PIXI.FederatedPointerEvent) => {
       // Resume simulation on any click when paused
       if (pausedRef.current) {
         pausedRef.current = false
+        notifyPausedRef.current?.(false)
         settleFrames = 0
       }
 
@@ -528,7 +538,10 @@ export default function PrintingListCanvas({ models, items }: Props) {
         const hit = hits[0]
         drag = { body: hit, ox: x - hit.position.x, oy: y - hit.position.y }
         Matter.Body.setStatic(hit, true)
-        if (pauseOnDragRef.current) pausedRef.current = true
+        if (pauseOnDragRef.current) {
+          pausedRef.current = true
+          notifyPausedRef.current?.(true)
+        }
       }
     })
 
@@ -545,6 +558,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
       Matter.Body.setAngularVelocity(drag.body, 0)
       drag = null
       pausedRef.current = false
+      notifyPausedRef.current?.(false)
       settleFrames = 0
     }
     app.stage.on('pointerup', endDrag)
@@ -569,6 +583,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
           settleFrames++
           if (settleFrames >= SETTLE_FRAMES) {
             pausedRef.current = true
+            notifyPausedRef.current?.(true)
             saveLayout()
           }
         } else {
@@ -584,6 +599,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
       entriesRef.current = []
       dynamicBodiesRef.current = []
       modelColorRef.current = new Map()
+      saveLayoutRef.current = null
       app.destroy(true, { children: true, texture: true, baseTexture: true })
       Matter.Engine.clear(engine)
     }
@@ -758,6 +774,28 @@ export default function PrintingListCanvas({ models, items }: Props) {
           <MenuItem value="convex">Convex hull</MenuItem>
           <MenuItem value="sansRaft">Sans raft hull</MenuItem>
         </Select>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => {
+            pausedRef.current = true
+            notifyPausedRef.current?.(true)
+            saveLayoutRef.current?.()
+          }}
+          disabled={isPaused}
+          sx={{
+            color: '#94a3b8',
+            borderColor: '#334155',
+            fontSize: '0.72rem',
+            padding: '2px 10px',
+            textTransform: 'none',
+            minWidth: 0,
+            '&:hover': { borderColor: '#64748b', color: '#e2e8f0' },
+            '&.Mui-disabled': { color: 'rgba(148,163,184,0.4)', borderColor: 'rgba(51,65,85,0.5)' },
+          }}
+        >
+          Save
+        </Button>
         <Button
           size="small"
           variant="outlined"

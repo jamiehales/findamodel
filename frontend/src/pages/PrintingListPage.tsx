@@ -25,6 +25,7 @@ function PrintingListPage() {
   const { mutate: clearItems } = useClearPrintingListItems()
   const { mutate: activateList } = useActivatePrintingList()
   const [savingPlate, setSavingPlate] = useState(false)
+  const [simulationPaused, setSimulationPaused] = useState(false)
 
   const items = useMemo<Record<string, number>>(
     () => list ? Object.fromEntries(list.items.map(i => [i.modelId, i.quantity])) : {},
@@ -149,7 +150,7 @@ function PrintingListPage() {
             <>
               <Button
                 onClick={handleSavePlate}
-                disabled={savingPlate}
+                disabled={savingPlate || !simulationPaused}
                 startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
                 sx={{
                   background: 'rgba(99,102,241,0.85)',
@@ -167,7 +168,7 @@ function PrintingListPage() {
                   '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
                 }}
               >
-                {savingPlate ? 'Preparing…' : 'Save plate'}
+                {savingPlate ? 'Preparing…' : 'Export plate'}
               </Button>
 
               <Button
@@ -220,7 +221,7 @@ function PrintingListPage() {
               ))}
             </Box>
 
-            <PrintingListCanvas models={listedModels} items={items} />
+            <PrintingListCanvas models={listedModels} items={items} onPausedChange={setSimulationPaused} />
           </>
         )}
       </Box>
