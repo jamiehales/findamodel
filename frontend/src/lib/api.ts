@@ -132,6 +132,12 @@ export async function updateDirectoryConfig(
   return r.json()
 }
 
+export async function triggerFolderIndex(path: string): Promise<{ indexed: number }> {
+  const r = await fetch(`/api/explorer/index?path=${encodeURIComponent(path)}`, { method: 'POST' })
+  if (!r.ok) throw new Error(`Failed to index folder: ${path}`)
+  return r.json()
+}
+
 export async function generatePlate(placements: PlatePlacement[]): Promise<Blob> {
   const r = await fetch('/api/plate/generate', {
     method: 'POST',

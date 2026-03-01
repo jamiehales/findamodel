@@ -14,8 +14,7 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CachedModel>()
-            .HasIndex(m => m.Checksum)
-            .IsUnique();
+            .HasIndex(m => m.Checksum);
 
         // CachedModel → DirectoryConfig (SetNull so removing a config record doesn't cascade-delete models)
         modelBuilder.Entity<CachedModel>()

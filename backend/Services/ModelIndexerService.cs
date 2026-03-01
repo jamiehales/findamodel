@@ -11,9 +11,6 @@ public class ModelIndexerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("ModelIndexerService: running initial scan");
-        await RunScanSafely();
-
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
         try
@@ -47,19 +44,19 @@ public class ModelIndexerService(
 
             if (!stoppingToken.IsCancellationRequested)
             {
-                logger.LogInformation("ModelIndexerService: running scheduled scan");
-                await RunScanSafely();
+                logger.LogInformation("ModelIndexerService: running scheduled scan (limit: 100)");
+                await RunScanSafely(limit: 100);
             }
         }
 
         logger.LogInformation("ModelIndexerService: stopped");
     }
 
-    private async Task RunScanSafely()
+    private async Task RunScanSafely(int? limit = null)
     {
         try
         {
-            await modelService.ScanAndCacheAsync();
+            await modelService.ScanAndCacheAsync(limit: limit);
         }
         catch (Exception ex)
         {

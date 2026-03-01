@@ -134,23 +134,33 @@ public class ModelService(
             .FirstOrDefaultAsync();
     }
 
-    public async Task ScanAndCacheAsync()
+    public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)
     {
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrEmpty(modelsPath))
         {
             logger.LogWarning("Models:DirectoryPath is not configured");
-            return;
+            return 0;
         }
 
         if (!Directory.Exists(modelsPath))
         {
             logger.LogWarning("Models directory not accessible: {Path}", modelsPath);
-            return;
+            return 0;
         }
 
-        // Phase 1: Discover all model files
-        var files = Directory.EnumerateFiles(modelsPath, "*.*", SearchOption.AllDirectories)
+        // Phase 1: Discover model files (scoped to directoryFilter when set)
+        var searchRoot = directoryFilter is not null
+            ? Path.Combine(modelsPath, directoryFilter.Replace('/', Path.DirectorySeparatorChar))
+            : modelsPath;
+
+        if (!Directory.Exists(searchRoot))
+        {
+            logger.LogWarning("Filter directory not found: {Path}", searchRoot);
+            return 0;
+        }
+
+        var files = Directory.EnumerateFiles(searchRoot, "*.*", SearchOption.AllDirectories)
             .Where(f => ModelExtensions.Contains(Path.GetExtension(f).ToLower()))
             .ToList();
 
@@ -169,6 +179,8 @@ public class ModelService(
         var newCount = 0;
         foreach (var file in files)
         {
+            if (limit.HasValue && newCount >= limit.Value) break;
+
             var checksum = await ComputeChecksumAsync(file);
             if (existingChecksums.Contains(checksum)) continue;
 
@@ -227,6 +239,7 @@ public class ModelService(
         }
 
         logger.LogInformation("Scan complete: {New} new models added, {Total} total in cache.", newCount, await db.Models.CountAsync());
+        return newCount;
     }
 
     private static async Task<string> ComputeChecksumAsync(string filePath)

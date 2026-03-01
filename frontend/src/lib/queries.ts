@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchModels, fetchModel, fetchGeometry,
-  fetchExplorer, fetchDirectoryConfig, updateDirectoryConfig,
+  fetchExplorer, fetchDirectoryConfig, updateDirectoryConfig, triggerFolderIndex,
   fetchPrintingLists, fetchActivePrintingList, fetchPrintingList,
   createPrintingList, renamePrintingList, deletePrintingList, activatePrintingList,
   upsertPrintingListItem, clearPrintingListItems,
@@ -73,6 +73,18 @@ export function useUpdateDirectoryConfig(path: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(parentPath) })
       // Also invalidate the dir we're in, so folder cards of its children update
       queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(path) })
+    },
+  })
+}
+
+export function useIndexFolder(path: string) {
+  const queryClient = useQueryClient()
+  const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : ''
+  return useMutation({
+    mutationFn: () => triggerFolderIndex(path),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(path) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(parentPath) })
     },
   })
 }

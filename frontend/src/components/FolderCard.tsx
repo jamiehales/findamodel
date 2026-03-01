@@ -4,11 +4,13 @@ import Typography from '@mui/material/Typography'
 import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import CircularProgress from '@mui/material/CircularProgress'
 import type { ExplorerFolder } from '../lib/api'
 import MetadataEditor from './MetadataEditor'
 import AppCard from './AppCard'
 import styles from './FolderCard.module.css'
 import { Stack } from '@mui/material'
+import { useIndexFolder } from '../lib/queries'
 
 interface Props {
   folder: ExplorerFolder
@@ -46,11 +48,40 @@ function MetaBadge({ type, value }: { type: string,value: string | null | undefi
 export default function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const rv = folder.resolvedValues
+  const indexFolder = useIndexFolder(folder.path)
 
   return (
     <Box className={styles.wrapper}>
       {/* Card face */}
       <AppCard href={href} className={styles.card}>
+        {/* Index button — triggers model indexing for this folder */}
+        <Tooltip title={indexFolder.isPending ? 'Indexing…' : 'Index models'} placement="top">
+          <span>
+            <IconButton
+              size="small"
+              className={styles.indexBtn}
+              disabled={indexFolder.isPending}
+              onClick={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                indexFolder.mutate()
+              }}
+              sx={{
+                color: indexFolder.isSuccess ? '#34d399' : 'rgba(226,232,240,0.5)',
+                '&:hover': { color: '#818cf8', bgcolor: 'rgba(99,102,241,0.15)' },
+              }}
+            >
+              {indexFolder.isPending ? (
+                <CircularProgress size={14} sx={{ color: '#818cf8' }} />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
+
         {/* Edit button — stops propagation so click doesn't navigate */}
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
