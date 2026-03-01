@@ -676,13 +676,13 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
         pausedRef.current = false // let new bodies fall in
 
       } else {
-        // ── Remove top-most instances (highest instanceIndex first) ────────
+        // Remove the models at the top of the build plate first
         for (let i = prevQty; i > currQty; i--) {
-          let maxInst = -1
+          let minY = Infinity
           let toRemove: Entry | null = null
           for (const e of entriesRef.current) {
-            if (e.modelId === modelId && e.instanceIndex > maxInst) {
-              maxInst = e.instanceIndex
+            if (e.modelId === modelId && e.body.position.y < minY) {
+              minY = e.body.position.y
               toRemove = e
             }
           }
