@@ -7,7 +7,6 @@ import Button from '@mui/material/Button'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import type { Model } from '../lib/api'
-import type { PrintingList } from '../lib/printingList'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +71,7 @@ interface Entry {
 
 interface Props {
   models: Model[]
-  items: PrintingList
+  items: Record<string, number>
 }
 
 // ── Hull helpers ──────────────────────────────────────────────────────────────

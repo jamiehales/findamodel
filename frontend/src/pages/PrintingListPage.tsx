@@ -5,13 +5,10 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { generatePlate, clearPrintingListItems } from '../lib/api'
-import { useModels, usePrintingListDetail, queryKeys } from '../lib/queries'
-import { usePrintingList } from '../lib/printingList'
+import { generatePlate } from '../lib/api'
+import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList } from '../lib/queries'
 import ModelCard from '../components/ModelCard'
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas'
-import type { PrintingList } from '../lib/printingList'
 
 const gridSx = {
   display: 'grid',
@@ -22,34 +19,20 @@ const gridSx = {
 function PrintingListPage() {
   const navigate = useNavigate()
   const { listId = 'active' } = useParams<{ listId: string }>()
-  const queryClient = useQueryClient()
 
-  const isActiveView = listId === 'active'
-
-  // Active-list data comes from the context (shared with model cards)
-  const ctx = usePrintingList()
-
-  // Specific-list data is fetched directly when not using the active alias
-  const { data: specificList, isPending: specificPending } = usePrintingListDetail(
-    isActiveView ? '' : listId
-  )
-
+  const { data: list, isPending: listPending } = usePrintingListDetail(listId)
   const { data: allModels, isPending: modelsPending } = useModels()
+  const { mutate: clearItems } = useClearPrintingListItems()
+  const { mutate: activateList } = useActivatePrintingList()
   const [savingPlate, setSavingPlate] = useState(false)
 
-  // Resolve items and list name depending on view mode
-  const items: PrintingList = isActiveView
-    ? ctx.items
-    : specificList
-      ? Object.fromEntries(specificList.items.map(i => [i.modelId, i.quantity]))
-      : {}
+  const items: Record<string, number> = list
+    ? Object.fromEntries(list.items.map(i => [i.modelId, i.quantity]))
+    : {}
 
-  const listName = isActiveView ? 'Printing list' : (specificList?.name ?? 'Printing list')
-
-  // Controls (+/−) only make sense on the active list; non-active views are read-only
-  const showControls = isActiveView || specificList?.isActive === true
-
-  const isPending = modelsPending || (!isActiveView && specificPending)
+  const listName = list?.name ?? 'Printing list'
+  const showControls = list?.isActive === true
+  const isPending = modelsPending || listPending
   const listedModels = allModels?.filter(m => items[m.id] != null) ?? []
 
   async function handleSavePlate() {
@@ -81,16 +64,6 @@ function PrintingListPage() {
       URL.revokeObjectURL(url)
     } finally {
       setSavingPlate(false)
-    }
-  }
-
-  function handleClear() {
-    if (isActiveView) {
-      ctx.clearList()
-    } else {
-      clearPrintingListItems(listId).then(updated => {
-        queryClient.setQueryData(queryKeys.printingList(listId), updated)
-      })
     }
   }
 
@@ -146,6 +119,28 @@ function PrintingListPage() {
             {listName}
           </Typography>
 
+          {list && !list.isActive && (
+            <Button
+              onClick={() => activateList(list.id)}
+              sx={{
+                background: 'rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(8px)',
+                color: '#94a3b8',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: '999px',
+                px: '1.25rem',
+                py: '0.5rem',
+                fontSize: '0.9rem',
+                fontWeight: 500,
+                textTransform: 'none',
+                minWidth: 0,
+                '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
+              }}
+            >
+              Set active
+            </Button>
+          )}
+
           {listedModels.length > 0 && (
             <>
               <Button
@@ -172,7 +167,7 @@ function PrintingListPage() {
               </Button>
 
               <Button
-                onClick={handleClear}
+                onClick={() => list && clearItems(list.id)}
                 sx={{
                   background: 'rgba(255,255,255,0.06)',
                   backdropFilter: 'blur(8px)',

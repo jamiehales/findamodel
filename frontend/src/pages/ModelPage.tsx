@@ -5,10 +5,9 @@ import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useModel } from '../lib/queries'
+import { useModel, useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
 import ModelViewer from '../components/ModelViewer'
 import HullPreview from '../components/HullPreview'
-import { usePrintingList } from '../lib/printingList'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -27,8 +26,10 @@ function ModelPage() {
   const decodedId = decodeURIComponent(id ?? '')
 
   const { data: model, isPending, isError } = useModel(decodedId)
-  const { items, addItem, setQuantity } = usePrintingList()
-  const qty = model ? (items[model.id] ?? 0) : 0
+  const { data: activeList } = useActivePrintingList()
+  const { mutate: upsertItem } = useUpsertPrintingListItem()
+  const activeListId = activeList?.id ?? ''
+  const qty = model ? (activeList?.items.find(i => i.modelId === model.id)?.quantity ?? 0) : 0
 
   const backButton = (
     <Button
@@ -226,7 +227,7 @@ function ModelPage() {
 
         {qty === 0 ? (
           <Button
-            onClick={() => addItem(model.id)}
+            onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })}
             variant="outlined"
             sx={{
               borderRadius: '12px',
@@ -252,7 +253,7 @@ function ModelPage() {
             }}
           >
             <IconButton
-              onClick={() => setQuantity(model.id, qty - 1)}
+              onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })}
               aria-label="Decrease quantity"
               sx={{
                 borderRadius: 0,
@@ -279,7 +280,7 @@ function ModelPage() {
               {qty}
             </Typography>
             <IconButton
-              onClick={() => setQuantity(model.id, qty + 1)}
+              onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })}
               aria-label="Increase quantity"
               sx={{
                 borderRadius: 0,

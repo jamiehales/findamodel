@@ -5,3 +5,4 @@ FEATURE:
 * Add higher quality renders with GI and AO (through blender running headless?)
 * Create an electron (or some other) wrapper for the app, so it can be run standalone on mac, windows and linux
 * Support creating a secondary convex and concave hulls, which allows ignoring the first X layers of a model, effectively allowing rafts to be smooshed together
+* Add support for "multiplates" by supporting several bins, and allowing models to be dragged between them

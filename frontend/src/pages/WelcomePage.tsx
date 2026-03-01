@@ -3,11 +3,12 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { useNavigate } from 'react-router-dom'
 import ModelGrid from '../components/ModelGrid'
-import { usePrintingList } from '../lib/printingList'
+import { useActivePrintingList } from '../lib/queries'
 
 function WelcomePage() {
   const navigate = useNavigate()
-  const { totalCount } = usePrintingList()
+  const { data: activeList } = useActivePrintingList()
+  const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0
 
   return (
     <Box

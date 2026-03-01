@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { usePrintingList } from '../lib/printingList'
+import { useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
 
 const btnSx = {
   pointerEvents: 'auto',
@@ -23,8 +23,11 @@ interface Props {
 }
 
 export default function PrintingListControls({ modelId }: Props) {
-  const { items, setQuantity } = usePrintingList()
-  const quantity = items[modelId]
+  const { data: activeList } = useActivePrintingList()
+  const { mutate: upsert } = useUpsertPrintingListItem()
+
+  const activeListId = activeList?.id ?? ''
+  const quantity = activeList?.items.find(i => i.modelId === modelId)?.quantity
 
   return (
     <Box
@@ -45,7 +48,7 @@ export default function PrintingListControls({ modelId }: Props) {
     >
       <Box
         component="button"
-        onClick={e => { e.preventDefault(); e.stopPropagation(); setQuantity(modelId, (quantity ?? 0) - 1) }}
+        onClick={e => { e.preventDefault(); e.stopPropagation(); upsert({ listId: activeListId, modelId, quantity: (quantity ?? 0) - 1 }) }}
         sx={btnSx}
       >
         −
@@ -67,7 +70,7 @@ export default function PrintingListControls({ modelId }: Props) {
 
       <Box
         component="button"
-        onClick={e => { e.preventDefault(); e.stopPropagation(); setQuantity(modelId, (quantity ?? 0) + 1) }}
+        onClick={e => { e.preventDefault(); e.stopPropagation(); upsert({ listId: activeListId, modelId, quantity: (quantity ?? 0) + 1 }) }}
         sx={btnSx}
       >
         +

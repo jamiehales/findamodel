@@ -95,15 +95,15 @@ export function useActivePrintingList() {
 
 export function usePrintingListDetail(id: string) {
   return useQuery({
-    queryKey: queryKeys.printingList(id),
-    queryFn: () => fetchPrintingList(id),
+    queryKey: id === 'active' ? queryKeys.activePrintingList : queryKeys.printingList(id),
+    queryFn: () => id === 'active' ? fetchActivePrintingList() : fetchPrintingList(id),
     enabled: !!id,
   })
 }
 
-function syncActiveList(queryClient: ReturnType<typeof useQueryClient>, updated: PrintingListDetail) {
-  queryClient.setQueryData(queryKeys.activePrintingList, updated)
+function syncList(queryClient: ReturnType<typeof useQueryClient>, updated: PrintingListDetail) {
   queryClient.setQueryData(queryKeys.printingList(updated.id), updated)
+  if (updated.isActive) queryClient.setQueryData(queryKeys.activePrintingList, updated)
 }
 
 export function useCreatePrintingList() {
@@ -143,25 +143,24 @@ export function useActivatePrintingList() {
   return useMutation({
     mutationFn: (id: string) => activatePrintingList(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.printingLists })
-      queryClient.invalidateQueries({ queryKey: queryKeys.activePrintingList })
+      queryClient.invalidateQueries({ queryKey: ['printing-lists'] })
     },
   })
 }
 
-export function useUpsertPrintingListItem(listId: string) {
+export function useUpsertPrintingListItem() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ modelId, quantity }: { modelId: string; quantity: number }) =>
+    mutationFn: ({ listId, modelId, quantity }: { listId: string; modelId: string; quantity: number }) =>
       upsertPrintingListItem(listId, modelId, quantity),
-    onSuccess: (updated) => syncActiveList(queryClient, updated),
+    onSuccess: (updated) => syncList(queryClient, updated),
   })
 }
 
-export function useClearPrintingListItems(listId: string) {
+export function useClearPrintingListItems() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => clearPrintingListItems(listId),
-    onSuccess: (updated) => syncActiveList(queryClient, updated),
+    mutationFn: (listId: string) => clearPrintingListItems(listId),
+    onSuccess: (updated) => syncList(queryClient, updated),
   })
 }

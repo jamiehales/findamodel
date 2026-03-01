@@ -6,8 +6,6 @@
 
 * Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
 
-* Fix popping when the model viewer loads
-
 * Reduce complexity of convex hull
 * Fix concave hull calculation
 
@@ -36,6 +34,21 @@
   - Browse Models - opens the file view
   - Advanced Search - opens the search view
 
-* Later, add Manage Printing Lists, which takes you to a manage printing lists page where you can add/remove and activate printing lists
-
 * A simple search should be in the top right of the screen when on the main screen which opens a model dropdown which shows a scrollable list of models (limited to 20 or so)
+
+* Add warning if there are any models off canvas when hitting save plate
+
+* Fix bug where the layout resets if save plate is clicked
+
+* Add option to show or hide labels
+
+* When adding additional copies of models, don't reset the simulation just add them to the top, same with removing models - just remove the top-most one of that type
+
+* Right align the reset button
+
+* Change the grouped/random toggle to a dropdown (mui select), and title it 'spawn order'
+
+* When starting to test larger mdoels and concave hulls, add a new spawn order - largest first, fill gaps - that spawns the largest model, then enough small models to fit in the bound rectangle minus the area of the convex/concave hull, for this all 'fill' models should be spawned at the same x location
+
+* Show a little bit above the top of the print plate, so that you can see clearly if any models are "out of bounds"
+* If models are out of bounds, add a thick red internal dotted border - use visual not physics data to determine this
