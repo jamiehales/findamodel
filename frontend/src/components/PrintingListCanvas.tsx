@@ -18,15 +18,11 @@ const ANGULAR_THRESH = 0.008
 const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 const MAX_BODY_HALF_PX = (CANVAS_PX * 0.65) / 2 // cap body half-extent
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
+const DEBUG_PHYSICS_WIREFRAME = false
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
-const BODY_GAP_MM = 4
+const BODY_GAP_MM = 1
 const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM
-
-// Overlap-detection hull inflation — bodies within BODY_OVERLAP_MM of each other
-// are considered overlapping and rendered brighter.
-const BODY_OVERLAP_MM = 1
-const BODY_OVERLAP_PX = (BODY_OVERLAP_MM / 2) * PX_PER_MM
 
 const PALETTE = [
   0x818cf8, // indigo
@@ -66,8 +62,6 @@ interface Entry {
   color: number
   /** Original (non-inflated) hull vertices in body-local space, for rendering. */
   visualLocalVerts: Vec2[]
-  /** Hull inflated by BODY_OVERLAP_PX per side, for overlap detection. */
-  overlapLocalVerts: Vec2[]
 }
 
 interface Props {
@@ -91,9 +85,21 @@ function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
     // Map z → canvas y.
     const pts = raw.map(([x, z]): Vec2 => ({ x: x * PX_PER_MM, y: z * PX_PER_MM }))
 
-    // Centre at vertex centroid (close enough for convex polygons).
-    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length
-    const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length
+    // Centre at the polygon area centroid (shoelace formula) so it matches
+    // what Matter.js uses internally, minimising the shift fromVertices applies.
+    let area = 0
+    let cx = 0
+    let cy = 0
+    for (let i = 0, n = pts.length; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n]
+      const cross = a.x * b.y - b.x * a.y
+      area += cross
+      cx += (a.x + b.x) * cross
+      cy += (a.y + b.y) * cross
+    }
+    area /= 2
+    cx /= 6 * area
+    cy /= 6 * area
     const centred = pts.map(p => ({ x: p.x - cx, y: p.y - cy }))
 
     // Scale down if any vertex exceeds the allowed half-extent.
@@ -148,8 +154,9 @@ function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Bod
   // fromVertices centres the body at (cx, cy) using the centroid of the passed
   // vertices. Since localVerts are already centred at origin, their centroid ≈ 0,
   // and Matter.js will correctly place the body at (cx, cy).
-  const body = Matter.Bodies.fromVertices(cx, cy, [localVerts as Matter.Vector[]], BODY_OPTIONS)
+  const body = Matter.Bodies.fromVertices(0, 0, [localVerts as Matter.Vector[]], BODY_OPTIONS)
   Matter.Body.setMass(body, BODY_MASS)
+  Matter.Body.setPosition(body, { x: cx, y: cy })
   return body
 }
 
@@ -162,7 +169,7 @@ function makeRectBody(
   model: Model,
   cx: number,
   cy: number,
-): { body: Matter.Body; visualLocalVerts: Vec2[]; overlapLocalVerts: Vec2[] } {
+): { body: Matter.Body; visualLocalVerts: Vec2[] } {
   const w = Math.min(Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
   const h = Math.min(Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16), MAX_BODY_HALF_PX * 2)
   const body = Matter.Bodies.rectangle(
@@ -180,15 +187,7 @@ function makeRectBody(
     { x: hw, y: hh },
     { x: -hw, y: hh },
   ]
-  const ohw = hw + BODY_OVERLAP_PX
-  const ohh = hh + BODY_OVERLAP_PX
-  const overlapLocalVerts: Vec2[] = [
-    { x: -ohw, y: -ohh },
-    { x: ohw, y: -ohh },
-    { x: ohw, y: ohh },
-    { x: -ohw, y: ohh },
-  ]
-  return { body, visualLocalVerts, overlapLocalVerts }
+  return { body, visualLocalVerts }
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -238,7 +237,7 @@ function satOverlap(a: Vec2[], b: Vec2[]): boolean {
 /** Returns the set of body IDs whose overlap-detection hulls intersect any other entry. */
 function computeOverlapping(entries: Entry[]): Set<number> {
   const overlapping = new Set<number>()
-  const worldVerts = entries.map(e => toWorldVerts(e.body, e.overlapLocalVerts))
+  const worldVerts = entries.map(e => toWorldVerts(e.body, e.visualLocalVerts))
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       if (satOverlap(worldVerts[i], worldVerts[j])) {
@@ -275,6 +274,14 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
   }
   gfx.closePath()
   gfx.endFill()
+
+  if (DEBUG_PHYSICS_WIREFRAME) {
+    gfx.lineStyle(1, 0xff0000, 0.5)
+    gfx.moveTo(body.vertices[0].x, body.vertices[0].y)
+    for (let i = 1; i < body.vertices.length; i++)
+      gfx.lineTo(body.vertices[i].x, body.vertices[i].y)
+    gfx.closePath()
+  }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -371,17 +378,15 @@ export default function PrintingListCanvas({ models, items }: Props) {
         // Create physics body (inflated) + keep original verts for rendering
         let body: Matter.Body
         let visualLocalVerts: Vec2[]
-        let overlapLocalVerts: Vec2[]
         if (localVerts && localVerts.length >= 3) {
           try {
             body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX))
-            visualLocalVerts = localVerts
-            overlapLocalVerts = inflateVerts(localVerts, BODY_OVERLAP_PX)
+            visualLocalVerts = localVerts;
           } catch {
-            ;({ body, visualLocalVerts, overlapLocalVerts } = makeRectBody(model, spawnX, spawnY))
+            ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
           }
         } else {
-          ;({ body, visualLocalVerts, overlapLocalVerts } = makeRectBody(model, spawnX, spawnY))
+          ;({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY))
         }
 
         // If there's a saved position for this instance, move the body there
@@ -417,7 +422,7 @@ export default function PrintingListCanvas({ models, items }: Props) {
         label.anchor.set(0.5)
         app.stage.addChild(label)
 
-        entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts, overlapLocalVerts })
+        entries.push({ body, gfx, label, modelId: model.id, instanceIndex: inst, color, visualLocalVerts })
       }
     }
 
