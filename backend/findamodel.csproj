@@ -17,6 +17,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="NetTopologySuite" Version="2.5.*" />
+    <PackageReference Include="YamlDotNet" Version="15.*" />
   </ItemGroup>
 
 </Project>

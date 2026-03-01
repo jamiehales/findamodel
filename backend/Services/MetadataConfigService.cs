@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using YamlDotNet.Serialization;
 using findamodel.Data;
 using findamodel.Data.Entities;
 
@@ -10,7 +10,8 @@ public class MetadataConfigService(
     ILogger<MetadataConfigService> logger,
     IDbContextFactory<ModelCacheContext> dbFactory)
 {
-    private const string ConfigFileName = "findamodel.json";
+    private const string ConfigFileName = "findamodel.yaml";
+    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder().Build();
 
     /// <summary>
     /// Ensures DirectoryConfig records exist for every directory in the given set (plus all
@@ -197,17 +198,17 @@ public class MetadataConfigService(
     {
         try
         {
-            await using var stream = File.OpenRead(filePath);
-            var doc = await JsonDocument.ParseAsync(stream);
-            var root = doc.RootElement;
+            using var reader = new StreamReader(filePath);
+            var yaml = await reader.ReadToEndAsync();
+            var parsed = YamlDeserializer.Deserialize<Dictionary<string, object>>(yaml) ?? new Dictionary<string, object>();
 
             return new RawConfigFields(
-                Author: TryGetString(root, "author"),
-                Collection: TryGetString(root, "collection"),
-                Subcollection: TryGetString(root, "subcollection"),
-                Category: ValidateEnum(TryGetString(root, "category"), ["Bust", "Miniature", "Uncategorized"]),
-                Type: ValidateEnum(TryGetString(root, "type"), ["Whole", "Part"]),
-                Supported: TryGetBool(root, "supported")
+                Author: TryGetString(parsed, "author"),
+                Collection: TryGetString(parsed, "collection"),
+                Subcollection: TryGetString(parsed, "subcollection"),
+                Category: ValidateEnum(TryGetString(parsed, "category"), ["Bust", "Miniature", "Uncategorized"]),
+                Type: ValidateEnum(TryGetString(parsed, "type"), ["Whole", "Part"]),
+                Supported: TryGetBool(parsed, "supported")
             );
         }
         catch (Exception ex)
@@ -217,15 +218,14 @@ public class MetadataConfigService(
         }
     }
 
-    private static string? TryGetString(JsonElement element, string propertyName)
+    private static string? TryGetString(Dictionary<string, object> data, string propertyName)
     {
         // Case-insensitive property search
-        foreach (var prop in element.EnumerateObject())
+        foreach (var kvp in data)
         {
-            if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase)
-                && prop.Value.ValueKind == JsonValueKind.String)
+            if (string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase))
             {
-                var value = prop.Value.GetString();
+                var value = kvp.Value?.ToString();
                 return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
             }
         }
@@ -238,13 +238,13 @@ public class MetadataConfigService(
         return Array.Find(allowed, a => string.Equals(a, value, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool? TryGetBool(JsonElement element, string propertyName)
+    private static bool? TryGetBool(Dictionary<string, object> data, string propertyName)
     {
-        foreach (var prop in element.EnumerateObject())
+        foreach (var kvp in data)
         {
-            if (!string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
-            if (prop.Value.ValueKind == JsonValueKind.True) return true;
-            if (prop.Value.ValueKind == JsonValueKind.False) return false;
+            if (!string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
+            if (kvp.Value is bool b) return b;
+            if (kvp.Value is string s && bool.TryParse(s, out var parsed)) return parsed;
         }
         return null;
     }

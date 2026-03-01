@@ -10,7 +10,7 @@ public class DirectoryConfig
     public DirectoryConfig? Parent { get; set; }
     public List<DirectoryConfig> Children { get; set; } = [];
 
-    // Raw (local) values — sourced exclusively from THIS directory's findamodel.json
+    // Raw (local) values — sourced exclusively from THIS directory's findamodel.yaml
     public string? RawAuthor { get; set; }
     public string? RawCollection { get; set; }
     public string? RawCategory { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
@@ -26,7 +26,7 @@ public class DirectoryConfig
     public string? Type { get; set; }
     public bool? Supported { get; set; }
 
-    // SHA256 hash of the findamodel.json at this directory (null = no config file present)
+    // SHA256 hash of the findamodel.yaml at this directory (null = no config file present)
     public string? LocalConfigFileHash { get; set; }
     public DateTime UpdatedAt { get; set; }
 
