@@ -119,19 +119,33 @@ public class ModelSaverService
         // Base mesh objects — not referenced directly in <build>.
         foreach (var (id, triangles) in objects)
         {
-            sb.Append($"<object id=\"{id}\" type=\"model\"><mesh><vertices>");
-            foreach (var tri in triangles)
+            // Deduplicate vertices so shared corners are written once.
+            var vertices  = new List<Vec3>();
+            var vertexMap = new Dictionary<Vec3, int>();
+            int GetOrAdd(Vec3 v)
             {
-                AppendVertex(sb, tri.V0);
-                AppendVertex(sb, tri.V1);
-                AppendVertex(sb, tri.V2);
+                if (!vertexMap.TryGetValue(v, out var idx))
+                {
+                    idx = vertices.Count;
+                    vertices.Add(v);
+                    vertexMap[v] = idx;
+                }
+                return idx;
             }
-            sb.Append("</vertices><triangles>");
+
+            var triIndices = new (int V0, int V1, int V2)[triangles.Count];
             for (int i = 0; i < triangles.Count; i++)
             {
-                int b = i * 3;
-                sb.Append($"<triangle v1=\"{b}\" v2=\"{b + 1}\" v3=\"{b + 2}\"/>");
+                var tri = triangles[i];
+                triIndices[i] = (GetOrAdd(tri.V0), GetOrAdd(tri.V1), GetOrAdd(tri.V2));
             }
+
+            sb.Append($"<object id=\"{id}\" type=\"model\"><mesh><vertices>");
+            foreach (var v in vertices)
+                AppendVertex(sb, v);
+            sb.Append("</vertices><triangles>");
+            foreach (var (v0, v1, v2) in triIndices)
+                sb.Append($"<triangle v1=\"{v0}\" v2=\"{v1}\" v3=\"{v2}\"/>");
             sb.Append("</triangles></mesh></object>");
         }
 

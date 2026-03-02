@@ -248,9 +248,11 @@ public class Save3mfTests
     }
 
     [Fact]
-    public void Mesh_VertexCountEqualsThreeTimesTriangleCount()
+    public void Mesh_VerticesAreDeduplicated()
     {
-        // The implementation writes 3 unshared vertices per triangle.
+        // The implementation shares vertices, so the vertex count must be strictly less than
+        // 3 × triangle count for any mesh whose triangles share corners (e.g. the tetrahedron).
+        // The tetrahedron has 4 unique corners and 4 triangles → vCount (4) < tCount × 3 (12).
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
                                                  .Where(o => o.Element(Ns3mf + "mesh") != null))
         {
@@ -258,7 +260,10 @@ public class Save3mfTests
             var vCount = mesh.Element(Ns3mf + "vertices")! .Elements(Ns3mf + "vertex")  .Count();
             var tCount = mesh.Element(Ns3mf + "triangles")!.Elements(Ns3mf + "triangle").Count();
 
-            Assert.Equal(tCount * 3, vCount);
+            Assert.True(vCount >= 3,          $"Vertex count {vCount} must be ≥ 3");
+            Assert.True(vCount <= tCount * 3, $"Vertex count {vCount} must be ≤ tCount×3 = {tCount * 3}");
+            // The tetrahedron specifically has 4 unique corners.
+            Assert.Equal(4, vCount);
         }
     }
 
@@ -586,4 +591,255 @@ public class Save3mfTests
 
         Assert.Equal(new[] { 0f, 50f, 100f }, translationsX);
     }
+
+    // ── lib3mf round-trip comparison: our output vs lib3mf-generated ──────────────
+
+    /// <summary>Unit cube from (0,0,0) to (1,1,1): 6 faces × 2 triangles = 12 triangles.</summary>
+    private static List<Triangle3D> UnitCube() =>
+    [
+        // Bottom (y=0, normal -Y)
+        new(new Vec3(0,0,0), new Vec3(1,0,1), new Vec3(1,0,0), new Vec3(0,-1,0)),
+        new(new Vec3(0,0,0), new Vec3(0,0,1), new Vec3(1,0,1), new Vec3(0,-1,0)),
+        // Top (y=1, normal +Y)
+        new(new Vec3(0,1,0), new Vec3(1,1,0), new Vec3(1,1,1), new Vec3(0,1,0)),
+        new(new Vec3(0,1,0), new Vec3(1,1,1), new Vec3(0,1,1), new Vec3(0,1,0)),
+        // Front (z=1, normal +Z)
+        new(new Vec3(0,0,1), new Vec3(1,1,1), new Vec3(1,0,1), new Vec3(0,0,1)),
+        new(new Vec3(0,0,1), new Vec3(0,1,1), new Vec3(1,1,1), new Vec3(0,0,1)),
+        // Back (z=0, normal -Z)
+        new(new Vec3(0,0,0), new Vec3(1,0,0), new Vec3(1,1,0), new Vec3(0,0,-1)),
+        new(new Vec3(0,0,0), new Vec3(1,1,0), new Vec3(0,1,0), new Vec3(0,0,-1)),
+        // Left (x=0, normal -X)
+        new(new Vec3(0,0,0), new Vec3(0,1,0), new Vec3(0,1,1), new Vec3(-1,0,0)),
+        new(new Vec3(0,0,0), new Vec3(0,1,1), new Vec3(0,0,1), new Vec3(-1,0,0)),
+        // Right (x=1, normal +X)
+        new(new Vec3(1,0,0), new Vec3(1,1,1), new Vec3(1,1,0), new Vec3(1,0,0)),
+        new(new Vec3(1,0,0), new Vec3(1,0,1), new Vec3(1,1,1), new Vec3(1,0,0)),
+    ];
+
+    /// <summary>
+    /// Generates a UV sphere approximation centred at the origin with radius 1.
+    /// Default: 6 stacks × 8 slices → 80 triangles, clearly distinct from the 12-triangle cube.
+    /// Normals are set to Vec3.Up (not used in 3MF output; only meaningful for STL/preview).
+    /// </summary>
+    private static List<Triangle3D> UnitSphere(int stacks = 6, int slices = 8)
+    {
+        var tris = new List<Triangle3D>();
+        static Vec3 S(float phi, float theta) =>
+            new(MathF.Sin(phi) * MathF.Cos(theta), MathF.Cos(phi), MathF.Sin(phi) * MathF.Sin(theta));
+
+        for (int i = 0; i < stacks; i++)
+        {
+            float phi0 = MathF.PI * i / stacks;
+            float phi1 = MathF.PI * (i + 1) / stacks;
+            for (int j = 0; j < slices; j++)
+            {
+                float th0 = 2 * MathF.PI * j / slices;
+                float th1 = 2 * MathF.PI * (j + 1) / slices;
+                var v00 = S(phi0, th0); var v01 = S(phi0, th1);
+                var v10 = S(phi1, th0); var v11 = S(phi1, th1);
+                if      (i == 0)          tris.Add(new(v00, v11, v10, Vec3.Up)); // top cap
+                else if (i == stacks - 1) tris.Add(new(v00, v01, v10, Vec3.Up)); // bottom cap
+                else { tris.Add(new(v00, v01, v11, Vec3.Up)); tris.Add(new(v00, v11, v10, Vec3.Up)); }
+            }
+        }
+        return tris;
+    }
+
+    /// <summary>
+    /// Builds a lib3mf sTransform representing a pure translation (identity rotation).
+    /// Fields layout: Fields[col][row], 4 columns × 3 rows, column-major.
+    /// Fields[3] = translation.
+    /// </summary>
+    private static Lib3MF.sTransform MakeTranslationTransform(float x, float y, float z) =>
+        new()
+        {
+            Fields =
+            [
+                [1f, 0f, 0f],
+                [0f, 1f, 0f],
+                [0f, 0f, 1f],
+                [x,  y,  z ],
+            ]
+        };
+
+    /// <summary>
+    /// Builds a 3MF package from scratch using lib3mf's write API.
+    /// Each object produces one shared-vertex mesh. Each placement produces one
+    /// ComponentsObject (referencing the appropriate mesh) and one BuildItem.
+    /// </summary>
+    private static byte[] BuildViaLib3mf(
+        IReadOnlyList<(int Id, IReadOnlyList<Triangle3D> Triangles)> objects,
+        IReadOnlyList<(int ObjectId, float X, float Y, float Z)> placements)
+    {
+        var model   = Lib3MF.Wrapper.CreateModel();
+        var meshById = new Dictionary<int, Lib3MF.CMeshObject>();
+
+        foreach (var (id, triangles) in objects)
+        {
+            var meshObj = model.AddMeshObject();
+            var vertIdx = new Dictionary<(float, float, float), uint>();
+            uint GetOrAdd(Vec3 v)
+            {
+                var key = (v.X, v.Y, v.Z);
+                if (!vertIdx.TryGetValue(key, out var idx))
+                {
+                    idx = meshObj.AddVertex(new Lib3MF.sPosition { Coordinates = [v.X, v.Y, v.Z] });
+                    vertIdx[key] = idx;
+                }
+                return idx;
+            }
+            foreach (var tri in triangles)
+                meshObj.AddTriangle(new Lib3MF.sTriangle
+                {
+                    Indices = [GetOrAdd(tri.V0), GetOrAdd(tri.V1), GetOrAdd(tri.V2)]
+                });
+            meshById[id] = meshObj;
+        }
+
+        var identity = MakeTranslationTransform(0, 0, 0);
+        foreach (var (objectId, x, y, z) in placements)
+        {
+            var compObj = model.AddComponentsObject();
+            compObj.AddComponent(meshById[objectId], MakeTranslationTransform(x, y, z));
+            model.AddBuildItem(compObj, identity);
+        }
+
+        var writer = model.QueryWriter("3mf");
+        writer.WriteToBuffer(out var bytes);
+        return bytes;
+    }
+
+    [Fact]
+    public void Lib3mf_RoundTrip_TwoMeshesTwentyInstancesEach_ComparesWithLib3mfGenerated()
+    {
+        // Object 1 (cube):   20 positions lerped from (-10, 10, 10) to ( 10, 10, 10)
+        // Object 2 (sphere): 20 positions lerped from ( 10,-10,-10) to (-10, 10, 10)
+        const int count = 20;
+        var cubePositions = Enumerable.Range(0, count)
+            .Select(i => { float t = (float)i / (count - 1); return (-10f + t * 20f,  10f,        10f); })
+            .ToArray();
+        var spherePositions = Enumerable.Range(0, count)
+            .Select(i => { float t = (float)i / (count - 1); return (10f - t * 20f, -10f + t * 20f, -10f + t * 20f); })
+            .ToArray();
+
+        var cubeTriangles   = UnitCube();
+        var sphereTriangles = UnitSphere(); // 80 triangles — distinct from cube's 12
+
+        // ── Our library ───────────────────────────────────────────────────────────
+        // 3MF transform: "m00 m01 m02 m10 m11 m12 m20 m21 m22 tx ty tz" (identity rotation)
+        static string Tfm((float, float, float) p) =>
+            FormattableString.Invariant($"1 0 0 0 1 0 0 0 1 {p.Item1:G9} {p.Item2:G9} {p.Item3:G9}");
+
+        var items = cubePositions.Select(p => (1, Tfm(p)))
+            .Concat(spherePositions.Select(p => (2, Tfm(p))))
+            .ToArray();
+        var ourBytes = Saver.Save3mf(
+            [(1, (IReadOnlyList<Triangle3D>)cubeTriangles), (2, (IReadOnlyList<Triangle3D>)sphereTriangles)],
+            items);
+
+        // ── lib3mf reference ──────────────────────────────────────────────────────
+        var refBytes = BuildViaLib3mf(
+            [(1, cubeTriangles), (2, sphereTriangles)],
+            [
+                .. cubePositions.Select(p   => (1, p.Item1, p.Item2, p.Item3)),
+                .. spherePositions.Select(p => (2, p.Item1, p.Item2, p.Item3)),
+            ]);
+
+        var ourModel = LoadViaLib3mf(ourBytes);
+        var refModel = LoadViaLib3mf(refBytes);
+        var diffs    = new List<string>();
+
+        // ── Total build item count ────────────────────────────────────────────────
+        int expectedTotal = count * 2;
+        var ourItems = AllBuildItems(ourModel);
+        var refItems = AllBuildItems(refModel);
+        if (ourItems.Count != expectedTotal)
+            diffs.Add($"Build item count: ours={ourItems.Count}, expected={expectedTotal}");
+        if (refItems.Count != expectedTotal)
+            diffs.Add($"Build item count: ref={refItems.Count}, expected={expectedTotal}");
+
+        // ── Total mesh object count ───────────────────────────────────────────────
+        var ourMeshes = AllMeshObjects(ourModel);
+        var refMeshes = AllMeshObjects(refModel);
+        if (ourMeshes.Count != 2) diffs.Add($"Mesh object count: ours={ourMeshes.Count}, expected=2");
+        if (refMeshes.Count != 2) diffs.Add($"Mesh object count: ref={refMeshes.Count}, expected=2");
+
+        // ── Per-mesh geometry + translations ──────────────────────────────────────
+        // Meshes are identified by their triangle count: cube=12, sphere=80.
+        void CheckMesh(
+            string          label,
+            Lib3MF.CModel   model,
+            string          name,
+            List<Triangle3D>         expectedGeom,
+            (float, float, float)[]  expectedPos)
+        {
+            int expTri  = expectedGeom.Count;
+            int expVert = UniqueVertexCount(expectedGeom);
+            const float eps = 1e-3f;
+
+            // Find the mesh whose triangle count matches.
+            Lib3MF.CMeshObject? mesh = null;
+            foreach (var m in AllMeshObjects(model))
+            {
+                m.GetTriangleIndices(out var t);
+                if (t.Length == expTri) { mesh = m; break; }
+            }
+            if (mesh == null) { diffs.Add($"[{label}] {name}: no mesh with {expTri} triangles"); return; }
+
+            mesh.GetTriangleIndices(out var tris);
+            mesh.GetVertices(out var verts);
+            if (tris.Length != expTri)  diffs.Add($"[{label}] {name} triangle count: got={tris.Length}, expected={expTri}");
+            if (verts.Length != expVert) diffs.Add($"[{label}] {name} vertex count: got={verts.Length}, expected={expVert}");
+
+            // Collect the component objects that reference this mesh.
+            uint meshId = mesh.GetModelResourceID();
+            var compObjs = AllComponentsObjects(model)
+                .Where(co => co.GetComponent(0).GetObjectResourceID() == meshId)
+                .ToList();
+            if (compObjs.Count != count)
+            {
+                diffs.Add($"[{label}] {name} instance count: got={compObjs.Count}, expected={count}");
+                return;
+            }
+
+            // Validate all three translation axes against sorted expected values.
+            float[] Act(int axis) => compObjs
+                .Select(co => co.GetComponent(0).GetTransform().Fields[3][axis])
+                .OrderBy(v => v).ToArray();
+            float[] Exp(int axis) => [.. expectedPos
+                .Select(p => axis == 0 ? p.Item1 : axis == 1 ? p.Item2 : p.Item3)
+                .OrderBy(v => v)];
+
+            string[] axisNames = ["X", "Y", "Z"];
+            for (int axis = 0; axis < 3; axis++)
+            {
+                var act = Act(axis); var exp = Exp(axis);
+                for (int i = 0; i < count; i++)
+                    if (MathF.Abs(act[i] - exp[i]) > eps)
+                        diffs.Add($"[{label}] {name} {axisNames[axis]}[{i}]: got={act[i]:G9}, expected={exp[i]:G9}");
+            }
+        }
+
+        if (ourMeshes.Count == 2)
+        {
+            CheckMesh("ours", ourModel, "cube",   cubeTriangles,   cubePositions);
+            CheckMesh("ours", ourModel, "sphere", sphereTriangles, spherePositions);
+        }
+        if (refMeshes.Count == 2)
+        {
+            CheckMesh("ref",  refModel, "cube",   cubeTriangles,   cubePositions);
+            CheckMesh("ref",  refModel, "sphere", sphereTriangles, spherePositions);
+        }
+
+        Assert.True(diffs.Count == 0,
+            $"Differences ({diffs.Count} issue(s)):\n" +
+            string.Join("\n", diffs.Select((d, i) => $"  [{i + 1}] {d}")));
+    }
+
+    // Returns the number of unique vertex positions in a triangle list (shared-vertex count).
+    private static int UniqueVertexCount(List<Triangle3D> tris) =>
+        tris.SelectMany(t => new[] { (t.V0.X, t.V0.Y, t.V0.Z), (t.V1.X, t.V1.Y, t.V1.Z), (t.V2.X, t.V2.Y, t.V2.Z) })
+            .Distinct()
+            .Count();
 }
