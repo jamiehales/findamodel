@@ -51,9 +51,8 @@
 * Add model name to metadata - allowing a model with multiple parts to be marked as one model
 * Add 3D Print type to model, FDM / Resin / Any
 
-* Draw sans raft hull Xmm (where X = however many the raft vertical offset was set to) in the air within the viewport. Use the same colors as the sans raft dialog below
-* Remove the convex hull card, and replace it with the sans raft one below. Then rename the title to say just "Convex"
-
 * UpdateLogger so the service/context is passed in separately from a constant as a channel, so that certain channels can be enabled or disabled, investigate logging libraries before choosing a method here
 * By default any logs of the ExecutedDbCommand should be set to Debug level, and that logging channel disabled
 * See if there's a VSCode serilog plugin or similar that can provide the ability to filter channels dynamically
+
+* Fix "show more" jumping to the top of the page

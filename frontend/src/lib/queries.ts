@@ -103,7 +103,7 @@ export function useIndexerStatus() {
   return useQuery({
     queryKey: queryKeys.indexerStatus,
     queryFn: fetchIndexerStatus,
-    refetchInterval: 2000,
+    refetchInterval: 30000,
     refetchIntervalInBackground: false,
   })
 }

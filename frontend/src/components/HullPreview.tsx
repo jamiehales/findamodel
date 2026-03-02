@@ -137,31 +137,23 @@ export default function HullPreview({ convexHull, concaveHull, convexSansRaftHul
   const concaveCoords = parseHull(concaveHull)
   const sansRaftCoords = parseHull(convexSansRaftHull)
 
+  const convexLayers = [
+    ...(convexCoords && convexCoords.length >= 2 ? [{ coords: convexCoords, color: '#818cf8', label: 'Full' }] : []),
+    ...(sansRaftCoords && sansRaftCoords.length >= 2 ? [{ coords: sansRaftCoords, color: '#f59e0b', label: 'Sans raft' }] : []),
+  ]
+
   return (
     <Box className={styles.container}>
-      {convexCoords && convexCoords.length >= 2 ? (
-        <HullPanel label="Convex Hull" layers={[{ coords: convexCoords, color: '#818cf8', label: 'Convex' }]} />
+      {convexLayers.length > 0 ? (
+        <HullPanel label="Convex" layers={convexLayers} />
       ) : (
-        <EmptyPanel label="Convex Hull" />
+        <EmptyPanel label="Convex" />
       )}
 
       {(concaveCoords && concaveCoords.length >= 2) ? (
         <HullPanel label="Concave Hull" layers={[{ coords: concaveCoords, color: '#34d399', label: 'Concave' }]} />
       ) : (
         <EmptyPanel label="Concave Hull" />
-      )}
-
-      {/* Sans-raft panel: overlay full convex (muted) + sans-raft (highlighted) so the raft zone is visible */}
-      {sansRaftCoords && sansRaftCoords.length >= 2 ? (
-        <HullPanel
-          label="Sans Raft"
-          layers={[
-            ...(convexCoords && convexCoords.length >= 2 ? [{ coords: convexCoords, color: '#818cf8', label: 'Full' }] : []),
-            { coords: sansRaftCoords, color: '#f59e0b', label: 'Sans raft' },
-          ]}
-        />
-      ) : (
-        <EmptyPanel label="Sans Raft" />
       )}
     </Box>
   )

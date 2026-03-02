@@ -165,7 +165,7 @@ function ModelPage() {
         )}
 
         <Box className={styles.viewerBox}>
-          <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} />
+          <ModelViewer modelId={model.id} fileType={model.fileType} convexHull={model.convexHull} convexSansRaftHull={model.convexSansRaftHull} />
         </Box>
 
         {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (

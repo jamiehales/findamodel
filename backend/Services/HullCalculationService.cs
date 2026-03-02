@@ -10,6 +10,8 @@ public class HullCalculationService(
 {
     private static readonly GeometryFactory Factory = new();
 
+    public const float RaftOffset = 2f; // 2mm offset for raft/brim removal, to be configurable later
+
     /// <summary>
     /// Calculates convex, concave (alpha), and convex-sans-raft hulls from pre-loaded geometry. Preferred overload.
     /// Projects vertices onto the X-Z plane (bird's eye view with Y-up coordinate system).
@@ -38,9 +40,9 @@ public class HullCalculationService(
             var convexCoords  = CalculateConvexHull(points2D);
             var concaveCoords = new Coordinate[0]; //CalculateConcaveHull(points2D);
 
-            // Sans-raft: exclude vertices at or below 2mm (Y-up, 1 unit = 1mm)
+            // Sans-raft: exclude vertices at or below defined raft offset (Y-up, 1 unit = 1mm)
             var sansRaftPoints2D = allVertices
-                .Where(v => v.Y >= 2f)
+                .Where(v => v.Y >= RaftOffset)
                 .Select(v => new Coordinate((double)v.X, (double)v.Z))
                 .Distinct()
                 .ToArray();

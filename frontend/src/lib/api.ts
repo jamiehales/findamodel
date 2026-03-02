@@ -16,6 +16,7 @@ export interface Model {
   convexHull: string | null
   concaveHull: string | null
   convexSansRaftHull: string | null
+  raftOffsetMm: number
   dimensionXMm: number | null
   dimensionYMm: number | null
   dimensionZMm: number | null
