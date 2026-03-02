@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using findamodel.Services;
 using Xunit;
@@ -728,8 +729,9 @@ public class Save3mfTests
 
         // ── Our library ───────────────────────────────────────────────────────────
         // 3MF transform: "m00 m01 m02 m10 m11 m12 m20 m21 m22 tx ty tz" (identity rotation)
+        // G6 matches lib3mf's 6-significant-figure output for translation values.
         static string Tfm((float, float, float) p) =>
-            FormattableString.Invariant($"1 0 0 0 1 0 0 0 1 {p.Item1:G9} {p.Item2:G9} {p.Item3:G9}");
+            FormattableString.Invariant($"1 0 0 0 1 0 0 0 1 {p.Item1:G6} {p.Item2:G6} {p.Item3:G6}");
 
         var items = cubePositions.Select(p => (1, Tfm(p)))
             .Concat(spherePositions.Select(p => (2, Tfm(p))))
@@ -749,6 +751,88 @@ public class Save3mfTests
         var ourModel = LoadViaLib3mf(ourBytes);
         var refModel = LoadViaLib3mf(refBytes);
         var diffs    = new List<string>();
+
+        // ── Binary & formatted-XML equivalence ───────────────────────────────────
+        // Production UUIDs are random, so raw bytes can never be identical between two
+        // independent runs.  We therefore compare the *UUID-normalised* formatted XML of
+        // each ZIP entry, which strips that non-determinism and lets us assert that
+        // everything else is structurally equivalent to lib3mf's output.
+        var binaryIssues = new List<string>();
+        bool rawEqual = ourBytes.SequenceEqual(refBytes);
+        if (rawEqual)
+            binaryIssues.Add("Raw bytes are identical (unexpected — UUIDs should differ)");
+
+        static string NormalizeXml(string xml)
+        {
+            // Strip random production UUIDs so they never cause mismatches.
+            xml = Regex.Replace(xml,
+                @"p:UUID=""[0-9a-fA-F\-]+""",
+                "p:UUID=\"00000000-0000-0000-0000-000000000000\"");
+
+            // Round vertex coordinate values to 4 decimal places so that 1-ULP float32
+            // rounding differences between .NET MathF and lib3mf's libm don't cause mismatches.
+            try
+            {
+                var doc = XDocument.Parse(xml);
+                XNamespace ns = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02";
+                foreach (var vertex in doc.Descendants(ns + "vertex"))
+                {
+                    foreach (var attrName in new[] { "x", "y", "z" })
+                    {
+                        var attr = vertex.Attribute(attrName);
+                        if (attr != null &&
+                            float.TryParse(attr.Value,
+                                System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out var v))
+                        {
+                            attr.SetValue(MathF.Round(v, 4).ToString(
+                                "G6", System.Globalization.CultureInfo.InvariantCulture));
+                        }
+                    }
+                }
+                return doc.ToString(SaveOptions.None);
+            }
+            catch
+            {
+                return xml;
+            }
+        }
+
+        var ourZip = ZipEntries(ourBytes);
+        var refZip = ZipEntries(refBytes);
+        bool allXmlMatch = true;
+
+        foreach (var key in ourZip.Keys.Union(refZip.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
+        {
+            bool inO = ourZip.TryGetValue(key, out var ob);
+            bool inR = refZip.TryGetValue(key, out var rb);
+            if (!inO) { binaryIssues.Add($"Entry missing from ours: {key}"); allXmlMatch = false; continue; }
+            if (!inR) { binaryIssues.Add($"Entry missing from ref:  {key}"); allXmlMatch = false; continue; }
+
+            bool isText = key.EndsWith(".model", StringComparison.OrdinalIgnoreCase)
+                       || key.EndsWith(".xml",   StringComparison.OrdinalIgnoreCase)
+                       || key.EndsWith(".rels",  StringComparison.OrdinalIgnoreCase);
+            if (!isText) continue;
+
+            var ourXml = NormalizeXml(FormatXml(ob!));
+            var refXml = NormalizeXml(FormatXml(rb!));
+            if (ourXml == refXml) continue;
+
+            allXmlMatch = false;
+            var tmp  = Path.GetTempPath();
+            var safe = key.Replace('/', '_').Replace('\\', '_');
+            var ourPath = Path.Combine(tmp, $"our_{safe}");
+            var refPath = Path.Combine(tmp, $"ref_{safe}");
+            File.WriteAllText(ourPath, ourXml, System.Text.Encoding.UTF8);
+            File.WriteAllText(refPath, refXml, System.Text.Encoding.UTF8);
+            binaryIssues.Add($"Entry '{key}' formatted XML differs (UUID-normalised):");
+            binaryIssues.Add($"  ours: {ourPath}");
+            binaryIssues.Add($"  ref:  {refPath}");
+        }
+
+        Assert.True(allXmlMatch,
+            $"Formatted-XML differences ({binaryIssues.Count} issue(s)):\n" +
+            string.Join("\n", binaryIssues.Select((d, i) => $"  [{i + 1}] {d}")));
 
         // ── Total build item count ────────────────────────────────────────────────
         int expectedTotal = count * 2;
@@ -842,4 +926,17 @@ public class Save3mfTests
         tris.SelectMany(t => new[] { (t.V0.X, t.V0.Y, t.V0.Z), (t.V1.X, t.V1.Y, t.V1.Z), (t.V2.X, t.V2.Y, t.V2.Z) })
             .Distinct()
             .Count();
+
+    private static string FormatXml(byte[] xmlBytes)
+    {
+        try
+        {
+            var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(xmlBytes));
+            return doc.ToString(SaveOptions.None);
+        }
+        catch
+        {
+            return System.Text.Encoding.UTF8.GetString(xmlBytes);
+        }
+    }
 }

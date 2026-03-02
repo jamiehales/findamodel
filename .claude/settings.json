@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet build --no-restore -v q)",
+      "Bash(dotnet build)",
       "Bash(yarn tsc --noEmit)",
       "Bash(xargs basename -a)",
       "Bash(dotnet ef migrations add InitialCreate)",
@@ -13,7 +13,8 @@
       "WebFetch(domain:lib3mf.readthedocs.io)",
       "Bash(dotnet test --no-build -v normal)",
       "Bash(curl -s \"https://raw.githubusercontent.com/*\")",
-      "Bash(dotnet test -c Debug)"
+      "Bash(dotnet test)",
+      "Bash(dotnet test backend.Tests/ --filter \"Lib3mf_RoundTrip_TwentyInstancesCubeLerped_ComparesWithLib3mfGenerated\")"
     ]
   }
 }
