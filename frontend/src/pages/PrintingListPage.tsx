@@ -1,4 +1,5 @@
-import { Stack, Box, Button, CircularProgress, Typography } from '@mui/material'
+import { Stack, Box, Button, CircularProgress, Typography, Menu, MenuItem } from '@mui/material'
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { generatePlate } from '../lib/api'
@@ -17,6 +18,7 @@ function PrintingListPage() {
   const { mutate: activateList } = useActivatePrintingList()
   const [savingPlate, setSavingPlate] = useState(false)
   const [simulationPaused, setSimulationPaused] = useState(false)
+  const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null)
 
   const items = useMemo<Record<string, number>>(
     () => list ? Object.fromEntries(list.items.map(i => [i.modelId, i.quantity])) : {},
@@ -31,7 +33,7 @@ function PrintingListPage() {
   const showControls = list?.isActive === true
   const isPending = modelsPending || listPending
 
-  async function handleSavePlate() {
+  async function handleSavePlate(format: '3mf' | 'stl' = '3mf') {
     setSavingPlate(true)
     try {
       let placements: Parameters<typeof generatePlate>[0] = []
@@ -51,11 +53,11 @@ function PrintingListPage() {
         }
       } catch { /* proceed with empty placements */ }
 
-      const blob = await generatePlate(placements)
+      const blob = await generatePlate(placements, format)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'plate.stl'
+      a.download = format === 'stl' ? 'plate.stl' : 'plate.3mf'
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -87,14 +89,40 @@ function PrintingListPage() {
 
             {listedModels.length > 0 && (
               <>
-                <Button
-                  onClick={handleSavePlate}
-                  disabled={savingPlate || !simulationPaused}
-                  startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
-                  className={styles.btnExport}
+                <Box className={styles.exportGroup}>
+                  <Button
+                    onClick={() => handleSavePlate('3mf')}
+                    disabled={savingPlate || !simulationPaused}
+                    startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+                    className={styles.btnExportMain}
+                  >
+                    {savingPlate ? 'Preparing…' : 'Export plate'}
+                  </Button>
+                  <Button
+                    onClick={e => setFormatMenuAnchor(e.currentTarget)}
+                    disabled={savingPlate || !simulationPaused}
+                    className={styles.btnExportArrow}
+                    aria-label="export format options"
+                    aria-haspopup="menu"
+                  >
+                    <ArrowDropDownIcon fontSize="small" />
+                  </Button>
+                </Box>
+
+                <Menu
+                  anchorEl={formatMenuAnchor}
+                  open={Boolean(formatMenuAnchor)}
+                  onClose={() => setFormatMenuAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                 >
-                  {savingPlate ? 'Preparing…' : 'Export plate'}
-                </Button>
+                  <MenuItem onClick={() => { setFormatMenuAnchor(null); handleSavePlate('3mf') }}>
+                    Export as 3MF
+                  </MenuItem>
+                  <MenuItem onClick={() => { setFormatMenuAnchor(null); handleSavePlate('stl') }}>
+                    Export as STL
+                  </MenuItem>
+                </Menu>
 
                 <Button
                   onClick={() => list && clearItems(list.id)}

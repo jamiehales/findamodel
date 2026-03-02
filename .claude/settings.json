@@ -5,7 +5,11 @@
       "Bash(yarn tsc --noEmit)",
       "Bash(xargs basename -a)",
       "Bash(dotnet ef migrations add InitialCreate)",
-      "Bash(dotnet tool install --global dotnet-ef)"
+      "Bash(dotnet tool install --global dotnet-ef)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.nuget.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet test backend.Tests/findamodel.Tests.csproj --logger \"console;verbosity=normal\")"
     ]
   }
 }

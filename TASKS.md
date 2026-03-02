@@ -1,5 +1,3 @@
-* Switch 3D plate generation to 3mf with instancing
-
 * Allow hulls to be calculated in a separate pass
 
 * Expand the main page to fill the whole width of the screen
@@ -8,8 +6,6 @@
 
 * Reduce complexity of convex hull
 * Fix concave hull calculation
-
-* Add a creator explorer, there should be a list of creators, then a list of collections, if there are subcollections then show those
 
 * If there is an image in a directory, allow setting this as the collection preview, creator preview
 

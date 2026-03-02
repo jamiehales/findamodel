@@ -227,11 +227,14 @@ export async function enqueueIndex(directoryFilter: string | null, flags: number
   return r.json()
 }
 
-export async function generatePlate(placements: PlatePlacement[]): Promise<Blob> {
+export async function generatePlate(
+  placements: PlatePlacement[],
+  format: '3mf' | 'stl' = '3mf',
+): Promise<Blob> {
   const r = await fetch('/api/plate/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ placements }),
+    body: JSON.stringify({ placements, format }),
   })
   if (!r.ok) throw new Error('Failed to generate plate')
   return r.blob()

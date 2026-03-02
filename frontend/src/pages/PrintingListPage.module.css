@@ -47,12 +47,17 @@
   color: #e2e8f0 !important;
 }
 
-.btnExport {
+.exportGroup {
+  display: flex;
+}
+
+.btnExportMain {
   background: rgba(99, 102, 241, 0.85) !important;
   backdrop-filter: blur(8px);
   color: #fff !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 999px !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-radius: 999px 0 0 999px !important;
   padding: 0.5rem 1.25rem !important;
   font-size: 0.9rem !important;
   font-weight: 600 !important;
@@ -60,11 +65,31 @@
   min-width: 0 !important;
 }
 
-.btnExport:hover {
+.btnExportMain:hover {
   background: rgba(79, 82, 211, 0.9) !important;
 }
 
-.btnExport.Mui-disabled {
+.btnExportMain.Mui-disabled {
+  background: rgba(99, 102, 241, 0.4) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.btnExportArrow {
+  background: rgba(99, 102, 241, 0.85) !important;
+  backdrop-filter: blur(8px);
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-left: none !important;
+  border-radius: 0 999px 999px 0 !important;
+  padding: 0.5rem 0.55rem !important;
+  min-width: 0 !important;
+}
+
+.btnExportArrow:hover {
+  background: rgba(79, 82, 211, 0.9) !important;
+}
+
+.btnExportArrow.Mui-disabled {
   background: rgba(99, 102, 241, 0.4) !important;
   color: rgba(255, 255, 255, 0.6) !important;
 }

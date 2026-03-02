@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using findamodel.Services;
 
@@ -12,18 +13,14 @@ public class PlateController(
     IConfiguration config) : ControllerBase
 {
     /// <summary>
-    /// Generates a build-plate STL from the supplied model placements.
+    /// Generates a build-plate file from the supplied model placements.
+    ///
+    /// Supported formats (request.Format field, default "3mf"):
+    ///   3mf — 3MF package with instancing; each unique model stored once as a mesh resource.
+    ///   stl — merged binary STL with all placements baked into a single triangle soup.
     ///
     /// Each placement specifies a model ID, its XY position on the plate (in mm), and a
     /// rotation angle (radians, counter-clockwise when viewed from above).
-    ///
-    /// Pipeline per model:
-    ///   1. Load geometry via ModelLoaderService → Y-up, mm, centred (base at Y = 0).
-    ///   2. Rotate around the Y axis by AngleRad.
-    ///   3. Translate: X += XMm, Z += YMm  (plate XY maps to world XZ in Y-up space).
-    ///   4. Convert to Z-up ((x,y,z) → (-x,z,y)) for slicer-compatible output.
-    ///
-    /// All transformed models are merged into a single binary STL and returned as a download.
     /// </summary>
     [HttpPost("generate")]
     public async Task<IActionResult> GeneratePlate([FromBody] GeneratePlateRequest request)
@@ -32,12 +29,22 @@ public class PlateController(
         if (string.IsNullOrEmpty(modelsPath))
             return StatusCode(500, "Models:DirectoryPath not configured");
 
-        var allTriangles = new List<Triangle3D>();
+        var format = (request.Format ?? "3mf").ToLowerInvariant();
+        if (format is not ("3mf" or "stl"))
+            return BadRequest($"Unsupported format '{request.Format}'. Supported: 3mf, stl");
+
+        // Load each unique model once.
+        var geometryByModelId = new Dictionary<Guid, LoadedGeometry>();
+        var objectIdByModelId = new Dictionary<Guid, int>();
+        int nextObjectId = 1;
 
         foreach (var placement in request.Placements)
         {
             if (!Guid.TryParse(placement.ModelId, out var modelId))
                 return BadRequest($"Invalid model ID: {placement.ModelId}");
+
+            if (geometryByModelId.ContainsKey(modelId))
+                continue;
 
             var model = await modelService.GetModelAsync(modelId);
             if (model == null)
@@ -54,53 +61,79 @@ public class PlateController(
             if (geometry == null)
                 return StatusCode(500, $"Failed to parse geometry for: {model.FileName}");
 
-            // Pre-compute rotation coefficients
-            float sinA = MathF.Sin((float)placement.AngleRad);
-            float cosA = MathF.Cos((float)placement.AngleRad);
-
-            foreach (var tri in geometry.Triangles)
-            {
-                allTriangles.Add(new Triangle3D(
-                    PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm),
-                    PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm),
-                    PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm),
-                    RotateY(tri.Normal, sinA, cosA)));
-            }
+            geometryByModelId[modelId] = geometry;
+            objectIdByModelId[modelId] = nextObjectId++;
         }
 
-        // Convert Y-up → Z-up: (x,y,z) → (-x,z,y) — slicers expect Z-up
-        var zUpTriangles = new List<Triangle3D>(allTriangles.Count);
-        foreach (var tri in allTriangles)
+        if (format == "stl")
         {
-            zUpTriangles.Add(new Triangle3D(
-                YUpToZUp(tri.V0),
-                YUpToZUp(tri.V1),
-                YUpToZUp(tri.V2),
-                YUpToZUp(tri.Normal)));
+            // Merge all placements into a single triangle soup, converting to Z-up.
+            var merged = new List<Triangle3D>();
+            foreach (var placement in request.Placements)
+            {
+                var modelId = Guid.Parse(placement.ModelId);
+                var geometry = geometryByModelId[modelId];
+                float sinA = MathF.Sin((float)placement.AngleRad);
+                float cosA = MathF.Cos((float)placement.AngleRad);
+                foreach (var tri in geometry.Triangles)
+                {
+                    merged.Add(new Triangle3D(
+                        YUpToZUp(PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(RotateY(tri.Normal, sinA, cosA))));
+                }
+            }
+            return File(saverService.SaveStl(merged, "findamodel plate"), "model/stl", "plate.stl");
         }
 
-        var stlBytes = saverService.SaveStl(zUpTriangles, "findamodel plate");
-        return File(stlBytes, "model/stl", "plate.stl");
+        // 3MF: base geometry in Z-up, placement baked into per-item transforms (instancing).
+        var objects = new List<(int Id, IReadOnlyList<Triangle3D> Triangles)>();
+        foreach (var (modelId, geometry) in geometryByModelId)
+        {
+            var zUpTriangles = geometry.Triangles
+                .Select(t => new Triangle3D(YUpToZUp(t.V0), YUpToZUp(t.V1), YUpToZUp(t.V2), YUpToZUp(t.Normal)))
+                .ToList();
+            objects.Add((objectIdByModelId[modelId], zUpTriangles));
+        }
+
+        var items = new List<(int ObjectId, string Transform)>();
+        foreach (var placement in request.Placements)
+        {
+            var modelId = Guid.Parse(placement.ModelId);
+            items.Add((objectIdByModelId[modelId], Compute3mfTransform(placement.AngleRad, placement.XMm, placement.YMm)));
+        }
+
+        return File(saverService.Save3mf(objects, items), "application/vnd.ms-3mf", "plate.3mf");
     }
 
-    /// <summary>Rotate around Y axis then translate in the XZ plane.
-    /// Matches the 2D canvas convention: x' = x·cos − z·sin, z' = x·sin + z·cos
-    /// (positive angle = CCW when viewed from above, consistent with Matter.js).
+    /// <summary>
+    /// Computes the 3MF transform string for a placement, expressed in Z-up space.
+    ///
+    /// The base mesh is stored after applying YUpToZUp: (x,y,z) → (−x,z,y).
+    /// Composing that with RotateY(A) + Translate(XMm,YMm) + YUpToZUp gives:
+    ///   rotation around Z by −A  +  translation (−XMm, YMm, 0).
+    ///
+    /// 3MF matrix layout "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" where
+    ///   p'x = m00·px + m10·py + m20·pz + m30, etc.
     /// </summary>
+    private static string Compute3mfTransform(double angleRad, double xMm, double yMm)
+    {
+        float cosA = MathF.Cos((float)angleRad);
+        float sinA = MathF.Sin((float)angleRad);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{cosA:G9} {-sinA:G9} 0 {sinA:G9} {cosA:G9} 0 0 0 1 {-xMm:G9} {yMm:G9} 0");
+    }
+
+    /// <summary>Rotate around Y axis then translate in the XZ plane (used for STL output).</summary>
     private static Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
-        => new(
-            v.X * cosA - v.Z * sinA + xMm,
-            v.Y,
-            v.X * sinA + v.Z * cosA + yMm);
+        => new(v.X * cosA - v.Z * sinA + xMm, v.Y, v.X * sinA + v.Z * cosA + yMm);
 
-    /// <summary>Rotate around Y axis (normals are directions — no translation).</summary>
+    /// <summary>Rotate around Y axis — direction only, no translation (used for STL normals).</summary>
     private static Vec3 RotateY(Vec3 n, float sinA, float cosA)
-        => new(
-            n.X * cosA - n.Z * sinA,
-            n.Y,
-            n.X * sinA + n.Z * cosA);
+        => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
-    /// <summary>Y-up (x,y,z) → Z-up (-x,z,y). The ZUpToYUp transform is its own inverse.</summary>
+    /// <summary>Y-up (x,y,z) → Z-up (−x,z,y). This transform is its own inverse.</summary>
     private static Vec3 YUpToZUp(Vec3 v) => new(-v.X, v.Z, v.Y);
 }
 
@@ -111,4 +144,5 @@ public class PlateController(
 /// <param name="AngleRad">Rotation around the vertical axis in radians (counter-clockwise when viewed from above).</param>
 public record PlacementDto(string ModelId, int InstanceIndex, double XMm, double YMm, double AngleRad);
 
-public record GeneratePlateRequest(IReadOnlyList<PlacementDto> Placements);
+/// <param name="Format">Output format: "3mf" (default) or "stl".</param>
+public record GeneratePlateRequest(IReadOnlyList<PlacementDto> Placements, string? Format = null);
