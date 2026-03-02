@@ -1,5 +1,5 @@
 import Box from '@mui/material/Box'
-import Skeleton from '@mui/material/Skeleton'
+import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { useModels } from '../lib/queries'
 import ModelCard from './ModelCard'
@@ -14,14 +14,8 @@ function ModelGrid() {
         <Typography variant="section-label">
           Models
         </Typography>
-        <Box className={styles.grid}>
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <Skeleton
-              key={i}
-              variant="rectangular"
-              className={styles.skeleton}
-            />
-          ))}
+        <Box className={styles.loadingCenter}>
+          <CircularProgress color="primary" />
         </Box>
       </Box>
     )

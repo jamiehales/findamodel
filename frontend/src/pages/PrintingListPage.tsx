@@ -1,4 +1,4 @@
-import { Stack, Box, Button, CircularProgress, Skeleton, Typography } from '@mui/material'
+import { Stack, Box, Button, CircularProgress, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { generatePlate } from '../lib/api'
@@ -108,14 +108,8 @@ function PrintingListPage() {
         </Stack>
 
         {isPending ? (
-          <Box className={styles.grid}>
-            {[1, 2, 3, 4].map(i => (
-              <Skeleton
-                key={i}
-                variant="rectangular"
-                className={styles.skeleton}
-              />
-            ))}
+          <Box className={styles.loadingCenter}>
+            <CircularProgress color="primary" />
           </Box>
         ) : listedModels.length === 0 ? (
           <Typography color="text.secondary" className={styles.emptyText}>

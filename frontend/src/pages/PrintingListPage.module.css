@@ -93,10 +93,10 @@
   gap: 0.875rem;
 }
 
-.skeleton {
-  aspect-ratio: 3 / 4;
-  border-radius: 14px !important;
-  height: auto;
+.loadingCenter {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 0;
 }
 
 .emptyText {

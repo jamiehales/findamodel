@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box'
+import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import Skeleton from '@mui/material/Skeleton'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useExplorer } from '../lib/queries'
 import FolderCard from '../components/FolderCard'
@@ -13,14 +13,8 @@ function ExplorePageInner({ path }: { path: string }) {
 
   if (isPending) {
     return (
-      <Box className={styles.grid}>
-        {[1, 2, 3, 4, 5, 6].map(i => (
-          <Skeleton
-            key={i}
-            variant="rectangular"
-            className={styles.skeleton}
-          />
-        ))}
+      <Box className={styles.loadingCenter}>
+        <CircularProgress color="primary" />
       </Box>
     )
   }
