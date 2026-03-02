@@ -33,7 +33,7 @@ function PrintingListPage() {
   const showControls = list?.isActive === true
   const isPending = modelsPending || listPending
 
-  async function handleSavePlate(format: '3mf' | 'stl' = '3mf') {
+  async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
     setSavingPlate(true)
     try {
       let placements: Parameters<typeof generatePlate>[0] = []
@@ -57,7 +57,7 @@ function PrintingListPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = format === 'stl' ? 'plate.stl' : 'plate.3mf'
+      a.download = format === 'stl' ? 'plate.stl' : format === 'glb' ? 'plate.glb' : 'plate.3mf'
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -121,6 +121,9 @@ function PrintingListPage() {
                   </MenuItem>
                   <MenuItem onClick={() => { setFormatMenuAnchor(null); handleSavePlate('stl') }}>
                     Export as STL
+                  </MenuItem>
+                  <MenuItem onClick={() => { setFormatMenuAnchor(null); handleSavePlate('glb') }}>
+                    Export as GLB
                   </MenuItem>
                 </Menu>
 

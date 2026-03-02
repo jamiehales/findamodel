@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Numerics;
 using System.Text;
 
 namespace findamodel.Services;
@@ -203,5 +204,61 @@ public class ModelSaverService
     private static void AppendVertex(StringBuilder sb, Vec3 v)
     {
         sb.Append($"<vertex x=\"{FormatCoord(v.X)}\" y=\"{FormatCoord(v.Y)}\" z=\"{FormatCoord(v.Z)}\"/>");
+    }
+
+    // -------------------------------------------------------------------------
+    // GLB (binary glTF 2.0) output — via SharpGLTF.Toolkit
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Serialises the supplied geometry as a GLB (binary glTF 2.0) and returns the raw bytes.
+    ///
+    /// Geometry must be in Y-up coordinates — glTF's native coordinate system — so no
+    /// axis conversion is applied here.  Each entry in <paramref name="objects"/> defines
+    /// one mesh that is stored once.  Each entry in <paramref name="items"/> creates a glTF
+    /// node that references one of those meshes; passing the same mesh builder to multiple
+    /// <c>AddRigidMesh</c> calls is how SharpGLTF achieves node-level instancing.
+    ///
+    /// Meshes use flat shading: each triangle's face normal is replicated across all three
+    /// of its vertices so the NORMAL attribute carries per-face shading correctly.
+    /// </summary>
+    public byte[] SaveGlb(
+        IReadOnlyList<(int Id, IReadOnlyList<Triangle3D> Triangles)> objects,
+        IReadOnlyList<(int ObjectId, Matrix4x4 Transform)> items)
+    {
+        // Build one MeshBuilder per unique object.
+        var meshByObjectId = new Dictionary<int, SharpGLTF.Geometry.MeshBuilder<
+            SharpGLTF.Geometry.VertexTypes.VertexPositionNormal>>(objects.Count);
+
+        foreach (var (id, triangles) in objects)
+        {
+            var mb   = new SharpGLTF.Geometry.MeshBuilder<
+                SharpGLTF.Geometry.VertexTypes.VertexPositionNormal>($"mesh_{id}");
+            var prim = mb.UsePrimitive(SharpGLTF.Materials.MaterialBuilder.CreateDefault());
+
+            foreach (var tri in triangles)
+            {
+                var n = new Vector3(tri.Normal.X, tri.Normal.Y, tri.Normal.Z);
+                prim.AddTriangle(
+                    new SharpGLTF.Geometry.VertexTypes.VertexPositionNormal(
+                        new Vector3(tri.V0.X, tri.V0.Y, tri.V0.Z), n),
+                    new SharpGLTF.Geometry.VertexTypes.VertexPositionNormal(
+                        new Vector3(tri.V1.X, tri.V1.Y, tri.V1.Z), n),
+                    new SharpGLTF.Geometry.VertexTypes.VertexPositionNormal(
+                        new Vector3(tri.V2.X, tri.V2.Y, tri.V2.Z), n));
+            }
+
+            meshByObjectId[id] = mb;
+        }
+
+        // Add one rigid node per placement, reusing the same MeshBuilder for instancing.
+        var scene = new SharpGLTF.Scenes.SceneBuilder();
+        foreach (var (objectId, transform) in items)
+            scene.AddRigidMesh(meshByObjectId[objectId], transform);
+
+        var model = scene.ToGltf2();
+        using var ms = new MemoryStream();
+        model.WriteGLB(ms);
+        return ms.ToArray();
     }
 }

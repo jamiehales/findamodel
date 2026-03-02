@@ -229,7 +229,7 @@ export async function enqueueIndex(directoryFilter: string | null, flags: number
 
 export async function generatePlate(
   placements: PlatePlacement[],
-  format: '3mf' | 'stl' = '3mf',
+  format: '3mf' | 'stl' | 'glb' = '3mf',
 ): Promise<Blob> {
   const r = await fetch('/api/plate/generate', {
     method: 'POST',
