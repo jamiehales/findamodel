@@ -106,7 +106,8 @@ public class Save3mfTests
             .FirstOrDefault(e => e.Attribute("Extension")?.Value == "model");
 
         Assert.NotNull(el);
-        Assert.Equal("application/vnd.ms-3mf.model", el.Attribute("ContentType")?.Value);
+        // 3MF Core Spec §5.1 mandates this specific content type string
+        Assert.Equal("application/vnd.ms-package.3dmanufacturing-3dmodel+xml", el.Attribute("ContentType")?.Value);
     }
 
     [Fact]
@@ -442,5 +443,147 @@ public class Save3mfTests
             .ToList();
 
         Assert.Equal(buildIds.Count, buildIds.Distinct().Count());
+    }
+
+    // ── lib3mf round-trip validation ─────────────────────────────────────────────
+    //
+    // These tests load the generated 3MF bytes into the precompiled lib3mf library
+    // (v2.5.0, lib3mf/lib3mf.dll) to verify conformance beyond what XML parsing
+    // alone can guarantee.  lib3mf is the reference implementation used by major
+    // slicers (PrusaSlicer, Bambu Studio, etc.) and its reader enforces the full
+    // 3MF Core Specification.
+
+    /// <summary>Loads the generated 3MF via lib3mf and returns the parsed model.</summary>
+    private static Lib3MF.CModel LoadViaLib3mf(byte[] bytes)
+    {
+        var model = Lib3MF.Wrapper.CreateModel();
+        var reader = model.QueryReader("3mf");
+        reader.ReadFromBuffer(bytes);
+        return model;
+    }
+
+    /// <summary>Collects all build items from the iterator into a list.</summary>
+    private static List<Lib3MF.CBuildItem> AllBuildItems(Lib3MF.CModel model)
+    {
+        var iter = model.GetBuildItems();
+        var list = new List<Lib3MF.CBuildItem>();
+        while (iter.MoveNext())
+            list.Add(iter.GetCurrent());
+        return list;
+    }
+
+    /// <summary>Collects all mesh objects from the iterator into a list.</summary>
+    private static List<Lib3MF.CMeshObject> AllMeshObjects(Lib3MF.CModel model)
+    {
+        var iter = model.GetMeshObjects();
+        var list = new List<Lib3MF.CMeshObject>();
+        while (iter.MoveNext())
+            list.Add(iter.GetCurrentMeshObject());
+        return list;
+    }
+
+    /// <summary>Collects all components-objects from the iterator into a list.</summary>
+    private static List<Lib3MF.CComponentsObject> AllComponentsObjects(Lib3MF.CModel model)
+    {
+        var iter = model.GetComponentsObjects();
+        var list = new List<Lib3MF.CComponentsObject>();
+        while (iter.MoveNext())
+            list.Add(iter.GetCurrentComponentsObject());
+        return list;
+    }
+
+    [Fact]
+    public void Lib3mf_Reads_WithoutWarnings()
+    {
+        // lib3mf raises warnings for non-fatal spec violations.
+        // A well-formed 3MF should produce zero warnings.
+        var reader = Lib3MF.Wrapper.CreateModel().QueryReader("3mf");
+        reader.ReadFromBuffer(Simple3mf());
+        Assert.Equal(0u, reader.GetWarningCount());
+    }
+
+    // ── lib3mf instancing tests ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Lib3mf_Instancing_ThreePlacements_OneMeshObjectInModel()
+    {
+        var bytes = Simple3mf(
+            (1, "1 0 0 0 1 0 0 0 1 0 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
+
+        var model = LoadViaLib3mf(bytes);
+        Assert.Single(AllMeshObjects(model));
+    }
+
+    [Fact]
+    public void Lib3mf_Instancing_ThreePlacements_ThreeBuildItemsInModel()
+    {
+        var bytes = Simple3mf(
+            (1, "1 0 0 0 1 0 0 0 1 0 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
+
+        var model = LoadViaLib3mf(bytes);
+        Assert.Equal(3, AllBuildItems(model).Count);
+    }
+
+    [Fact]
+    public void Lib3mf_Instancing_ThreePlacements_BuildItemsReferenceComponentsObjects()
+    {
+        // Each build item must point to a ComponentsObject, not a raw MeshObject.
+        var bytes = Simple3mf(
+            (1, "1 0 0 0 1 0 0 0 1 0 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
+
+        var model = LoadViaLib3mf(bytes);
+        foreach (var item in AllBuildItems(model))
+            Assert.True(item.GetObjectResource().IsComponentsObject(),
+                "Build item must reference a ComponentsObject (not a mesh object directly)");
+    }
+
+    [Fact]
+    public void Lib3mf_Instancing_ThreePlacements_AllComponentsReferenceTheSameMesh()
+    {
+        // All three wrapper objects must point their single component at the one shared mesh.
+        var bytes = Simple3mf(
+            (1, "1 0 0 0 1 0 0 0 1 0 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
+
+        var model    = LoadViaLib3mf(bytes);
+        var meshId   = AllMeshObjects(model).Single().GetModelResourceID();
+        var compObjs = AllComponentsObjects(model);
+
+        Assert.Equal(3, compObjs.Count);
+        foreach (var co in compObjs)
+        {
+            Assert.Equal(1u, co.GetComponentCount());
+            var referencedId = co.GetComponent(0).GetObjectResourceID();
+            Assert.Equal(meshId, referencedId);
+        }
+    }
+
+    [Fact]
+    public void Lib3mf_Instancing_ThreePlacements_TranslationsAreDistinct()
+    {
+        // Each placement uses a different X translation; verify lib3mf reads them back correctly.
+        var bytes = Simple3mf(
+            (1, "1 0 0 0 1 0 0 0 1 0 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
+            (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
+
+        var model = LoadViaLib3mf(bytes);
+        var compObjs = AllComponentsObjects(model);
+
+        // Collect the X-translation from each component's transform.
+        // sTransform.Fields[3][0] is the translation-X in the lib3mf 4×3 column-major layout.
+        var translationsX = compObjs
+            .Select(co => co.GetComponent(0).GetTransform().Fields[3][0])
+            .OrderBy(x => x)
+            .ToArray();
+
+        Assert.Equal(new[] { 0f, 50f, 100f }, translationsX);
     }
 }
