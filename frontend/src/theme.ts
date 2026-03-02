@@ -4,6 +4,8 @@ declare module '@mui/material/Chip' {
   interface ChipPropsVariantOverrides {
     'status-running': true
     'status-queued': true
+    'badge-enabled': true
+    'badge-disabled': true
   }
 }
 
@@ -79,6 +81,29 @@ const theme = createTheme({
             fontWeight: 600,
             fontSize: '0.65rem',
             height: 20,
+          },
+        },
+        {
+          props: { variant: 'badge-enabled' },
+          style: {
+            backgroundColor: 'rgba(99, 102, 241, 0.15)',
+            color: '#818cf8',
+            fontWeight: 600,
+            fontSize: '0.65rem',
+            height: 20,
+            borderRadius: 4,
+          },
+        },
+        {
+          props: { variant: 'badge-disabled' },
+          style: {
+            backgroundColor: 'transparent',
+            color: '#64748b',
+            border: '1px solid #334155',
+            fontWeight: 600,
+            fontSize: '0.65rem',
+            height: 20,
+            borderRadius: 4,
           },
         },
       ],
