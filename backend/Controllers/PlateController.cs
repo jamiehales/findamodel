@@ -129,9 +129,6 @@ public class PlateController(
         Vec3 RotateY(Vec3 n, float sinA, float cosA)
             => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
-        /// <summary>Y-up (x,y,z) → Z-up (−x,z,y). This transform is its own inverse.</summary>
-        Vec3 YUpToZUp(Vec3 v) => new(-v.X, v.Z, v.Y);
-        
         // Merge all placements into a single triangle soup, converting to Z-up.
         var merged = new List<Triangle3D>();
         foreach (var placement in request.Placements)
@@ -183,6 +180,9 @@ public class PlateController(
 
         return File(saverService.SaveGlb(glbObjects, glbItems), "model/gltf-binary", "plate.glb");
     }
+
+    /// <summary>Y-up (x,y,z) → Z-up (−x,z,y). This transform is its own inverse.</summary>
+    static private Vec3 YUpToZUp(Vec3 v) => new(-v.X, v.Z, v.Y);
 }
 
 /// <param name="ModelId">GUID of the model.</param>
