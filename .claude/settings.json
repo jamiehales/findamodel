@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build --no-restore -v q)",
-      "Bash(yarn tsc --noEmit)"
+      "Bash(yarn tsc --noEmit)",
+      "Bash(xargs basename -a)"
     ]
   }
 }
