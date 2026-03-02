@@ -1,16 +1,22 @@
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { useNavigate } from 'react-router-dom'
 import ModelGrid from '../components/ModelGrid'
+import ModelFilters from '../components/ModelFilters'
 import IndexerStatus from '../components/IndexerStatus'
-import { useActivePrintingList } from '../lib/queries'
+import { useActivePrintingList, useFilterOptions } from '../lib/queries'
+import { emptyFilter, type ModelFilter } from '../lib/api'
 import styles from './WelcomePage.module.css'
 
 function WelcomePage() {
   const navigate = useNavigate()
   const { data: activeList } = useActivePrintingList()
+  const { data: filterOptions } = useFilterOptions()
   const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0
+
+  const [filter, setFilter] = useState<ModelFilter>(emptyFilter)
 
   return (
     <>
@@ -54,7 +60,11 @@ function WelcomePage() {
         </Box>
       </Box>
 
-      <ModelGrid />
+      {filterOptions && (
+        <ModelFilters value={filter} onChange={setFilter} options={filterOptions} />
+      )}
+
+      <ModelGrid filter={filter} />
     </Box>
     </>
   )

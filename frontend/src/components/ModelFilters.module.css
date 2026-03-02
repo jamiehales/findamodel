@@ -1,0 +1,18 @@
+.grid {
+  width: 800px;
+  overflow: hidden;
+}
+
+.searchField {
+  min-width: 180px;
+}
+
+.selectField {
+  width: 160px;
+}
+
+.selectTags {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -4,8 +4,6 @@
 
 * Allow hulls to be calculated in a separate pass
 
-* Add a filters section to the main page that can search by any of the fields on a model (based on the calculated values from findamodel.yaml), it should update the shown model results in real time
-
 * Expand the main page to fill the whole width of the screen
 
 * Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
@@ -31,16 +29,7 @@
 
 * On the main screen show the X most recently added models (configurable via config variable)
 
-* Add a sidebar that has the following items:
-  - View Printing List - shows the name of the active printing list below it, if you click it it takes you to the printing list
-  - Browse Models - opens the file view
-  - Advanced Search - opens the search view
-
-* A simple search should be in the top right of the screen when on the main screen which opens a model dropdown which shows a scrollable list of models (limited to 20 or so)
-
 * Add warning if there are any models off canvas when hitting save plate
-
-* Fix bug where the layout resets if save plate is clicked
 
 * Add option to show or hide labels
 

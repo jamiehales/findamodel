@@ -6,7 +6,8 @@ import {
   fetchPrintingLists, fetchActivePrintingList, fetchPrintingList,
   createPrintingList, renamePrintingList, deletePrintingList, activatePrintingList,
   upsertPrintingListItem, clearPrintingListItems,
-  type MetadataFields, type PrintingListDetail,
+  fetchQueryModels, fetchFilterOptions,
+  type MetadataFields, type PrintingListDetail, type ModelFilter,
 } from './api'
 
 export const queryKeys = {
@@ -19,6 +20,8 @@ export const queryKeys = {
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
+  queryModels: (filter: ModelFilter, limit: number) => ['query', 'models', filter, limit] as const,
+  filterOptions: ['query', 'options'] as const,
 }
 
 export function useModels(limit?: number) {
@@ -46,6 +49,21 @@ export function useGeometry(id: string) {
   return useSuspenseQuery({
     queryKey: queryKeys.geometry(id),
     queryFn: () => fetchGeometry(id),
+  })
+}
+
+export function useQueryModels(filter: ModelFilter, limit: number) {
+  return useQuery({
+    queryKey: queryKeys.queryModels(filter, limit),
+    queryFn: () => fetchQueryModels(filter, limit),
+  })
+}
+
+export function useFilterOptions() {
+  return useQuery({
+    queryKey: queryKeys.filterOptions,
+    queryFn: fetchFilterOptions,
+    staleTime: 5 * 60 * 1000,
   })
 }
 

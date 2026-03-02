@@ -32,6 +32,66 @@ export async function fetchModels(limit?: number): Promise<Model[]> {
   return r.json()
 }
 
+export interface ModelFilter {
+  search: string
+  creator: string[]
+  collection: string[]
+  subcollection: string[]
+  category: string[]
+  type: string[]
+  fileType: string[]
+  supported: boolean | null
+}
+
+export const emptyFilter: ModelFilter = {
+  search: '',
+  creator: [],
+  collection: [],
+  subcollection: [],
+  category: [],
+  type: [],
+  fileType: [],
+  supported: null,
+}
+
+export interface ModelQueryResult {
+  models: Model[]
+  totalCount: number
+  hasMore: boolean
+}
+
+export interface FilterOptions {
+  creators: string[]
+  collections: string[]
+  subcollections: string[]
+  categories: string[]
+  types: string[]
+  fileTypes: string[]
+}
+
+export async function fetchQueryModels(filter: ModelFilter, limit: number, offset: number = 0): Promise<ModelQueryResult> {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  if (filter.search) params.set('search', filter.search)
+  for (const v of filter.creator) params.append('creator', v)
+  for (const v of filter.collection) params.append('collection', v)
+  for (const v of filter.subcollection) params.append('subcollection', v)
+  for (const v of filter.category) params.append('category', v)
+  for (const v of filter.type) params.append('type', v)
+  for (const v of filter.fileType) params.append('fileType', v)
+  if (filter.supported !== null) params.set('supported', String(filter.supported))
+  const r = await fetch(`/api/query?${params}`)
+  if (!r.ok) throw new Error('Failed to query models')
+  return r.json()
+}
+
+export async function fetchFilterOptions(): Promise<FilterOptions> {
+  const r = await fetch('/api/query/options')
+  if (!r.ok) throw new Error('Failed to fetch filter options')
+  return r.json()
+}
+
 export async function fetchModel(id: string): Promise<Model> {
   const r = await fetch(`/api/models/${id}`)
   if (!r.ok) throw new Error(`Failed to fetch model ${id}`)
