@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { Model } from '../lib/api'
@@ -23,9 +24,10 @@ interface ModelCardProps {
 
 function ModelCard({ model, href, showControls = true }: ModelCardProps) {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
+  const [hovered, setHovered] = useState(false)
 
   return (
-    <AppCard href={href} className={styles.card}>
+    <AppCard href={href} className={styles.card} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       {model.previewUrl && (
         <Box
           component="img"
@@ -52,7 +54,7 @@ function ModelCard({ model, href, showControls = true }: ModelCardProps) {
         </Typography>
       </Box>
 
-      {showControls && <PrintingListControls modelId={model.id} />}
+      {showControls && <PrintingListControls modelId={model.id} showButtons={hovered} />}
     </AppCard>
   )
 }

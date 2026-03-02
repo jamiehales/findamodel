@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { ExplorerModel } from '../lib/api'
@@ -23,11 +24,14 @@ interface Props {
 export default function ExplorerModelCard({ model, href }: Props) {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
   const isIndexed = model.id != null
+  const [hovered, setHovered] = useState(false)
 
   return (
     <AppCard
       href={href}
       className={`${styles.card}${!isIndexed ? ` ${styles.cardUnindexed}` : ''}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {model.previewUrl && (
         <Box
@@ -63,7 +67,7 @@ export default function ExplorerModelCard({ model, href }: Props) {
         )}
       </Box>
 
-      {model.id && <PrintingListControls modelId={model.id} />}
+      {model.id && <PrintingListControls modelId={model.id} showButtons={hovered} />}
     </AppCard>
   )
 }

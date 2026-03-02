@@ -6,14 +6,16 @@ interface AppCardProps {
   href?: string
   className?: string
   children: React.ReactNode
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }
 
-export default function AppCard({ href, className, children }: AppCardProps) {
+export default function AppCard({ href, className, children, onMouseEnter, onMouseLeave }: AppCardProps) {
   const combinedClass = `${styles.base}${className ? ` ${className}` : ''}`
 
   if (!href) {
     return (
-      <Box className={combinedClass}>
+      <Box className={combinedClass} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
         {children}
       </Box>
     )
@@ -24,6 +26,8 @@ export default function AppCard({ href, className, children }: AppCardProps) {
       component={RouterLink as React.ElementType}
       {...{ to: href }}
       className={combinedClass}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {children}
     </Box>
