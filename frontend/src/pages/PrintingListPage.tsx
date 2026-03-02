@@ -5,12 +5,7 @@ import { generatePlate } from '../lib/api'
 import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList } from '../lib/queries'
 import ModelCard from '../components/ModelCard'
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas'
-
-const gridSx = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-  gap: '0.875rem',
-}
+import styles from './PrintingListPage.module.css'
 
 function PrintingListPage() {
   const navigate = useNavigate()
@@ -69,54 +64,14 @@ function PrintingListPage() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', pb: '3rem' }}>
-      <Button
-        onClick={() => navigate(-1)}
-        sx={{
-          position: 'fixed',
-          top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
-          left: '1rem',
-          background: 'rgba(15,23,42,0.7)',
-          backdropFilter: 'blur(8px)',
-          color: '#e2e8f0',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: '999px',
-          px: '1rem',
-          py: '0.5rem',
-          fontSize: '0.9rem',
-          fontWeight: 500,
-          textTransform: 'none',
-          zIndex: 10,
-          minWidth: 0,
-          '&:hover': { background: 'rgba(30,41,59,0.9)' },
-          '&:active': { background: 'rgba(30,41,59,0.9)' },
-        }}
-      >
+    <Box className={styles.page}>
+      <Button variant="back" onClick={() => navigate(-1)}>
         ← Back
       </Button>
 
-      <Box
-        sx={{
-          pt: '5rem',
-          px: '1.25rem',
-          maxWidth: 900,
-          mx: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1.5rem',
-        }}
-      >
+      <Box className={styles.content}>
         <Stack direction="column" spacing={2} alignItems="left">
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: { xs: '2rem', sm: '2.5rem' },
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              color: '#f1f5f9',
-              lineHeight: 1.2,
-            }}
-          >
+          <Typography component="h1" className={styles.title}>
             {listName}
           </Typography>
 
@@ -124,20 +79,7 @@ function PrintingListPage() {
             {list && !list.isActive && (
               <Button
                 onClick={() => activateList(list.id)}
-                sx={{
-                  background: 'rgba(255,255,255,0.06)',
-                  backdropFilter: 'blur(8px)',
-                  color: '#94a3b8',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  borderRadius: '999px',
-                  px: '1.25rem',
-                  py: '0.5rem',
-                  fontSize: '0.9rem',
-                  fontWeight: 500,
-                  textTransform: 'none',
-                  minWidth: 0,
-                  '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
-                }}
+                className={styles.btnActivate}
               >
                 Set active
               </Button>
@@ -149,41 +91,14 @@ function PrintingListPage() {
                   onClick={handleSavePlate}
                   disabled={savingPlate || !simulationPaused}
                   startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
-                  sx={{
-                    background: 'rgba(99,102,241,0.85)',
-                    backdropFilter: 'blur(8px)',
-                    color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '999px',
-                    px: '1.25rem',
-                    py: '0.5rem',
-                    fontSize: '0.9rem',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    minWidth: 0,
-                    '&:hover': { background: 'rgba(79,82,211,0.9)' },
-                    '&:disabled': { background: 'rgba(99,102,241,0.4)', color: 'rgba(255,255,255,0.6)' },
-                  }}
+                  className={styles.btnExport}
                 >
                   {savingPlate ? 'Preparing…' : 'Export plate'}
                 </Button>
 
                 <Button
                   onClick={() => list && clearItems(list.id)}
-                  sx={{
-                    background: 'rgba(255,255,255,0.06)',
-                    backdropFilter: 'blur(8px)',
-                    color: '#94a3b8',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    borderRadius: '999px',
-                    px: '1.25rem',
-                    py: '0.5rem',
-                    fontSize: '0.9rem',
-                    fontWeight: 500,
-                    textTransform: 'none',
-                    minWidth: 0,
-                    '&:hover': { background: 'rgba(255,255,255,0.10)', color: '#e2e8f0' },
-                  }}
+                  className={styles.btnClear}
                 >
                   Clear list
                 </Button>
@@ -193,22 +108,22 @@ function PrintingListPage() {
         </Stack>
 
         {isPending ? (
-          <Box sx={gridSx}>
+          <Box className={styles.grid}>
             {[1, 2, 3, 4].map(i => (
               <Skeleton
                 key={i}
                 variant="rectangular"
-                sx={{ aspectRatio: '3 / 4', borderRadius: '14px', height: 'auto' }}
+                className={styles.skeleton}
               />
             ))}
           </Box>
         ) : listedModels.length === 0 ? (
-          <Typography sx={{ color: 'text.secondary', fontSize: '1rem' }}>
+          <Typography color="text.secondary" className={styles.emptyText}>
             No models added yet. Browse models and use "Add to printing list" to add them here.
           </Typography>
         ) : (
           <>
-            <Box sx={gridSx}>
+            <Box className={styles.grid}>
               {listedModels.map(model => (
                 <ModelCard
                   key={model.id}

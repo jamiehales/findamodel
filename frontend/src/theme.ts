@@ -7,6 +7,18 @@ declare module '@mui/material/Chip' {
   }
 }
 
+declare module '@mui/material/Typography' {
+  interface TypographyPropsVariantOverrides {
+    'section-label': true
+  }
+}
+
+declare module '@mui/material/Button' {
+  interface ButtonPropsVariantOverrides {
+    'back': true
+  }
+}
+
 const theme = createTheme({
   palette: {
     mode: 'dark',
@@ -67,6 +79,48 @@ const theme = createTheme({
             fontWeight: 600,
             fontSize: '0.65rem',
             height: 20,
+          },
+        },
+      ],
+    },
+    MuiTypography: {
+      variants: [
+        {
+          props: { variant: 'section-label' },
+          style: {
+            display: 'block',
+            fontSize: '1.1rem',
+            fontWeight: 600,
+            color: '#94a3b8',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: '0.75rem',
+            marginLeft: '0.25rem',
+          },
+        },
+      ],
+    },
+    MuiButton: {
+      variants: [
+        {
+          props: { variant: 'back' },
+          style: {
+            position: 'fixed',
+            top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+            left: '1rem',
+            background: 'rgba(15,23,42,0.7)',
+            backdropFilter: 'blur(8px)',
+            color: '#e2e8f0',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '999px',
+            padding: '0.5rem 1rem',
+            fontSize: '0.9rem',
+            fontWeight: 500,
+            textTransform: 'none',
+            zIndex: 10,
+            minWidth: 0,
+            '&:hover': { background: 'rgba(30,41,59,0.9)' },
+            '&:active': { background: 'rgba(30,41,59,0.9)' },
           },
         },
       ],

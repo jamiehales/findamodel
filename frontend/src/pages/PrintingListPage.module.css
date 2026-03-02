@@ -1,0 +1,104 @@
+.page {
+  min-height: 100vh;
+  padding-bottom: 3rem;
+}
+
+.content {
+  padding-top: 5rem;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.title {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  color: #f1f5f9 !important;
+  line-height: 1.2 !important;
+}
+
+@media (min-width: 600px) {
+  .title {
+    font-size: 2.5rem !important;
+  }
+}
+
+.btnActivate {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(8px);
+  color: #94a3b8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 999px !important;
+  padding: 0.5rem 1.25rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  min-width: 0 !important;
+}
+
+.btnActivate:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #e2e8f0 !important;
+}
+
+.btnExport {
+  background: rgba(99, 102, 241, 0.85) !important;
+  backdrop-filter: blur(8px);
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 999px !important;
+  padding: 0.5rem 1.25rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  min-width: 0 !important;
+}
+
+.btnExport:hover {
+  background: rgba(79, 82, 211, 0.9) !important;
+}
+
+.btnExport.Mui-disabled {
+  background: rgba(99, 102, 241, 0.4) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.btnClear {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(8px);
+  color: #94a3b8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 999px !important;
+  padding: 0.5rem 1.25rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  min-width: 0 !important;
+}
+
+.btnClear:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #e2e8f0 !important;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.875rem;
+}
+
+.skeleton {
+  aspect-ratio: 3 / 4;
+  border-radius: 14px !important;
+  height: auto;
+}
+
+.emptyText {
+  font-size: 1rem !important;
+}

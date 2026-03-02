@@ -29,12 +29,34 @@
   position: absolute !important;
   top: 6px;
   right: 6px;
+  color: rgba(226, 232, 240, 0.5) !important;
+}
+
+.editBtnActive {
+  color: #818cf8 !important;
+}
+
+.editBtn:hover,
+.editBtnActive:hover {
+  color: #818cf8 !important;
+  background-color: rgba(99, 102, 241, 0.15) !important;
 }
 
 .indexBtn {
   position: absolute !important;
   top: 6px;
   left: 6px;
+  color: rgba(226, 232, 240, 0.5) !important;
+}
+
+.indexBtnQueued {
+  color: #fbbf24 !important;
+}
+
+.indexBtn:hover,
+.indexBtnQueued:hover {
+  color: #818cf8 !important;
+  background-color: rgba(99, 102, 241, 0.15) !important;
 }
 
 .icon {
@@ -42,4 +64,56 @@
   align-items: center;
   justify-content: center;
   margin-bottom: 4px;
+}
+
+.spinner {
+  color: #818cf8 !important;
+}
+
+.metaBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  margin-right: 4px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.metaBadgeSet {
+  background-color: rgba(99, 102, 241, 0.18);
+}
+
+.metaBadgeUnset {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.metaEditorWrapper {
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background-color: rgba(15, 23, 42, 0.8);
+}
+
+.name {
+  font-weight: 600 !important;
+  color: #e2e8f0 !important;
+  text-align: center;
+  line-height: 1.3 !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden !important;
+  padding: 0 8px;
+  width: 100%;
+  height: 2.6em;
+}
+
+.counts {
+  margin-top: 2px !important;
 }

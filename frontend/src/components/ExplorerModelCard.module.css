@@ -1,0 +1,79 @@
+.card {
+  display: block;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  aspect-ratio: 3 / 4;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+.cardUnindexed {
+  border-color: rgba(255, 255, 255, 0.04);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cardUnindexed:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.cardUnindexed:active {
+  transform: none !important;
+}
+
+.preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0.875rem;
+  gap: 0.25rem;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.5) 60%, transparent 100%);
+  box-sizing: border-box;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 0.25rem;
+}
+
+.name {
+  color: #f1f5f9;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden !important;
+}
+
+.size {
+  color: #64748b;
+  font-size: 0.75rem !important;
+}
+
+.unindexedLabel {
+  color: #475569;
+  font-size: 0.7rem !important;
+  font-style: italic;
+}

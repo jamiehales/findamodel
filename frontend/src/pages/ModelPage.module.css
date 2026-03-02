@@ -1,0 +1,164 @@
+.page {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.loadingCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.errorCenter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 16px;
+}
+
+.content {
+  padding-top: 5rem;
+  padding-bottom: 3rem;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .content {
+    padding-bottom: calc(3rem + env(safe-area-inset-bottom));
+  }
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.fileTypeBadge {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  margin-bottom: 0.25rem;
+}
+
+.modelTitle {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em !important;
+  color: #f1f5f9 !important;
+}
+
+@media (min-width: 600px) {
+  .modelTitle {
+    font-size: 2.5rem !important;
+  }
+}
+
+.fileSize {
+  font-size: 0.85rem !important;
+  color: #475569 !important;
+}
+
+.addToListBtn {
+  border-radius: 12px !important;
+  padding: 0.875rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  color: #818cf8 !important;
+}
+
+.addToListBtn:hover {
+  border-color: #818cf8 !important;
+  background: rgba(99, 102, 241, 0.08) !important;
+}
+
+.qtyControl {
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  overflow: hidden;
+}
+
+.qtyBtn {
+  border-radius: 0 !important;
+  padding: 0.75rem 1.25rem !important;
+  color: #818cf8 !important;
+  font-size: 1.25rem !important;
+}
+
+.qtyBtn:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+}
+
+.qtyValue {
+  flex: 1;
+  text-align: center;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: #e2e8f0 !important;
+  user-select: none;
+  min-width: 3rem;
+}
+
+.downloadBtn {
+  border-radius: 12px !important;
+  padding: 0.875rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  text-decoration: none !important;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.625rem 1.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background-color: #1e293b;
+  padding: 1rem 1.25rem;
+}
+
+.metaLabel {
+  font-size: 0.8rem !important;
+  color: #475569 !important;
+  white-space: nowrap;
+  padding-top: 0.1rem;
+}
+
+.metaValue {
+  font-size: 0.85rem !important;
+  color: #94a3b8 !important;
+}
+
+.supportedBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.viewerBox {
+  height: 380px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}

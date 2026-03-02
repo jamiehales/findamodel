@@ -1,0 +1,48 @@
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rootLink {
+  font-size: 0.875rem !important;
+  color: #818cf8 !important;
+  cursor: pointer;
+}
+
+.rootLink:hover {
+  text-decoration: underline;
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.separator {
+  color: #475569 !important;
+  font-size: 0.875rem !important;
+}
+
+.segLink {
+  font-size: 0.875rem !important;
+  color: #818cf8 !important;
+  cursor: pointer;
+}
+
+.segLink:hover {
+  text-decoration: underline;
+}
+
+.segLinkLast {
+  font-size: 0.875rem !important;
+  color: #e2e8f0 !important;
+  cursor: default;
+  font-weight: 600 !important;
+}
+
+.segLinkLast:hover {
+  text-decoration: none;
+}

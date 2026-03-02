@@ -6,25 +6,19 @@ import { useExplorer } from '../lib/queries'
 import FolderCard from '../components/FolderCard'
 import ExplorerModelCard from '../components/ExplorerModelCard'
 import PathBreadcrumb from '../components/PathBreadcrumb'
-
-const gridSx = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-  gap: '0.875rem',
-  alignItems: 'start',
-}
+import styles from './ExplorePage.module.css'
 
 function ExplorePageInner({ path }: { path: string }) {
   const { data, isPending, isError } = useExplorer(path)
 
   if (isPending) {
     return (
-      <Box sx={gridSx}>
+      <Box className={styles.grid}>
         {[1, 2, 3, 4, 5, 6].map(i => (
           <Skeleton
             key={i}
             variant="rectangular"
-            sx={{ aspectRatio: '3 / 4', borderRadius: '14px', height: 'auto' }}
+            className={styles.skeleton}
           />
         ))}
       </Box>
@@ -33,7 +27,7 @@ function ExplorePageInner({ path }: { path: string }) {
 
   if (isError) {
     return (
-      <Typography sx={{ color: 'error.main', mt: 2 }}>
+      <Typography color="error.main" style={{ marginTop: 16 }}>
         Failed to load directory. Check that the path exists.
       </Typography>
     )
@@ -44,27 +38,17 @@ function ExplorePageInner({ path }: { path: string }) {
   return (
     <>
       {isEmpty && (
-        <Typography sx={{ color: 'text.disabled', mt: 2 }}>
+        <Typography color="text.disabled" style={{ marginTop: 16 }}>
           This folder is empty.
         </Typography>
       )}
 
       {data.folders.length > 0 && (
-        <Box sx={{ mb: data.models.length > 0 ? '2rem' : 0 }}>
-          <Typography
-            sx={{
-              fontSize: '1.1rem',
-              fontWeight: 600,
-              color: '#94a3b8',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              mb: '0.75rem',
-              ml: '0.25rem',
-            }}
-          >
+        <Box className={data.models.length > 0 ? styles.sectionWithMargin : undefined}>
+          <Typography variant="section-label">
             Folders
           </Typography>
-          <Box sx={gridSx}>
+          <Box className={styles.grid}>
             {data.folders.map(folder => (
               <FolderCard
                 key={folder.path}
@@ -78,20 +62,10 @@ function ExplorePageInner({ path }: { path: string }) {
 
       {data.models.length > 0 && (
         <Box>
-          <Typography
-            sx={{
-              fontSize: '1.1rem',
-              fontWeight: 600,
-              color: '#94a3b8',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              mb: '0.75rem',
-              ml: '0.25rem',
-            }}
-          >
+          <Typography variant="section-label">
             Models
           </Typography>
-          <Box sx={gridSx}>
+          <Box className={styles.grid}>
             {data.models.map(model => (
               <ExplorerModelCard
                 key={model.relativePath}
@@ -112,61 +86,29 @@ export default function ExplorePage() {
   const path = params['*'] ?? ''
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        px: { xs: 2, sm: 3 },
-        pt: { xs: '3.5rem', sm: '5rem' },
-        pb: '3rem',
-        boxSizing: 'border-box',
-        maxWidth: 1200,
-        mx: 'auto',
-        width: '100%',
-      }}
-    >
+    <Box className={styles.page}>
       {/* Header */}
-      <Box sx={{ mb: '1rem' }}>
+      <Box className={styles.header}>
         <Typography
           component="button"
           onClick={() => navigate('/')}
-          sx={{
-            background: 'none',
-            border: 'none',
-            p: 0,
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            color: '#475569',
-            '&:hover': { color: '#818cf8' },
-            mb: '0.5rem',
-            display: 'block',
-          }}
+          className={styles.homeLink}
         >
           ← Home
         </Typography>
 
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: '2rem',
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            lineHeight: 1,
-            mb: '1.5rem',
-          }}
-        >
+        <Typography component="h1" className={styles.logoTitle}>
           find
-          <Box component="span" sx={{ fontSize: '1.1rem', verticalAlign: 'baseline' }}>
+          <Box component="span" className={styles.logoA}>
             a
           </Box>
           model
-          <Box component="span" sx={{ color: '#475569', fontSize: '1rem', fontWeight: 400, ml: '0.5rem' }}>
+          <Box component="span" className={styles.logoSuffix}>
             / explore
           </Box>
         </Typography>
 
-        <Box sx={{ mb: '1.5rem' }}>
+        <Box className={styles.breadcrumbWrapper}>
           <PathBreadcrumb path={path} />
         </Box>
       </Box>

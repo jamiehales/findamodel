@@ -17,28 +17,11 @@ interface Props {
   href: string
 }
 
-function MetaBadge({ type, value }: { type: string,value: string | null | undefined }) {
-  const color = value ? 'rgba(99,102,241,0.18)' : 'rgba(0,0,0,0.1)';
-
+function MetaBadge({ type, value }: { type: string, value: string | null | undefined }) {
   return (
     <Box
       component="span"
-      sx={{
-        display: 'inline-block',
-        px: '6px',
-        py: '1px',
-        borderRadius: '4px',
-        fontSize: '0.65rem',
-        fontWeight: 600,
-        bgcolor: color,
-        color: '#a5b4fc',
-        mr: '4px',
-        mb: '2px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        maxWidth: '100%',
-      }}
+      className={`${styles.metaBadge} ${value ? styles.metaBadgeSet : styles.metaBadgeUnset}`}
     >
       <div style={{ color: value ? '#a5b4fc' : 'rgba(131, 143, 202, 0.53)' }}>{value ?? "Unknown " + type.toLowerCase()}</div>
     </Box>
@@ -63,22 +46,16 @@ export default function FolderCard({ folder, href }: Props) {
           <span>
             <IconButton
               size="small"
-              className={styles.indexBtn}
+              className={`${styles.indexBtn}${indexingState === 'queued' ? ` ${styles.indexBtnQueued}` : ''}`}
               disabled={indexingState !== null}
               onClick={e => {
                 e.preventDefault()
                 e.stopPropagation()
                 indexFolder.mutate()
               }}
-              sx={{
-                color: indexingState === 'queued'
-                  ? '#fbbf24'
-                  : 'rgba(226,232,240,0.5)',
-                '&:hover': { color: '#818cf8', bgcolor: 'rgba(99,102,241,0.15)' },
-              }}
             >
               {indexingState === 'running' ? (
-                <CircularProgress size={14} sx={{ color: '#818cf8' }} />
+                <CircularProgress size={14} className={styles.spinner} />
               ) : (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -92,15 +69,11 @@ export default function FolderCard({ folder, href }: Props) {
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
             size="small"
-            className={styles.editBtn}
+            className={`${styles.editBtn}${editorOpen ? ` ${styles.editBtnActive}` : ''}`}
             onClick={e => {
               e.preventDefault()
               e.stopPropagation()
               setEditorOpen(v => !v)
-            }}
-            sx={{
-              color: editorOpen ? '#818cf8' : 'rgba(226,232,240,0.5)',
-              '&:hover': { color: '#818cf8', bgcolor: 'rgba(99,102,241,0.15)' },
             }}
           >
             {/* Pencil icon (SVG inline) */}
@@ -120,25 +93,13 @@ export default function FolderCard({ folder, href }: Props) {
         {/* Name */}
         <Typography
           variant="body2"
-          sx={{
-            fontWeight: 600,
-            color: '#e2e8f0',
-            textAlign: 'center',
-            lineHeight: 1.3,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            px: 1,
-            width: '100%',
-            height: '2.6em', // 2 lines of text
-          }}
+          className={styles.name}
         >
           {folder.name}
         </Typography>
 
         {/* Counts */}
-        <Typography variant="caption" sx={{ color: 'text.disabled', mt: '2px' }}>
+        <Typography variant="caption" color="text.disabled" className={styles.counts}>
           {folder.subdirectoryCount > 0 && `${folder.subdirectoryCount} folder${folder.subdirectoryCount !== 1 ? 's' : ''}`}
           {folder.subdirectoryCount > 0 && folder.modelCount > 0 && ' · '}
           {folder.modelCount > 0 && `${folder.modelCount} model${folder.modelCount !== 1 ? 's' : ''}`}
@@ -158,14 +119,7 @@ export default function FolderCard({ folder, href }: Props) {
 
       {/* Collapsible metadata editor */}
       <Collapse in={editorOpen} unmountOnExit>
-        <Box
-          sx={{
-            border: '1px solid rgba(99,102,241,0.3)',
-            borderTop: 'none',
-            borderRadius: '0 0 8px 8px',
-            bgcolor: 'rgba(15,23,42,0.8)',
-          }}
-        >
+        <Box className={styles.metaEditorWrapper}>
           <MetadataEditor path={folder.path} onClose={() => setEditorOpen(false)} />
         </Box>
       </Collapse>

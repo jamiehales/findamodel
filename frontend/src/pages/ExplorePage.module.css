@@ -1,0 +1,82 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 3.5rem;
+  padding-bottom: 3rem;
+  box-sizing: border-box;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .page {
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 5rem;
+  }
+}
+
+.header {
+  margin-bottom: 1rem;
+}
+
+.homeLink {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.875rem !important;
+  color: #475569 !important;
+  margin-bottom: 0.5rem !important;
+  display: block !important;
+}
+
+.homeLink:hover {
+  color: #818cf8 !important;
+}
+
+.logoTitle {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1 !important;
+  margin-bottom: 1.5rem !important;
+}
+
+.logoA {
+  font-size: 1.1rem;
+  vertical-align: baseline;
+}
+
+.logoSuffix {
+  color: #475569;
+  font-size: 1rem;
+  font-weight: 400;
+  margin-left: 0.5rem;
+}
+
+.breadcrumbWrapper {
+  margin-bottom: 1.5rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.875rem;
+  align-items: start;
+}
+
+.skeleton {
+  aspect-ratio: 3 / 4;
+  border-radius: 14px !important;
+  height: auto;
+}
+
+.sectionWithMargin {
+  margin-bottom: 2rem;
+}

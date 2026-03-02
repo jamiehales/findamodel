@@ -1,0 +1,13 @@
+.base {
+  text-decoration: none;
+  color: inherit;
+}
+
+.base:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.base:active {
+  transform: scale(0.97);
+}

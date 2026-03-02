@@ -1,5 +1,6 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import styles from './HullPreview.module.css'
 
 interface HullPreviewProps {
   convexHull: string | null
@@ -62,25 +63,11 @@ function toPath(coords: Coords, bounds: { offsetX: number; offsetZ: number; scal
 
 function EmptyPanel({ label }: { label: string }) {
   return (
-    <Box
-      sx={{
-        flex: '1 1 45%',
-        borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.07)',
-        bgcolor: 'rgba(255,255,255,0.02)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '0.375rem',
-        minHeight: 160,
-        p: '1rem',
-      }}
-    >
-      <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+    <Box className={styles.emptyPanel}>
+      <Typography className={styles.emptyLabel}>
         {label}
       </Typography>
-      <Typography sx={{ fontSize: '0.75rem', color: '#334155' }}>No data</Typography>
+      <Typography className={styles.emptyNoData}>No data</Typography>
     </Box>
   )
 }
@@ -96,28 +83,20 @@ function HullPanel({ label, layers }: PanelProps) {
   if (!bounds) return <EmptyPanel label={label} />
 
   return (
-    <Box
-      sx={{
-        flex: '1 1 45%',
-        borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.07)',
-        bgcolor: 'rgba(255,255,255,0.02)',
-        p: '1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
-      }}
-    >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+    <Box className={styles.panel}>
+      <Box className={styles.panelHeader}>
+        <Typography className={styles.panelLabel}>
           {label}
         </Typography>
         {layers.length > 1 && (
-          <Box sx={{ display: 'flex', gap: '0.625rem' }}>
+          <Box className={styles.legend}>
             {layers.map(l => (
-              <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: l.color, opacity: 0.9 }} />
-                <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>{l.label}</Typography>
+              <Box key={l.label} className={styles.legendItem}>
+                <Box
+                  className={styles.legendDot}
+                  style={{ backgroundColor: l.color }}
+                />
+                <Typography className={styles.legendLabel}>{l.label}</Typography>
               </Box>
             ))}
           </Box>
@@ -159,7 +138,7 @@ export default function HullPreview({ convexHull, concaveHull, convexSansRaftHul
   const sansRaftCoords = parseHull(convexSansRaftHull)
 
   return (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
+    <Box className={styles.container}>
       {convexCoords && convexCoords.length >= 2 ? (
         <HullPanel label="Convex Hull" layers={[{ coords: convexCoords, color: '#818cf8', label: 'Convex' }]} />
       ) : (

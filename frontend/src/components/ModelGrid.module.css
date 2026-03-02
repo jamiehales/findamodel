@@ -1,0 +1,18 @@
+.container {
+  width: 100%;
+  max-width: 900px;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.875rem;
+}
+
+.skeleton {
+  aspect-ratio: 3 / 4;
+  border-radius: 14px !important;
+  height: auto;
+}

@@ -1,27 +1,19 @@
 import { Link as RouterLink } from 'react-router-dom'
 import Box from '@mui/material/Box'
-import type { SxProps, Theme } from '@mui/material/styles'
+import styles from './AppCard.module.css'
 
 interface AppCardProps {
   href?: string
-  sx?: SxProps<Theme>
   className?: string
   children: React.ReactNode
 }
 
-const baseSx: SxProps<Theme> = {
-  textDecoration: 'none',
-  color: 'inherit',
-  '&:hover': { transform: 'scale(1.03)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' },
-  '&:active': { transform: 'scale(0.97)' },
-}
-
-export default function AppCard({ href, sx, className, children }: AppCardProps) {
-  const sxArr = [baseSx, ...(Array.isArray(sx) ? sx : sx ? [sx] : [])]
+export default function AppCard({ href, className, children }: AppCardProps) {
+  const combinedClass = `${styles.base}${className ? ` ${className}` : ''}`
 
   if (!href) {
     return (
-      <Box sx={sxArr} className={className}>
+      <Box className={combinedClass}>
         {children}
       </Box>
     )
@@ -31,8 +23,7 @@ export default function AppCard({ href, sx, className, children }: AppCardProps)
     <Box
       component={RouterLink as React.ElementType}
       {...{ to: href }}
-      sx={sxArr}
-      className={className}
+      className={combinedClass}
     >
       {children}
     </Box>

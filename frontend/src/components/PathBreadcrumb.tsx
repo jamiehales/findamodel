@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import { useNavigate } from 'react-router-dom'
+import styles from './PathBreadcrumb.module.css'
 
 interface PathBreadcrumbProps {
   /** Forward-slash separated path. Last segment is rendered as non-clickable. */
@@ -12,16 +13,11 @@ export default function PathBreadcrumb({ path }: PathBreadcrumbProps) {
   const segments = path === '' ? [] : path.split('/')
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+    <Box className={styles.breadcrumb}>
       <Typography
         component="span"
         onClick={() => navigate('/explore')}
-        sx={{
-          fontSize: '0.875rem',
-          color: '#818cf8',
-          cursor: 'pointer',
-          '&:hover': { textDecoration: 'underline' },
-        }}
+        className={styles.rootLink}
       >
         findamodel
       </Typography>
@@ -30,20 +26,14 @@ export default function PathBreadcrumb({ path }: PathBreadcrumbProps) {
         const segPath = segments.slice(0, i + 1).join('/')
         const isLast = i === segments.length - 1
         return (
-          <Box key={segPath} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Typography component="span" sx={{ color: '#475569', fontSize: '0.875rem' }}>
+          <Box key={segPath} className={styles.segment}>
+            <Typography component="span" className={styles.separator}>
               /
             </Typography>
             <Typography
               component="span"
               onClick={() => !isLast && navigate(`/explore/${segPath}`)}
-              sx={{
-                fontSize: '0.875rem',
-                color: isLast ? '#e2e8f0' : '#818cf8',
-                cursor: isLast ? 'default' : 'pointer',
-                fontWeight: isLast ? 600 : 400,
-                '&:hover': !isLast ? { textDecoration: 'underline' } : {},
-              }}
+              className={isLast ? styles.segLinkLast : styles.segLink}
             >
               {seg}
             </Typography>

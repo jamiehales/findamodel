@@ -3,6 +3,7 @@ import Typography from '@mui/material/Typography'
 import type { Model } from '../lib/api'
 import AppCard from './AppCard'
 import PrintingListControls from './PrintingListControls'
+import styles from './ModelCard.module.css'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -24,82 +25,29 @@ function ModelCard({ model, href, showControls = true }: ModelCardProps) {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
 
   return (
-    <AppCard
-      href={href}
-      sx={{
-        display: 'block',
-        borderRadius: '14px',
-        border: '1px solid rgba(255,255,255,0.08)',
-        aspectRatio: '3 / 4',
-        position: 'relative',
-        overflow: 'hidden',
-        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-      }}
-    >
+    <AppCard href={href} className={styles.card}>
       {model.previewUrl && (
         <Box
           component="img"
           src={model.previewUrl}
           alt=""
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
+          className={styles.preview}
         />
       )}
 
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'flex-end',
-          p: '0.875rem',
-          gap: '0.25rem',
-          width: '100%',
-          height: '100%',
-          position: 'relative',
-          zIndex: 1,
-          background: 'linear-gradient(to top, rgba(15,23,42,0.95) 0%, rgba(15,23,42,0.5) 60%, transparent 100%)',
-          boxSizing: 'border-box',
-        }}
-      >
-        <Box
-          component="span"
-          sx={{
-            alignSelf: 'flex-start',
-            fontSize: '0.65rem',
-            fontWeight: 700,
-            letterSpacing: '0.06em',
-            px: '0.5rem',
-            py: '0.2rem',
-            borderRadius: '4px',
-            mb: '0.25rem',
-            background: badge.bg,
-            color: badge.color,
-          }}
+      <Box className={styles.overlay}>
+        <span
+          className={styles.badge}
+          style={{ background: badge.bg, color: badge.color }}
         >
           {model.fileType.toUpperCase()}
-        </Box>
+        </span>
 
-        <Typography
-          sx={{
-            color: '#f1f5f9',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            lineHeight: 1.3,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
+        <Typography className={styles.name}>
           {model.name}
         </Typography>
 
-        <Typography sx={{ color: '#64748b', fontSize: '0.75rem' }}>
+        <Typography className={styles.size}>
           {formatBytes(model.fileSize)}
         </Typography>
       </Box>

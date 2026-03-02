@@ -1,8 +1,8 @@
 * Add database migration support
 
-* Allow hulls to be calculated in a separate pass
+* Switch 3D plate generation to 3mf with instancing
 
-* Remove all the garbage sx from every control, and tell AI to stop that shit, use themes instead, we don't want it overriding stuff that much it makes things hard to keep consistent
+* Allow hulls to be calculated in a separate pass
 
 * Add a filters section to the main page that can search by any of the fields on a model (based on the calculated values from findamodel.yaml), it should update the shown model results in real time
 
@@ -12,8 +12,6 @@
 
 * Reduce complexity of convex hull
 * Fix concave hull calculation
-
-* Add the following field to the model metadata when indexing - size (x/y/z dimensions of the object in mm), and spherical center of the model. Making sure to use the model service for both of these tasks so that the data is pre-transformed into a y up coordinate system. Update the model api endpoints to return this data
 
 * Add a creator explorer, there should be a list of creators, then a list of collections, if there are subcollections then show those
 
@@ -62,6 +60,7 @@
 * Setup prettier, and have claude run it after frontend changes
 
 * Add model name to metadata - allowing a model with multiple parts to be marked as one model
+* Add 3D Print type to model, FDM / Resin / Any
 
 * Draw sans raft hull Xmm (where X = however many the raft vertical offset was set to) in the air within the viewport. Use the same colors as the sans raft dialog below
 * Remove the convex hull card, and replace it with the sans raft one below. Then rename the title to say just "Convex"

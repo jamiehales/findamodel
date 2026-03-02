@@ -6,7 +6,8 @@ General:
 Frontend:
 * Prefer to use MUI layout (Stack, Grid) instead of Box and divs
 * Use react-query for storage and mutation of any state backed by the backend
-* Don't use sx tags for style, update the theme if new controls need adding (theme.ts), else create and use local app re-usable controls if custom styling is needed, avoid inlining visual style unless there is no other option
+* Don't use sx tags for style, update the theme if new controls need adding (theme.ts), else create and use local app re-usable controls if custom styling is needed
+* Use minimal css. Only use local styles (.module.css) where completely appropriate and is truly a one off local change. Prefer using variants and modify the MUI theme if this is a reusable style, or preferably choose an appropriate existing style
 
 Backend:
 * Ensure permissions are checked for each operation

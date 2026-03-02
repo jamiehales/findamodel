@@ -12,6 +12,7 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries'
 import type { MetadataFields } from '../lib/api'
+import styles from './MetadataEditor.module.css'
 
 interface Props {
   path: string
@@ -24,7 +25,7 @@ const TYPES = ['Whole', 'Part']
 function InheritedHint({ value }: { value: string | boolean | null | undefined }) {
   if (value == null) return null
   return (
-    <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mt: '2px' }}>
+    <Typography variant="caption" color="text.disabled" component="p" className={styles.subtitle}>
       Inherited: {String(value)}
     </Typography>
   )
@@ -76,15 +77,15 @@ export default function MetadataEditor({ path, onClose }: Props) {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+      <Box className={styles.loadingBox}>
         <CircularProgress size={24} />
       </Box>
     )
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 2 }}>
-      <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 0.5 }}>
+    <Box className={styles.form}>
+      <Typography variant="subtitle2" color="text.secondary" className={styles.subtitle}>
         Metadata — local values override inherited ones
       </Typography>
 
@@ -99,7 +100,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onChange={e => set('creator', e.target.value || null)}
           onBlur={handleCommit}
           onKeyDown={handleKeyDown}
-          slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
+          slotProps={{ input: { className: styles.fieldInput } }}
         />
         <InheritedHint value={p?.creator} />
       </Box>
@@ -115,7 +116,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onChange={e => set('collection', e.target.value || null)}
           onBlur={handleCommit}
           onKeyDown={handleKeyDown}
-          slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
+          slotProps={{ input: { className: styles.fieldInput } }}
         />
         <InheritedHint value={p?.collection} />
       </Box>
@@ -131,7 +132,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onChange={e => set('subcollection', e.target.value || null)}
           onBlur={handleCommit}
           onKeyDown={handleKeyDown}
-          slotProps={{ input: { sx: { fontSize: '0.875rem' } } }}
+          slotProps={{ input: { className: styles.fieldInput } }}
         />
         <InheritedHint value={p?.subcollection} />
       </Box>
@@ -149,7 +150,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
               setFields(next)
               saveFields(next)
             }}
-            sx={{ fontSize: '0.875rem' }}
+            className={styles.selectSmall}
           >
             <MenuItem value=""><em>Not set</em></MenuItem>
             {CATEGORIES.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
@@ -171,7 +172,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
               setFields(next)
               saveFields(next)
             }}
-            sx={{ fontSize: '0.875rem' }}
+            className={styles.selectSmall}
           >
             <MenuItem value=""><em>Not set</em></MenuItem>
             {TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
@@ -197,14 +198,14 @@ export default function MetadataEditor({ path, onClose }: Props) {
               }}
             />
           }
-          label={<Typography sx={{ fontSize: '0.875rem' }}>Supported</Typography>}
+          label={<Typography className={styles.labelSmall}>Supported</Typography>}
         />
         <InheritedHint value={p?.supported} />
       </Box>
 
       {/* Actions */}
-      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 0.5 }}>
-        <Button size="small" onClick={onClose} sx={{ textTransform: 'none', color: 'text.secondary' }}>
+      <Box className={styles.actions}>
+        <Button size="small" onClick={onClose} className={styles.closeBtn}>
           Close
         </Button>
         <Button
@@ -212,21 +213,16 @@ export default function MetadataEditor({ path, onClose }: Props) {
           variant="contained"
           onClick={handleCommit}
           disabled={mutation.isPending}
-          sx={{
-            textTransform: 'none',
-            bgcolor: '#6366f1',
-            '&:hover': { bgcolor: '#4f46e5' },
-            minWidth: 80,
-          }}
+          className={styles.saveBtn}
         >
           {mutation.isPending ? (
-            <CircularProgress size={14} sx={{ color: 'white' }} />
+            <CircularProgress size={14} color="inherit" />
           ) : savedIndicator ? 'Saved!' : 'Save'}
         </Button>
       </Box>
 
       {mutation.isError && (
-        <Typography variant="caption" sx={{ color: 'error.main' }}>
+        <Typography variant="caption" color="error.main">
           Failed to save — please try again.
         </Typography>
       )}
