@@ -57,7 +57,7 @@ using (var scope = app.Services.CreateScope())
 
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ModelCacheContext>>();
     using var db = dbFactory.CreateDbContext();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
     db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 
     var userService = scope.ServiceProvider.GetRequiredService<findamodel.Services.UserService>();

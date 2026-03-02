@@ -1,5 +1,3 @@
-* Add database migration support
-
 * Switch 3D plate generation to 3mf with instancing
 
 * Allow hulls to be calculated in a separate pass

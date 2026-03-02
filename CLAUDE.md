@@ -12,3 +12,4 @@ Frontend:
 Backend:
 * Ensure permissions are checked for each operation
 * Use standard asp.net authorization/authentication checks for generated api calls
+* Any schema change to EF Core entities must be accompanied by a new migration: `dotnet ef migrations add <MigrationName>` from the `backend/` directory

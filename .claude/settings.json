@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dotnet build --no-restore -v q)",
       "Bash(yarn tsc --noEmit)",
-      "Bash(xargs basename -a)"
+      "Bash(xargs basename -a)",
+      "Bash(dotnet ef migrations add InitialCreate)",
+      "Bash(dotnet tool install --global dotnet-ef)"
     ]
   }
 }
