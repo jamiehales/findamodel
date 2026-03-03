@@ -1,11 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import IconButton from '@mui/material/IconButton'
-import Popover from '@mui/material/Popover'
-import Stack from '@mui/material/Stack'
-import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip'
-import Badge from '@mui/material/Badge'
-import Tooltip from '@mui/material/Tooltip'
+import { IconButton, Popover, Stack, Typography, Chip, Badge, Tooltip } from '@mui/material'
 import { useIndexerStatus } from '../lib/queries'
 import type { IndexRequest } from '../lib/api'
 import { IndexFlags } from '../lib/api'
@@ -38,21 +32,24 @@ function flagsLabel(flags: number): string {
 function RequestRow({ request, status }: { request: IndexRequest; status: 'running' | 'queued' }) {
   const elapsed = useElapsed(request.requestedAt)
   return (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-      <Chip
-        label={status === 'running' ? 'Running' : 'Queued'}
-        size="small"
-        variant={status === 'running' ? 'status-running' : 'status-queued'}
-      />
-      <Typography variant="caption">
-        {request.directoryFilter ?? 'All directories'}
-      </Typography>
-      <Typography variant="caption" color="text.disabled">
-        {flagsLabel(request.flags)}
-      </Typography>
+    <Stack direction="row" alignItems="center" spacing={2} justifyContent="space-between">
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Chip
+          label={status === 'running' ? 'Running' : 'Queued'}
+          size="small"
+          variant={status === 'running' ? 'status-running' : 'status-queued'}
+        />
+        <Typography variant="caption">
+          {request.directoryFilter ?? 'All directories'}
+        </Typography>
+        <Typography variant="caption" color="text.disabled">
+          {flagsLabel(request.flags)}
+        </Typography>
+      </Stack>
+      <div/>
       <Typography variant="caption" color="text.disabled" className={styles.elapsed}>
-        {elapsed}
-      </Typography>
+          {elapsed}
+        </Typography>
     </Stack>
   )
 }
