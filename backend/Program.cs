@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using findamodel.Auth;
 using findamodel.Data;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,7 +50,27 @@ if (builder.Environment.IsDevelopment())
     });
 }
 
+ResponseCompressionOptions responseCompressionOptions = new();
+responseCompressionOptions.Providers.Add<GzipCompressionProvider>();
+responseCompressionOptions.Providers.Add<BrotliCompressionProvider>();
+responseCompressionOptions.EnableForHttps = true;
+responseCompressionOptions.MimeTypes = ["application/json", "application/3mf", "model/gltf-binary"];
+
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Optimal;
+});
+
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Optimal;
+});
+
+builder.Services.AddResponseCompression(options => options = responseCompressionOptions);
+
 var app = builder.Build();
+
+app.UseResponseCompression();
 
 using (var scope = app.Services.CreateScope())
 {

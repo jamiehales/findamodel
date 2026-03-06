@@ -50,3 +50,6 @@
 * See if there's a VSCode serilog plugin or similar that can provide the ability to filter channels dynamically
 
 * Fix "show more" jumping to the top of the page
+
+* Switch model geometry return to binary format for less data transfer
+* Potentially investigate some sort of model simplification algorithm?

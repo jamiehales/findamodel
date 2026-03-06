@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using findamodel.Services;
+using System.Text.Json;
 
 namespace findamodel.Controllers;
 
@@ -104,7 +105,7 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
             normals[b + 6] = tri.Normal.X; normals[b + 7] = tri.Normal.Y; normals[b + 8] = tri.Normal.Z;
         }
 
-        return Ok(new
+        return new JsonResult(new
         {
             positions,
             normals,
@@ -113,7 +114,7 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
             sphereCentre  = new { geometry.SphereCentre.X, geometry.SphereCentre.Y, geometry.SphereCentre.Z },
             dimensionXMm  = geometry.DimensionXMm,
             dimensionYMm  = geometry.DimensionYMm,
-            dimensionZMm  = geometry.DimensionZMm,
+            dimensionZMm  = geometry.DimensionZMm
         });
     }
 }
