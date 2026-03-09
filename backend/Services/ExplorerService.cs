@@ -158,10 +158,18 @@ public class ExplorerService(
             };
             foreach (var field in resolvedRules.Keys) available.Remove(field);
 
+            var fieldTypes = new Dictionary<string, RuleFieldType>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["supported"] = RuleFieldType.Bool,
+                ["category"]  = RuleFieldType.Enum,
+                ["type"]      = RuleFieldType.Enum,
+            };
+
             ruleConfigs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (field, ruleEl) in resolvedRules)
             {
-                var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl);
+                var ft = fieldTypes.TryGetValue(field, out var t) ? t : RuleFieldType.String;
+                var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl, ft);
                 if (value == null) continue;
 
                 ruleConfigs[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
@@ -173,6 +181,7 @@ public class ExplorerService(
                     case "category":    category    = ValidateEnumValue(value, ["Bust", "Miniature", "Uncategorized"]); break;
                     case "type":        type        = ValidateEnumValue(value, ["Whole", "Part"]); break;
                     case "model_name":  modelName   = value; break;
+                    case "supported":   supported   = value.Equals("true", StringComparison.OrdinalIgnoreCase); break;
                 }
             }
 

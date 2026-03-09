@@ -11,18 +11,6 @@
 
 * findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name
 
-* Add support for storing metadata for models, not just directories
-* The model metadata should be stored in the database
-
-* Add support for a regex rule, and RegexRuleParser
-* When a regex rule is used the value passed into the regex is specified by the source
-* Options should be full_path (passes the full path to the regex), folder (passes the folder that the current file is in), filename (passes the filename with extension)
-* In the example below it would be the full path of the file (relative to the root)
-  - name:
-      regex:
-        source: full_path
-        expression: s|.*/([^/]*)/[^/]*$|\1|
-
 * Determine if db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;"); is needed
 
 * On the main screen show the X most recently added models (configurable via config variable)

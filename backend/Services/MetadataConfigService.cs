@@ -85,28 +85,7 @@ public class MetadataConfigService(
         var all = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
 
         all.TryGetValue(dirPath, out var record);
-
-        var localValues = record != null
-            ? new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
-                                  record.RawCategory, record.RawType, record.RawSupported, record.RawModelName)
-            : new ConfigFieldsDto(null, null, null, null, null, null);
-
-        var parentPath = GetParentPath(dirPath);
-        ConfigFieldsDto? parentResolved = null;
-        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
-        {
-            parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
-                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported,
-                parentRecord.ModelName);
-        }
-
-        var localRuleFields = record?.RawRulesYaml != null
-            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
-                .Select(k => k.ToLowerInvariant())
-                .ToHashSet()
-            : null;
-
-        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields);
+        return BuildDetailDto(dirPath, record, all);
     }
 
     /// <summary>
@@ -151,28 +130,7 @@ public class MetadataConfigService(
 
         await db.SaveChangesAsync();
 
-        var parentPath = GetParentPath(dirPath);
-        ConfigFieldsDto? parentResolved = null;
-        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
-        {
-            parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
-                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported,
-                parentRecord.ModelName);
-        }
-
-        var localRuleFields = record.RawRulesYaml != null
-            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
-                .Select(k => k.ToLowerInvariant())
-                .ToHashSet()
-            : null;
-
-        return new DirectoryConfigDetailDto(
-            dirPath,
-            new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
-                                 record.RawCategory, record.RawType, record.RawSupported, record.RawModelName),
-            parentResolved,
-            parentPath,
-            localRuleFields);
+        return BuildDetailDto(dirPath, record, all);
     }
 
     // -------------------------------------------------------------------------
@@ -195,46 +153,9 @@ public class MetadataConfigService(
         var count = 0;
         foreach (var dirPath in directories)
         {
-            var fullPath = GetFullDirPath(modelsRootPath, dirPath);
-            var configFilePath = Path.Combine(fullPath, ConfigFileName);
-            var configExists = File.Exists(configFilePath);
-            var currentHash = configExists ? await ComputeFileHashAsync(configFilePath) : null;
-
-            if (existing.TryGetValue(dirPath, out var record))
-            {
-                if (record.LocalConfigFileHash != currentHash)
-                {
-                    logger.LogInformation(
-                        "Config file changed for directory '{Dir}': {Old} → {New}",
-                        dirPath, record.LocalConfigFileHash ?? "(none)", currentHash ?? "(none)");
-
-                    var rawFields = configExists ? await ParseConfigFileAsync(configFilePath) : null;
-                    ApplyRawFields(record, rawFields);
-                    record.LocalConfigFileHash = currentHash;
-                    record.UpdatedAt = DateTime.UtcNow;
-                }
-                // Always re-resolve: parent's resolved values may have changed upstream.
-                // Safe because DFS pre-order guarantees the parent is already current in `existing`.
-                ResolveFields(record, existing);
-            }
-            else
-            {
-                var rawFields = configExists ? await ParseConfigFileAsync(configFilePath) : null;
-                var parent = GetParentRecord(dirPath, existing);
-                var newRecord = new DirectoryConfig
-                {
-                    Id = Guid.NewGuid(),
-                    DirectoryPath = dirPath,
-                    ParentId = parent?.Id,
-                    LocalConfigFileHash = currentHash,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                ApplyRawFields(newRecord, rawFields);
-                ResolveFields(newRecord, existing);
-                db.DirectoryConfigs.Add(newRecord);
-                existing[dirPath] = newRecord;
-            }
-
+            // alwaysResolve=true: DFS pre-order guarantees parent is current, so re-resolving
+            // every dir propagates any upstream parent changes in one pass.
+            await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
             count++;
 
             if (count % DirectoryBatchSize == 0)
@@ -257,69 +178,81 @@ public class MetadataConfigService(
         string modelsRootPath,
         IEnumerable<string> relativeDirectories)
     {
-        var allPaths = ExpandToAllAncestors(relativeDirectories);
-
         // Process root-first (shorter paths first; "" always comes first)
-        var sorted = allPaths.OrderBy(p => p.Length).ThenBy(p => p).ToList();
+        var sorted = ExpandToAllAncestors(relativeDirectories)
+            .OrderBy(p => p.Length).ThenBy(p => p).ToList();
 
         await using var db = await dbFactory.CreateDbContextAsync();
-
-        // Load all existing records in one query
         var existing = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
 
         foreach (var dirPath in sorted)
         {
-            var fullPath = GetFullDirPath(modelsRootPath, dirPath);
-            var configFilePath = Path.Combine(fullPath, ConfigFileName);
-            var configExists = File.Exists(configFilePath);
-
-            var currentHash = configExists ? await ComputeFileHashAsync(configFilePath) : null;
-            var rawFields = configExists ? await ParseConfigFileAsync(configFilePath) : null;
-
-            if (existing.TryGetValue(dirPath, out var record))
-            {
-                // Record exists — check if the config file hash has changed
-                if (record.LocalConfigFileHash != currentHash)
-                {
-                    logger.LogInformation(
-                        "Config file changed for directory '{Dir}': {Old} → {New}",
-                        dirPath,
-                        record.LocalConfigFileHash ?? "(none)",
-                        currentHash ?? "(none)");
-
-                    ApplyRawFields(record, rawFields);
-                    record.LocalConfigFileHash = currentHash;
-                    ResolveFields(record, existing);
-                    record.UpdatedAt = DateTime.UtcNow;
-
-                    // Re-resolve all descendants so inherited values propagate
-                    ResolveDescendants(dirPath, existing);
-                }
-                // Unchanged hash → resolved fields are still valid, skip
-            }
-            else
-            {
-                var parent = GetParentRecord(dirPath, existing);
-                var newRecord = new DirectoryConfig
-                {
-                    Id = Guid.NewGuid(),
-                    DirectoryPath = dirPath,
-                    ParentId = parent?.Id,
-                    LocalConfigFileHash = currentHash,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                ApplyRawFields(newRecord, rawFields);
-                ResolveFields(newRecord, existing);
-
-                db.DirectoryConfigs.Add(newRecord);
-                existing[dirPath] = newRecord;
-            }
+            // alwaysResolve=true: sorted is root-first, so each parent is already re-resolved
+            // in `existing` before its children are processed. No need to cascade into sibling
+            // trees via ResolveDescendants — only the paths we're actually scanning matter here.
+            await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
         }
 
         await db.SaveChangesAsync();
 
         return await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: single-directory config sync
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Syncs a single directory's config record. If the config file hash changed (or the record
+    /// is new), parses the file, applies raw fields, and resolves the record.
+    /// When <paramref name="alwaysResolve"/> is true, resolves even when unchanged (needed when
+    /// a parent's resolved values may have changed upstream).
+    /// Returns true if the record was created or its hash changed.
+    /// Does NOT call SaveChanges or ResolveDescendants — callers are responsible.
+    /// </summary>
+    private async Task<bool> SyncSingleDirectoryConfigAsync(
+        ModelCacheContext db,
+        string modelsRootPath,
+        string dirPath,
+        Dictionary<string, DirectoryConfig> existing,
+        bool alwaysResolve)
+    {
+        var fullPath = GetFullDirPath(modelsRootPath, dirPath);
+        var configFilePath = Path.Combine(fullPath, ConfigFileName);
+        var configExists = File.Exists(configFilePath);
+        var currentHash = configExists ? await ComputeFileHashAsync(configFilePath) : null;
+
+        if (existing.TryGetValue(dirPath, out var record))
+        {
+            var changed = record.LocalConfigFileHash != currentHash;
+            if (changed)
+            {
+                logger.LogInformation(
+                    "Config file changed for directory '{Dir}': {Old} → {New}",
+                    dirPath, record.LocalConfigFileHash ?? "(none)", currentHash ?? "(none)");
+                ApplyRawFields(record, configExists ? await ParseConfigFileAsync(configFilePath) : null);
+                record.LocalConfigFileHash = currentHash;
+                record.UpdatedAt = DateTime.UtcNow;
+            }
+            if (changed || alwaysResolve)
+                ResolveFields(record, existing);
+            return changed;
+        }
+
+        var parent = GetParentRecord(dirPath, existing);
+        var newRecord = new DirectoryConfig
+        {
+            Id = Guid.NewGuid(),
+            DirectoryPath = dirPath,
+            ParentId = parent?.Id,
+            LocalConfigFileHash = currentHash,
+            UpdatedAt = DateTime.UtcNow
+        };
+        ApplyRawFields(newRecord, configExists ? await ParseConfigFileAsync(configFilePath) : null);
+        ResolveFields(newRecord, existing);
+        db.DirectoryConfigs.Add(newRecord);
+        existing[dirPath] = newRecord;
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -370,7 +303,7 @@ public class MetadataConfigService(
                 var existing = YamlDeserializer.Deserialize<Dictionary<string, object>>(existingYaml);
                 if (existing != null)
                 {
-                    var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "model_name" };
+                    var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "supported", "model_name" };
                     foreach (var kvp in existing)
                     {
                         var fieldName = ruleFieldNames.FirstOrDefault(f =>
@@ -425,6 +358,31 @@ public class MetadataConfigService(
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private static DirectoryConfigDetailDto BuildDetailDto(
+        string dirPath,
+        DirectoryConfig? record,
+        Dictionary<string, DirectoryConfig> all)
+    {
+        var localValues = record != null
+            ? new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
+                                  record.RawCategory, record.RawType, record.RawSupported, record.RawModelName)
+            : new ConfigFieldsDto(null, null, null, null, null, null);
+
+        var parentPath = GetParentPath(dirPath);
+        ConfigFieldsDto? parentResolved = null;
+        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
+            parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
+                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type,
+                parentRecord.Supported, parentRecord.ModelName);
+
+        var localRuleFields = record?.RawRulesYaml != null
+            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
+                .Select(k => k.ToLowerInvariant()).ToHashSet()
+            : null;
+
+        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields);
+    }
 
     private static string GetFullDirPath(string rootPath, string dirPath) =>
         dirPath == ""
@@ -506,6 +464,7 @@ public class MetadataConfigService(
                 case "subcollection" when !subcollectionSet: resolvedRules["subcollection"] = ruleEl; subcollectionSet = true; break;
                 case "category" when !categorySet: resolvedRules["category"] = ruleEl; categorySet = true; break;
                 case "type" when !typeSet: resolvedRules["type"] = ruleEl; typeSet = true; break;
+                case "supported" when !supportedSet: resolvedRules["supported"] = ruleEl; supportedSet = true; break;
                 case "model_name" when !modelNameSet: resolvedRules["model_name"] = ruleEl; modelNameSet = true; break;
             }
         }
@@ -520,6 +479,7 @@ public class MetadataConfigService(
                 || (!subcollectionSet && current.RawSubcollection == null)
                 || (!categorySet && current.RawCategory == null)
                 || (!typeSet && current.RawType == null)
+                || (!supportedSet && current.RawSupported == null)
                 || (!modelNameSet && current.RawModelName == null);
             Dictionary<string, JsonElement>? parentRules = needsRuleCheck
                 ? RuleRegistry.DeserializeRules(current.RawRulesYaml)
@@ -550,10 +510,10 @@ public class MetadataConfigService(
                 if (current.RawType != null) { type = current.RawType; typeSet = true; }
                 else if (parentRules != null && parentRules.TryGetValue("type", out var ruleEl)) { resolvedRules["type"] = ruleEl; typeSet = true; }
             }
-            if (!supportedSet && current.RawSupported != null)
+            if (!supportedSet)
             {
-                supported = current.RawSupported; supportedSet = true;
-                // Note: "supported" is boolean — rules are not applied to it
+                if (current.RawSupported != null) { supported = current.RawSupported; supportedSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("supported", out var ruleEl)) { resolvedRules["supported"] = ruleEl; supportedSet = true; }
             }
             if (!modelNameSet)
             {
@@ -628,7 +588,7 @@ public class MetadataConfigService(
     /// </summary>
     private static string? ExtractRulesYaml(Dictionary<string, object> data)
     {
-        var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "model_name" };
+        var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "supported", "model_name" };
         var rules = new Dictionary<string, object>();
 
         foreach (var kvp in data)

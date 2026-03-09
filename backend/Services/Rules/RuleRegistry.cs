@@ -3,6 +3,8 @@ using YamlDotNet.Serialization;
 
 namespace findamodel.Services.Rules;
 
+public enum RuleFieldType { String, Bool, Enum }
+
 /// <summary>
 /// Registry that maps rule names to their parser implementations and evaluates rules for model files.
 /// </summary>
@@ -15,12 +17,14 @@ public static class RuleRegistry
     /// <param name="filePath">Full path to the model file.</param>
     /// <param name="availableFields">Resolved non-rule field values available for use by rules.</param>
     /// <param name="ruleConfig">The rule config JSON element (must contain a "rule" property).</param>
+    /// <param name="fieldType">The expected type of the field; governs how regex results are interpreted.</param>
     /// <returns>The computed value, or null if the rule name is unknown or evaluation fails.</returns>
     public static string? Evaluate(
         string fieldName,
         string filePath,
         Dictionary<string, string?> availableFields,
-        JsonElement ruleConfig)
+        JsonElement ruleConfig,
+        RuleFieldType fieldType = RuleFieldType.String)
     {
         if (!ruleConfig.TryGetProperty("rule", out var ruleNameEl)) return null;
         if (ruleNameEl.ValueKind != JsonValueKind.String) return null;
@@ -38,6 +42,7 @@ public static class RuleRegistry
         return ruleName.ToLowerInvariant() switch
         {
             "filename" => FilenameRuleParser.ParseValue(filePath, availableFields, options),
+            "regex"    => RegexRuleParser.ParseValue(filePath, fieldType, options),
             _ => null
         };
     }

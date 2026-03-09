@@ -12,7 +12,7 @@ import styles from './FolderCard.module.css'
 import { Divider, Stack } from '@mui/material'
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries'
 
-const RULE_COLOR = '#fbbf24'
+const RULE_COLOR = '#fbbf24B0'
 
 interface Props {
   folder: ExplorerFolder
@@ -22,15 +22,14 @@ interface Props {
 function MetaBadge({ type, value, ruleYaml }: { type: string; value: string | null | undefined; ruleYaml?: string | null }) {
   const isRule = ruleYaml != null && value == null
 
-  console.log(type, value, ruleYaml, isRule)
-
   const badge = (
     <Box
       component="span"
       className={`${styles.metaBadge} ${value || isRule ? styles.metaBadgeSet : styles.metaBadgeUnset}`}
+      style={isRule ? { border: `1px dashed ${RULE_COLOR}` } : undefined}
     >
-      <div style={{ color: value ? '#a5b4fc' : isRule ? RULE_COLOR : 'rgba(131, 143, 202, 0.53)' }}>
-        {value ?? (isRule ? `Rule exists for ${type.toLowerCase()}` : `Unknown ${type.toLowerCase()}`)}
+      <div style={{ color: value ? '#a5b4fc' : 'rgba(131, 143, 202, 0.53)' }}>
+        {value ?? (isRule ? `${type}` : `Unknown ${type.toLowerCase()}`)}
       </div>
     </Box>
   )
@@ -133,7 +132,7 @@ export default function FolderCard({ folder, href }: Props) {
             <MetaBadge type="Subcollection" value={rv.subcollection} ruleYaml={folder.ruleConfigs?.subcollection} />
             <MetaBadge type="Category" value={rv.category} ruleYaml={folder.ruleConfigs?.category} />
             <MetaBadge type="Type" value={rv.type} ruleYaml={folder.ruleConfigs?.type} />
-            <MetaBadge type="Supports" value={rv.supported == null ? null : rv.supported ? "Supported" : "Unsupported"} />
+            <MetaBadge type="Supports" value={rv.supported == null ? null : rv.supported ? "Supported" : "Unsupported"} ruleYaml={folder.ruleConfigs?.supported} />
             <Divider />
             <MetaBadge type="Model Name" value={rv.modelName} ruleYaml={folder.ruleConfigs?.model_name} />
           </Stack>
