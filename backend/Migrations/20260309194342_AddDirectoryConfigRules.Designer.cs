@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using findamodel.Data;
 
@@ -10,9 +11,11 @@ using findamodel.Data;
 namespace findamodel.Migrations
 {
     [DbContext(typeof(ModelCacheContext))]
-    partial class ModelCacheContextModelSnapshot : ModelSnapshot
+    [Migration("20260309194342_AddDirectoryConfigRules")]
+    partial class AddDirectoryConfigRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.13");
@@ -124,9 +127,6 @@ namespace findamodel.Migrations
                     b.Property<string>("LocalConfigFileHash")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ModelName")
-                        .HasColumnType("TEXT");
-
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("TEXT");
 
@@ -139,10 +139,7 @@ namespace findamodel.Migrations
                     b.Property<string>("RawCreator")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("RawModelName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RawRulesYaml")
+                    b.Property<string>("RawRulesJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RawSubcollection")
@@ -154,7 +151,7 @@ namespace findamodel.Migrations
                     b.Property<string>("RawType")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ResolvedRulesYaml")
+                    b.Property<string>("ResolvedRulesJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Subcollection")

@@ -133,6 +133,7 @@ export interface MetadataFields {
   category: string | null
   type: string | null
   supported: boolean | null
+  modelName: string | null
 }
 
 export interface ExplorerFolder {
@@ -141,6 +142,7 @@ export interface ExplorerFolder {
   subdirectoryCount: number
   modelCount: number
   resolvedValues: MetadataFields
+  ruleConfigs: Record<string, string> | null
 }
 
 export interface ExplorerModel {
@@ -151,6 +153,8 @@ export interface ExplorerModel {
   fileSize: number | null
   hasPreview: boolean
   previewUrl: string | null
+  resolvedMetadata: MetadataFields | null
+  ruleConfigs: Record<string, string> | null
 }
 
 export interface ExplorerResponse {
@@ -165,6 +169,7 @@ export interface DirectoryConfigDetail {
   localValues: MetadataFields
   parentResolvedValues: MetadataFields | null
   parentPath: string | null
+  localRuleFields: string[] | null
 }
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {

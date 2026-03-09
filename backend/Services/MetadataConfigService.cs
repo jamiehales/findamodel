@@ -1,9 +1,11 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using YamlDotNet.Serialization;
 using findamodel.Data;
 using findamodel.Data.Entities;
 using findamodel.Models;
+using findamodel.Services.Rules;
 
 namespace findamodel.Services;
 
@@ -86,7 +88,7 @@ public class MetadataConfigService(
 
         var localValues = record != null
             ? new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
-                                  record.RawCategory, record.RawType, record.RawSupported)
+                                  record.RawCategory, record.RawType, record.RawSupported, record.RawModelName)
             : new ConfigFieldsDto(null, null, null, null, null, null);
 
         var parentPath = GetParentPath(dirPath);
@@ -94,10 +96,17 @@ public class MetadataConfigService(
         if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
         {
             parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
-                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
+                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported,
+                parentRecord.ModelName);
         }
 
-        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath);
+        var localRuleFields = record?.RawRulesYaml != null
+            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
+                .Select(k => k.ToLowerInvariant())
+                .ToHashSet()
+            : null;
+
+        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields);
     }
 
     /// <summary>
@@ -132,7 +141,7 @@ public class MetadataConfigService(
         }
 
         var rawFields = new RawConfigFields(req.Creator, req.Collection, req.Subcollection,
-                                            req.Category, req.Type, req.Supported);
+                                            req.Category, req.Type, req.Supported, ModelName: req.ModelName);
         ApplyRawFields(record, rawFields);
         record.LocalConfigFileHash = newHash;
         ResolveFields(record, all);
@@ -147,15 +156,23 @@ public class MetadataConfigService(
         if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
         {
             parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
-                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported);
+                parentRecord.Subcollection, parentRecord.Category, parentRecord.Type, parentRecord.Supported,
+                parentRecord.ModelName);
         }
+
+        var localRuleFields = record.RawRulesYaml != null
+            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
+                .Select(k => k.ToLowerInvariant())
+                .ToHashSet()
+            : null;
 
         return new DirectoryConfigDetailDto(
             dirPath,
             new ConfigFieldsDto(record.RawCreator, record.RawCollection, record.RawSubcollection,
-                                 record.RawCategory, record.RawType, record.RawSupported),
+                                 record.RawCategory, record.RawType, record.RawSupported, record.RawModelName),
             parentResolved,
-            parentPath);
+            parentPath,
+            localRuleFields);
     }
 
     // -------------------------------------------------------------------------
@@ -343,14 +360,57 @@ public class MetadataConfigService(
         var fullDirPath = GetFullDirPath(rootPath, dirPath);
         var configPath = Path.Combine(fullDirPath, ConfigFileName);
 
+        // Preserve any rule definitions that exist in the current YAML file
+        var existingRules = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        if (File.Exists(configPath))
+        {
+            try
+            {
+                var existingYaml = await File.ReadAllTextAsync(configPath);
+                var existing = YamlDeserializer.Deserialize<Dictionary<string, object>>(existingYaml);
+                if (existing != null)
+                {
+                    var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "model_name" };
+                    foreach (var kvp in existing)
+                    {
+                        var fieldName = ruleFieldNames.FirstOrDefault(f =>
+                            string.Equals(f, kvp.Key, StringComparison.OrdinalIgnoreCase));
+                        if (fieldName == null) continue;
+
+                        Dictionary<string, object>? ruleObj = kvp.Value switch
+                        {
+                            Dictionary<string, object> d => d,
+                            Dictionary<object, object> d2 => d2
+                                .Where(kv => kv.Key != null)
+                                .ToDictionary(kv => kv.Key.ToString()!, kv => kv.Value),
+                            _ => null
+                        };
+
+                        if (ruleObj != null && ruleObj.ContainsKey("rule"))
+                            existingRules[fieldName] = ruleObj;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not read existing rules from '{ConfigPath}'; rules may be lost", configPath);
+            }
+        }
+
         // Build ordered dictionary of fields that are explicitly set (non-null)
         var data = new Dictionary<string, object>();
-        if (req.Creator != null)      data["creator"] = req.Creator;
-        if (req.Collection != null)  data["collection"] = req.Collection;
+        if (req.ModelName != null)     data["model_name"] = req.ModelName;
+        if (req.Creator != null)       data["creator"] = req.Creator;
+        if (req.Collection != null)    data["collection"] = req.Collection;
         if (req.Subcollection != null) data["subcollection"] = req.Subcollection;
-        if (req.Category != null)    data["category"] = req.Category;
-        if (req.Type != null)        data["type"] = req.Type;
-        if (req.Supported.HasValue)  data["supported"] = req.Supported.Value;
+        if (req.Category != null)      data["category"] = req.Category;
+        if (req.Type != null)          data["type"] = req.Type;
+        if (req.Supported.HasValue)    data["supported"] = req.Supported.Value;
+
+        // Re-add any existing rules for fields not being overridden by a plain value
+        foreach (var (field, ruleObj) in existingRules)
+            if (!data.ContainsKey(field))
+                data[field] = ruleObj;
 
         if (data.Count == 0)
         {
@@ -410,7 +470,8 @@ public class MetadataConfigService(
     /// <summary>
     /// Resolves all metadata fields by walking up the ancestor chain.
     /// Uses Raw* fields only (never resolved fields) to prevent cascading errors.
-    /// The record's own Raw values take priority; the first non-null value found wins.
+    /// The record's own Raw values take priority; the first non-null value or rule found wins.
+    /// A field resolved to a rule is stored in ResolvedRulesJson; plain values use the existing columns.
     /// </summary>
     private static void ResolveFields(DirectoryConfig record, Dictionary<string, DirectoryConfig> allRecords)
     {
@@ -420,16 +481,86 @@ public class MetadataConfigService(
         string? category = record.RawCategory;
         string? type = record.RawType;
         bool? supported = record.RawSupported;
+        string? modelName = record.RawModelName;
 
-        var current = GetParentRecord(record.DirectoryPath, allRecords);
-        while (current != null && (creator == null || collection == null || subcollection == null || category == null || type == null || supported == null))
+        // Track which fields are "claimed" — either by a plain value or a rule
+        bool creatorSet = creator != null;
+        bool collectionSet = collection != null;
+        bool subcollectionSet = subcollection != null;
+        bool categorySet = category != null;
+        bool typeSet = type != null;
+        bool supportedSet = supported != null;
+        bool modelNameSet = modelName != null;
+
+        // Resolved rules accumulate as we walk ancestors (field name → JSON element string)
+        var resolvedRules = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+
+        // Check this record's own raw rules for unclaimed fields
+        var localRules = RuleRegistry.DeserializeRules(record.RawRulesYaml);
+        foreach (var (field, ruleEl) in localRules)
         {
-            creator ??= current.RawCreator;
-            collection ??= current.RawCollection;
-            subcollection ??= current.RawSubcollection;
-            category ??= current.RawCategory;
-            type ??= current.RawType;
-            supported ??= current.RawSupported;
+            switch (field.ToLowerInvariant())
+            {
+                case "creator" when !creatorSet: resolvedRules["creator"] = ruleEl; creatorSet = true; break;
+                case "collection" when !collectionSet: resolvedRules["collection"] = ruleEl; collectionSet = true; break;
+                case "subcollection" when !subcollectionSet: resolvedRules["subcollection"] = ruleEl; subcollectionSet = true; break;
+                case "category" when !categorySet: resolvedRules["category"] = ruleEl; categorySet = true; break;
+                case "type" when !typeSet: resolvedRules["type"] = ruleEl; typeSet = true; break;
+                case "model_name" when !modelNameSet: resolvedRules["model_name"] = ruleEl; modelNameSet = true; break;
+            }
+        }
+
+        // Walk ancestors
+        var current = GetParentRecord(record.DirectoryPath, allRecords);
+        while (current != null && !(creatorSet && collectionSet && subcollectionSet && categorySet && typeSet && supportedSet && modelNameSet))
+        {
+            // Deserialize this ancestor's raw rules once (only if any field still needs a rule)
+            var needsRuleCheck = (!creatorSet && current.RawCreator == null)
+                || (!collectionSet && current.RawCollection == null)
+                || (!subcollectionSet && current.RawSubcollection == null)
+                || (!categorySet && current.RawCategory == null)
+                || (!typeSet && current.RawType == null)
+                || (!modelNameSet && current.RawModelName == null);
+            Dictionary<string, JsonElement>? parentRules = needsRuleCheck
+                ? RuleRegistry.DeserializeRules(current.RawRulesYaml)
+                : null;
+
+            if (!creatorSet)
+            {
+                if (current.RawCreator != null) { creator = current.RawCreator; creatorSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("creator", out var ruleEl)) { resolvedRules["creator"] = ruleEl; creatorSet = true; }
+            }
+            if (!collectionSet)
+            {
+                if (current.RawCollection != null) { collection = current.RawCollection; collectionSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("collection", out var ruleEl)) { resolvedRules["collection"] = ruleEl; collectionSet = true; }
+            }
+            if (!subcollectionSet)
+            {
+                if (current.RawSubcollection != null) { subcollection = current.RawSubcollection; subcollectionSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("subcollection", out var ruleEl)) { resolvedRules["subcollection"] = ruleEl; subcollectionSet = true; }
+            }
+            if (!categorySet)
+            {
+                if (current.RawCategory != null) { category = current.RawCategory; categorySet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("category", out var ruleEl)) { resolvedRules["category"] = ruleEl; categorySet = true; }
+            }
+            if (!typeSet)
+            {
+                if (current.RawType != null) { type = current.RawType; typeSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("type", out var ruleEl)) { resolvedRules["type"] = ruleEl; typeSet = true; }
+            }
+            if (!supportedSet && current.RawSupported != null)
+            {
+                supported = current.RawSupported; supportedSet = true;
+                // Note: "supported" is boolean — rules are not applied to it
+            }
+            if (!modelNameSet)
+            {
+                if (current.RawModelName != null) { modelName = current.RawModelName; modelNameSet = true; }
+                else if (parentRules != null && parentRules.TryGetValue("model_name", out var ruleEl)) { resolvedRules["model_name"] = ruleEl; modelNameSet = true; }
+            }
+
             current = GetParentRecord(current.DirectoryPath, allRecords);
         }
 
@@ -439,6 +570,10 @@ public class MetadataConfigService(
         record.Category = category;
         record.Type = type;
         record.Supported = supported;
+        record.ModelName = modelName;
+        record.ResolvedRulesYaml = resolvedRules.Count > 0
+            ? SerializeRulesToYaml(resolvedRules)
+            : null;
     }
 
     private static void ApplyRawFields(DirectoryConfig record, RawConfigFields? fields)
@@ -449,6 +584,8 @@ public class MetadataConfigService(
         record.RawCategory = fields?.Category;
         record.RawType = fields?.Type;
         record.RawSupported = fields?.Supported;
+        record.RawModelName = fields?.ModelName;
+        record.RawRulesYaml = fields?.RulesYaml;
     }
 
     private static async Task<string> ComputeFileHashAsync(string filePath)
@@ -472,7 +609,9 @@ public class MetadataConfigService(
                 Subcollection: TryGetString(parsed, "subcollection"),
                 Category: ValidateEnum(TryGetString(parsed, "category"), ["Bust", "Miniature", "Uncategorized"]),
                 Type: ValidateEnum(TryGetString(parsed, "type"), ["Whole", "Part"]),
-                Supported: TryGetBool(parsed, "supported")
+                Supported: TryGetBool(parsed, "supported"),
+                ModelName: TryGetString(parsed, "model_name"),
+                RulesYaml: ExtractRulesYaml(parsed)
             );
         }
         catch (Exception ex)
@@ -482,16 +621,72 @@ public class MetadataConfigService(
         }
     }
 
+    /// <summary>
+    /// Extracts rule definitions from YAML-parsed data and serializes them back to YAML.
+    /// Fields whose value is a mapping containing a "rule" key are treated as rules.
+    /// Returns a YAML string or null if no rules found.
+    /// </summary>
+    private static string? ExtractRulesYaml(Dictionary<string, object> data)
+    {
+        var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "model_name" };
+        var rules = new Dictionary<string, object>();
+
+        foreach (var kvp in data)
+        {
+            var fieldName = ruleFieldNames.FirstOrDefault(f =>
+                string.Equals(f, kvp.Key, StringComparison.OrdinalIgnoreCase));
+            if (fieldName == null) continue;
+
+            Dictionary<string, object>? ruleObj = kvp.Value switch
+            {
+                Dictionary<string, object> d => d,
+                Dictionary<object, object> d2 => d2
+                    .Where(kv => kv.Key != null)
+                    .ToDictionary(kv => kv.Key.ToString()!, kv => kv.Value),
+                _ => null
+            };
+
+            if (ruleObj == null || !ruleObj.ContainsKey("rule")) continue;
+            rules[fieldName] = ruleObj;
+        }
+
+        return rules.Count > 0 ? YamlSerializer.Serialize(rules) : null;
+    }
+
+    /// <summary>
+    /// Serializes a resolved rules dictionary (JsonElement values) to YAML for storage.
+    /// </summary>
+    private static string SerializeRulesToYaml(Dictionary<string, JsonElement> rules)
+    {
+        var plain = rules.ToDictionary(kvp => kvp.Key, kvp => JsonElementToYamlObject(kvp.Value));
+        return YamlSerializer.Serialize(plain);
+    }
+
+    private static object? JsonElementToYamlObject(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Object => el.EnumerateObject()
+            .ToDictionary(p => p.Name, p => JsonElementToYamlObject(p.Value)),
+        JsonValueKind.Array => el.EnumerateArray().Select(JsonElementToYamlObject).ToList<object?>(),
+        JsonValueKind.String => (object?)el.GetString(),
+        JsonValueKind.Number when el.TryGetInt64(out var i) => (object?)i,
+        JsonValueKind.Number => (object?)el.GetDouble(),
+        JsonValueKind.True => (object?)true,
+        JsonValueKind.False => (object?)false,
+        _ => null
+    };
+
     private static string? TryGetString(Dictionary<string, object> data, string propertyName)
     {
         // Case-insensitive property search
         foreach (var kvp in data)
         {
-            if (string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                var value = kvp.Value?.ToString();
-                return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-            }
+            if (!string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Skip mappings — they represent rule definitions, not plain string values
+            if (kvp.Value is Dictionary<object, object> || kvp.Value is Dictionary<string, object>) return null;
+
+            var value = kvp.Value?.ToString();
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
         return null;
     }
@@ -507,11 +702,15 @@ public class MetadataConfigService(
         foreach (var kvp in data)
         {
             if (!string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Skip mappings — they represent rule definitions
+            if (kvp.Value is Dictionary<object, object> || kvp.Value is Dictionary<string, object>) return null;
+
             if (kvp.Value is bool b) return b;
             if (kvp.Value is string s && bool.TryParse(s, out var parsed)) return parsed;
         }
         return null;
     }
 
-    private sealed record RawConfigFields(string? Creator, string? Collection, string? Subcollection, string? Category, string? Type, bool? Supported);
+    private sealed record RawConfigFields(string? Creator, string? Collection, string? Subcollection, string? Category, string? Type, bool? Supported, string? ModelName = null, string? RulesYaml = null);
 }

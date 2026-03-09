@@ -64,11 +64,12 @@ function ModelPage() {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
 
   const metaRows: { label: string; value: React.ReactNode }[] = [
-    model.creator       && { label: 'Creator',        value: model.creator },
-    model.collection   && { label: 'Collection',    value: model.collection },
+    model.name          && { label: 'Name', value: model.name },
+    model.creator       && { label: 'Creator', value: model.creator },
+    model.collection    && { label: 'Collection', value: model.collection },
     model.subcollection && { label: 'Subcollection', value: model.subcollection },
-    model.category     && { label: 'Category',      value: model.category },
-    model.type         && { label: 'Type',           value: model.type },
+    model.category      && { label: 'Category', value: model.category },
+    model.type          && { label: 'Type', value: model.type },
     model.supported != null && {
       label: 'Supported',
       value: (

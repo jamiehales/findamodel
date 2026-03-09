@@ -1,6 +1,9 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using findamodel.Data;
+using findamodel.Data.Entities;
 using findamodel.Models;
+using findamodel.Services.Rules;
 
 namespace findamodel.Services;
 
@@ -55,6 +58,10 @@ public class ExplorerService(
             .Where(d => childPaths.Contains(d.DirectoryPath))
             .ToDictionaryAsync(d => d.DirectoryPath);
 
+        // Load the current directory's config for resolving model metadata and rules
+        var currentDirConfig = await db.DirectoryConfigs
+            .FirstOrDefaultAsync(d => d.DirectoryPath == relativePath);
+
         var cachedModels = await db.Models
             .Where(m => m.Directory == relativePath &&
                         modelFileNames.Select(f => f.Name).Contains(m.FileName))
@@ -74,11 +81,16 @@ public class ExplorerService(
             dirConfigs.TryGetValue(childPath, out var dc);
             var resolved = dc != null
                 ? new ConfigFieldsDto(dc.Creator, dc.Collection, dc.Subcollection,
-                                      dc.Category, dc.Type, dc.Supported)
+                                      dc.Category, dc.Type, dc.Supported, dc.ModelName)
                 : new ConfigFieldsDto(null, null, null, null, null, null);
 
-            folders.Add(new FolderItemDto(name, childPath, subdirCount, modelCount, resolved));
+            var ruleConfigs = BuildRuleConfigs(dc?.ResolvedRulesYaml);
+
+            folders.Add(new FolderItemDto(name, childPath, subdirCount, modelCount, resolved, ruleConfigs));
         }
+
+        // ---- Precompute resolved rules for current directory ----
+        var resolvedRules = RuleRegistry.DeserializeRules(currentDirConfig?.ResolvedRulesYaml);
 
         // ---- Build model items ----
         var previewBase = "/api/models";
@@ -87,6 +99,8 @@ public class ExplorerService(
             var relPath = relativePath == "" ? fi.Name : $"{relativePath}/{fi.Name}";
             cachedModels.TryGetValue(fi.Name, out var cm);
 
+            var (resolvedMeta, ruleConfigs) = BuildModelMetadata(currentDirConfig, resolvedRules, fi.FullName);
+
             return new ExplorerModelItemDto(
                 Id: cm?.Id.ToString(),
                 FileName: fi.Name,
@@ -94,7 +108,9 @@ public class ExplorerService(
                 FileType: fi.Extension.TrimStart('.').ToLower(),
                 FileSize: cm?.FileSize ?? fi.Length,
                 HasPreview: cm?.PreviewImagePath != null,
-                PreviewUrl: cm?.PreviewImagePath != null ? $"{previewBase}/{cm.Id}/preview" : null);
+                PreviewUrl: cm?.PreviewImagePath != null ? $"{previewBase}/{cm.Id}/preview" : null,
+                ResolvedMetadata: resolvedMeta,
+                RuleConfigs: ruleConfigs);
         }).ToList();
 
         var parentPath = relativePath == ""
@@ -105,6 +121,118 @@ public class ExplorerService(
     }
 
     // ---- Helpers ----
+
+    /// <summary>
+    /// Computes the effective metadata for a model file by combining the directory's resolved plain
+    /// values with any rule-evaluated values. Returns the metadata DTO and a map of rule-derived
+    /// field names to their YAML snippets. Returns (null, null) if there is no config and no rules.
+    /// </summary>
+    private static (ConfigFieldsDto? Meta, Dictionary<string, string>? RuleConfigs) BuildModelMetadata(
+        DirectoryConfig? dc,
+        Dictionary<string, JsonElement> resolvedRules,
+        string fullFilePath)
+    {
+        if (dc == null && resolvedRules.Count == 0) return (null, null);
+
+        string? creator = dc?.Creator;
+        string? collection = dc?.Collection;
+        string? subcollection = dc?.Subcollection;
+        string? category = dc?.Category;
+        string? type = dc?.Type;
+        bool? supported = dc?.Supported;
+        string? modelName = dc?.ModelName;
+
+        Dictionary<string, string>? ruleConfigs = null;
+
+        if (resolvedRules.Count > 0)
+        {
+            // Build available (non-rule) fields to pass to parsers
+            var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["creator"] = creator,
+                ["collection"] = collection,
+                ["subcollection"] = subcollection,
+                ["category"] = category,
+                ["type"] = type,
+                ["model_name"] = modelName,
+            };
+            foreach (var field in resolvedRules.Keys) available.Remove(field);
+
+            ruleConfigs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, ruleEl) in resolvedRules)
+            {
+                var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl);
+                if (value == null) continue;
+
+                ruleConfigs[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
+                switch (field.ToLowerInvariant())
+                {
+                    case "creator":     creator     = value; break;
+                    case "collection":  collection  = value; break;
+                    case "subcollection": subcollection = value; break;
+                    case "category":    category    = ValidateEnumValue(value, ["Bust", "Miniature", "Uncategorized"]); break;
+                    case "type":        type        = ValidateEnumValue(value, ["Whole", "Part"]); break;
+                    case "model_name":  modelName   = value; break;
+                }
+            }
+
+            if (ruleConfigs.Count == 0) ruleConfigs = null;
+        }
+
+        // Return null metadata if all fields are null
+        if (creator == null && collection == null && subcollection == null
+            && category == null && type == null && supported == null && modelName == null)
+            return (null, null);
+
+        return (new ConfigFieldsDto(creator, collection, subcollection, category, type, supported, modelName), ruleConfigs);
+    }
+
+    /// <summary>
+    /// Builds a dictionary mapping each rule field to its YAML snippet for display in the UI.
+    /// Returns null when there are no resolved rules.
+    /// </summary>
+    private static Dictionary<string, string>? BuildRuleConfigs(string? resolvedRulesYaml)
+    {
+        var rules = RuleRegistry.DeserializeRules(resolvedRulesYaml);
+        if (rules.Count == 0) return null;
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (field, ruleEl) in rules)
+            result[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
+        return result;
+    }
+
+    /// <summary>
+    /// Converts a rule's JsonElement config to a compact YAML snippet for display.
+    /// E.g. {"rule":"filename","include_extension":false} →
+    ///   collection:
+    ///     rule: filename
+    ///     include_extension: false
+    /// </summary>
+    private static string RuleConfigToYamlSnippet(string fieldName, JsonElement ruleEl)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{fieldName}:");
+        foreach (var prop in ruleEl.EnumerateObject())
+        {
+            var val = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString() ?? "",
+                JsonValueKind.True   => "true",
+                JsonValueKind.False  => "false",
+                JsonValueKind.Number => prop.Value.GetRawText(),
+                _                   => prop.Value.GetRawText()
+            };
+            sb.AppendLine($"  {prop.Name}: {val}");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string? ValidateEnumValue(string? value, string[] allowed)
+    {
+        if (value == null) return null;
+        return Array.Find(allowed, a => string.Equals(a, value, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static int CountSubdirectories(string fullPath)
     {

@@ -9,22 +9,42 @@ import type { ExplorerFolder } from '../lib/api'
 import MetadataEditor from './MetadataEditor'
 import AppCard from './AppCard'
 import styles from './FolderCard.module.css'
-import { Stack } from '@mui/material'
+import { Divider, Stack } from '@mui/material'
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries'
+
+const RULE_COLOR = '#fbbf24'
 
 interface Props {
   folder: ExplorerFolder
   href: string
 }
 
-function MetaBadge({ type, value }: { type: string, value: string | null | undefined }) {
-  return (
+function MetaBadge({ type, value, ruleYaml }: { type: string; value: string | null | undefined; ruleYaml?: string | null }) {
+  const isRule = ruleYaml != null && value == null
+
+  console.log(type, value, ruleYaml, isRule)
+
+  const badge = (
     <Box
       component="span"
-      className={`${styles.metaBadge} ${value ? styles.metaBadgeSet : styles.metaBadgeUnset}`}
+      className={`${styles.metaBadge} ${value || isRule ? styles.metaBadgeSet : styles.metaBadgeUnset}`}
     >
-      <div style={{ color: value ? '#a5b4fc' : 'rgba(131, 143, 202, 0.53)' }}>{value ?? "Unknown " + type.toLowerCase()}</div>
+      <div style={{ color: value ? '#a5b4fc' : isRule ? RULE_COLOR : 'rgba(131, 143, 202, 0.53)' }}>
+        {value ?? (isRule ? `Rule exists for ${type.toLowerCase()}` : `Unknown ${type.toLowerCase()}`)}
+      </div>
     </Box>
+  )
+
+  if (!isRule) return badge
+
+  return (
+    <Tooltip
+      title={<pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.75rem' }}>{ruleYaml}</pre>}
+      placement="right"
+      arrow
+    >
+      {badge}
+    </Tooltip>
   )
 }
 
@@ -108,12 +128,14 @@ export default function FolderCard({ folder, href }: Props) {
 
         {/* Resolved metadata badges */}
           <Stack direction="column" spacing={1} textAlign="center" width="100%">
-            <MetaBadge type="Creator" value={rv.creator} />
-            <MetaBadge type="Collection" value={rv.collection} />
-            <MetaBadge type="Subcollection" value={rv.subcollection} />
-            <MetaBadge type="Category" value={rv.category} />
-            <MetaBadge type="Type" value={rv.type} />
+            <MetaBadge type="Creator" value={rv.creator} ruleYaml={folder.ruleConfigs?.creator} />
+            <MetaBadge type="Collection" value={rv.collection} ruleYaml={folder.ruleConfigs?.collection} />
+            <MetaBadge type="Subcollection" value={rv.subcollection} ruleYaml={folder.ruleConfigs?.subcollection} />
+            <MetaBadge type="Category" value={rv.category} ruleYaml={folder.ruleConfigs?.category} />
+            <MetaBadge type="Type" value={rv.type} ruleYaml={folder.ruleConfigs?.type} />
             <MetaBadge type="Supports" value={rv.supported == null ? null : rv.supported ? "Supported" : "Unsupported"} />
+            <Divider />
+            <MetaBadge type="Model Name" value={rv.modelName} ruleYaml={folder.ruleConfigs?.model_name} />
           </Stack>
       </AppCard>
 

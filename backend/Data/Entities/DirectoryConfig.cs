@@ -17,14 +17,22 @@ public class DirectoryConfig
     public string? RawType { get; set; }        // "Whole" | "Part" | null
     public bool? RawSupported { get; set; }
     public string? RawSubcollection { get; set; }
+    public string? RawModelName { get; set; }
 
     // Resolved (composed) values — computed at scan time by walking ancestors; closest non-null wins
     public string? Creator { get; set; }
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
+    public string? ModelName { get; set; }
     public string? Category { get; set; }
     public string? Type { get; set; }
     public bool? Supported { get; set; }
+
+    // Rule definitions stored as YAML: Dictionary<fieldName, ruleConfigObject>
+    // e.g. "creator:\n  rule: filename\n  include_extension: false\n"
+    // Raw = defined in THIS directory's YAML; Resolved = after inheritance walk
+    public string? RawRulesYaml { get; set; }
+    public string? ResolvedRulesYaml { get; set; }
 
     // SHA256 hash of the findamodel.yaml at this directory (null = no config file present)
     public string? LocalConfigFileHash { get; set; }

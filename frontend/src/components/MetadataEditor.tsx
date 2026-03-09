@@ -31,13 +31,21 @@ function InheritedHint({ value }: { value: string | boolean | null | undefined }
   )
 }
 
+function RuleHint() {
+  return (
+    <Typography variant="caption" color="warning.main" component="p" className={styles.subtitle}>
+      Controlled by a rule — edit the YAML to change
+    </Typography>
+  )
+}
+
 export default function MetadataEditor({ path, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path)
   const mutation = useUpdateDirectoryConfig(path)
 
   const [fields, setFields] = useState<MetadataFields>({
     creator: null, collection: null, subcollection: null,
-    category: null, type: null, supported: null,
+    category: null, type: null, supported: null, modelName: null,
   })
   const [savedIndicator, setSavedIndicator] = useState(false)
   const committedRef = useRef(fields)
@@ -74,6 +82,10 @@ export default function MetadataEditor({ path, onClose }: Props) {
   }
 
   const p = detail?.parentResolvedValues ?? null
+  const ruleFields = detail?.localRuleFields ?? null
+  function isRule(yamlFieldName: string) {
+    return ruleFields != null && ruleFields.includes(yamlFieldName)
+  }
 
   if (isLoading) {
     return (
@@ -89,12 +101,30 @@ export default function MetadataEditor({ path, onClose }: Props) {
         Metadata — local values override inherited ones
       </Typography>
 
+      {/* Model Name */}
+      <Box>
+        <TextField
+          label="Model Name"
+          size="small"
+          fullWidth
+          disabled={isRule('model_name')}
+          value={fields.modelName ?? ''}
+          placeholder={p?.modelName ?? undefined}
+          onChange={e => set('modelName', e.target.value || null)}
+          onBlur={handleCommit}
+          onKeyDown={handleKeyDown}
+          slotProps={{ input: { className: styles.fieldInput } }}
+        />
+        {isRule('model_name') ? <RuleHint /> : <InheritedHint value={p?.modelName} />}
+      </Box>
+
       {/* Creator */}
       <Box>
         <TextField
           label="Creator"
           size="small"
           fullWidth
+          disabled={isRule('creator')}
           value={fields.creator ?? ''}
           placeholder={p?.creator ?? undefined}
           onChange={e => set('creator', e.target.value || null)}
@@ -102,7 +132,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onKeyDown={handleKeyDown}
           slotProps={{ input: { className: styles.fieldInput } }}
         />
-        <InheritedHint value={p?.creator} />
+        {isRule('creator') ? <RuleHint /> : <InheritedHint value={p?.creator} />}
       </Box>
 
       {/* Collection */}
@@ -111,6 +141,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           label="Collection"
           size="small"
           fullWidth
+          disabled={isRule('collection')}
           value={fields.collection ?? ''}
           placeholder={p?.collection ?? undefined}
           onChange={e => set('collection', e.target.value || null)}
@@ -118,7 +149,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onKeyDown={handleKeyDown}
           slotProps={{ input: { className: styles.fieldInput } }}
         />
-        <InheritedHint value={p?.collection} />
+        {isRule('collection') ? <RuleHint /> : <InheritedHint value={p?.collection} />}
       </Box>
 
       {/* Subcollection */}
@@ -127,6 +158,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
           label="Subcollection"
           size="small"
           fullWidth
+          disabled={isRule('subcollection')}
           value={fields.subcollection ?? ''}
           placeholder={p?.subcollection ?? undefined}
           onChange={e => set('subcollection', e.target.value || null)}
@@ -134,12 +166,12 @@ export default function MetadataEditor({ path, onClose }: Props) {
           onKeyDown={handleKeyDown}
           slotProps={{ input: { className: styles.fieldInput } }}
         />
-        <InheritedHint value={p?.subcollection} />
+        {isRule('subcollection') ? <RuleHint /> : <InheritedHint value={p?.subcollection} />}
       </Box>
 
       {/* Category */}
       <Box>
-        <FormControl size="small" fullWidth>
+        <FormControl size="small" fullWidth disabled={isRule('category')}>
           <InputLabel>Category</InputLabel>
           <Select
             label="Category"
@@ -156,12 +188,12 @@ export default function MetadataEditor({ path, onClose }: Props) {
             {CATEGORIES.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
           </Select>
         </FormControl>
-        <InheritedHint value={p?.category} />
+        {isRule('category') ? <RuleHint /> : <InheritedHint value={p?.category} />}
       </Box>
 
       {/* Type */}
       <Box>
-        <FormControl size="small" fullWidth>
+        <FormControl size="small" fullWidth disabled={isRule('type')}>
           <InputLabel>Type</InputLabel>
           <Select
             label="Type"
@@ -178,7 +210,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
             {TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
           </Select>
         </FormControl>
-        <InheritedHint value={p?.type} />
+        {isRule('type') ? <RuleHint /> : <InheritedHint value={p?.type} />}
       </Box>
 
       {/* Supported */}
