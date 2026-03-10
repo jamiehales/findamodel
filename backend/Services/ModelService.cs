@@ -172,87 +172,120 @@ public class ModelService(
         // Phase 2: Sync DirectoryConfig records (root-first, hash-detected changes)
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
 
-        // Phase 3: Process new model files
+        // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
-        var existingFiles = (await db.Models
-            .Select(m => new { m.Directory, m.FileName })
+        var existingModels = (await db.Models
+            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum })
             .ToListAsync())
-            .Select(m => (m.Directory, m.FileName))
-            .ToHashSet();
+            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum));
 
         var newCount = 0;
+        var updatedCount = 0;
         foreach (var file in files)
         {
-            if (limit.HasValue && newCount >= limit.Value) break;
-
             var relativePath = Path.GetRelativePath(modelsPath, file);
             var fileName = Path.GetFileName(file);
             var directory = (Path.GetDirectoryName(relativePath) ?? "").Replace('\\', '/');
-
-            if (existingFiles.Contains((directory, fileName))) continue;
-
             var info = new FileInfo(file);
             var fileType = Path.GetExtension(file).TrimStart('.').ToLower();
 
+            if (existingModels.TryGetValue((directory, fileName), out var existingEntry))
+            {
+                var currentChecksum = await ComputeChecksumAsync(file);
+                if (currentChecksum == existingEntry.Checksum) continue;
+
+                logger.LogInformation("Model content changed, updating: {FilePath}", file);
+
+                var entity = await db.Models.FindAsync(existingEntry.Id);
+                if (entity == null) continue;
+
+                var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum);
+                ApplyFileData(entity, data, info);
+                await db.SaveChangesAsync();
+                updatedCount++;
+                continue;
+            }
+
+            // New file
+            if (limit.HasValue && newCount >= limit.Value) continue;
+
             logger.LogInformation("Discovered {FileType} model: {FilePath}", fileType.ToUpper(), file);
 
-            // Load geometry once — parsed, transformed, and centred
-            var geometry = await loaderService.LoadModelAsync(file, fileType);
-
-            // Generate preview and hulls from pre-loaded geometry to avoid re-parsing
-            var checksum = await ComputeChecksumAsync(file);
-            var previewImagePath = geometry is not null
-                ? await previewService.GeneratePreviewAsync(geometry, checksum)
-                : null;
-            var (convexHull, concaveHull, convexSansRaftHull) = geometry is not null
-                ? await hullCalculationService.CalculateHullsAsync(geometry)
-                : (null, null, null);
-
-            directoryConfigs.TryGetValue(directory, out var dirConfig);
-            var metadata = ModelMetadataHelper.Compute(file, dirConfig);
-
-            var entity = new CachedModel
+            var newData = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs);
+            var newEntity = new CachedModel
             {
                 Id = Guid.NewGuid(),
-                Checksum = checksum,
                 FileName = fileName,
                 Directory = directory,
                 FileType = fileType,
-                FileSize = info.Length,
-                FileModifiedAt = info.LastWriteTimeUtc,
-                CachedAt = DateTime.UtcNow,
-                PreviewImagePath = previewImagePath,
-                PreviewGeneratedAt = previewImagePath != null ? DateTime.UtcNow : null,
-                ConvexHullCoordinates = convexHull,
-                ConcaveHullCoordinates = concaveHull,
-                ConvexSansRaftHullCoordinates = convexSansRaftHull,
-                HullGeneratedAt = convexHull != null || concaveHull != null || convexSansRaftHull != null ? DateTime.UtcNow : null,
-                DirectoryConfigId = dirConfig?.Id,
-                CalculatedCreator = metadata.Creator,
-                CalculatedCollection = metadata.Collection,
-                CalculatedSubcollection = metadata.Subcollection,
-                CalculatedCategory = metadata.Category,
-                CalculatedType = metadata.Type,
-                CalculatedSupported = metadata.Supported,
-                CalculatedModelName = metadata.ModelName,
-                DimensionXMm        = geometry?.DimensionXMm,
-                DimensionYMm        = geometry?.DimensionYMm,
-                DimensionZMm        = geometry?.DimensionZMm,
-                SphereCentreX       = geometry?.SphereCentre.X,
-                SphereCentreY       = geometry?.SphereCentre.Y,
-                SphereCentreZ       = geometry?.SphereCentre.Z,
-                SphereRadius        = geometry?.SphereRadius,
-                GeometryCalculatedAt = geometry is not null ? DateTime.UtcNow : null
+                DirectoryConfigId = newData.DirConfig?.Id,
             };
-
-            db.Models.Add(entity);
+            ApplyFileData(newEntity, newData, info);
+            db.Models.Add(newEntity);
             await db.SaveChangesAsync();
-            existingFiles.Add((directory, fileName));
+            existingModels[(directory, fileName)] = (newEntity.Id, newData.Checksum);
             newCount++;
         }
 
-        logger.LogInformation("Scan complete: {New} new models added, {Total} total in cache.", newCount, await db.Models.CountAsync());
+        logger.LogInformation("Scan complete: {New} new, {Updated} updated, {Total} total in cache.", newCount, updatedCount, await db.Models.CountAsync());
         return newCount;
+    }
+
+    private sealed record ModelFileData(
+        string Checksum,
+        LoadedGeometry? Geometry,
+        string? PreviewImagePath,
+        string? ConvexHull,
+        string? ConcaveHull,
+        string? ConvexSansRaftHull,
+        ModelMetadataHelper.ComputedMetadata Metadata,
+        DirectoryConfig? DirConfig);
+
+    private async Task<ModelFileData> ComputeFileDataAsync(
+        string file, string fileType, string directory,
+        Dictionary<string, DirectoryConfig> directoryConfigs,
+        string? knownChecksum = null)
+    {
+        var checksum = knownChecksum ?? await ComputeChecksumAsync(file);
+        var geometry = await loaderService.LoadModelAsync(file, fileType);
+        var previewImagePath = geometry is not null
+            ? await previewService.GeneratePreviewAsync(geometry, checksum)
+            : null;
+        var (convexHull, concaveHull, convexSansRaftHull) = geometry is not null
+            ? await hullCalculationService.CalculateHullsAsync(geometry)
+            : (null, null, null);
+        directoryConfigs.TryGetValue(directory, out var dirConfig);
+        var metadata = ModelMetadataHelper.Compute(file, dirConfig);
+        return new ModelFileData(checksum, geometry, previewImagePath, convexHull, concaveHull, convexSansRaftHull, metadata, dirConfig);
+    }
+
+    private static void ApplyFileData(CachedModel entity, ModelFileData d, FileInfo info)
+    {
+        entity.Checksum                      = d.Checksum;
+        entity.FileSize                      = info.Length;
+        entity.FileModifiedAt                = info.LastWriteTimeUtc;
+        entity.CachedAt                      = DateTime.UtcNow;
+        entity.PreviewImagePath              = d.PreviewImagePath;
+        entity.PreviewGeneratedAt            = d.PreviewImagePath != null ? DateTime.UtcNow : null;
+        entity.ConvexHullCoordinates         = d.ConvexHull;
+        entity.ConcaveHullCoordinates        = d.ConcaveHull;
+        entity.ConvexSansRaftHullCoordinates = d.ConvexSansRaftHull;
+        entity.HullGeneratedAt               = d.ConvexHull != null || d.ConcaveHull != null || d.ConvexSansRaftHull != null ? DateTime.UtcNow : null;
+        entity.CalculatedCreator             = d.Metadata.Creator;
+        entity.CalculatedCollection          = d.Metadata.Collection;
+        entity.CalculatedSubcollection       = d.Metadata.Subcollection;
+        entity.CalculatedCategory            = d.Metadata.Category;
+        entity.CalculatedType                = d.Metadata.Type;
+        entity.CalculatedSupported           = d.Metadata.Supported;
+        entity.CalculatedModelName           = d.Metadata.ModelName;
+        entity.DimensionXMm                  = d.Geometry?.DimensionXMm;
+        entity.DimensionYMm                  = d.Geometry?.DimensionYMm;
+        entity.DimensionZMm                  = d.Geometry?.DimensionZMm;
+        entity.SphereCentreX                 = d.Geometry?.SphereCentre.X;
+        entity.SphereCentreY                 = d.Geometry?.SphereCentre.Y;
+        entity.SphereCentreZ                 = d.Geometry?.SphereCentre.Z;
+        entity.SphereRadius                  = d.Geometry?.SphereRadius;
+        entity.GeometryCalculatedAt          = d.Geometry is not null ? DateTime.UtcNow : null;
     }
 
     private static async Task<string> ComputeChecksumAsync(string filePath)
