@@ -17,6 +17,15 @@ public class CachedModel
     public Guid? DirectoryConfigId { get; set; }
     public DirectoryConfig? DirectoryConfig { get; set; }
 
+    // Cached computed metadata — DirectoryConfig resolved values with rules applied to this specific file
+    public string? CalculatedCreator { get; set; }
+    public string? CalculatedCollection { get; set; }
+    public string? CalculatedSubcollection { get; set; }
+    public string? CalculatedCategory { get; set; }
+    public string? CalculatedType { get; set; }
+    public bool? CalculatedSupported { get; set; }
+    public string? CalculatedModelName { get; set; }
+
     // Hull coordinates as JSON arrays: [[x1,y1],[x2,y2],...]
     // Projected onto X-Z plane with Y-up coordinate system (bird's eye view)
     public string? ConvexHullCoordinates { get; set; }           // Outer boundary hull (JSON)

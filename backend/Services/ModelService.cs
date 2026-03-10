@@ -19,9 +19,7 @@ public class ModelService(
     public async Task<List<ModelDto>> GetModelsAsync(int? limit = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        // Include DirectoryConfig to avoid N+1 queries
         var modelsQuery = db.Models
-            .Include(m => m.DirectoryConfig)
             .OrderBy(m => m.Directory)
             .ThenBy(m => m.FileName);
 
@@ -37,12 +35,12 @@ public class ModelService(
             FileUrl = $"/api/models/{m.Id}/file",
             HasPreview = m.PreviewImagePath != null,
             PreviewUrl = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
-            Creator = m.DirectoryConfig?.Creator,
-            Collection = m.DirectoryConfig?.Collection,
-            Subcollection = m.DirectoryConfig?.Subcollection,
-            Category = m.DirectoryConfig?.Category,
-            Type = m.DirectoryConfig?.Type,
-            Supported = m.DirectoryConfig?.Supported,
+            Creator = m.CalculatedCreator,
+            Collection = m.CalculatedCollection,
+            Subcollection = m.CalculatedSubcollection,
+            Category = m.CalculatedCategory,
+            Type = m.CalculatedType,
+            Supported = m.CalculatedSupported,
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
@@ -76,12 +74,12 @@ public class ModelService(
                 m.FileType,
                 m.FileSize,
                 HasPreview = m.PreviewImagePath != null,
-                Creator        = m.DirectoryConfig != null ? m.DirectoryConfig.Creator        : null,
-                Collection    = m.DirectoryConfig != null ? m.DirectoryConfig.Collection    : null,
-                Subcollection = m.DirectoryConfig != null ? m.DirectoryConfig.Subcollection : null,
-                Category      = m.DirectoryConfig != null ? m.DirectoryConfig.Category      : null,
-                Type          = m.DirectoryConfig != null ? m.DirectoryConfig.Type          : null,
-                Supported     = m.DirectoryConfig != null ? m.DirectoryConfig.Supported     : null,
+                m.CalculatedCreator,
+                m.CalculatedCollection,
+                m.CalculatedSubcollection,
+                m.CalculatedCategory,
+                m.CalculatedType,
+                m.CalculatedSupported,
                 m.ConvexHullCoordinates,
                 m.ConcaveHullCoordinates,
                 m.ConvexSansRaftHullCoordinates,
@@ -107,12 +105,12 @@ public class ModelService(
             FileUrl       = $"/api/models/{m.Id}/file",
             HasPreview    = m.HasPreview,
             PreviewUrl    = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
-            Creator        = m.Creator,
-            Collection    = m.Collection,
-            Subcollection = m.Subcollection,
-            Category      = m.Category,
-            Type          = m.Type,
-            Supported     = m.Supported,
+            Creator        = m.CalculatedCreator,
+            Collection    = m.CalculatedCollection,
+            Subcollection = m.CalculatedSubcollection,
+            Category      = m.CalculatedCategory,
+            Type          = m.CalculatedType,
+            Supported     = m.CalculatedSupported,
             ConvexHull         = m.ConvexHullCoordinates,
             ConcaveHull        = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
@@ -211,6 +209,7 @@ public class ModelService(
                 : (null, null, null);
 
             directoryConfigs.TryGetValue(directory, out var dirConfig);
+            var metadata = ModelMetadataHelper.Compute(file, dirConfig);
 
             var entity = new CachedModel
             {
@@ -229,6 +228,13 @@ public class ModelService(
                 ConvexSansRaftHullCoordinates = convexSansRaftHull,
                 HullGeneratedAt = convexHull != null || concaveHull != null || convexSansRaftHull != null ? DateTime.UtcNow : null,
                 DirectoryConfigId = dirConfig?.Id,
+                CalculatedCreator = metadata.Creator,
+                CalculatedCollection = metadata.Collection,
+                CalculatedSubcollection = metadata.Subcollection,
+                CalculatedCategory = metadata.Category,
+                CalculatedType = metadata.Type,
+                CalculatedSupported = metadata.Supported,
+                CalculatedModelName = metadata.ModelName,
                 DimensionXMm        = geometry?.DimensionXMm,
                 DimensionYMm        = geometry?.DimensionYMm,
                 DimensionZMm        = geometry?.DimensionZMm,

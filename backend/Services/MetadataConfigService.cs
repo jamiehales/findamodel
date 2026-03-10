@@ -128,6 +128,13 @@ public class MetadataConfigService(
 
         ResolveDescendants(dirPath, all);
 
+        var affectedDirs = dirPath == ""
+            ? all.Keys.ToList()
+            : all.Keys
+                .Where(k => k == dirPath || k.StartsWith(dirPath + "/", StringComparison.Ordinal))
+                .ToList();
+        await RecomputeModelCachesForDirectoriesAsync(db, rootPath, affectedDirs, all);
+
         await db.SaveChangesAsync();
 
         return BuildDetailDto(dirPath, record, all);
@@ -150,12 +157,14 @@ public class MetadataConfigService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var existing = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
 
+        var changedDirs = new HashSet<string>(StringComparer.Ordinal);
         var count = 0;
         foreach (var dirPath in directories)
         {
             // alwaysResolve=true: DFS pre-order guarantees parent is current, so re-resolving
             // every dir propagates any upstream parent changes in one pass.
-            await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
+            bool changed = await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
+            if (changed) changedDirs.Add(dirPath);
             count++;
 
             if (count % DirectoryBatchSize == 0)
@@ -166,6 +175,14 @@ public class MetadataConfigService(
         }
 
         await db.SaveChangesAsync();
+
+        if (changedDirs.Count > 0)
+        {
+            var affectedDirs = ExpandToDescendants(changedDirs, existing.Keys);
+            await RecomputeModelCachesForDirectoriesAsync(db, modelsRootPath, affectedDirs, existing);
+            await db.SaveChangesAsync();
+        }
+
         return count;
     }
 
@@ -184,18 +201,89 @@ public class MetadataConfigService(
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var existing = await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+        var changedDirs = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var dirPath in sorted)
         {
             // alwaysResolve=true: sorted is root-first, so each parent is already re-resolved
             // in `existing` before its children are processed. No need to cascade into sibling
             // trees via ResolveDescendants — only the paths we're actually scanning matter here.
-            await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
+            bool changed = await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
+            if (changed) changedDirs.Add(dirPath);
         }
 
         await db.SaveChangesAsync();
 
+        if (changedDirs.Count > 0)
+        {
+            var affectedDirs = ExpandToDescendants(changedDirs, existing.Keys);
+            await RecomputeModelCachesForDirectoriesAsync(db, modelsRootPath, affectedDirs, existing);
+            await db.SaveChangesAsync();
+        }
+
         return await db.DirectoryConfigs.ToDictionaryAsync(d => d.DirectoryPath);
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: model cache recomputation
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Recomputes Calculated* fields on CachedModel records for all models in the given
+    /// set of directories, using the in-memory allConfigs dictionary for DirectoryConfig lookup.
+    /// Does NOT call SaveChanges — callers are responsible.
+    /// </summary>
+    private static async Task RecomputeModelCachesForDirectoriesAsync(
+        ModelCacheContext db,
+        string modelsRootPath,
+        IEnumerable<string> affectedDirs,
+        Dictionary<string, DirectoryConfig> allConfigs)
+    {
+        var dirList = affectedDirs is List<string> l ? l : affectedDirs.ToList();
+        if (dirList.Count == 0) return;
+
+        var models = await db.Models
+            .Where(m => dirList.Contains(m.Directory))
+            .ToListAsync();
+
+        foreach (var model in models)
+        {
+            allConfigs.TryGetValue(model.Directory, out var dirConfig);
+            var fullFilePath = BuildFullFilePath(modelsRootPath, model.Directory, model.FileName);
+            var metadata = ModelMetadataHelper.Compute(fullFilePath, dirConfig);
+            model.CalculatedCreator      = metadata.Creator;
+            model.CalculatedCollection   = metadata.Collection;
+            model.CalculatedSubcollection = metadata.Subcollection;
+            model.CalculatedCategory     = metadata.Category;
+            model.CalculatedType         = metadata.Type;
+            model.CalculatedSupported    = metadata.Supported;
+            model.CalculatedModelName    = metadata.ModelName;
+        }
+    }
+
+    private static string BuildFullFilePath(string modelsRootPath, string directory, string fileName) =>
+        string.IsNullOrEmpty(directory)
+            ? Path.Combine(modelsRootPath, fileName)
+            : Path.Combine(modelsRootPath, directory.Replace('/', Path.DirectorySeparatorChar), fileName);
+
+    /// <summary>
+    /// Expands a set of changed root directories to include all their descendants from allKnownDirs.
+    /// </summary>
+    private static List<string> ExpandToDescendants(HashSet<string> changedRoots, IEnumerable<string> allKnownDirs)
+    {
+        var result = new HashSet<string>(changedRoots, StringComparer.Ordinal);
+        foreach (var dir in allKnownDirs)
+        {
+            foreach (var root in changedRoots)
+            {
+                if (root == "" || dir.StartsWith(root + "/", StringComparison.Ordinal))
+                {
+                    result.Add(dir);
+                    break;
+                }
+            }
+        }
+        return result.ToList();
     }
 
     // -------------------------------------------------------------------------
