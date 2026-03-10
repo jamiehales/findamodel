@@ -134,6 +134,9 @@ export interface MetadataFields {
   type: string | null
   supported: boolean | null
   modelName: string | null
+  /** When provided, fully replaces the rule set for this directory. Maps YAML field name
+   *  (e.g. "creator", "model_name") to inner rule YAML (e.g. "rule: filename\nindex: -2"). */
+  fieldRules?: Record<string, string> | null
 }
 
 export interface ExplorerFolder {
@@ -170,6 +173,9 @@ export interface DirectoryConfigDetail {
   parentResolvedValues: MetadataFields | null
   parentPath: string | null
   localRuleFields: string[] | null
+  /** Maps each rule field name to its inner YAML content for editing
+   *  (e.g. "rule: filename\nindex: -2", without the outer field key wrapper). */
+  localRuleContents: Record<string, string> | null
 }
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {

@@ -8,7 +8,13 @@ public record UpdateDirectoryConfigRequest(
     string? Category,
     string? Type,
     bool? Supported,
-    string? ModelName = null);
+    string? ModelName = null,
+    /// <summary>
+    /// When non-null, fully defines the rule set for this directory (replaces any existing rules).
+    /// Each entry maps a YAML field name (e.g. "creator", "model_name") to the inner rule YAML
+    /// (e.g. "rule: filename\nindex: -2"). Plain values in the request take precedence over rules.
+    /// </summary>
+    Dictionary<string, string>? FieldRules = null);
 
 /// <summary>A snapshot of raw or resolved metadata fields for a directory.</summary>
 public record ConfigFieldsDto(
@@ -25,13 +31,16 @@ public record ConfigFieldsDto(
 /// parent's resolved values so the UI can show inherited placeholders.
 /// LocalRuleFields contains field names whose values in this directory's YAML are rule
 /// definitions rather than plain values (e.g. "creator", "model_name").
+/// LocalRuleContents maps each rule field name to its inner YAML content for editing
+/// (e.g. "rule: filename\nindex: -2", without the outer field key wrapper).
 /// </summary>
 public record DirectoryConfigDetailDto(
     string DirectoryPath,
     ConfigFieldsDto LocalValues,
     ConfigFieldsDto? ParentResolvedValues,
     string? ParentPath,
-    HashSet<string>? LocalRuleFields = null);
+    HashSet<string>? LocalRuleFields = null,
+    Dictionary<string, string>? LocalRuleContents = null);
 
 /// <summary>A folder entry in the explorer grid.</summary>
 /// <param name="RuleConfigs">

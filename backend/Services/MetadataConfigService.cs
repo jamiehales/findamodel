@@ -380,44 +380,7 @@ public class MetadataConfigService(
         var fullDirPath = GetFullDirPath(rootPath, dirPath);
         var configPath = Path.Combine(fullDirPath, ConfigFileName);
 
-        // Preserve any rule definitions that exist in the current YAML file
-        var existingRules = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        if (File.Exists(configPath))
-        {
-            try
-            {
-                var existingYaml = await File.ReadAllTextAsync(configPath);
-                var existing = YamlDeserializer.Deserialize<Dictionary<string, object>>(existingYaml);
-                if (existing != null)
-                {
-                    var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "supported", "model_name" };
-                    foreach (var kvp in existing)
-                    {
-                        var fieldName = ruleFieldNames.FirstOrDefault(f =>
-                            string.Equals(f, kvp.Key, StringComparison.OrdinalIgnoreCase));
-                        if (fieldName == null) continue;
-
-                        Dictionary<string, object>? ruleObj = kvp.Value switch
-                        {
-                            Dictionary<string, object> d => d,
-                            Dictionary<object, object> d2 => d2
-                                .Where(kv => kv.Key != null)
-                                .ToDictionary(kv => kv.Key.ToString()!, kv => kv.Value),
-                            _ => null
-                        };
-
-                        if (ruleObj != null && ruleObj.ContainsKey("rule"))
-                            existingRules[fieldName] = ruleObj;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Could not read existing rules from '{ConfigPath}'; rules may be lost", configPath);
-            }
-        }
-
-        // Build ordered dictionary of fields that are explicitly set (non-null)
+        // Build ordered dictionary of fields that are explicitly set (non-null plain values)
         var data = new Dictionary<string, object>();
         if (req.ModelName != null)     data["model_name"] = req.ModelName;
         if (req.Creator != null)       data["creator"] = req.Creator;
@@ -427,10 +390,70 @@ public class MetadataConfigService(
         if (req.Type != null)          data["type"] = req.Type;
         if (req.Supported.HasValue)    data["supported"] = req.Supported.Value;
 
-        // Re-add any existing rules for fields not being overridden by a plain value
-        foreach (var (field, ruleObj) in existingRules)
-            if (!data.ContainsKey(field))
-                data[field] = ruleObj;
+        if (req.FieldRules != null)
+        {
+            // Explicit rule management: write exactly the provided rules (plain values take precedence).
+            // Fields not in FieldRules get no rule written — this clears any previously saved rules.
+            foreach (var (fieldName, ruleYaml) in req.FieldRules)
+            {
+                if (data.ContainsKey(fieldName)) continue; // plain value wins
+                if (string.IsNullOrWhiteSpace(ruleYaml)) continue;
+                try
+                {
+                    var ruleObj = YamlDeserializer.Deserialize<Dictionary<string, object>>(ruleYaml);
+                    if (ruleObj != null && ruleObj.ContainsKey("rule"))
+                        data[fieldName] = ruleObj;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Invalid rule YAML for field '{Field}'; skipping", fieldName);
+                }
+            }
+        }
+        else
+        {
+            // Legacy path: preserve any rule definitions that exist in the current YAML file
+            // for fields not being overridden by a plain value.
+            var existingRules = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (File.Exists(configPath))
+            {
+                try
+                {
+                    var existingYaml = await File.ReadAllTextAsync(configPath);
+                    var existing = YamlDeserializer.Deserialize<Dictionary<string, object>>(existingYaml);
+                    if (existing != null)
+                    {
+                        var ruleFieldNames = new[] { "creator", "collection", "subcollection", "category", "type", "supported", "model_name" };
+                        foreach (var kvp in existing)
+                        {
+                            var fieldName = ruleFieldNames.FirstOrDefault(f =>
+                                string.Equals(f, kvp.Key, StringComparison.OrdinalIgnoreCase));
+                            if (fieldName == null) continue;
+
+                            Dictionary<string, object>? ruleObj = kvp.Value switch
+                            {
+                                Dictionary<string, object> d => d,
+                                Dictionary<object, object> d2 => d2
+                                    .Where(kv => kv.Key != null)
+                                    .ToDictionary(kv => kv.Key.ToString()!, kv => kv.Value),
+                                _ => null
+                            };
+
+                            if (ruleObj != null && ruleObj.ContainsKey("rule"))
+                                existingRules[fieldName] = ruleObj;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Could not read existing rules from '{ConfigPath}'; rules may be lost", configPath);
+                }
+            }
+
+            foreach (var (field, ruleObj) in existingRules)
+                if (!data.ContainsKey(field))
+                    data[field] = ruleObj;
+        }
 
         if (data.Count == 0)
         {
@@ -463,12 +486,27 @@ public class MetadataConfigService(
                 parentRecord.Subcollection, parentRecord.Category, parentRecord.Type,
                 parentRecord.Supported, parentRecord.ModelName);
 
-        var localRuleFields = record?.RawRulesYaml != null
-            ? RuleRegistry.DeserializeRules(record.RawRulesYaml).Keys
-                .Select(k => k.ToLowerInvariant()).ToHashSet()
-            : null;
+        HashSet<string>? localRuleFields = null;
+        Dictionary<string, string>? localRuleContents = null;
 
-        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields);
+        if (record?.RawRulesYaml != null)
+        {
+            var rules = RuleRegistry.DeserializeRules(record.RawRulesYaml);
+            if (rules.Count > 0)
+            {
+                localRuleFields = rules.Keys.Select(k => k.ToLowerInvariant()).ToHashSet();
+                localRuleContents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (field, ruleEl) in rules)
+                {
+                    // Serialize only the inner rule properties (without the outer field key wrapper)
+                    var innerObj = ruleEl.EnumerateObject()
+                        .ToDictionary(p => p.Name, p => JsonElementToYamlObject(p.Value));
+                    localRuleContents[field.ToLowerInvariant()] = YamlSerializer.Serialize(innerObj).TrimEnd();
+                }
+            }
+        }
+
+        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields, localRuleContents);
     }
 
     private static string GetFullDirPath(string rootPath, string dirPath) =>

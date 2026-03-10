@@ -11,20 +11,39 @@
   padding: 16px;
 }
 
-.subtitle {
+.sectionLabel {
   margin-bottom: 4px !important;
 }
 
-.selectSmall {
-  font-size: 0.875rem !important;
+.hint {
+  margin-top: 2px !important;
+}
+
+.fieldHeader {
+  margin-bottom: 4px !important;
+}
+
+.modeChip {
+  font-size: 0.7rem !important;
+  height: 20px !important;
+  cursor: pointer !important;
 }
 
 .fieldInput {
   font-size: 0.875rem !important;
 }
 
-.labelSmall {
-  font-size: 0.875rem;
+.ruleInput {
+  font-size: 0.8rem !important;
+  font-family: monospace !important;
+}
+
+.selectSmall {
+  font-size: 0.875rem !important;
+}
+
+.checkbox {
+  padding: 4px !important;
 }
 
 .actions {

@@ -1,10 +1,15 @@
 import Box from '@mui/material/Box'
+import Accordion from '@mui/material/Accordion'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import AccordionDetails from '@mui/material/AccordionDetails'
 import CircularProgress from '@mui/material/CircularProgress'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import Typography from '@mui/material/Typography'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useExplorer } from '../lib/queries'
 import FolderCard from '../components/FolderCard'
 import ExplorerModelCard from '../components/ExplorerModelCard'
+import MetadataEditor from '../components/MetadataEditor'
 import PathBreadcrumb from '../components/PathBreadcrumb'
 import styles from './ExplorePage.module.css'
 
@@ -106,6 +111,15 @@ export default function ExplorePage() {
           <PathBreadcrumb path={path} />
         </Box>
       </Box>
+
+      <Accordion className={styles.metaAccordion} disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />} className={styles.metaAccordionSummary}>
+          <Typography variant="body2">Edit metadata</Typography>
+        </AccordionSummary>
+        <AccordionDetails className={styles.metaAccordionDetails}>
+          <MetadataEditor path={path} />
+        </AccordionDetails>
+      </Accordion>
 
       <ExplorePageInner path={path} />
     </Box>
