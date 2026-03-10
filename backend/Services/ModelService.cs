@@ -176,19 +176,23 @@ public class ModelService(
 
         // Phase 3: Process new model files
         await using var db = await dbFactory.CreateDbContextAsync();
-        var existingChecksums = (await db.Models.Select(m => m.Checksum).ToListAsync()).ToHashSet();
+        var existingFiles = (await db.Models
+            .Select(m => new { m.Directory, m.FileName })
+            .ToListAsync())
+            .Select(m => (m.Directory, m.FileName))
+            .ToHashSet();
 
         var newCount = 0;
         foreach (var file in files)
         {
             if (limit.HasValue && newCount >= limit.Value) break;
 
-            var checksum = await ComputeChecksumAsync(file);
-            if (existingChecksums.Contains(checksum)) continue;
-
             var relativePath = Path.GetRelativePath(modelsPath, file);
             var fileName = Path.GetFileName(file);
             var directory = (Path.GetDirectoryName(relativePath) ?? "").Replace('\\', '/');
+
+            if (existingFiles.Contains((directory, fileName))) continue;
+
             var info = new FileInfo(file);
             var fileType = Path.GetExtension(file).TrimStart('.').ToLower();
 
@@ -198,6 +202,7 @@ public class ModelService(
             var geometry = await loaderService.LoadModelAsync(file, fileType);
 
             // Generate preview and hulls from pre-loaded geometry to avoid re-parsing
+            var checksum = await ComputeChecksumAsync(file);
             var previewImagePath = geometry is not null
                 ? await previewService.GeneratePreviewAsync(geometry, checksum)
                 : null;
@@ -236,7 +241,7 @@ public class ModelService(
 
             db.Models.Add(entity);
             await db.SaveChangesAsync();
-            existingChecksums.Add(checksum);
+            existingFiles.Add((directory, fileName));
             newCount++;
         }
 
