@@ -10,9 +10,7 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
 
-        var query = db.Models
-            .Include(m => m.DirectoryConfig)
-            .AsQueryable();
+        var query = db.Models.AsQueryable();
 
         // Text search: case-insensitive match on file name (without extension)
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -21,28 +19,28 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             query = query.Where(m => m.FileName.ToLower().Contains(term));
         }
 
-        // Multi-value filters on resolved DirectoryConfig fields
+        // Multi-value filters on per-model calculated metadata fields (rules applied)
         if (request.Creator is { Length: > 0 })
-            query = query.Where(m => m.DirectoryConfig != null && request.Creator.Contains(m.DirectoryConfig.Creator));
+            query = query.Where(m => m.CalculatedCreator != null && request.Creator.Contains(m.CalculatedCreator));
 
         if (request.Collection is { Length: > 0 })
-            query = query.Where(m => m.DirectoryConfig != null && request.Collection.Contains(m.DirectoryConfig.Collection));
+            query = query.Where(m => m.CalculatedCollection != null && request.Collection.Contains(m.CalculatedCollection));
 
         if (request.Subcollection is { Length: > 0 })
-            query = query.Where(m => m.DirectoryConfig != null && request.Subcollection.Contains(m.DirectoryConfig.Subcollection));
+            query = query.Where(m => m.CalculatedSubcollection != null && request.Subcollection.Contains(m.CalculatedSubcollection));
 
         if (request.Category is { Length: > 0 })
-            query = query.Where(m => m.DirectoryConfig != null && request.Category.Contains(m.DirectoryConfig.Category));
+            query = query.Where(m => m.CalculatedCategory != null && request.Category.Contains(m.CalculatedCategory));
 
         if (request.Type is { Length: > 0 })
-            query = query.Where(m => m.DirectoryConfig != null && request.Type.Contains(m.DirectoryConfig.Type));
+            query = query.Where(m => m.CalculatedType != null && request.Type.Contains(m.CalculatedType));
 
         if (request.FileType is { Length: > 0 })
             query = query.Where(m => request.FileType.Contains(m.FileType));
 
         // Three-state boolean filter
         if (request.Supported.HasValue)
-            query = query.Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Supported == request.Supported.Value);
+            query = query.Where(m => m.CalculatedSupported == request.Supported.Value);
 
         var totalCount = await query.CountAsync();
 
@@ -58,19 +56,19 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             Models = models.Select(m => new ModelDto
             {
                 Id            = m.Id,
-                Name          = Path.GetFileNameWithoutExtension(m.FileName),
+                Name          = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
                 RelativePath  = string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
                 FileType      = m.FileType,
                 FileSize      = m.FileSize,
                 FileUrl       = $"/api/models/{m.Id}/file",
                 HasPreview    = m.PreviewImagePath != null,
                 PreviewUrl    = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
-                Creator        = m.DirectoryConfig?.Creator,
-                Collection    = m.DirectoryConfig?.Collection,
-                Subcollection = m.DirectoryConfig?.Subcollection,
-                Category      = m.DirectoryConfig?.Category,
-                Type          = m.DirectoryConfig?.Type,
-                Supported     = m.DirectoryConfig?.Supported,
+                Creator       = m.CalculatedCreator,
+                Collection    = m.CalculatedCollection,
+                Subcollection = m.CalculatedSubcollection,
+                Category      = m.CalculatedCategory,
+                Type          = m.CalculatedType,
+                Supported     = m.CalculatedSupported,
                 ConvexHull         = m.ConvexHullCoordinates,
                 ConcaveHull        = m.ConcaveHullCoordinates,
                 ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
@@ -93,36 +91,36 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         await using var db = await dbFactory.CreateDbContextAsync();
 
         var creators = await db.Models
-            .Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Creator != null)
-            .Select(m => m.DirectoryConfig!.Creator!)
+            .Where(m => m.CalculatedCreator != null)
+            .Select(m => m.CalculatedCreator!)
             .Distinct()
             .OrderBy(v => v)
             .ToListAsync();
 
         var collections = await db.Models
-            .Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Collection != null)
-            .Select(m => m.DirectoryConfig!.Collection!)
+            .Where(m => m.CalculatedCollection != null)
+            .Select(m => m.CalculatedCollection!)
             .Distinct()
             .OrderBy(v => v)
             .ToListAsync();
 
         var subcollections = await db.Models
-            .Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Subcollection != null)
-            .Select(m => m.DirectoryConfig!.Subcollection!)
+            .Where(m => m.CalculatedSubcollection != null)
+            .Select(m => m.CalculatedSubcollection!)
             .Distinct()
             .OrderBy(v => v)
             .ToListAsync();
 
         var categories = await db.Models
-            .Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Category != null)
-            .Select(m => m.DirectoryConfig!.Category!)
+            .Where(m => m.CalculatedCategory != null)
+            .Select(m => m.CalculatedCategory!)
             .Distinct()
             .OrderBy(v => v)
             .ToListAsync();
 
         var types = await db.Models
-            .Where(m => m.DirectoryConfig != null && m.DirectoryConfig.Type != null)
-            .Select(m => m.DirectoryConfig!.Type!)
+            .Where(m => m.CalculatedType != null)
+            .Select(m => m.CalculatedType!)
             .Distinct()
             .OrderBy(v => v)
             .ToListAsync();
