@@ -119,8 +119,7 @@ public class MetadataConfigService(
             all[dirPath] = record;
         }
 
-        var rawFields = new RawConfigFields(req.Creator, req.Collection, req.Subcollection,
-                                            req.Category, req.Type, req.Supported, ModelName: req.ModelName);
+        var rawFields = File.Exists(configFilePath) ? await ParseConfigFileAsync(configFilePath) : null;
         ApplyRawFields(record, rawFields);
         record.LocalConfigFileHash = newHash;
         ResolveFields(record, all);
