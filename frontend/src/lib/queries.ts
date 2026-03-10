@@ -122,7 +122,7 @@ export function useEnqueueIndex() {
 export function useIndexFolder(path: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => enqueueIndex(path || null, IndexFlags.Directories | IndexFlags.Models),
+    mutationFn: () => enqueueIndex(path || null, IndexFlags.Models),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
     },
