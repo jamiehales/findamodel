@@ -12,7 +12,8 @@ public class ModelIndexerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        indexerService.Enqueue(null, IndexFlags.Directories);
+        if (config.GetValue("Indexing:IndexOnStartup", true))
+            indexerService.Enqueue(null, IndexFlags.Directories);
 
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
