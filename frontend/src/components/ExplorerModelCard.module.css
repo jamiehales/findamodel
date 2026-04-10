@@ -91,3 +91,25 @@
   background: rgba(255, 255, 255, 0.06);
   white-space: nowrap;
 }
+
+.indexWrap {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 3;
+}
+
+.indexBtn {
+  color: #818cf8 !important;
+  border: 1px solid rgba(99, 102, 241, 0.5) !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+}
+
+.indexBtnQueued {
+  color: #93c5fd !important;
+  border-color: rgba(147, 197, 253, 0.55) !important;
+}
+
+.spinner {
+  color: #818cf8 !important;
+}

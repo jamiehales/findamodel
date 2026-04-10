@@ -23,17 +23,18 @@ public class IndexerService(
 
     /// <summary>
     /// Adds an indexing request to the queue.
-    /// If a request for the same <paramref name="directoryFilter"/> is already queued,
+    /// If a request for the same target is already queued,
     /// its flags are merged and it is moved to the front of the queue.
     /// </summary>
-    public IndexRequestDto Enqueue(string? directoryFilter, IndexFlags flags)
+    public IndexRequestDto Enqueue(string? directoryFilter, string? relativeModelPath, IndexFlags flags)
     {
         lock (_lock)
         {
             // Normalise empty string → null so root-level requests deduplicate correctly.
             var filter = string.IsNullOrEmpty(directoryFilter) ? null : directoryFilter;
+            var modelPath = string.IsNullOrEmpty(relativeModelPath) ? null : relativeModelPath;
 
-            var existing = FindQueued(filter);
+            var existing = FindQueued(filter, modelPath);
             if (existing != null)
             {
                 existing.Flags |= flags;
@@ -42,7 +43,7 @@ public class IndexerService(
                 return existing.ToDto("queued");
             }
 
-            var entry = new IndexEntry(filter, flags);
+            var entry = new IndexEntry(filter, modelPath, flags);
             entry.Node = _queue.AddLast(entry);
 
             if (_processingTask == null || _processingTask.IsCompleted)
@@ -67,10 +68,10 @@ public class IndexerService(
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private IndexEntry? FindQueued(string? filter)
+    private IndexEntry? FindQueued(string? filter, string? modelPath)
     {
         foreach (var entry in _queue)
-            if (entry.DirectoryFilter == filter)
+            if (entry.DirectoryFilter == filter && entry.RelativeModelPath == modelPath)
                 return entry;
         return null;
     }
@@ -104,8 +105,10 @@ public class IndexerService(
 
     private async Task ProcessRequestAsync(IndexEntry entry)
     {
-        var label = entry.DirectoryFilter ?? "(all)";
-        logger.LogInformation("IndexerService: starting {Flags} for {Directory}", entry.Flags, label);
+        var label = entry.RelativeModelPath is not null
+            ? $"model:{entry.RelativeModelPath}"
+            : entry.DirectoryFilter ?? "(all)";
+        logger.LogInformation("IndexerService: starting {Flags} for {Target}", entry.Flags, label);
 
         try
         {
@@ -113,13 +116,18 @@ public class IndexerService(
                 await metadataConfigService.SyncDirectoryConfigsAsync();
 
             if (entry.Flags.HasFlag(IndexFlags.Models))
-                await modelService.ScanAndCacheAsync(directoryFilter: entry.DirectoryFilter);
+            {
+                if (entry.RelativeModelPath is not null)
+                    await modelService.ScanAndCacheSingleAsync(entry.RelativeModelPath);
+                else
+                    await modelService.ScanAndCacheAsync(directoryFilter: entry.DirectoryFilter);
+            }
 
-            logger.LogInformation("IndexerService: completed {Flags} for {Directory}", entry.Flags, label);
+            logger.LogInformation("IndexerService: completed {Flags} for {Target}", entry.Flags, label);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "IndexerService: failed processing {Flags} for {Directory}", entry.Flags, label);
+            logger.LogError(ex, "IndexerService: failed processing {Flags} for {Target}", entry.Flags, label);
         }
     }
 
@@ -127,10 +135,11 @@ public class IndexerService(
     // Internal data class
     // -------------------------------------------------------------------------
 
-    private sealed class IndexEntry(string? directoryFilter, IndexFlags flags)
+    private sealed class IndexEntry(string? directoryFilter, string? relativeModelPath, IndexFlags flags)
     {
         public Guid Id { get; } = Guid.NewGuid();
         public string? DirectoryFilter { get; } = directoryFilter;
+        public string? RelativeModelPath { get; } = relativeModelPath;
         public IndexFlags Flags { get; set; } = flags;
         public DateTime RequestedAt { get; } = DateTime.UtcNow;
 
@@ -138,6 +147,6 @@ public class IndexerService(
         public LinkedListNode<IndexEntry>? Node { get; set; }
 
         public IndexRequestDto ToDto(string status) =>
-            new(Id, DirectoryFilter, Flags, RequestedAt, status);
+            new(Id, DirectoryFilter, RelativeModelPath, Flags, RequestedAt, status);
     }
 }

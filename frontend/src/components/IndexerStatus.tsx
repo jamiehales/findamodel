@@ -40,7 +40,7 @@ function RequestRow({ request, status }: { request: IndexRequest; status: 'runni
           variant={status === 'running' ? 'status-running' : 'status-queued'}
         />
         <Typography variant="caption">
-          {request.directoryFilter ?? 'All directories'}
+          {request.relativeModelPath ?? request.directoryFilter ?? 'All directories'}
         </Typography>
         <Typography variant="caption" color="text.disabled">
           {flagsLabel(request.flags)}

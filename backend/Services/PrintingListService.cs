@@ -24,6 +24,8 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             OwnerId = userId,
             IsActive = true,
             IsDefault = true,
+            SpawnType = PrintingList.DefaultSpawnType,
+            HullMode = PrintingList.DefaultHullMode,
             CreatedAt = DateTime.UtcNow,
         };
         db.PrintingLists.Add(list);
@@ -45,7 +47,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             .OrderByDescending(l => l.IsActive)
             .ThenBy(l => l.CreatedAt)
             .Select(l => new PrintingListSummaryDto(
-                l.Id, l.Name, l.IsActive, l.IsDefault, l.CreatedAt,
+                l.Id, l.Name, l.IsActive, l.IsDefault, l.SpawnType, l.HullMode, l.CreatedAt,
                 l.Owner.Username,
                 l.Items.Count))
             .ToListAsync();
@@ -87,13 +89,15 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             OwnerId = userId,
             IsActive = !hasAny,
             IsDefault = false,
+            SpawnType = PrintingList.DefaultSpawnType,
+            HullMode = PrintingList.DefaultHullMode,
             CreatedAt = DateTime.UtcNow,
         };
         db.PrintingLists.Add(list);
         await db.SaveChangesAsync();
 
         await db.Entry(list).Reference(l => l.Owner).LoadAsync();
-        return new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.CreatedAt, list.Owner.Username, 0);
+        return new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.SpawnType, list.HullMode, list.CreatedAt, list.Owner.Username, 0);
     }
 
     public async Task<(PrintingListMutateResult Result, PrintingListSummaryDto? Dto)> RenameListAsync(
@@ -111,7 +115,30 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         list.Name = name;
         await db.SaveChangesAsync();
         return (PrintingListMutateResult.Success,
-            new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.CreatedAt, list.Owner.Username, list.Items.Count));
+            new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.SpawnType, list.HullMode, list.CreatedAt, list.Owner.Username, list.Items.Count));
+    }
+
+    public async Task<PrintingListDetailDto?> UpdateSettingsAsync(
+        Guid id,
+        Guid userId,
+        bool isAdmin,
+        string spawnType,
+        string hullMode)
+    {
+        using var db = dbFactory.CreateDbContext();
+        var list = await db.PrintingLists
+            .Include(l => l.Owner)
+            .FirstOrDefaultAsync(l => l.Id == id);
+
+        if (list == null) return null;
+        if (!isAdmin && list.OwnerId != userId) return null;
+
+        list.SpawnType = NormalizeSpawnType(spawnType);
+        list.HullMode = NormalizeHullMode(hullMode);
+        await db.SaveChangesAsync();
+
+        var items = await db.PrintingListItems.Where(i => i.PrintingListId == id).ToListAsync();
+        return ToDetail(list, items);
     }
 
     public async Task<PrintingListMutateResult> DeleteListAsync(Guid id, Guid userId, bool isAdmin)
@@ -225,6 +252,12 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
     }
 
     private static PrintingListDetailDto ToDetail(PrintingList list, IEnumerable<PrintingListItem> items) =>
-        new(list.Id, list.Name, list.IsActive, list.IsDefault, list.CreatedAt, list.Owner.Username,
+        new(list.Id, list.Name, list.IsActive, list.IsDefault, NormalizeSpawnType(list.SpawnType), NormalizeHullMode(list.HullMode), list.CreatedAt, list.Owner.Username,
             items.Select(i => new PrintingListItemDto(i.Id, i.ModelId, i.Quantity)).ToList());
+
+    private static string NormalizeSpawnType(string? spawnType) =>
+        string.Equals(spawnType, "random", StringComparison.OrdinalIgnoreCase) ? "random" : PrintingList.DefaultSpawnType;
+
+    private static string NormalizeHullMode(string? hullMode) =>
+        string.Equals(hullMode, "sansRaft", StringComparison.OrdinalIgnoreCase) ? "sansRaft" : PrintingList.DefaultHullMode;
 }

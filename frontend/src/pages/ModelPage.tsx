@@ -5,10 +5,12 @@ import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useModel, useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
+import { useModel, useModelOtherParts, useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
+import { useIndexModel, useIsModelIndexing } from '../lib/queries'
 import ModelViewer from '../components/ModelViewer'
 import HullPreview from '../components/HullPreview'
 import PathBreadcrumb from '../components/PathBreadcrumb'
+import AppCard from '../components/AppCard'
 import styles from './ModelPage.module.css'
 
 function formatBytes(bytes: number): string {
@@ -28,10 +30,15 @@ function ModelPage() {
   const decodedId = decodeURIComponent(id ?? '')
 
   const { data: model, isPending, isError } = useModel(decodedId)
+  const { data: otherParts } = useModelOtherParts(decodedId)
   const { data: activeList } = useActivePrintingList()
   const { mutate: upsertItem } = useUpsertPrintingListItem()
   const activeListId = activeList?.id ?? ''
   const qty = model ? (activeList?.items.find(i => i.modelId === model.id)?.quantity ?? 0) : 0
+
+  const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '')
+  const indexingStatus = useIsModelIndexing(model?.relativePath ?? '')
+  const isReindexing = indexingStatus === 'running'
 
   const backButton = (
     <Button variant="back" onClick={() => navigate('/')}>
@@ -150,6 +157,23 @@ function ModelPage() {
           Download .{model.fileType}
         </Button>
 
+        <Button
+          onClick={() => indexModel()}
+          variant="outlined"
+          disabled={isReindexing}
+          className={styles.reindexBtn}
+        >
+          {isReindexing ? (
+            <>
+              <CircularProgress size={18} className={styles.reindexSpinner} />
+              Reindexing...
+            </>
+          ) : (
+            'Reindex'
+
+          )}
+        </Button>
+
         {metaRows.length > 0 && (
           <Box className={styles.metaGrid}>
             {metaRows.map(({ label, value }) => (
@@ -176,6 +200,27 @@ function ModelPage() {
             convexSansRaftHull={model.convexSansRaftHull}
             label="Hull Projections"
           />
+        )}
+
+        {(otherParts?.length ?? 0) > 0 && (
+          <Box className={styles.otherPartsSection}>
+            <Typography variant="h6" className={styles.otherPartsTitle}>
+              Other parts
+            </Typography>
+            <Box className={styles.otherPartsGrid}>
+              {otherParts!.map(part => (
+                <AppCard key={part.id} href={`/model/${encodeURIComponent(part.id)}`} className={styles.otherPartCard}>
+                  {part.previewUrl && (
+                    <Box component="img" src={part.previewUrl} alt="" className={styles.otherPartPreview} />
+                  )}
+                  <Box className={styles.otherPartOverlay}>
+                    <Typography className={styles.otherPartName}>{part.name}</Typography>
+                    <Typography className={styles.otherPartPath}>{part.relativePath}</Typography>
+                  </Box>
+                </AppCard>
+              ))}
+            </Box>
+          </Box>
         )}
       </Box>
     </Box>

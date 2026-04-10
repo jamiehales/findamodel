@@ -16,6 +16,13 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<CachedModel>()
             .HasIndex(m => m.Checksum);
 
+        modelBuilder.Entity<CachedModel>()
+            .HasIndex(m => new { m.Directory, m.FileName })
+            .IsUnique();
+
+        modelBuilder.Entity<CachedModel>()
+            .HasIndex(m => new { m.CalculatedCreator, m.CalculatedCollection, m.CalculatedSubcollection, m.CalculatedModelName });
+
         // CachedModel → DirectoryConfig (SetNull so removing a config record doesn't cascade-delete models)
         modelBuilder.Entity<CachedModel>()
             .HasOne(m => m.DirectoryConfig)
@@ -36,6 +43,14 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .WithMany()
             .HasForeignKey(l => l.OwnerId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PrintingList>()
+            .Property(l => l.SpawnType)
+            .HasDefaultValue(PrintingList.DefaultSpawnType);
+
+        modelBuilder.Entity<PrintingList>()
+            .Property(l => l.HullMode)
+            .HasDefaultValue(PrintingList.DefaultHullMode);
 
         modelBuilder.Entity<PrintingListItem>()
             .HasOne(i => i.PrintingList)

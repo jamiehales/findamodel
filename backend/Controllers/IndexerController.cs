@@ -26,7 +26,10 @@ public class IndexerController(IndexerService indexerService) : ControllerBase
     [HttpPost]
     public ActionResult<IndexRequestDto> Enqueue([FromBody] EnqueueIndexRequest request)
     {
-        var result = indexerService.Enqueue(request.DirectoryFilter, request.Flags);
+        if (!string.IsNullOrWhiteSpace(request.DirectoryFilter) && !string.IsNullOrWhiteSpace(request.RelativeModelPath))
+            return BadRequest("Specify either directoryFilter or relativeModelPath, not both.");
+
+        var result = indexerService.Enqueue(request.DirectoryFilter, request.RelativeModelPath, request.Flags);
         return Ok(result);
     }
 }

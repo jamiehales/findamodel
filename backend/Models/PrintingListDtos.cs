@@ -7,6 +7,8 @@ public record PrintingListSummaryDto(
     string Name,
     bool IsActive,
     bool IsDefault,
+    string SpawnType,
+    string HullMode,
     DateTime CreatedAt,
     string? OwnerUsername,
     int ItemCount);
@@ -21,6 +23,8 @@ public record PrintingListDetailDto(
     string Name,
     bool IsActive,
     bool IsDefault,
+    string SpawnType,
+    string HullMode,
     DateTime CreatedAt,
     string? OwnerUsername,
     List<PrintingListItemDto> Items);
@@ -28,5 +32,7 @@ public record PrintingListDetailDto(
 public record CreatePrintingListRequest(string Name);
 
 public record RenamePrintingListRequest(string Name);
+
+public record UpdatePrintingListSettingsRequest(string SpawnType, string HullMode);
 
 public record UpsertPrintingListItemRequest(int Quantity);

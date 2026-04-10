@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as PIXI from 'pixi.js'
 import Matter from 'matter-js'
-import { Stack, Typography, Button, MenuItem, Select, ToggleButton, ToggleButtonGroup, Checkbox, FormGroup, FormControlLabel } from '@mui/material'
-import type { Model } from '../lib/api'
+import { Stack, Typography, Button, MenuItem, Select, Checkbox, FormGroup, FormControlLabel, FormControl, InputLabel } from '@mui/material'
+import type { Model, SpawnType, HullMode } from '../lib/api'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -17,9 +17,7 @@ const SPEED_THRESH = 0.12
 const ANGULAR_THRESH = 0.008
 const SETTLE_FRAMES = 90 // ~1.5 s at 60 fps
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout'
-const SPAWN_ORDER_LOCALSTORAGE_KEY = 'findamodel.printingListSpawnOrder'
 const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag'
-const HULL_MODE_LOCALSTORAGE_KEY = 'findamodel.printingListHullMode'
 const DEBUG_PHYSICS_WIREFRAME = false
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
@@ -69,6 +67,10 @@ interface Entry {
 interface Props {
   models: Model[]
   items: Record<string, number>
+  spawnOrder: SpawnType
+  hullMode: HullMode
+  onSpawnOrderChange?: (next: SpawnType) => void
+  onHullModeChange?: (next: HullMode) => void
   onPausedChange?: (paused: boolean) => void
 }
 
@@ -286,21 +288,18 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type SpawnOrder = 'grouped' | 'random'
-type HullMode = 'convex' | 'sansRaft'
-
-export default function PrintingListCanvas({ models, items, onPausedChange }: Props) {
+export default function PrintingListCanvas({
+  models,
+  items,
+  spawnOrder,
+  hullMode,
+  onSpawnOrderChange,
+  onHullModeChange,
+  onPausedChange,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const itemsKey = useMemo(() => JSON.stringify(items), [items])
-  const [spawnOrder, setSpawnOrder] = useState<SpawnOrder>(() => {
-    const saved = localStorage.getItem(SPAWN_ORDER_LOCALSTORAGE_KEY)
-    return saved === 'random' ? 'random' : 'grouped'
-  })
   const [resetCount, setResetCount] = useState(0)
-  const [hullMode, setHullMode] = useState<HullMode>(() => {
-    const saved = localStorage.getItem(HULL_MODE_LOCALSTORAGE_KEY)
-    return saved === 'sansRaft' ? 'sansRaft' : 'convex'
-  })
   const [pauseOnDrag, setPauseOnDrag] = useState(
     () => localStorage.getItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY) === 'true',
   )
@@ -326,7 +325,7 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
   itemsKeyRef.current = itemsKey
   const modelsRef = useRef(models)
   modelsRef.current = models
-  const hullModeRef = useRef(hullMode)
+  const hullModeRef = useRef<HullMode>(hullMode)
   hullModeRef.current = hullMode
 
   useEffect(() => {
@@ -716,34 +715,38 @@ export default function PrintingListCanvas({ models, items, onPausedChange }: Pr
           Printer: Uniformation GK2<br/>
           Print area: {CANVAS_WIDTH_MM} × {CANVAS_HEIGHT_MM} mm
         </Typography>
-        <ToggleButtonGroup
-          value={spawnOrder}
-          exclusive
-          onChange={(_e, v: SpawnOrder | null) => {
-            if (v) {
+        <FormControl size="small">
+          <InputLabel id="spawn-order-label">Spawn order</InputLabel>
+          <Select
+            labelId="spawn-order-label"
+            label="Spawn order"
+            value={spawnOrder}
+            onChange={e => {
+              const next = e.target.value as SpawnType
               localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
-              localStorage.setItem(SPAWN_ORDER_LOCALSTORAGE_KEY, v)
-              setSpawnOrder(v)
-            }
-          }}
-          size="small"
-        >
-          <ToggleButton value="grouped">Grouped</ToggleButton>
-          <ToggleButton value="random">Random</ToggleButton>
-        </ToggleButtonGroup>
-        <Select
-          value={hullMode}
-          onChange={e => {
-            const next = e.target.value as HullMode
-            localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
-            localStorage.setItem(HULL_MODE_LOCALSTORAGE_KEY, next)
-            setHullMode(next)
-          }}
-          size="small"
-        >
-          <MenuItem value="convex">Convex hull</MenuItem>
-          <MenuItem value="sansRaft">Sans raft hull</MenuItem>
-        </Select>
+              onSpawnOrderChange?.(next)
+            }}
+          >
+            <MenuItem value="grouped">Grouped</MenuItem>
+            <MenuItem value="random">Random</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl size="small">
+          <InputLabel id="hull-mode-label">Hull mode</InputLabel>
+          <Select
+            labelId="hull-mode-label"
+            label="Hull mode"
+            value={hullMode}
+            onChange={e => {
+              const next = e.target.value as HullMode
+              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY)
+              onHullModeChange?.(next)
+            }}
+          >
+            <MenuItem value="convex">Convex hull</MenuItem>
+            <MenuItem value="sansRaft">Sans raft hull</MenuItem>
+          </Select>
+        </FormControl>
         <Button
           size="large"
           variant="outlined"

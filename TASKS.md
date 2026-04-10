@@ -6,7 +6,6 @@
 
 * Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
 
-* Reduce complexity of convex hull
 * Fix concave hull calculation
 
 * If there is an image in a directory, allow setting this as the collection preview, creator preview
@@ -23,8 +22,6 @@
 
 * Right align the reset button
 
-* Change the grouped/random toggle to a dropdown (mui select), and title it 'spawn order'
-
 * When starting to test larger mdoels and concave hulls, add a new spawn order - largest first, fill gaps - that spawns the largest model, then enough small models to fit in the bound rectangle minus the area of the convex/concave hull, for this all 'fill' models should be spawned at the same x location
 
 * Show a little bit above the top of the print plate, so that you can see clearly if any models are "out of bounds"
@@ -32,18 +29,13 @@
 
 * Make the hardcoded 2mm raft clipping configurable - it should default to 2mm, but be overridable using the findamodel.yaml metadata
 
-* Store the hull mode / spawn type / on the printing list
-
 * Setup prettier, and have claude run it after frontend changes
 
-* Add model name to metadata - allowing a model with multiple parts to be marked as one model
 * Add 3D Print type to model, FDM / Resin / Any
 
 * UpdateLogger so the service/context is passed in separately from a constant as a channel, so that certain channels can be enabled or disabled, investigate logging libraries before choosing a method here
 * By default any logs of the ExecutedDbCommand should be set to Debug level, and that logging channel disabled
 * See if there's a VSCode serilog plugin or similar that can provide the ability to filter channels dynamically
-
-* Fix "show more" jumping to the top of the page
 
 * Switch model geometry return to binary format for less data transfer
 * Potentially investigate some sort of model simplification algorithm?

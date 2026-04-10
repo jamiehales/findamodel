@@ -110,9 +110,24 @@ export interface GeometryResponse {
   dimensionZMm: number
 }
 
+export interface RelatedModel {
+  id: string
+  name: string
+  relativePath: string
+  fileType: string
+  fileSize: number
+  previewUrl: string | null
+}
+
 export async function fetchGeometry(id: string): Promise<GeometryResponse> {
   const r = await fetch(`/api/models/${id}/geometry`)
   if (!r.ok) throw new Error('Failed to fetch geometry')
+  return r.json()
+}
+
+export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
+  const r = await fetch(`/api/models/${id}/other-parts`)
+  if (!r.ok) throw new Error('Failed to fetch other parts')
   return r.json()
 }
 
@@ -225,6 +240,7 @@ export const IndexFlags = { Directories: 1, Models: 2, Hulls: 4, All: 7 } as con
 export interface IndexRequest {
   id: string
   directoryFilter: string | null
+  relativeModelPath: string | null
   flags: number
   requestedAt: string
   status: 'queued' | 'running'
@@ -242,11 +258,11 @@ export async function fetchIndexerStatus(): Promise<IndexerStatus> {
   return r.json()
 }
 
-export async function enqueueIndex(directoryFilter: string | null, flags: number): Promise<IndexRequest> {
+export async function enqueueIndex(directoryFilter: string | null, flags: number, relativeModelPath: string | null = null): Promise<IndexRequest> {
   const r = await fetch('/api/indexer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ directoryFilter, flags }),
+    body: JSON.stringify({ directoryFilter, relativeModelPath, flags }),
   })
   if (!r.ok) throw new Error('Failed to enqueue index request')
   return r.json()
@@ -267,11 +283,16 @@ export async function generatePlate(
 
 // ---- Printing Lists ----
 
+export type SpawnType = 'grouped' | 'random'
+export type HullMode = 'convex' | 'sansRaft'
+
 export interface PrintingListSummary {
   id: string
   name: string
   isActive: boolean
   isDefault: boolean
+  spawnType: SpawnType
+  hullMode: HullMode
   createdAt: string
   ownerUsername: string | null
   itemCount: number
@@ -288,6 +309,8 @@ export interface PrintingListDetail {
   name: string
   isActive: boolean
   isDefault: boolean
+  spawnType: SpawnType
+  hullMode: HullMode
   createdAt: string
   ownerUsername: string | null
   items: PrintingListItem[]
@@ -340,6 +363,19 @@ export async function deletePrintingList(id: string): Promise<void> {
 export async function activatePrintingList(id: string): Promise<void> {
   const r = await fetch(`/api/printing-lists/${id}/activate`, { method: 'POST' })
   if (!r.ok) throw new Error('Failed to activate printing list')
+}
+
+export async function updatePrintingListSettings(
+  id: string,
+  settings: { spawnType: SpawnType; hullMode: HullMode },
+): Promise<PrintingListDetail> {
+  const r = await fetch(`/api/printing-lists/${id}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  if (!r.ok) throw new Error('Failed to update printing list settings')
+  return r.json()
 }
 
 export async function upsertPrintingListItem(listId: string, modelId: string, quantity: number): Promise<PrintingListDetail> {

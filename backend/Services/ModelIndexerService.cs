@@ -13,7 +13,7 @@ public class ModelIndexerService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (config.GetValue("Indexing:IndexOnStartup", true))
-            indexerService.Enqueue(null, IndexFlags.Directories);
+            indexerService.Enqueue(null, null, IndexFlags.Directories);
 
         var expression = config["Models:IndexSchedule"] ?? DefaultSchedule;
         CronExpression cron;
@@ -49,7 +49,7 @@ public class ModelIndexerService(
             if (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogInformation("ModelIndexerService: enqueueing scheduled full scan");
-                indexerService.Enqueue(null, IndexFlags.Directories | IndexFlags.Models);
+                indexerService.Enqueue(null, null, IndexFlags.Directories | IndexFlags.Models);
             }
         }
 

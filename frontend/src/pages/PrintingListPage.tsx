@@ -2,8 +2,8 @@ import { Stack, Box, Button, CircularProgress, Typography, Menu, MenuItem } from
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { generatePlate } from '../lib/api'
-import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList } from '../lib/queries'
+import { generatePlate, type SpawnType, type HullMode } from '../lib/api'
+import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList, useUpdatePrintingListSettings } from '../lib/queries'
 import ModelCard from '../components/ModelCard'
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas'
 import styles from './PrintingListPage.module.css'
@@ -15,6 +15,7 @@ function PrintingListPage() {
   const { data: allModels, isPending: modelsPending } = useModels()
   const { mutate: clearItems } = useClearPrintingListItems()
   const { mutate: activateList } = useActivatePrintingList()
+  const { mutate: updateSettings } = useUpdatePrintingListSettings()
   const [savingPlate, setSavingPlate] = useState(false)
   const [simulationPaused, setSimulationPaused] = useState(false)
   const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null)
@@ -31,6 +32,16 @@ function PrintingListPage() {
   const listName = list?.name ?? 'Printing list'
   const showControls = list?.isActive === true
   const isPending = modelsPending || listPending
+
+  function handleSpawnOrderChange(next: SpawnType) {
+    if (!list) return
+    updateSettings({ id: list.id, spawnType: next, hullMode: list.hullMode })
+  }
+
+  function handleHullModeChange(next: HullMode) {
+    if (!list) return
+    updateSettings({ id: list.id, spawnType: list.spawnType, hullMode: next })
+  }
 
   async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
     setSavingPlate(true)
@@ -159,7 +170,15 @@ function PrintingListPage() {
             </Box>
 
             <Box className={styles.canvasWrapper}>
-              <PrintingListCanvas models={listedModels} items={items} onPausedChange={setSimulationPaused} />
+              <PrintingListCanvas
+                models={listedModels}
+                items={items}
+                spawnOrder={list?.spawnType ?? 'grouped'}
+                hullMode={list?.hullMode ?? 'convex'}
+                onSpawnOrderChange={handleSpawnOrderChange}
+                onHullModeChange={handleHullModeChange}
+                onPausedChange={setSimulationPaused}
+              />
             </Box>
           </>
         )}

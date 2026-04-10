@@ -1,18 +1,19 @@
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchModels, fetchModel, fetchGeometry,
+  fetchModels, fetchModel, fetchGeometry, fetchOtherParts,
   fetchExplorer, fetchDirectoryConfig, updateDirectoryConfig,
   fetchIndexerStatus, enqueueIndex, IndexFlags,
   fetchPrintingLists, fetchActivePrintingList, fetchPrintingList,
   createPrintingList, renamePrintingList, deletePrintingList, activatePrintingList,
-  upsertPrintingListItem, clearPrintingListItems,
+  updatePrintingListSettings, upsertPrintingListItem, clearPrintingListItems,
+  type MetadataFields, type PrintingListDetail, type ModelFilter, type SpawnType, type HullMode,
   fetchQueryModels, fetchFilterOptions,
-  type MetadataFields, type PrintingListDetail, type ModelFilter,
 } from './api'
 
 export const queryKeys = {
   models: (limit?: number) => limit !== undefined ? ['models', limit] as const : ['models'] as const,
   model: (id: string) => ['model', id] as const,
+  modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
@@ -49,6 +50,14 @@ export function useGeometry(id: string) {
   return useSuspenseQuery({
     queryKey: queryKeys.geometry(id),
     queryFn: () => fetchGeometry(id),
+  })
+}
+
+export function useModelOtherParts(id: string) {
+  return useQuery({
+    queryKey: queryKeys.modelOtherParts(id),
+    queryFn: () => fetchOtherParts(id),
+    enabled: !!id,
   })
 }
 
@@ -111,8 +120,8 @@ export function useIndexerStatus() {
 export function useEnqueueIndex() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ directoryFilter, flags }: { directoryFilter: string | null; flags: number }) =>
-      enqueueIndex(directoryFilter, flags),
+    mutationFn: ({ directoryFilter, flags, relativeModelPath }: { directoryFilter: string | null; flags: number; relativeModelPath?: string | null }) =>
+      enqueueIndex(directoryFilter, flags, relativeModelPath ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
     },
@@ -122,7 +131,7 @@ export function useEnqueueIndex() {
 export function useIndexFolder(path: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => enqueueIndex(path || null, IndexFlags.Models),
+    mutationFn: () => enqueueIndex(path || null, IndexFlags.Models, null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
     },
@@ -139,8 +148,27 @@ export function useIsFolderIndexing(path: string): 'running' | 'queued' | null {
   if (!status) return null
 
   const filter = path || null
-  if (status.currentRequest?.directoryFilter === filter) return 'running'
-  if (status.queue.some(r => r.directoryFilter === filter)) return 'queued'
+  if (status.currentRequest?.relativeModelPath == null && status.currentRequest?.directoryFilter === filter) return 'running'
+  if (status.queue.some(r => r.relativeModelPath == null && r.directoryFilter === filter)) return 'queued'
+  return null
+}
+
+export function useIndexModel(relativePath: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => enqueueIndex(null, IndexFlags.Models, relativePath),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus })
+    },
+  })
+}
+
+export function useIsModelIndexing(relativePath: string): 'running' | 'queued' | null {
+  const { data: status } = useIndexerStatus()
+  if (!status) return null
+
+  if (status.currentRequest?.relativeModelPath === relativePath) return 'running'
+  if (status.queue.some(r => r.relativeModelPath === relativePath)) return 'queued'
   return null
 }
 
@@ -212,6 +240,15 @@ export function useActivatePrintingList() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printing-lists'] })
     },
+  })
+}
+
+export function useUpdatePrintingListSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, spawnType, hullMode }: { id: string; spawnType: SpawnType; hullMode: HullMode }) =>
+      updatePrintingListSettings(id, { spawnType, hullMode }),
+    onSuccess: (updated) => syncList(queryClient, updated),
   })
 }
 

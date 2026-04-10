@@ -12,12 +12,13 @@ public enum IndexFlags
 public record IndexRequestDto(
     Guid Id,
     string? DirectoryFilter,
+    string? RelativeModelPath,
     IndexFlags Flags,
     DateTime RequestedAt,
     string Status);  // "queued" | "running"
 
 /// <summary>Request body for POST /api/indexer.</summary>
-public record EnqueueIndexRequest(string? DirectoryFilter, IndexFlags Flags);
+public record EnqueueIndexRequest(string? DirectoryFilter, string? RelativeModelPath, IndexFlags Flags);
 
 /// <summary>Response for GET /api/indexer.</summary>
 public record IndexerStatusDto(

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using findamodel.Models;
 using findamodel.Services;
 using System.Text.Json;
 
@@ -21,6 +22,13 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
         var model = await modelService.GetModelDtoAsync(id);
         if (model == null) return NotFound();
         return Ok(model);
+    }
+
+    [HttpGet("{id:guid}/other-parts")]
+    public async Task<ActionResult<List<RelatedModelDto>>> GetOtherParts(Guid id)
+    {
+        var parts = await modelService.GetOtherPartsAsync(id);
+        return Ok(parts);
     }
 
     [HttpGet("{id:guid}/file")]

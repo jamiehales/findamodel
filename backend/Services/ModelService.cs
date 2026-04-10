@@ -28,7 +28,7 @@ public class ModelService(
         return models.Select(m => new ModelDto
         {
             Id = m.Id,
-            Name = Path.GetFileNameWithoutExtension(m.FileName),
+            Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
             RelativePath = ComputeRelativePath(m.Directory, m.FileName),
             FileType = m.FileType,
             FileSize = m.FileSize,
@@ -80,6 +80,7 @@ public class ModelService(
                 m.CalculatedCategory,
                 m.CalculatedType,
                 m.CalculatedSupported,
+                m.CalculatedModelName,
                 m.ConvexHullCoordinates,
                 m.ConcaveHullCoordinates,
                 m.ConvexSansRaftHullCoordinates,
@@ -98,7 +99,7 @@ public class ModelService(
         return new ModelDto
         {
             Id            = m.Id,
-            Name          = Path.GetFileNameWithoutExtension(m.FileName),
+            Name          = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
             RelativePath  = ComputeRelativePath(m.Directory, m.FileName),
             FileType      = m.FileType,
             FileSize      = m.FileSize,
@@ -229,6 +230,137 @@ public class ModelService(
 
         logger.LogInformation("Scan complete: {New} new, {Updated} updated, {Total} total in cache.", newCount, updatedCount, await db.Models.CountAsync());
         return newCount;
+    }
+
+    public async Task<bool> ScanAndCacheSingleAsync(string relativeModelPath)
+    {
+        var modelsPath = config["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsPath))
+        {
+            logger.LogWarning("Models:DirectoryPath is not configured");
+            return false;
+        }
+
+        if (!Directory.Exists(modelsPath))
+        {
+            logger.LogWarning("Models directory not accessible: {Path}", modelsPath);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(relativeModelPath))
+        {
+            logger.LogWarning("Single-model indexing called with empty relative path");
+            return false;
+        }
+
+        var normalized = relativeModelPath.Replace('\\', '/').TrimStart('/');
+        var fullPath = Path.GetFullPath(Path.Combine(modelsPath, normalized.Replace('/', Path.DirectorySeparatorChar)));
+        var rootPath = Path.GetFullPath(modelsPath);
+
+        if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning("Rejected model path outside models root: {RelativePath}", relativeModelPath);
+            return false;
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            logger.LogWarning("Model file not found: {RelativePath}", relativeModelPath);
+            return false;
+        }
+
+        var extension = Path.GetExtension(fullPath).ToLowerInvariant();
+        if (!ModelExtensions.Contains(extension))
+        {
+            logger.LogWarning("Unsupported model extension for single-model indexing: {Path}", fullPath);
+            return false;
+        }
+
+        var directory = (Path.GetDirectoryName(normalized) ?? "").Replace('\\', '/');
+        var fileName = Path.GetFileName(fullPath);
+        var fileType = extension.TrimStart('.');
+        var info = new FileInfo(fullPath);
+
+        var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, [directory]);
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var existing = await db.Models
+            .FirstOrDefaultAsync(m => m.Directory == directory && m.FileName == fileName);
+
+        var checksum = await ComputeChecksumAsync(fullPath);
+        if (existing is not null && existing.Checksum == checksum)
+            return false;
+
+        if (existing is not null)
+            logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
+        else
+            logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
+
+        var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum);
+
+        if (existing is null)
+        {
+            existing = new CachedModel
+            {
+                Id = Guid.NewGuid(),
+                FileName = fileName,
+                Directory = directory,
+                FileType = fileType,
+                DirectoryConfigId = data.DirConfig?.Id,
+            };
+            ApplyFileData(existing, data, info);
+            db.Models.Add(existing);
+        }
+        else
+        {
+            existing.FileType = fileType;
+            existing.DirectoryConfigId = data.DirConfig?.Id;
+            ApplyFileData(existing, data, info);
+        }
+
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<List<RelatedModelDto>> GetOtherPartsAsync(Guid id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var source = await db.Models.FirstOrDefaultAsync(m => m.Id == id);
+        if (source == null) return [];
+
+        if (string.IsNullOrWhiteSpace(source.CalculatedCreator)
+            || string.IsNullOrWhiteSpace(source.CalculatedCollection)
+            || string.IsNullOrWhiteSpace(source.CalculatedSubcollection))
+            return [];
+
+        var sourceName = string.IsNullOrWhiteSpace(source.CalculatedModelName)
+            ? Path.GetFileNameWithoutExtension(source.FileName)
+            : source.CalculatedModelName!;
+
+        var candidates = await db.Models
+            .Where(m => m.Id != id
+                        && m.CalculatedCreator == source.CalculatedCreator
+                        && m.CalculatedCollection == source.CalculatedCollection
+                        && m.CalculatedSubcollection == source.CalculatedSubcollection)
+            .OrderBy(m => m.Directory)
+            .ThenBy(m => m.FileName)
+            .ToListAsync();
+
+        return candidates
+            .Where(m => string.Equals(
+                string.IsNullOrWhiteSpace(m.CalculatedModelName)
+                    ? Path.GetFileNameWithoutExtension(m.FileName)
+                    : m.CalculatedModelName,
+                sourceName,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(m => new RelatedModelDto(
+                m.Id,
+                m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
+                ComputeRelativePath(m.Directory, m.FileName),
+                m.FileType,
+                m.FileSize,
+                m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null))
+            .ToList();
     }
 
     private sealed record ModelFileData(

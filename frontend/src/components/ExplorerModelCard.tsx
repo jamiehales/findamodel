@@ -3,7 +3,10 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import IconButton from '@mui/material/IconButton'
+import CircularProgress from '@mui/material/CircularProgress'
 import type { ExplorerModel } from '../lib/api'
+import { useIndexModel, useIsModelIndexing } from '../lib/queries'
 import AppCard from './AppCard'
 import PrintingListControls from './PrintingListControls'
 import styles from './ExplorerModelCard.module.css'
@@ -77,6 +80,8 @@ export default function ExplorerModelCard({ model, href }: Props) {
   const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
   const isIndexed = model.id != null
   const [hovered, setHovered] = useState(false)
+  const indexModel = useIndexModel(model.relativePath)
+  const indexingState = useIsModelIndexing(model.relativePath)
 
   return (
     <AppCard
@@ -124,6 +129,34 @@ export default function ExplorerModelCard({ model, href }: Props) {
       </Box>
 
       {model.id && <PrintingListControls modelId={model.id} showButtons={hovered} />}
+
+      {!model.id && (
+        <Tooltip
+          title={indexingState === 'running' ? 'Indexing…' : indexingState === 'queued' ? 'Queued…' : 'Index model'}
+          placement="top"
+        >
+          <span className={styles.indexWrap}>
+            <IconButton
+              size="small"
+              className={`${styles.indexBtn}${indexingState === 'queued' ? ` ${styles.indexBtnQueued}` : ''}`}
+              disabled={indexingState !== null}
+              onClick={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                indexModel.mutate()
+              }}
+            >
+              {indexingState === 'running' ? (
+                <CircularProgress size={16} className={styles.spinner} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
+      )}
     </AppCard>
   )
 }

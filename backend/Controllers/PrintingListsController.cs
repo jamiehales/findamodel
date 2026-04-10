@@ -89,6 +89,15 @@ public class PrintingListsController(PrintingListService printingListService) : 
         return NoContent();
     }
 
+    // PUT /api/printing-lists/{id}/settings
+    [HttpPut("{id:guid}/settings")]
+    public async Task<IActionResult> UpdateSettings(Guid id, [FromBody] UpdatePrintingListSettingsRequest request)
+    {
+        var list = await printingListService.UpdateSettingsAsync(id, CurrentUserId, IsAdmin, request.SpawnType, request.HullMode);
+        if (list == null) return NotFound();
+        return Ok(list);
+    }
+
     // PUT /api/printing-lists/{id}/items/{modelId}  (id may be "active" or a GUID)
     [HttpPut("{id}/items/{modelId:guid}")]
     public async Task<IActionResult> UpsertItem(string id, Guid modelId, [FromBody] UpsertPrintingListItemRequest request)
