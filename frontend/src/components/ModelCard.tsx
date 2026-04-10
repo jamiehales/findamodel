@@ -10,6 +10,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getFileName(relativePath: string): string {
+  const parts = relativePath.split('/');
+  return parts[parts.length - 1] ?? relativePath;
+}
+
 interface ModelCardProps {
   model: Model;
   href: string;
@@ -43,6 +48,8 @@ function ModelCard({ model, href, showControls = true }: ModelCardProps) {
         </Stack>
 
         <Typography className={styles.name}>{model.name}</Typography>
+
+        <Typography className={styles.fileName}>{getFileName(model.relativePath)}</Typography>
 
         <Typography className={styles.size}>{formatBytes(model.fileSize)}</Typography>
       </Box>

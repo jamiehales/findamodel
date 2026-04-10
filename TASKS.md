@@ -1,5 +1,3 @@
-* Show the filename on the card under/next to the model name
-
 * Use a library for DTO generation?
 
 * Add unit tests for services
