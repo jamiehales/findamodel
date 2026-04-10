@@ -106,11 +106,11 @@ public class ModelsController(
                 positions = BuildLegacyPositions(geometry),
                 normals = BuildLegacyNormals(geometry),
                 triangleCount = geometry.Triangles.Count,
-                sphereRadius  = geometry.SphereRadius,
-                sphereCentre  = new { geometry.SphereCentre.X, geometry.SphereCentre.Y, geometry.SphereCentre.Z },
-                dimensionXMm  = geometry.DimensionXMm,
-                dimensionYMm  = geometry.DimensionYMm,
-                dimensionZMm  = geometry.DimensionZMm
+                sphereRadius = geometry.SphereRadius,
+                sphereCentre = new { geometry.SphereCentre.X, geometry.SphereCentre.Y, geometry.SphereCentre.Z },
+                dimensionXMm = geometry.DimensionXMm,
+                dimensionYMm = geometry.DimensionYMm,
+                dimensionZMm = geometry.DimensionZMm
             });
 
         var payload = meshTransferService.Encode(geometry);
