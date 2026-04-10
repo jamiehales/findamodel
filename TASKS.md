@@ -20,8 +20,6 @@
 
 * Right align the reset button
 
-* When starting to test larger mdoels and concave hulls, add a new spawn order - largest first, fill gaps - that spawns the largest model, then enough small models to fit in the bound rectangle minus the area of the convex/concave hull, for this all 'fill' models should be spawned at the same x location
-
 * Show a little bit above the top of the print plate, so that you can see clearly if any models are "out of bounds"
 * If models are out of bounds, add a thick red internal dotted border - use visual not physics data to determine this
 

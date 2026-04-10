@@ -256,7 +256,12 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             items.Select(i => new PrintingListItemDto(i.Id, i.ModelId, i.Quantity)).ToList());
 
     private static string NormalizeSpawnType(string? spawnType) =>
-        string.Equals(spawnType, "random", StringComparison.OrdinalIgnoreCase) ? "random" : PrintingList.DefaultSpawnType;
+        spawnType?.Trim().ToLowerInvariant() switch
+        {
+            "random" => "random",
+            "largestfirstfillgaps" => "largestFirstFillGaps",
+            _ => PrintingList.DefaultSpawnType,
+        };
 
     private static string NormalizeHullMode(string? hullMode) =>
         string.Equals(hullMode, "sansRaft", StringComparison.OrdinalIgnoreCase) ? "sansRaft" : PrintingList.DefaultHullMode;

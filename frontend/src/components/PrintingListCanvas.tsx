@@ -75,6 +75,22 @@ interface Entry {
   visualLocalVerts: Vec2[];
 }
 
+interface ModelFootprintMetrics {
+  bodyHullJson: string | null;
+  localVerts: Vec2[] | null;
+  footprintAreaPx2: number;
+  boundingWidthPx: number;
+  boundingHeightPx: number;
+  boundingAreaPx2: number;
+}
+
+interface SpawnPlanItem {
+  model: Model;
+  inst: number;
+  spawnX: number;
+  metrics: ModelFootprintMetrics;
+}
+
 interface Props {
   models: Model[];
   items: Record<string, number>;
@@ -125,7 +141,182 @@ function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
   }
 }
 
+function getSpawnHullJson(model: Model, hullMode: HullMode): string | null {
+  return hullMode === 'sansRaft' ? (model.convexSansRaftHull ?? model.convexHull) : model.convexHull;
+}
+
+function getFillEstimateHullJson(model: Model, hullMode: HullMode): string | null {
+  return model.concaveHull ?? getSpawnHullJson(model, hullMode);
+}
+
 // ── Geometry helpers ──────────────────────────────────────────────────────────
+
+function polygonArea(verts: Vec2[]): number {
+  if (verts.length < 3) return 0;
+
+  let area = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % verts.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+
+  return Math.abs(area) / 2;
+}
+
+function getBounds(verts: Vec2[]): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (const v of verts) {
+    minX = Math.min(minX, v.x);
+    maxX = Math.max(maxX, v.x);
+    minY = Math.min(minY, v.y);
+    maxY = Math.max(maxY, v.y);
+  }
+
+  return { minX, maxX, minY, maxY };
+}
+
+function getRectLocalVerts(model: Model): Vec2[] {
+  const w = Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16);
+  const h = Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16);
+  const hw = w / 2;
+  const hh = h / 2;
+
+  return [
+    { x: -hw, y: -hh },
+    { x: hw, y: -hh },
+    { x: hw, y: hh },
+    { x: -hw, y: hh },
+  ];
+}
+
+function getModelFootprintMetrics(model: Model, hullMode: HullMode): ModelFootprintMetrics {
+  const bodyHullJson = getSpawnHullJson(model, hullMode);
+  const localVerts = parseHullLocalPx(bodyHullJson);
+  const rectLocalVerts = getRectLocalVerts(model);
+  const boundingVerts = localVerts && localVerts.length >= 3 ? localVerts : rectLocalVerts;
+  const fillVerts = parseHullLocalPx(getFillEstimateHullJson(model, hullMode)) ?? boundingVerts;
+  const bounds = getBounds(boundingVerts);
+  const boundingWidthPx = Math.max(bounds.maxX - bounds.minX, 16);
+  const boundingHeightPx = Math.max(bounds.maxY - bounds.minY, 16);
+
+  return {
+    bodyHullJson,
+    localVerts,
+    footprintAreaPx2: polygonArea(fillVerts),
+    boundingWidthPx,
+    boundingHeightPx,
+    boundingAreaPx2: boundingWidthPx * boundingHeightPx,
+  };
+}
+
+function getRandomSpawnX(): number {
+  return CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6;
+}
+
+function clampSpawnX(spawnX: number, widthPx: number): number {
+  const margin = widthPx / 2 + BODY_MARGIN_PX + 8;
+  return Math.min(CANVAS_WIDTH_PX - margin, Math.max(margin, spawnX));
+}
+
+function compareBySizeDesc(a: ModelFootprintMetrics, b: ModelFootprintMetrics): number {
+  return b.boundingAreaPx2 - a.boundingAreaPx2 || b.footprintAreaPx2 - a.footprintAreaPx2;
+}
+
+function buildSpawnPlan(
+  models: Model[],
+  items: Record<string, number>,
+  spawnOrder: SpawnType,
+  hullMode: HullMode,
+): SpawnPlanItem[] {
+  const baseSequence: Array<{ model: Model; inst: number; metrics: ModelFootprintMetrics }> = [];
+
+  for (const model of models) {
+    const qty = items[model.id] ?? 0;
+    if (qty <= 0) continue;
+
+    const metrics = getModelFootprintMetrics(model, hullMode);
+    for (let inst = 0; inst < qty; inst++) {
+      baseSequence.push({ model, inst, metrics });
+    }
+  }
+
+  if (spawnOrder === 'random') {
+    for (let i = baseSequence.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [baseSequence[i], baseSequence[j]] = [baseSequence[j], baseSequence[i]];
+    }
+  }
+
+  if (spawnOrder !== 'largestFirstFillGaps') {
+    return baseSequence.map(({ model, inst, metrics }) => ({
+      model,
+      inst,
+      metrics,
+      spawnX: clampSpawnX(getRandomSpawnX(), metrics.boundingWidthPx),
+    }));
+  }
+
+  const remaining = [...baseSequence].sort(
+    (a, b) =>
+      compareBySizeDesc(a.metrics, b.metrics) ||
+      a.model.name.localeCompare(b.model.name) ||
+      a.inst - b.inst,
+  );
+
+  const plan: SpawnPlanItem[] = [];
+  while (remaining.length > 0) {
+    const largest = remaining.shift()!;
+    const anchorX = clampSpawnX(getRandomSpawnX(), largest.metrics.boundingWidthPx);
+
+    plan.push({
+      model: largest.model,
+      inst: largest.inst,
+      metrics: largest.metrics,
+      spawnX: anchorX,
+    });
+
+    let remainingGapArea = Math.max(0, largest.metrics.boundingAreaPx2 - largest.metrics.footprintAreaPx2);
+    if (remainingGapArea <= 0) continue;
+
+    const fillers = remaining
+      .filter(
+        (candidate) =>
+          candidate.metrics.footprintAreaPx2 > 0
+          && candidate.metrics.boundingAreaPx2 < largest.metrics.boundingAreaPx2,
+      )
+      .sort(
+        (a, b) =>
+          a.metrics.footprintAreaPx2 - b.metrics.footprintAreaPx2
+          || a.metrics.boundingAreaPx2 - b.metrics.boundingAreaPx2
+          || a.model.name.localeCompare(b.model.name)
+          || a.inst - b.inst,
+      );
+
+    for (const filler of fillers) {
+      if (filler.metrics.footprintAreaPx2 > remainingGapArea) continue;
+
+      const fillerIndex = remaining.indexOf(filler);
+      if (fillerIndex < 0) continue;
+
+      remaining.splice(fillerIndex, 1);
+      remainingGapArea -= filler.metrics.footprintAreaPx2;
+
+      plan.push({
+        model: filler.model,
+        inst: filler.inst,
+        metrics: filler.metrics,
+        spawnX: clampSpawnX(anchorX, filler.metrics.boundingWidthPx),
+      });
+    }
+  }
+
+  return plan;
+}
 
 /**
  * Expand each vertex outward by `amount` px along its vertex normal.
@@ -184,8 +375,10 @@ function makeRectBody(
   cy: number,
 ): { body: Matter.Body; visualLocalVerts: Vec2[] } {
   // TODO: There is a minimum body size set here, check what we want to happen if this condition is met
-  const w = Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16);
-  const h = Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16);
+  const rectLocalVerts = getRectLocalVerts(model);
+  const bounds = getBounds(rectLocalVerts);
+  const w = bounds.maxX - bounds.minX;
+  const h = bounds.maxY - bounds.minY;
   const body = Matter.Bodies.rectangle(
     cx,
     cy,
@@ -193,15 +386,7 @@ function makeRectBody(
     h + BODY_MARGIN_PX * 2,
     BODY_OPTIONS,
   );
-  const hw = w / 2;
-  const hh = h / 2;
-  const visualLocalVerts: Vec2[] = [
-    { x: -hw, y: -hh },
-    { x: hw, y: -hh },
-    { x: hw, y: hh },
-    { x: -hw, y: hh },
-  ];
-  return { body, visualLocalVerts };
+  return { body, visualLocalVerts: rectLocalVerts };
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -306,6 +491,39 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
       gfx.lineTo(body.vertices[i].x, body.vertices[i].y);
     gfx.closePath();
   }
+}
+
+function getIncrementalSpawnX(
+  spawnOrder: SpawnType,
+  model: Model,
+  models: Model[],
+  items: Record<string, number>,
+  entries: Entry[],
+  hullMode: HullMode,
+): number {
+  const currentMetrics = getModelFootprintMetrics(model, hullMode);
+  if (spawnOrder !== 'largestFirstFillGaps') {
+    return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+  }
+
+  const activeModels = models
+    .filter((candidate) => (items[candidate.id] ?? 0) > 0)
+    .map((candidate) => ({ candidate, metrics: getModelFootprintMetrics(candidate, hullMode) }))
+    .sort((a, b) => compareBySizeDesc(a.metrics, b.metrics) || a.candidate.name.localeCompare(b.candidate.name));
+
+  const largest = activeModels[0];
+  if (!largest) {
+    return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+  }
+
+  if (compareBySizeDesc(currentMetrics, largest.metrics) <= 0 && largest.candidate.id !== model.id) {
+    const anchorEntry = entries.find((entry) => entry.modelId === largest.candidate.id);
+    if (anchorEntry) {
+      return clampSpawnX(anchorEntry.body.position.x, currentMetrics.boundingWidthPx);
+    }
+  }
+
+  return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -439,28 +657,11 @@ export default function PrintingListCanvas({
 
     let spawnY = -40; // bodies spawn above the canvas and fall in
 
-    // Build the flat spawn sequence, then reorder based on algorithm.
-    const spawnSequence: { model: Model; inst: number; qty: number }[] = [];
-    for (const model of models) {
-      const qty = items[model.id] ?? 0;
-      if (qty === 0) continue;
-      for (let inst = 0; inst < qty; inst++) {
-        spawnSequence.push({ model, inst, qty });
-      }
-    }
-    if (spawnOrder === 'random') {
-      for (let i = spawnSequence.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [spawnSequence[i], spawnSequence[j]] = [spawnSequence[j], spawnSequence[i]];
-      }
-    }
+    const spawnPlan = buildSpawnPlan(models, items, spawnOrder, hullMode);
 
-    for (const { model, inst } of spawnSequence) {
+    for (const { model, inst, spawnX, metrics } of spawnPlan) {
       const color = modelColor.get(model.id) ?? PALETTE[0];
-      const hullJson =
-        hullMode === 'sansRaft' ? (model.convexSansRaftHull ?? model.convexHull) : model.convexHull;
-      const localVerts = parseHullLocalPx(hullJson);
-      const spawnX = CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6;
+      const localVerts = metrics.localVerts;
 
       // Create physics body (inflated) + keep original verts for rendering
       let body: Matter.Body;
@@ -491,7 +692,7 @@ export default function PrintingListCanvas({
       dynamicBodies.push(body);
 
       // Spread spawn points above canvas so bodies don't all overlap
-      spawnY -= 50 + (localVerts ? Math.max(...localVerts.map((v) => Math.abs(v.y))) * 2 : 60);
+      spawnY -= 50 + Math.max(metrics.boundingHeightPx, 60);
 
       // Pixi graphics (drawn in world-space each frame)
       const gfx = new PIXI.Graphics();
@@ -673,12 +874,16 @@ export default function PrintingListCanvas({
         let spawnY = -80;
         for (let inst = prevQty; inst < currQty; inst++) {
           const color = modelColorRef.current.get(modelId)!;
-          const hullJson =
-            hullModeRef.current === 'sansRaft'
-              ? (model.convexSansRaftHull ?? model.convexHull)
-              : model.convexHull;
-          const localVerts = parseHullLocalPx(hullJson);
-          const spawnX = CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6;
+          const metrics = getModelFootprintMetrics(model, hullModeRef.current);
+          const localVerts = metrics.localVerts;
+          const spawnX = getIncrementalSpawnX(
+            spawnOrder,
+            model,
+            currentModels,
+            currItems,
+            entriesRef.current,
+            hullModeRef.current,
+          );
 
           let body: Matter.Body;
           let visualLocalVerts: Vec2[];
@@ -693,7 +898,7 @@ export default function PrintingListCanvas({
             ({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY));
           }
 
-          spawnY -= 50 + (localVerts ? Math.max(...localVerts.map((v) => Math.abs(v.y))) * 2 : 60);
+          spawnY -= 50 + Math.max(metrics.boundingHeightPx, 60);
 
           Matter.Composite.add(engine.world, body);
           dynamicBodiesRef.current.push(body);
@@ -754,7 +959,7 @@ export default function PrintingListCanvas({
     }
 
     prevItemsRef.current = { ...currItems };
-  }, [itemsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [itemsKey, spawnOrder]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Stack direction="column" spacing={1}>
@@ -778,6 +983,7 @@ export default function PrintingListCanvas({
           >
             <MenuItem value="grouped">Grouped</MenuItem>
             <MenuItem value="random">Random</MenuItem>
+            <MenuItem value="largestFirstFillGaps">Largest first, fill gaps</MenuItem>
           </Select>
         </FormControl>
         <FormControl size="small">

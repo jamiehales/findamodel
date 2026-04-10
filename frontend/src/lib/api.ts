@@ -291,7 +291,7 @@ export async function generatePlate(
 
 // ---- Printing Lists ----
 
-export type SpawnType = 'grouped' | 'random';
+export type SpawnType = 'grouped' | 'random' | 'largestFirstFillGaps';
 export type HullMode = 'convex' | 'sansRaft';
 
 export interface PrintingListSummary {
