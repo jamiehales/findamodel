@@ -46,12 +46,7 @@ function PrintingListsManagePage() {
 
   return (
     <Box className={styles.page}>
-      <Button variant="back" onClick={() => navigate('/')}>
-        ← Back
-      </Button>
-
-      <Box className={styles.content}>
-        <Typography component="h1" className={styles.title}>
+      <Typography component="h1" className={styles.title}>
           Printing lists
         </Typography>
 
@@ -184,7 +179,6 @@ function PrintingListsManagePage() {
             ))}
           </Box>
         )}
-      </Box>
     </Box>
   )
 }

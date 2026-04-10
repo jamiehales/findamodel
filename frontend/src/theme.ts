@@ -131,7 +131,7 @@ const theme = createTheme({
           props: { variant: 'back' },
           style: {
             position: 'fixed',
-            top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+            top: 'calc(env(safe-area-inset-top, 0px) + 3.5rem + 0.75rem)',
             left: '1rem',
             background: 'rgba(15,23,42,0.7)',
             backdropFilter: 'blur(8px)',

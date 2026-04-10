@@ -1,7 +1,7 @@
 import { Stack, Box, Button, CircularProgress, Typography, Menu, MenuItem } from '@mui/material'
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { generatePlate } from '../lib/api'
 import { useModels, usePrintingListDetail, useClearPrintingListItems, useActivatePrintingList } from '../lib/queries'
 import ModelCard from '../components/ModelCard'
@@ -9,7 +9,6 @@ import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/Print
 import styles from './PrintingListPage.module.css'
 
 function PrintingListPage() {
-  const navigate = useNavigate()
   const { listId = 'active' } = useParams<{ listId: string }>()
 
   const { data: list, isPending: listPending } = usePrintingListDetail(listId)
@@ -67,15 +66,15 @@ function PrintingListPage() {
 
   return (
     <Box className={styles.page}>
-      <Button variant="back" onClick={() => navigate(-1)}>
-        ← Back
-      </Button>
-
-      <Box className={styles.content}>
-        <Stack direction="column" spacing={2} alignItems="left">
-          <Typography component="h1" className={styles.title}>
-            {listName}
-          </Typography>
+      <Stack direction="column" spacing={2} alignItems="left">
+          <Stack direction="row" alignItems="baseline" justifyContent="space-between">
+            <Typography component="h1" className={styles.title}>
+              {listName}
+            </Typography>
+            <Button component={Link} to="/printing-lists" className={styles.manageLink}>
+              Manage lists
+            </Button>
+          </Stack>
 
           <Stack direction="row" spacing={1} alignItems="center">
             {list && !list.isActive && (
@@ -159,10 +158,11 @@ function PrintingListPage() {
               ))}
             </Box>
 
-            <PrintingListCanvas models={listedModels} items={items} onPausedChange={setSimulationPaused} />
+            <Box className={styles.canvasWrapper}>
+              <PrintingListCanvas models={listedModels} items={items} onPausedChange={setSimulationPaused} />
+            </Box>
           </>
         )}
-      </Box>
     </Box>
   )
 }

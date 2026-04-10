@@ -5,7 +5,7 @@ import AccordionDetails from '@mui/material/AccordionDetails'
 import CircularProgress from '@mui/material/CircularProgress'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import Typography from '@mui/material/Typography'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useExplorer } from '../lib/queries'
 import FolderCard from '../components/FolderCard'
 import ExplorerModelCard from '../components/ExplorerModelCard'
@@ -80,36 +80,13 @@ function ExplorePageInner({ path }: { path: string }) {
 }
 
 export default function ExplorePage() {
-  const navigate = useNavigate()
   const params = useParams()
   const path = params['*'] ?? ''
 
   return (
     <Box className={styles.page}>
-      {/* Header */}
-      <Box className={styles.header}>
-        <Typography
-          component="button"
-          onClick={() => navigate('/')}
-          className={styles.homeLink}
-        >
-          ← Home
-        </Typography>
-
-        <Typography component="h1" className={styles.logoTitle}>
-          find
-          <Box component="span" className={styles.logoA}>
-            a
-          </Box>
-          model
-          <Box component="span" className={styles.logoSuffix}>
-            / explore
-          </Box>
-        </Typography>
-
-        <Box className={styles.breadcrumbWrapper}>
-          <PathBreadcrumb path={path} />
-        </Box>
+      <Box className={styles.breadcrumbWrapper}>
+        <PathBreadcrumb path={path} />
       </Box>
 
       <Accordion className={styles.metaAccordion} disableGutters>

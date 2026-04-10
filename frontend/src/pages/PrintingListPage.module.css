@@ -1,18 +1,40 @@
 .page {
   min-height: 100vh;
-  padding-bottom: 3rem;
-}
-
-.content {
-  padding-top: 5rem;
-  padding-left: 1.25rem;
-  padding-right: 1.25rem;
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
+  padding: 1.5rem 2rem 3rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .page {
+    padding-left: 4rem;
+    padding-right: 4rem;
+  }
+}
+
+.manageLink {
+  border-radius: 999px !important;
+  padding: 0.4rem 1rem !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  color: #94a3b8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-decoration: none !important;
+}
+
+.manageLink:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #e2e8f0 !important;
+}
+
+.canvasWrapper {
+  align-self: center;
 }
 
 .title {

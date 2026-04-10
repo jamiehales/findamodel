@@ -1,8 +1,4 @@
 .iconButton {
-  position: fixed !important;
-  top: 1rem;
-  right: 1rem;
-  z-index: 1200;
   color: rgba(226, 232, 240, 0.25) !important;
 }
 

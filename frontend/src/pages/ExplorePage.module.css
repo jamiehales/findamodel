@@ -2,62 +2,16 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding-left: 16px;
-  padding-right: 16px;
-  padding-top: 3.5rem;
-  padding-bottom: 3rem;
+  padding: 1.5rem 2rem 3rem;
   box-sizing: border-box;
-  max-width: 1200px;
-  margin-left: auto;
-  margin-right: auto;
   width: 100%;
 }
 
 @media (min-width: 600px) {
   .page {
-    padding-left: 24px;
-    padding-right: 24px;
-    padding-top: 5rem;
+    padding-left: 4rem;
+    padding-right: 4rem;
   }
-}
-
-.header {
-  margin-bottom: 1rem;
-}
-
-.homeLink {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-size: 0.875rem !important;
-  color: #475569 !important;
-  margin-bottom: 0.5rem !important;
-  display: block !important;
-}
-
-.homeLink:hover {
-  color: #818cf8 !important;
-}
-
-.logoTitle {
-  font-size: 2rem !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em !important;
-  line-height: 1 !important;
-  margin-bottom: 1.5rem !important;
-}
-
-.logoA {
-  font-size: 1.1rem;
-  vertical-align: baseline;
-}
-
-.logoSuffix {
-  color: #475569;
-  font-size: 1rem;
-  font-weight: 400;
-  margin-left: 0.5rem;
 }
 
 .breadcrumbWrapper {
@@ -70,6 +24,9 @@
   border-radius: 8px !important;
   background: rgba(15, 23, 42, 0.4) !important;
   box-shadow: none !important;
+  max-width: 900px !important;
+  align-self: center;
+  width: 100%;
 }
 
 .metaAccordion::before {
@@ -85,8 +42,9 @@
 }
 
 .grid {
+  --card-min-width: 240px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   gap: 0.875rem;
   align-items: start;
 }
