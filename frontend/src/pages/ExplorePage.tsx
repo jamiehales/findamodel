@@ -1,27 +1,27 @@
-import Box from '@mui/material/Box'
-import Accordion from '@mui/material/Accordion'
-import AccordionSummary from '@mui/material/AccordionSummary'
-import AccordionDetails from '@mui/material/AccordionDetails'
-import CircularProgress from '@mui/material/CircularProgress'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import Typography from '@mui/material/Typography'
-import { useParams } from 'react-router-dom'
-import { useExplorer } from '../lib/queries'
-import FolderCard from '../components/FolderCard'
-import ExplorerModelCard from '../components/ExplorerModelCard'
-import MetadataEditor from '../components/MetadataEditor'
-import PathBreadcrumb from '../components/PathBreadcrumb'
-import styles from './ExplorePage.module.css'
+import Box from '@mui/material/Box';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import CircularProgress from '@mui/material/CircularProgress';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import Typography from '@mui/material/Typography';
+import { useParams } from 'react-router-dom';
+import { useExplorer } from '../lib/queries';
+import FolderCard from '../components/FolderCard';
+import ExplorerModelCard from '../components/ExplorerModelCard';
+import MetadataEditor from '../components/MetadataEditor';
+import PathBreadcrumb from '../components/PathBreadcrumb';
+import styles from './ExplorePage.module.css';
 
 function ExplorePageInner({ path }: { path: string }) {
-  const { data, isPending, isError } = useExplorer(path)
+  const { data, isPending, isError } = useExplorer(path);
 
   if (isPending) {
     return (
       <Box className={styles.loadingCenter}>
         <CircularProgress color="primary" />
       </Box>
-    )
+    );
   }
 
   if (isError) {
@@ -29,10 +29,10 @@ function ExplorePageInner({ path }: { path: string }) {
       <Typography color="error.main" style={{ marginTop: 16 }}>
         Failed to load directory. Check that the path exists.
       </Typography>
-    )
+    );
   }
 
-  const isEmpty = data.folders.length === 0 && data.models.length === 0
+  const isEmpty = data.folders.length === 0 && data.models.length === 0;
 
   return (
     <>
@@ -44,16 +44,10 @@ function ExplorePageInner({ path }: { path: string }) {
 
       {data.folders.length > 0 && (
         <Box className={data.models.length > 0 ? styles.sectionWithMargin : undefined}>
-          <Typography variant="section-label">
-            Folders
-          </Typography>
+          <Typography variant="section-label">Folders</Typography>
           <Box className={styles.grid}>
-            {data.folders.map(folder => (
-              <FolderCard
-                key={folder.path}
-                folder={folder}
-                href={`/explore/${folder.path}`}
-              />
+            {data.folders.map((folder) => (
+              <FolderCard key={folder.path} folder={folder} href={`/explore/${folder.path}`} />
             ))}
           </Box>
         </Box>
@@ -61,11 +55,9 @@ function ExplorePageInner({ path }: { path: string }) {
 
       {data.models.length > 0 && (
         <Box>
-          <Typography variant="section-label">
-            Models
-          </Typography>
+          <Typography variant="section-label">Models</Typography>
           <Box className={styles.grid}>
-            {data.models.map(model => (
+            {data.models.map((model) => (
               <ExplorerModelCard
                 key={model.relativePath}
                 model={model}
@@ -76,12 +68,12 @@ function ExplorePageInner({ path }: { path: string }) {
         </Box>
       )}
     </>
-  )
+  );
 }
 
 export default function ExplorePage() {
-  const params = useParams()
-  const path = params['*'] ?? ''
+  const params = useParams();
+  const path = params['*'] ?? '';
 
   return (
     <Box className={styles.page}>
@@ -100,5 +92,5 @@ export default function ExplorePage() {
 
       <ExplorePageInner path={path} />
     </Box>
-  )
+  );
 }

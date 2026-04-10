@@ -1,24 +1,30 @@
-import { Link as RouterLink } from 'react-router-dom'
-import Box from '@mui/material/Box'
-import styles from './AppCard.module.css'
+import { Link as RouterLink } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import styles from './AppCard.module.css';
 
 interface AppCardProps {
-  href?: string
-  className?: string
-  children: React.ReactNode
-  onMouseEnter?: () => void
-  onMouseLeave?: () => void
+  href?: string;
+  className?: string;
+  children: React.ReactNode;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-export default function AppCard({ href, className, children, onMouseEnter, onMouseLeave }: AppCardProps) {
-  const combinedClass = `${styles.base}${className ? ` ${className}` : ''}`
+export default function AppCard({
+  href,
+  className,
+  children,
+  onMouseEnter,
+  onMouseLeave,
+}: AppCardProps) {
+  const combinedClass = `${styles.base}${className ? ` ${className}` : ''}`;
 
   if (!href) {
     return (
       <Box className={combinedClass} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
         {children}
       </Box>
-    )
+    );
   }
 
   return (
@@ -31,5 +37,5 @@ export default function AppCard({ href, className, children, onMouseEnter, onMou
     >
       {children}
     </Box>
-  )
+  );
 }

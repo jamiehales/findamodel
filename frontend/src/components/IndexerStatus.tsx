@@ -1,36 +1,36 @@
-import { useState, useRef, useEffect } from 'react'
-import { IconButton, Popover, Stack, Typography, Chip, Badge, Tooltip } from '@mui/material'
-import { useIndexerStatus } from '../lib/queries'
-import type { IndexRequest } from '../lib/api'
-import { IndexFlags } from '../lib/api'
-import styles from './IndexerStatus.module.css'
+import { useState, useRef, useEffect } from 'react';
+import { IconButton, Popover, Stack, Typography, Chip, Badge, Tooltip } from '@mui/material';
+import { useIndexerStatus } from '../lib/queries';
+import type { IndexRequest } from '../lib/api';
+import { IndexFlags } from '../lib/api';
+import styles from './IndexerStatus.module.css';
 
 function formatElapsed(since: string): string {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ${s % 60}s`
-  return `${Math.floor(m / 60)}h ${m % 60}m`
+  const s = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
 function useElapsed(since: string): string {
-  const [, tick] = useState(0)
+  const [, tick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => tick(n => n + 1), 1000)
-    return () => clearInterval(id)
-  }, [since])
-  return formatElapsed(since)
+    const id = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [since]);
+  return formatElapsed(since);
 }
 
 function flagsLabel(flags: number): string {
-  const parts: string[] = []
-  if (flags & IndexFlags.Directories) parts.push('dirs')
-  if (flags & IndexFlags.Models) parts.push('models')
-  return parts.join(', ') || 'none'
+  const parts: string[] = [];
+  if (flags & IndexFlags.Directories) parts.push('dirs');
+  if (flags & IndexFlags.Models) parts.push('models');
+  return parts.join(', ') || 'none';
 }
 
 function RequestRow({ request, status }: { request: IndexRequest; status: 'running' | 'queued' }) {
-  const elapsed = useElapsed(request.requestedAt)
+  const elapsed = useElapsed(request.requestedAt);
   return (
     <Stack direction="row" alignItems="center" spacing={2} justifyContent="space-between">
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -46,21 +46,21 @@ function RequestRow({ request, status }: { request: IndexRequest; status: 'runni
           {flagsLabel(request.flags)}
         </Typography>
       </Stack>
-      <div/>
+      <div />
       <Typography variant="caption" color="text.disabled" className={styles.elapsed}>
-          {elapsed}
-        </Typography>
+        {elapsed}
+      </Typography>
     </Stack>
-  )
+  );
 }
 
 export default function IndexerStatus() {
-  const { data: status } = useIndexerStatus()
-  const [open, setOpen] = useState(false)
-  const anchorRef = useRef<HTMLButtonElement>(null)
+  const { data: status } = useIndexerStatus();
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
 
-  const isActive = !!(status?.isRunning || (status?.queue && status.queue.length > 0))
-  const totalCount = (status?.isRunning ? 1 : 0) + (status?.queue.length ?? 0)
+  const isActive = !!(status?.isRunning || (status?.queue && status.queue.length > 0));
+  const totalCount = (status?.isRunning ? 1 : 0) + (status?.queue.length ?? 0);
 
   return (
     <>
@@ -68,13 +68,10 @@ export default function IndexerStatus() {
         <IconButton
           ref={anchorRef}
           size="small"
-          onClick={() => setOpen(v => !v)}
+          onClick={() => setOpen((v) => !v)}
           className={`${styles.iconButton} ${isActive ? styles.iconButtonActive : ''}`}
         >
-          <Badge
-            badgeContent={totalCount > 1 ? totalCount : 0}
-            classes={{ badge: styles.badge }}
-          >
+          <Badge badgeContent={totalCount > 1 ? totalCount : 0} classes={{ badge: styles.badge }}>
             <svg
               width="18"
               height="18"
@@ -111,11 +108,11 @@ export default function IndexerStatus() {
             <RequestRow request={status.currentRequest} status="running" />
           )}
 
-          {status?.queue.map(req => (
+          {status?.queue.map((req) => (
             <RequestRow key={req.id} request={req} status="queued" />
           ))}
         </Stack>
       </Popover>
     </>
-  )
+  );
 }

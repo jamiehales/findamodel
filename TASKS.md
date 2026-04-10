@@ -1,3 +1,5 @@
+* Show the filename on the card under/next to the model name
+
 * Use a library for DTO generation?
 
 * Add unit tests for services
@@ -5,8 +7,6 @@
 * Allow hulls to be calculated in a separate pass
 
 * Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
-
-* Fix concave hull calculation
 
 * If there is an image in a directory, allow setting this as the collection preview, creator preview
 
@@ -28,8 +28,6 @@
 * If models are out of bounds, add a thick red internal dotted border - use visual not physics data to determine this
 
 * Make the hardcoded 2mm raft clipping configurable - it should default to 2mm, but be overridable using the findamodel.yaml metadata
-
-* Setup prettier, and have claude run it after frontend changes
 
 * Add 3D Print type to model, FDM / Resin / Any
 

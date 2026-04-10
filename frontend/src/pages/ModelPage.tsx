@@ -1,50 +1,55 @@
-import React from 'react'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useModel, useModelOtherParts, useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries'
-import { useIndexModel, useIsModelIndexing } from '../lib/queries'
-import ModelViewer from '../components/ModelViewer'
-import HullPreview from '../components/HullPreview'
-import PathBreadcrumb from '../components/PathBreadcrumb'
-import AppCard from '../components/AppCard'
-import styles from './ModelPage.module.css'
+import React from 'react';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  useModel,
+  useModelOtherParts,
+  useActivePrintingList,
+  useUpsertPrintingListItem,
+} from '../lib/queries';
+import { useIndexModel, useIsModelIndexing } from '../lib/queries';
+import ModelViewer from '../components/ModelViewer';
+import HullPreview from '../components/HullPreview';
+import PathBreadcrumb from '../components/PathBreadcrumb';
+import AppCard from '../components/AppCard';
+import styles from './ModelPage.module.css';
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const badgeColors: Record<string, { bg: string; color: string }> = {
   stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
   obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
-}
+};
 
 function ModelPage() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
-  const decodedId = decodeURIComponent(id ?? '')
+  const decodedId = decodeURIComponent(id ?? '');
 
-  const { data: model, isPending, isError } = useModel(decodedId)
-  const { data: otherParts } = useModelOtherParts(decodedId)
-  const { data: activeList } = useActivePrintingList()
-  const { mutate: upsertItem } = useUpsertPrintingListItem()
-  const activeListId = activeList?.id ?? ''
-  const qty = model ? (activeList?.items.find(i => i.modelId === model.id)?.quantity ?? 0) : 0
+  const { data: model, isPending, isError } = useModel(decodedId);
+  const { data: otherParts } = useModelOtherParts(decodedId);
+  const { data: activeList } = useActivePrintingList();
+  const { mutate: upsertItem } = useUpsertPrintingListItem();
+  const activeListId = activeList?.id ?? '';
+  const qty = model ? (activeList?.items.find((i) => i.modelId === model.id)?.quantity ?? 0) : 0;
 
-  const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '')
-  const indexingStatus = useIsModelIndexing(model?.relativePath ?? '')
-  const isReindexing = indexingStatus === 'running'
+  const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '');
+  const indexingStatus = useIsModelIndexing(model?.relativePath ?? '');
+  const isReindexing = indexingStatus === 'running';
 
   const backButton = (
     <Button variant="back" onClick={() => navigate('/')}>
       ← Back
     </Button>
-  )
+  );
 
   if (isPending) {
     return (
@@ -54,7 +59,7 @@ function ModelPage() {
           <CircularProgress color="primary" />
         </Box>
       </Box>
-    )
+    );
   }
 
   if (isError || model === null) {
@@ -65,18 +70,18 @@ function ModelPage() {
           <Typography>Model not found.</Typography>
         </Box>
       </Box>
-    )
+    );
   }
 
-  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
+  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' };
 
   const metaRows: { label: string; value: React.ReactNode }[] = [
-    model.name          && { label: 'Name', value: model.name },
-    model.creator       && { label: 'Creator', value: model.creator },
-    model.collection    && { label: 'Collection', value: model.collection },
+    model.name && { label: 'Name', value: model.name },
+    model.creator && { label: 'Creator', value: model.creator },
+    model.collection && { label: 'Collection', value: model.collection },
     model.subcollection && { label: 'Subcollection', value: model.subcollection },
-    model.category      && { label: 'Category', value: model.category },
-    model.type          && { label: 'Type', value: model.type },
+    model.category && { label: 'Category', value: model.category },
+    model.type && { label: 'Type', value: model.type },
     model.supported != null && {
       label: 'Supported',
       value: (
@@ -91,7 +96,7 @@ function ModelPage() {
         </span>
       ),
     },
-  ].filter(Boolean) as { label: string; value: React.ReactNode }[]
+  ].filter(Boolean) as { label: string; value: React.ReactNode }[];
 
   return (
     <Box className={styles.page}>
@@ -112,14 +117,14 @@ function ModelPage() {
 
           <PathBreadcrumb path={model.relativePath} />
 
-          <Typography className={styles.fileSize}>
-            {formatBytes(model.fileSize)}
-          </Typography>
+          <Typography className={styles.fileSize}>{formatBytes(model.fileSize)}</Typography>
         </Box>
 
         {qty === 0 ? (
           <Button
-            onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })}
+            onClick={() =>
+              upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })
+            }
             variant="outlined"
             className={styles.addToListBtn}
           >
@@ -128,17 +133,19 @@ function ModelPage() {
         ) : (
           <Box className={styles.qtyControl}>
             <IconButton
-              onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })}
+              onClick={() =>
+                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })
+              }
               aria-label="Decrease quantity"
               className={styles.qtyBtn}
             >
               −
             </IconButton>
-            <Typography className={styles.qtyValue}>
-              {qty}
-            </Typography>
+            <Typography className={styles.qtyValue}>{qty}</Typography>
             <IconButton
-              onClick={() => upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })}
+              onClick={() =>
+                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })
+              }
               aria-label="Increase quantity"
               className={styles.qtyBtn}
             >
@@ -170,7 +177,6 @@ function ModelPage() {
             </>
           ) : (
             'Reindex'
-
           )}
         </Button>
 
@@ -178,9 +184,7 @@ function ModelPage() {
           <Box className={styles.metaGrid}>
             {metaRows.map(({ label, value }) => (
               <React.Fragment key={label}>
-                <Typography className={styles.metaLabel}>
-                  {label}
-                </Typography>
+                <Typography className={styles.metaLabel}>{label}</Typography>
                 <Typography component="div" className={styles.metaValue}>
                   {value}
                 </Typography>
@@ -214,10 +218,19 @@ function ModelPage() {
               Other parts
             </Typography>
             <Box className={styles.otherPartsGrid}>
-              {otherParts!.map(part => (
-                <AppCard key={part.id} href={`/model/${encodeURIComponent(part.id)}`} className={styles.otherPartCard}>
+              {otherParts!.map((part) => (
+                <AppCard
+                  key={part.id}
+                  href={`/model/${encodeURIComponent(part.id)}`}
+                  className={styles.otherPartCard}
+                >
                   {part.previewUrl && (
-                    <Box component="img" src={part.previewUrl} alt="" className={styles.otherPartPreview} />
+                    <Box
+                      component="img"
+                      src={part.previewUrl}
+                      alt=""
+                      className={styles.otherPartPreview}
+                    />
                   )}
                   <Box className={styles.otherPartOverlay}>
                     <Typography className={styles.otherPartName}>{part.name}</Typography>
@@ -230,7 +243,7 @@ function ModelPage() {
         )}
       </Box>
     </Box>
-  )
+  );
 }
 
-export default ModelPage
+export default ModelPage;

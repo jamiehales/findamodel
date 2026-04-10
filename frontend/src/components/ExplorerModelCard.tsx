@@ -1,32 +1,40 @@
-import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
-import IconButton from '@mui/material/IconButton'
-import CircularProgress from '@mui/material/CircularProgress'
-import type { ExplorerModel } from '../lib/api'
-import { useIndexModel, useIsModelIndexing } from '../lib/queries'
-import AppCard from './AppCard'
-import PrintingListControls from './PrintingListControls'
-import styles from './ExplorerModelCard.module.css'
+import { useState } from 'react';
+import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import CircularProgress from '@mui/material/CircularProgress';
+import type { ExplorerModel } from '../lib/api';
+import { useIndexModel, useIsModelIndexing } from '../lib/queries';
+import AppCard from './AppCard';
+import PrintingListControls from './PrintingListControls';
+import styles from './ExplorerModelCard.module.css';
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const badgeColors: Record<string, { bg: string; color: string }> = {
   stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
   obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
-}
+};
 
 // Colour for fields whose value was computed by a rule (amber = dynamic/computed)
-const RULE_COLOR = '#fbbf24'
+const RULE_COLOR = '#fbbf24';
 // Colour for fields with a plain inherited/set value (indigo)
-const VALUE_COLOR = '#a5b4fc'
+const VALUE_COLOR = '#a5b4fc';
 
-function MetaBadge({ value, isRule, ruleYaml }: { value: string; isRule: boolean; ruleYaml?: string | null }) {
+function MetaBadge({
+  value,
+  isRule,
+  ruleYaml,
+}: {
+  value: string;
+  isRule: boolean;
+  ruleYaml?: string | null;
+}) {
   const badge = (
     <Box
       component="span"
@@ -35,32 +43,60 @@ function MetaBadge({ value, isRule, ruleYaml }: { value: string; isRule: boolean
     >
       {value}
     </Box>
-  )
+  );
 
-  if (!isRule || !ruleYaml) return badge
+  if (!isRule || !ruleYaml) return badge;
 
   return (
     <Tooltip
-      title={<pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.75rem' }}>{ruleYaml}</pre>}
+      title={
+        <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.75rem' }}>{ruleYaml}</pre>
+      }
       placement="top"
       arrow
     >
       {badge}
     </Tooltip>
-  )
+  );
 }
 
-function MetaBadges({ meta, ruleConfigs }: { meta: ExplorerModel['resolvedMetadata'] & object; ruleConfigs: Record<string, string> | null }) {
-  const entries: { value: string; isRule: boolean; ruleYaml?: string }[] = []
+function MetaBadges({
+  meta,
+  ruleConfigs,
+}: {
+  meta: ExplorerModel['resolvedMetadata'] & object;
+  ruleConfigs: Record<string, string> | null;
+}) {
+  const entries: { value: string; isRule: boolean; ruleYaml?: string }[] = [];
 
-  if (meta.creator) entries.push({ value: meta.creator, isRule: 'creator' in (ruleConfigs ?? {}), ruleYaml: ruleConfigs?.creator })
-  if (meta.collection) entries.push({ value: meta.collection, isRule: 'collection' in (ruleConfigs ?? {}), ruleYaml: ruleConfigs?.collection })
-  if (meta.category) entries.push({ value: meta.category, isRule: 'category' in (ruleConfigs ?? {}), ruleYaml: ruleConfigs?.category })
-  if (meta.type) entries.push({ value: meta.type, isRule: 'type' in (ruleConfigs ?? {}), ruleYaml: ruleConfigs?.type })
+  if (meta.creator)
+    entries.push({
+      value: meta.creator,
+      isRule: 'creator' in (ruleConfigs ?? {}),
+      ruleYaml: ruleConfigs?.creator,
+    });
+  if (meta.collection)
+    entries.push({
+      value: meta.collection,
+      isRule: 'collection' in (ruleConfigs ?? {}),
+      ruleYaml: ruleConfigs?.collection,
+    });
+  if (meta.category)
+    entries.push({
+      value: meta.category,
+      isRule: 'category' in (ruleConfigs ?? {}),
+      ruleYaml: ruleConfigs?.category,
+    });
+  if (meta.type)
+    entries.push({
+      value: meta.type,
+      isRule: 'type' in (ruleConfigs ?? {}),
+      ruleYaml: ruleConfigs?.type,
+    });
   if (meta.supported != null)
-    entries.push({ value: meta.supported ? 'Supported' : 'Unsupported', isRule: false })
+    entries.push({ value: meta.supported ? 'Supported' : 'Unsupported', isRule: false });
 
-  if (entries.length === 0) return null
+  if (entries.length === 0) return null;
 
   return (
     <Stack direction="row" flexWrap="wrap" gap={0.5} className={styles.metaBadges}>
@@ -68,20 +104,20 @@ function MetaBadges({ meta, ruleConfigs }: { meta: ExplorerModel['resolvedMetada
         <MetaBadge key={i} value={e.value} isRule={e.isRule} ruleYaml={e.ruleYaml} />
       ))}
     </Stack>
-  )
+  );
 }
 
 interface Props {
-  model: ExplorerModel
-  href?: string
+  model: ExplorerModel;
+  href?: string;
 }
 
 export default function ExplorerModelCard({ model, href }: Props) {
-  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' }
-  const isIndexed = model.id != null
-  const [hovered, setHovered] = useState(false)
-  const indexModel = useIndexModel(model.relativePath)
-  const indexingState = useIsModelIndexing(model.relativePath)
+  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' };
+  const isIndexed = model.id != null;
+  const [hovered, setHovered] = useState(false);
+  const indexModel = useIndexModel(model.relativePath);
+  const indexingState = useIsModelIndexing(model.relativePath);
 
   return (
     <AppCard
@@ -91,19 +127,11 @@ export default function ExplorerModelCard({ model, href }: Props) {
       onMouseLeave={() => setHovered(false)}
     >
       {model.previewUrl && (
-        <Box
-          component="img"
-          src={model.previewUrl}
-          alt=""
-          className={styles.preview}
-        />
+        <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
       )}
 
       <Box className={styles.overlay}>
-        <span
-          className={styles.badge}
-          style={{ background: badge.bg, color: badge.color }}
-        >
+        <span className={styles.badge} style={{ background: badge.bg, color: badge.color }}>
           {model.fileType.toUpperCase()}
         </span>
 
@@ -112,16 +140,10 @@ export default function ExplorerModelCard({ model, href }: Props) {
         </Typography>
 
         {model.fileSize != null && (
-          <Typography className={styles.size}>
-            {formatBytes(model.fileSize)}
-          </Typography>
+          <Typography className={styles.size}>{formatBytes(model.fileSize)}</Typography>
         )}
 
-        {!isIndexed && (
-          <Typography className={styles.unindexedLabel}>
-            Not yet indexed
-          </Typography>
-        )}
+        {!isIndexed && <Typography className={styles.unindexedLabel}>Not yet indexed</Typography>}
 
         {model.resolvedMetadata && (
           <MetaBadges meta={model.resolvedMetadata} ruleConfigs={model.ruleConfigs} />
@@ -132,7 +154,13 @@ export default function ExplorerModelCard({ model, href }: Props) {
 
       {!model.id && (
         <Tooltip
-          title={indexingState === 'running' ? 'Indexing…' : indexingState === 'queued' ? 'Queued…' : 'Index model'}
+          title={
+            indexingState === 'running'
+              ? 'Indexing…'
+              : indexingState === 'queued'
+                ? 'Queued…'
+                : 'Index model'
+          }
           placement="top"
         >
           <span className={styles.indexWrap}>
@@ -140,17 +168,17 @@ export default function ExplorerModelCard({ model, href }: Props) {
               size="small"
               className={`${styles.indexBtn}${indexingState === 'queued' ? ` ${styles.indexBtnQueued}` : ''}`}
               disabled={indexingState !== null}
-              onClick={e => {
-                e.preventDefault()
-                e.stopPropagation()
-                indexModel.mutate()
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                indexModel.mutate();
               }}
             >
               {indexingState === 'running' ? (
                 <CircularProgress size={16} className={styles.spinner} />
               ) : (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
                 </svg>
               )}
             </IconButton>
@@ -158,5 +186,5 @@ export default function ExplorerModelCard({ model, href }: Props) {
         </Tooltip>
       )}
     </AppCard>
-  )
+  );
 }

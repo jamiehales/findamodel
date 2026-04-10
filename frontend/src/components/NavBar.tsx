@@ -1,18 +1,18 @@
-import AppBar from '@mui/material/AppBar'
-import Toolbar from '@mui/material/Toolbar'
-import Stack from '@mui/material/Stack'
-import Typography from '@mui/material/Typography'
-import { NavLink, Link, useMatch } from 'react-router-dom'
-import { useActivePrintingList } from '../lib/queries'
-import IndexerStatus from './IndexerStatus'
-import styles from './NavBar.module.css'
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import { NavLink, Link, useMatch } from 'react-router-dom';
+import { useActivePrintingList } from '../lib/queries';
+import IndexerStatus from './IndexerStatus';
+import styles from './NavBar.module.css';
 
 export default function NavBar() {
-  const { data: activeList } = useActivePrintingList()
-  const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0
-  const printingListMatch = useMatch('/printing-list/*')
-  const printingListsMatch = useMatch('/printing-lists')
-  const printingActive = !!(printingListMatch || printingListsMatch)
+  const { data: activeList } = useActivePrintingList();
+  const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0;
+  const printingListMatch = useMatch('/printing-list/*');
+  const printingListsMatch = useMatch('/printing-lists');
+  const printingActive = !!(printingListMatch || printingListsMatch);
 
   return (
     <AppBar position="sticky" className={styles.appBar}>
@@ -24,13 +24,17 @@ export default function NavBar() {
           <NavLink
             to="/"
             end
-            className={({ isActive }) => `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`}
+            className={({ isActive }) =>
+              `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`
+            }
           >
             Models
           </NavLink>
           <NavLink
             to="/explore"
-            className={({ isActive }) => `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`}
+            className={({ isActive }) =>
+              `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`
+            }
           >
             Explore
           </NavLink>
@@ -45,5 +49,5 @@ export default function NavBar() {
         <IndexerStatus />
       </Toolbar>
     </AppBar>
-  )
+  );
 }

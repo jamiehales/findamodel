@@ -232,7 +232,12 @@
   gap: 0.25rem;
   min-height: 130px;
   padding: 0.7rem;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.5) 65%, transparent 100%);
+  background: linear-gradient(
+    to top,
+    rgba(15, 23, 42, 0.95) 0%,
+    rgba(15, 23, 42, 0.5) 65%,
+    transparent 100%
+  );
 }
 
 .otherPartName {

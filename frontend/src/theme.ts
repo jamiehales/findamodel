@@ -1,23 +1,23 @@
-import { createTheme } from '@mui/material/styles'
+import { createTheme } from '@mui/material/styles';
 
 declare module '@mui/material/Chip' {
   interface ChipPropsVariantOverrides {
-    'status-running': true
-    'status-queued': true
-    'badge-enabled': true
-    'badge-disabled': true
+    'status-running': true;
+    'status-queued': true;
+    'badge-enabled': true;
+    'badge-disabled': true;
   }
 }
 
 declare module '@mui/material/Typography' {
   interface TypographyPropsVariantOverrides {
-    'section-label': true
+    'section-label': true;
   }
 }
 
 declare module '@mui/material/Button' {
   interface ButtonPropsVariantOverrides {
-    'back': true
+    back: true;
   }
 }
 
@@ -151,6 +151,6 @@ const theme = createTheme({
       ],
     },
   },
-})
+});
 
-export default theme
+export default theme;

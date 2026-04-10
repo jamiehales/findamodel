@@ -1,10 +1,10 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import ModelsPage from './pages/ModelsPage'
-import ModelPage from './pages/ModelPage'
-import PrintingListPage from './pages/PrintingListPage'
-import PrintingListsManagePage from './pages/PrintingListsManagePage'
-import ExplorePage from './pages/ExplorePage'
-import NavBar from './components/NavBar'
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import ModelsPage from './pages/ModelsPage';
+import ModelPage from './pages/ModelPage';
+import PrintingListPage from './pages/PrintingListPage';
+import PrintingListsManagePage from './pages/PrintingListsManagePage';
+import ExplorePage from './pages/ExplorePage';
+import NavBar from './components/NavBar';
 
 function App() {
   return (
@@ -19,7 +19,7 @@ function App() {
         <Route path="/explore/*" element={<ExplorePage />} />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;
