@@ -11,6 +11,7 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries'
+import { ConfigValidationError } from '../lib/api'
 import type { MetadataFields } from '../lib/api'
 import styles from './MetadataEditor.module.css'
 
@@ -154,10 +155,16 @@ export default function MetadataEditor({ path, onClose }: Props) {
       }
     }
 
-    await mutation.mutateAsync({ ...cleanFields, fieldRules: fieldRulesMap })
-    committedRef.current = f
-    setSavedIndicator(true)
-    setTimeout(() => setSavedIndicator(false), 2000)
+    try {
+      await mutation.mutateAsync({ ...cleanFields, fieldRules: fieldRulesMap })
+      committedRef.current = f
+      setSavedIndicator(true)
+      setTimeout(() => setSavedIndicator(false), 2000)
+    } catch (err) {
+      if (err instanceof ConfigValidationError) {
+        setRuleErrors(prev => ({ ...prev, ...err.fieldErrors }))
+      }
+    }
   }
 
   function handleValueCommit() {

@@ -191,6 +191,12 @@ export async function fetchDirectoryConfig(path: string): Promise<DirectoryConfi
   return r.json()
 }
 
+export class ConfigValidationError extends Error {
+  constructor(public readonly fieldErrors: Record<string, string>) {
+    super('Config validation failed')
+  }
+}
+
 export async function updateDirectoryConfig(
   path: string,
   fields: MetadataFields
@@ -200,6 +206,10 @@ export async function updateDirectoryConfig(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(fields),
   })
+  if (r.status === 422) {
+    const body = await r.json()
+    throw new ConfigValidationError(body.fieldErrors ?? {})
+  }
   if (!r.ok) throw new Error(`Failed to update config for: ${path}`)
   return r.json()
 }

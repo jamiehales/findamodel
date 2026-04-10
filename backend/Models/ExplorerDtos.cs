@@ -79,3 +79,6 @@ public record ExplorerResponseDto(
     List<FolderItemDto> Folders,
     List<ExplorerModelItemDto> Models);
 
+/// <summary>Response body for 422 validation errors on config update.</summary>
+public record ConfigValidationErrorResponse(Dictionary<string, string> FieldErrors);
+

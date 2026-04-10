@@ -59,6 +59,10 @@ public class ExplorerController(
             var result = await metadataConfigService.UpdateDirectoryConfigAsync(modelsRoot, path, request);
             return Ok(result);
         }
+        catch (ConfigValidationException ex)
+        {
+            return UnprocessableEntity(new ConfigValidationErrorResponse(ex.FieldErrors));
+        }
         catch (DirectoryNotFoundException)
         {
             return NotFound($"Directory not found: {path}");

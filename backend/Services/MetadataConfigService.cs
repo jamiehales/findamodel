@@ -9,6 +9,12 @@ using findamodel.Services.Rules;
 
 namespace findamodel.Services;
 
+/// <summary>Thrown when one or more rule YAML entries in a config update fail validation.</summary>
+public class ConfigValidationException(Dictionary<string, string> fieldErrors) : Exception("Config validation failed")
+{
+    public Dictionary<string, string> FieldErrors { get; } = fieldErrors;
+}
+
 public class MetadataConfigService(
     IConfiguration config,
     ILogger<MetadataConfigService> logger,
@@ -21,6 +27,49 @@ public class MetadataConfigService(
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .Build();
+
+    private static readonly HashSet<string> KnownRuleTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "filename", "regex" };
+
+    /// <summary>
+    /// Validates each field rule entry; returns a map of fieldName → error message for any failures.
+    /// </summary>
+    private static Dictionary<string, string> ValidateRules(Dictionary<string, string> fieldRules)
+    {
+        var errors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (fieldName, ruleYaml) in fieldRules)
+        {
+            if (string.IsNullOrWhiteSpace(ruleYaml)) continue;
+
+            Dictionary<string, object>? ruleObj;
+            try
+            {
+                ruleObj = YamlDeserializer.Deserialize<Dictionary<string, object>>(ruleYaml);
+            }
+            catch (Exception ex)
+            {
+                errors[fieldName] = $"Invalid YAML: {ex.Message}";
+                continue;
+            }
+
+            if (ruleObj == null || ruleObj.Count == 0)
+            {
+                errors[fieldName] = "Invalid YAML: rule is empty";
+                continue;
+            }
+
+            if (!ruleObj.TryGetValue("rule", out var ruleNameObj) || ruleNameObj == null)
+            {
+                errors[fieldName] = "Must include a \"rule:\" key (e.g. rule: filename)";
+                continue;
+            }
+
+            var ruleName = ruleNameObj.ToString() ?? "";
+            if (!KnownRuleTypes.Contains(ruleName))
+                errors[fieldName] = $"Unknown rule type \"{ruleName}\". Valid types: {string.Join(", ", KnownRuleTypes)}";
+        }
+        return errors;
+    }
 
     // -------------------------------------------------------------------------
     // Public API — used by ExplorerController
@@ -96,6 +145,13 @@ public class MetadataConfigService(
     public async Task<DirectoryConfigDetailDto> UpdateDirectoryConfigAsync(
         string rootPath, string dirPath, UpdateDirectoryConfigRequest req)
     {
+        if (req.FieldRules != null)
+        {
+            var errors = ValidateRules(req.FieldRules);
+            if (errors.Count > 0)
+                throw new ConfigValidationException(errors);
+        }
+
         await WriteConfigFileAsync(rootPath, dirPath, req);
 
         var fullDirPath = GetFullDirPath(rootPath, dirPath);
