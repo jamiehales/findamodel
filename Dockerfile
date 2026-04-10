@@ -22,10 +22,17 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+
 COPY --from=backend-build /app/backend/out .
 COPY --from=frontend-build /app/frontend/dist ./wwwroot
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
 ENV ASPNETCORE_URLS=http://+:80
+ENV PUID=0
+ENV PGID=0
+ENV UMASK=022
 
-ENTRYPOINT ["dotnet", "findamodel.dll"]
+ENTRYPOINT ["/entrypoint.sh"]
