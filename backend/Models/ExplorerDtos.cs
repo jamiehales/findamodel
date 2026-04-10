@@ -33,6 +33,7 @@ public record ConfigFieldsDto(
 /// definitions rather than plain values (e.g. "creator", "model_name").
 /// LocalRuleContents maps each rule field name to its inner YAML content for editing
 /// (e.g. "rule: filename\nindex: -2", without the outer field key wrapper).
+/// ParentResolvedRules maps field names to their inherited rule YAML snippets.
 /// </summary>
 public record DirectoryConfigDetailDto(
     string DirectoryPath,
@@ -40,7 +41,8 @@ public record DirectoryConfigDetailDto(
     ConfigFieldsDto? ParentResolvedValues,
     string? ParentPath,
     HashSet<string>? LocalRuleFields = null,
-    Dictionary<string, string>? LocalRuleContents = null);
+    Dictionary<string, string>? LocalRuleContents = null,
+    Dictionary<string, string>? ParentResolvedRules = null);
 
 /// <summary>A folder entry in the explorer grid.</summary>
 /// <param name="RuleConfigs">
@@ -53,7 +55,9 @@ public record FolderItemDto(
     int SubdirectoryCount,
     int ModelCount,
     ConfigFieldsDto ResolvedValues,
-    Dictionary<string, string>? RuleConfigs = null);
+    Dictionary<string, string>? RuleConfigs = null,
+    ConfigFieldsDto? LocalValues = null,
+    HashSet<string>? LocalRuleFields = null);
 
 /// <summary>
 /// A model-file entry in the explorer grid.

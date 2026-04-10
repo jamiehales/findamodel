@@ -10,6 +10,8 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries'
 import { ConfigValidationError } from '../lib/api'
 import type { MetadataFields } from '../lib/api'
@@ -51,12 +53,47 @@ function validateRuleYaml(text: string): string | null {
   return null
 }
 
-function InheritedHint({ value }: { value: string | boolean | null | undefined }) {
-  if (value == null) return null
+function InheritedHint({ value, inheritedRule }: { value?: string | boolean | null | undefined; inheritedRule?: string | null }) {
+  const [copied, setCopied] = useState(false)
+
+  if (value == null && !inheritedRule) return null
+
+  const textToCopy = inheritedRule ?? String(value)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(textToCopy)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
+    }
+  }
+
   return (
-    <Typography variant="caption" color="text.disabled" component="p" className={styles.hint}>
-      Inherited: {String(value)}
-    </Typography>
+    <Stack direction="row" alignItems="flex-start" spacing={1} className={styles.hintContainer}>
+      <Typography variant="caption" color="text.disabled" component="div" className={styles.hint}>
+        {inheritedRule ? (
+          <>
+            Inherited rule:<br />
+            <code style={{ display: 'block', marginTop: '4px', fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{inheritedRule}</code>
+          </>
+        ) : (
+          <>Inherited: {String(value)}</>
+        )}
+      </Typography>
+      <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
+        <IconButton
+          size="small"
+          onClick={handleCopy}
+          className={styles.copyBtn}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+          </svg>
+        </IconButton>
+      </Tooltip>
+    </Stack>
   )
 }
 
@@ -91,6 +128,14 @@ export default function MetadataEditor({ path, onClose }: Props) {
         for (const yamlName of detail.localRuleFields) {
           modes[yamlName] = 'rule'
           ruleTexts[yamlName] = detail.localRuleContents?.[yamlName] ?? ''
+        }
+      }
+      // Also set mode to 'rule' for fields with inherited rules (if not already set locally)
+      if (detail.parentResolvedRules) {
+        for (const yamlName of Object.keys(detail.parentResolvedRules)) {
+          if (!(yamlName in modes)) {
+            modes[yamlName] = 'rule'
+          }
         }
       }
       setFieldModes(modes)
@@ -200,20 +245,52 @@ export default function MetadataEditor({ path, onClose }: Props) {
         const ruleText = fieldRuleTexts[field.yamlName] ?? ''
         const ruleError = ruleErrors[field.yamlName] ?? null
         const parentValue = p ? (p[field.key] as string | boolean | null) : null
+        const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null
+        const localValue = fields[field.key] as string | boolean | null
+        const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null
+
+        const handleReset = () => {
+          // Reset the field to default (null)
+          setFieldValue(field.key, null as never)
+          // Also clear rule mode if active
+          if (isRuleMode) {
+            setFieldModes(prev => ({ ...prev, [field.yamlName]: 'value' }))
+            setFieldRuleTexts(prev => ({ ...prev, [field.yamlName]: '' }))
+          }
+          // Save the cleared state
+          const cleared = { ...fields, [field.key]: null }
+          doSave(cleared)
+        }
 
         return (
           <Box key={field.key}>
-            {/* Label + mode toggle */}
+            {/* Label + mode toggle + reset button */}
             <Stack direction="row" alignItems="center" justifyContent="space-between" className={styles.fieldHeader}>
               <Typography variant="caption" color="text.secondary">{field.label}</Typography>
-              <Chip
-                label={isRuleMode ? 'Rule' : 'Value'}
-                size="small"
-                variant={isRuleMode ? 'filled' : 'outlined'}
-                color={isRuleMode ? 'warning' : 'default'}
-                onClick={() => toggleMode(field.yamlName)}
-                className={styles.modeChip}
-              />
+              <Stack direction="row" alignItems="center" gap={1}>
+                <Tooltip title={hasLocalValue ? 'Reset to inherited value' : 'No local value to reset'}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      disabled={!hasLocalValue}
+                      onClick={handleReset}
+                      className={styles.resetBtn}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10-8c-4.4 0-8.3 2.5-10.2 6.1C4.8 7 2 9.5 2 12.5c0 3.3 2.7 6 6 6 1 0 1.9-.2 2.8-.7 1.3 1.3 3.1 2.1 5.2 2.1 4.4 0 8-3.6 8-8s-3.6-8-8-8zM8 16c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4zm12-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                      </svg>
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Chip
+                  label={isRuleMode ? 'Rule' : 'Value'}
+                  size="small"
+                  variant={isRuleMode ? 'filled' : 'outlined'}
+                  color={isRuleMode ? 'warning' : 'default'}
+                  onClick={() => toggleMode(field.yamlName)}
+                  className={styles.modeChip}
+                />
+              </Stack>
             </Stack>
 
             {/* Rule textarea */}
@@ -283,7 +360,11 @@ export default function MetadataEditor({ path, onClose }: Props) {
               />
             )}
 
-            {!isRuleMode && <InheritedHint value={parentValue} />}
+            {isRuleMode ? (
+              <InheritedHint inheritedRule={inheritedRule} />
+            ) : (
+              <InheritedHint value={parentValue} />
+            )}
           </Box>
         )
       })}

@@ -146,6 +146,8 @@ export interface ExplorerFolder {
   modelCount: number
   resolvedValues: MetadataFields
   ruleConfigs: Record<string, string> | null
+  localValues: MetadataFields | null
+  localRuleFields: string[] | null
 }
 
 export interface ExplorerModel {
@@ -176,6 +178,8 @@ export interface DirectoryConfigDetail {
   /** Maps each rule field name to its inner YAML content for editing
    *  (e.g. "rule: filename\nindex: -2", without the outer field key wrapper). */
   localRuleContents: Record<string, string> | null
+  /** Maps inherited rule field names to their YAML snippets from parent. */
+  parentResolvedRules: Record<string, string> | null
 }
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {

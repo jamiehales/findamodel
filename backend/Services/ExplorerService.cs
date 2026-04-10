@@ -82,11 +82,27 @@ public class ExplorerService(
             var resolved = dc != null
                 ? new ConfigFieldsDto(dc.Creator, dc.Collection, dc.Subcollection,
                                       dc.Category, dc.Type, dc.Supported, dc.ModelName)
+                : new ConfigFieldsDto(
+                    currentDirConfig?.Creator,
+                    currentDirConfig?.Collection,
+                    currentDirConfig?.Subcollection,
+                    currentDirConfig?.Category,
+                    currentDirConfig?.Type,
+                    currentDirConfig?.Supported,
+                    currentDirConfig?.ModelName);
+
+            var localValues = dc != null
+                ? new ConfigFieldsDto(dc.RawCreator, dc.RawCollection, dc.RawSubcollection,
+                                      dc.RawCategory, dc.RawType, dc.RawSupported, dc.RawModelName)
                 : new ConfigFieldsDto(null, null, null, null, null, null);
 
             var ruleConfigs = BuildRuleConfigs(dc?.ResolvedRulesYaml);
+            if (dc == null && currentDirConfig != null)
+                ruleConfigs = BuildRuleConfigs(currentDirConfig.ResolvedRulesYaml);
 
-            folders.Add(new FolderItemDto(name, childPath, subdirCount, modelCount, resolved, ruleConfigs));
+            var localRuleFields = BuildLocalRuleFields(dc?.RawRulesYaml);
+
+            folders.Add(new FolderItemDto(name, childPath, subdirCount, modelCount, resolved, ruleConfigs, localValues, localRuleFields));
         }
 
         // ---- Precompute resolved rules for current directory ----
@@ -209,6 +225,19 @@ public class ExplorerService(
         foreach (var (field, ruleEl) in rules)
             result[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
         return result;
+    }
+
+    /// <summary>
+    /// Returns local rule field names defined directly in this directory's YAML.
+    /// </summary>
+    private static HashSet<string>? BuildLocalRuleFields(string? rawRulesYaml)
+    {
+        var rules = RuleRegistry.DeserializeRules(rawRulesYaml);
+        if (rules.Count == 0) return null;
+
+        return rules.Keys
+            .Select(k => k.ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

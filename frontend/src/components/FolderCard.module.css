@@ -27,9 +27,12 @@
 
 .editBtn {
   position: absolute !important;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
+  padding: 8px !important;
   color: rgba(226, 232, 240, 0.5) !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
 }
 
 .editBtnActive {
@@ -44,9 +47,12 @@
 
 .indexBtn {
   position: absolute !important;
-  top: 6px;
-  left: 6px;
+  top: 4px;
+  left: 4px;
+  padding: 8px !important;
   color: rgba(226, 232, 240, 0.5) !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
 }
 
 .indexBtnQueued {
@@ -71,18 +77,52 @@
 }
 
 .metaBadge {
-  display: inline-block;
-  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: #a5b4fc;
-  margin-right: 4px;
   margin-bottom: 2px;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.metaType {
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.metaValue {
+  color: #c7d2fe;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+}
+
+.metaSource {
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+}
+
+.sourceSet {
+  color: #22c55e;
+  background-color: rgba(34, 197, 94, 0.2);
+}
+
+.sourceInherited {
+  color: #60a5fa;
+  background-color: rgba(96, 165, 250, 0.22);
+}
+
+.sourceUnset {
+  color: #94a3b8;
+  background-color: rgba(148, 163, 184, 0.2);
 }
 
 .metaBadgeSet {

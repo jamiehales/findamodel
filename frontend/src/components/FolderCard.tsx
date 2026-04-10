@@ -19,22 +19,36 @@ interface Props {
   href: string
 }
 
-function MetaBadge({ type, value, ruleYaml }: { type: string; value: string | null | undefined; ruleYaml?: string | null }) {
-  const isRule = ruleYaml != null && value == null
+type MetaSource = 'set' | 'inherited' | 'unset'
+
+function MetaBadge({
+  type,
+  value,
+  source,
+  ruleYaml,
+}: {
+  type: string
+  value: string | null | undefined
+  source: MetaSource
+  ruleYaml?: string | null
+}) {
+  const sourceLabel = source === 'set' ? 'Set' : source === 'inherited' ? 'Inherited' : 'Unset'
+  const sourceClass = source === 'set' ? styles.sourceSet : source === 'inherited' ? styles.sourceInherited : styles.sourceUnset
+  const valueLabel = value ?? (ruleYaml ? 'Rule' : 'Not set')
 
   const badge = (
     <Box
       component="span"
-      className={`${styles.metaBadge} ${value || isRule ? styles.metaBadgeSet : styles.metaBadgeUnset}`}
-      style={isRule ? { border: `1px dashed ${RULE_COLOR}` } : undefined}
+      className={`${styles.metaBadge} ${source === 'unset' ? styles.metaBadgeUnset : styles.metaBadgeSet}`}
+      style={ruleYaml ? { border: `1px dashed ${RULE_COLOR}` } : undefined}
     >
-      <div style={{ color: value ? '#a5b4fc' : 'rgba(131, 143, 202, 0.53)' }}>
-        {value ?? (isRule ? `${type}` : `Unknown ${type.toLowerCase()}`)}
-      </div>
+      <span className={styles.metaType}>{type}</span>
+      <span className={styles.metaValue}>{valueLabel}</span>
+      <span className={`${styles.metaSource} ${sourceClass}`}>{sourceLabel}</span>
     </Box>
   )
 
-  if (!isRule) return badge
+  if (!ruleYaml) return badge
 
   return (
     <Tooltip
@@ -50,8 +64,18 @@ function MetaBadge({ type, value, ruleYaml }: { type: string; value: string | nu
 export default function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const rv = folder.resolvedValues
+  const lv = folder.localValues
+  const localRuleFields = new Set((folder.localRuleFields ?? []).map(f => f.toLowerCase()))
   const indexFolder = useIndexFolder(folder.path)
   const indexingState = useIsFolderIndexing(folder.path)
+
+  function getSource(localValue: unknown, resolvedValue: unknown, ruleKey: string): MetaSource {
+    const hasLocalRule = localRuleFields.has(ruleKey.toLowerCase())
+    if (localValue != null || hasLocalRule) return 'set'
+
+    const hasInheritedValue = resolvedValue != null || !!folder.ruleConfigs?.[ruleKey]
+    return hasInheritedValue ? 'inherited' : 'unset'
+  }
 
   return (
     <Box className={styles.wrapper}>
@@ -64,7 +88,7 @@ export default function FolderCard({ folder, href }: Props) {
         >
           <span>
             <IconButton
-              size="small"
+              size="medium"
               className={`${styles.indexBtn}${indexingState === 'queued' ? ` ${styles.indexBtnQueued}` : ''}`}
               disabled={indexingState !== null}
               onClick={e => {
@@ -74,9 +98,9 @@ export default function FolderCard({ folder, href }: Props) {
               }}
             >
               {indexingState === 'running' ? (
-                <CircularProgress size={14} className={styles.spinner} />
+                <CircularProgress size={20} className={styles.spinner} />
               ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                 </svg>
               )}
@@ -87,7 +111,7 @@ export default function FolderCard({ folder, href }: Props) {
         {/* Edit button — stops propagation so click doesn't navigate */}
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
-            size="small"
+            size="medium"
             className={`${styles.editBtn}${editorOpen ? ` ${styles.editBtnActive}` : ''}`}
             onClick={e => {
               e.preventDefault()
@@ -96,7 +120,7 @@ export default function FolderCard({ folder, href }: Props) {
             }}
           >
             {/* Pencil icon (SVG inline) */}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
             </svg>
           </IconButton>
@@ -127,14 +151,49 @@ export default function FolderCard({ folder, href }: Props) {
 
         {/* Resolved metadata badges */}
           <Stack direction="column" spacing={1} textAlign="center" width="100%">
-            <MetaBadge type="Creator" value={rv.creator} ruleYaml={folder.ruleConfigs?.creator} />
-            <MetaBadge type="Collection" value={rv.collection} ruleYaml={folder.ruleConfigs?.collection} />
-            <MetaBadge type="Subcollection" value={rv.subcollection} ruleYaml={folder.ruleConfigs?.subcollection} />
-            <MetaBadge type="Category" value={rv.category} ruleYaml={folder.ruleConfigs?.category} />
-            <MetaBadge type="Type" value={rv.type} ruleYaml={folder.ruleConfigs?.type} />
-            <MetaBadge type="Supports" value={rv.supported == null ? null : rv.supported ? "Supported" : "Unsupported"} ruleYaml={folder.ruleConfigs?.supported} />
+            <MetaBadge
+              type="Creator"
+              value={rv.creator}
+              source={getSource(lv?.creator, rv.creator, 'creator')}
+              ruleYaml={folder.ruleConfigs?.creator}
+            />
+            <MetaBadge
+              type="Collection"
+              value={rv.collection}
+              source={getSource(lv?.collection, rv.collection, 'collection')}
+              ruleYaml={folder.ruleConfigs?.collection}
+            />
+            <MetaBadge
+              type="Subcollection"
+              value={rv.subcollection}
+              source={getSource(lv?.subcollection, rv.subcollection, 'subcollection')}
+              ruleYaml={folder.ruleConfigs?.subcollection}
+            />
+            <MetaBadge
+              type="Category"
+              value={rv.category}
+              source={getSource(lv?.category, rv.category, 'category')}
+              ruleYaml={folder.ruleConfigs?.category}
+            />
+            <MetaBadge
+              type="Type"
+              value={rv.type}
+              source={getSource(lv?.type, rv.type, 'type')}
+              ruleYaml={folder.ruleConfigs?.type}
+            />
+            <MetaBadge
+              type="Supports"
+              value={rv.supported == null ? null : rv.supported ? 'Supported' : 'Unsupported'}
+              source={getSource(lv?.supported, rv.supported, 'supported')}
+              ruleYaml={folder.ruleConfigs?.supported}
+            />
             <Divider />
-            <MetaBadge type="Model Name" value={rv.modelName} ruleYaml={folder.ruleConfigs?.model_name} />
+            <MetaBadge
+              type="Model Name"
+              value={rv.modelName}
+              source={getSource(lv?.modelName, rv.modelName, 'model_name')}
+              ruleYaml={folder.ruleConfigs?.model_name}
+            />
           </Stack>
       </AppCard>
 

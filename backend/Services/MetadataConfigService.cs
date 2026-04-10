@@ -537,7 +537,8 @@ public class MetadataConfigService(
 
         var parentPath = GetParentPath(dirPath);
         ConfigFieldsDto? parentResolved = null;
-        if (parentPath != null && all.TryGetValue(parentPath, out var parentRecord))
+        DirectoryConfig? parentRecord = null;
+        if (parentPath != null && all.TryGetValue(parentPath, out parentRecord))
             parentResolved = new ConfigFieldsDto(parentRecord.Creator, parentRecord.Collection,
                 parentRecord.Subcollection, parentRecord.Category, parentRecord.Type,
                 parentRecord.Supported, parentRecord.ModelName);
@@ -562,7 +563,31 @@ public class MetadataConfigService(
             }
         }
 
-        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields, localRuleContents);
+        // Compute parent resolved rules (inherited rules from parent directory)
+        Dictionary<string, string>? parentResolvedRules = null;
+        if (parentRecord != null)
+        {
+            var parentRules = RuleRegistry.DeserializeRules(parentRecord.ResolvedRulesYaml);
+            if (parentRules.Count > 0)
+            {
+                parentResolvedRules = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (field, ruleEl) in parentRules)
+                {
+                    // Skip any rules that are overridden locally
+                    if (record?.RawRulesYaml != null)
+                    {
+                        var localRules = RuleRegistry.DeserializeRules(record.RawRulesYaml);
+                        if (localRules.ContainsKey(field)) continue;
+                    }
+                    // Serialize only the inner rule properties
+                    var innerObj = ruleEl.EnumerateObject()
+                        .ToDictionary(p => p.Name, p => JsonElementToYamlObject(p.Value));
+                    parentResolvedRules[field.ToLowerInvariant()] = YamlSerializer.Serialize(innerObj).TrimEnd();
+                }
+            }
+        }
+
+        return new DirectoryConfigDetailDto(dirPath, localValues, parentResolved, parentPath, localRuleFields, localRuleContents, parentResolvedRules);
     }
 
     private static string GetFullDirPath(string rootPath, string dirPath) =>
