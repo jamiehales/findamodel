@@ -1,6 +1,8 @@
-* Allow hulls to be calculated in a separate pass
+* Use a library for DTO generation?
 
-* Expand the main page to fill the whole width of the screen
+* Add unit tests for services
+
+* Allow hulls to be calculated in a separate pass
 
 * Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
 
@@ -45,3 +47,5 @@
 
 * Switch model geometry return to binary format for less data transfer
 * Potentially investigate some sort of model simplification algorithm?
+
+* Determine the feasibility of rendering supports transparently

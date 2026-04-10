@@ -63,6 +63,16 @@
   cursor: pointer !important;
 }
 
+.helpBtn {
+  color: rgba(148, 163, 184, 0.7) !important;
+  padding: 4px !important;
+}
+
+.helpBtn:hover {
+  color: rgba(148, 163, 184, 1) !important;
+  background-color: rgba(148, 163, 184, 0.1) !important;
+}
+
 .fieldInput {
   font-size: 0.875rem !important;
 }

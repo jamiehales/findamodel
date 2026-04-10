@@ -12,6 +12,11 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Divider from '@mui/material/Divider'
 import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries'
 import { ConfigValidationError } from '../lib/api'
 import type { MetadataFields } from '../lib/api'
@@ -97,6 +102,79 @@ function InheritedHint({ value, inheritedRule }: { value?: string | boolean | nu
   )
 }
 
+function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const code = (text: string) => (
+    <Box component="code" sx={{ display: 'block', fontFamily: 'monospace', fontSize: '0.78rem', bgcolor: 'action.hover', borderRadius: 1, px: 1.5, py: 1, my: 0.5, whiteSpace: 'pre', overflowX: 'auto' }}>
+      {text}
+    </Box>
+  )
+  const inline = (text: string) => (
+    <Box component="code" sx={{ fontFamily: 'monospace', fontSize: '0.8em', bgcolor: 'action.hover', borderRadius: '3px', px: 0.6, py: 0.1 }}>
+      {text}
+    </Box>
+  )
+  const section = (title: string) => (
+    <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5, fontWeight: 600 }}>{title}</Typography>
+  )
+  const para = (text: React.ReactNode) => (
+    <Typography variant="body2" color="text.primary" sx={{ mb: 0.5 }}>{text}</Typography>
+  )
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth scroll="paper">
+      <DialogTitle sx={{ pb: 1 }}>Rules System</DialogTitle>
+      <DialogContent dividers>
+        {para('Rules let you automatically derive a field\'s value from each model\'s file path, rather than setting a fixed value. Rules defined on a folder are inherited by all subfolders and models within it.')}
+        {para(<>A rule is written in YAML. The only required key is {inline('rule:')} which names the rule type. All other keys are options specific to that rule.</>)}
+
+        <Divider sx={{ my: 1.5 }} />
+
+        {section('rule: filename')}
+        {para('Sets the field to the model\'s filename, title-cased and without extension by default.')}
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>Options:</Typography>
+        {para(<>{inline('include_extension: true')} — include the file extension in the value</>)}
+
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>Examples:</Typography>
+        {code('rule: filename')}
+        {para(<>A file named {inline('my-dragon.stl')} → {inline('My-Dragon')}</>)}
+        {code('rule: filename\ninclude_extension: true')}
+        {para(<>A file named {inline('my-dragon.stl')} → {inline('My-Dragon.stl')}</>)}
+
+        <Divider sx={{ my: 1.5 }} />
+
+        {section('rule: regex')}
+        {para('Applies a regular expression to a value derived from the file path.')}
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>Options:</Typography>
+        {para(<>{inline('source: full_path | folder | filename')} — what to match against (default: {inline('full_path')})</>)}
+        {para(<>{inline('expression: <pattern>')} — a regex or sed-style substitution ({inline('s|pattern|replacement|flags')})</>)}
+        {para(<>{inline('values: \{ EnumValue: "pattern" \}')} — for select fields: try each pattern in order, return the matching key</>)}
+
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>Plain regex — returns first capture group, or full match:</Typography>
+        {code('rule: regex\nsource: folder\nexpression: \'([^/]+)/[^/]+$\'')}
+        {para(<>For a file at {inline('Artists/Sculptor Name/dragon.stl')} → {inline('Sculptor Name')}</>)}
+
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>Sed-style substitution — transform the matched value:</Typography>
+        {code('rule: regex\nsource: folder\nexpression: \'s|.*/([^/]+)/[^/]+$|\\1|\'')}
+        {para(<>Same result as above but using a substitution expression</>)}
+
+        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>Enum (select) field — map patterns to values:</Typography>
+        {code('rule: regex\nsource: full_path\nvalues:\n  Bust: \'(?i)bust\'\n  Miniature: \'(?i)mini\'')
+        }
+        {para('Returns the first key whose pattern matches the path.')}
+
+        <Divider sx={{ my: 1.5 }} />
+
+        {section('Inheritance')}
+        {para('Rules set on a parent folder cascade down to all subfolders and models unless overridden. When a subfolder defines its own rule for the same field, it replaces the parent\'s rule for that subtree.')}
+        {para('If a folder has a plain value set for a field, that value takes precedence over any inherited rule.')}
+      </DialogContent>
+      <DialogActions>
+        <Button size="small" onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 interface Props {
   path: string
   onClose?: () => void
@@ -114,6 +192,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const [fieldRuleTexts, setFieldRuleTexts] = useState<Record<string, string>>({})
   const [ruleErrors, setRuleErrors] = useState<Record<string, string | null>>({})
   const [savedIndicator, setSavedIndicator] = useState(false)
+  const [rulesHelpOpen, setRulesHelpOpen] = useState(false)
   const committedRef = useRef(fields)
 
   useEffect(() => {
@@ -236,6 +315,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
 
   return (
     <Box className={styles.form}>
+      <RulesHelpDialog open={rulesHelpOpen} onClose={() => setRulesHelpOpen(false)} />
       <Typography variant="subtitle2" color="text.secondary" className={styles.sectionLabel}>
         Metadata — local values override inherited ones
       </Typography>
@@ -248,6 +328,8 @@ export default function MetadataEditor({ path, onClose }: Props) {
         const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null
         const localValue = fields[field.key] as string | boolean | null
         const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null
+        const hasInheritedValue = parentValue != null || inheritedRule != null
+        const canReset = hasLocalValue && hasInheritedValue
 
         const handleReset = () => {
           // Reset the field to default (null)
@@ -268,11 +350,32 @@ export default function MetadataEditor({ path, onClose }: Props) {
             <Stack direction="row" alignItems="center" justifyContent="space-between" className={styles.fieldHeader}>
               <Typography variant="caption" color="text.secondary">{field.label}</Typography>
               <Stack direction="row" alignItems="center" gap={1}>
-                <Tooltip title={hasLocalValue ? 'Reset to inherited value' : 'No local value to reset'}>
+                {isRuleMode && (
+                  <Tooltip title="Rules documentation">
+                    <IconButton
+                      size="small"
+                      onClick={() => setRulesHelpOpen(true)}
+                      className={styles.helpBtn}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/>
+                      </svg>
+                    </IconButton>
+                  </Tooltip>
+                )}
+                <Chip
+                  label={isRuleMode ? 'Rule' : 'Value'}
+                  size="small"
+                  variant={isRuleMode ? 'filled' : 'outlined'}
+                  color={isRuleMode ? 'warning' : 'default'}
+                  onClick={() => toggleMode(field.yamlName)}
+                  className={styles.modeChip}
+                />
+                <Tooltip title={canReset ? 'Reset to inherited value' : 'No inherited value to reset to'}>
                   <span>
                     <IconButton
                       size="small"
-                      disabled={!hasLocalValue}
+                      disabled={!canReset}
                       onClick={handleReset}
                       className={styles.resetBtn}
                     >
@@ -282,14 +385,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                     </IconButton>
                   </span>
                 </Tooltip>
-                <Chip
-                  label={isRuleMode ? 'Rule' : 'Value'}
-                  size="small"
-                  variant={isRuleMode ? 'filled' : 'outlined'}
-                  color={isRuleMode ? 'warning' : 'default'}
-                  onClick={() => toggleMode(field.yamlName)}
-                  className={styles.modeChip}
-                />
               </Stack>
             </Stack>
 
