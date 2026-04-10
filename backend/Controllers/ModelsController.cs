@@ -7,7 +7,11 @@ namespace findamodel.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ModelsController(ModelService modelService, ModelLoaderService loaderService, IConfiguration config) : ControllerBase
+public class ModelsController(
+    ModelService modelService,
+    ModelLoaderService loaderService,
+    MeshTransferService meshTransferService,
+    IConfiguration config) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetModels([FromQuery] int? limit = null)
@@ -75,7 +79,8 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
 
     /// <summary>
     /// Returns pre-processed geometry for a model: Y-up, mm scale, centred (X/Z at origin, base at Y=0).
-    /// Response contains flat float arrays ready for THREE.BufferGeometry (positions and normals, 3 components each).
+    /// Binary response contains indexed, 16-bit quantised positions plus 16/32-bit triangle indices.
+    /// Legacy JSON remains available for callers that do not request the mesh mime type.
     /// </summary>
     [HttpGet("{id:guid}/geometry")]
     public async Task<IActionResult> GetGeometry(Guid id)
@@ -95,11 +100,35 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
         var geometry = await loaderService.LoadModelAsync(fullPath, model.FileType);
         if (geometry == null) return StatusCode(500, "Failed to load model geometry");
 
-        // Build flat float arrays for Three.js BufferGeometry.
-        // 9 floats per triangle (3 vertices × 3 components each).
-        var positions = new float[geometry.Triangles.Count * 9];
-        var normals   = new float[geometry.Triangles.Count * 9];
+        if (!ClientPrefersBinaryMesh(Request))
+            return new JsonResult(new
+            {
+                positions = BuildLegacyPositions(geometry),
+                normals = BuildLegacyNormals(geometry),
+                triangleCount = geometry.Triangles.Count,
+                sphereRadius  = geometry.SphereRadius,
+                sphereCentre  = new { geometry.SphereCentre.X, geometry.SphereCentre.Y, geometry.SphereCentre.Z },
+                dimensionXMm  = geometry.DimensionXMm,
+                dimensionYMm  = geometry.DimensionYMm,
+                dimensionZMm  = geometry.DimensionZMm
+            });
 
+        var payload = meshTransferService.Encode(geometry);
+        return File(payload, MeshTransferService.ContentType);
+    }
+
+    private static bool ClientPrefersBinaryMesh(HttpRequest request)
+    {
+        if (string.Equals(request.Query["format"], "json", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var accept = request.Headers.Accept.ToString();
+        return accept.Contains(MeshTransferService.ContentType, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static float[] BuildLegacyPositions(LoadedGeometry geometry)
+    {
+        var positions = new float[geometry.Triangles.Count * 9];
         for (int i = 0; i < geometry.Triangles.Count; i++)
         {
             var tri = geometry.Triangles[i];
@@ -107,22 +136,23 @@ public class ModelsController(ModelService modelService, ModelLoaderService load
             positions[b + 0] = tri.V0.X; positions[b + 1] = tri.V0.Y; positions[b + 2] = tri.V0.Z;
             positions[b + 3] = tri.V1.X; positions[b + 4] = tri.V1.Y; positions[b + 5] = tri.V1.Z;
             positions[b + 6] = tri.V2.X; positions[b + 7] = tri.V2.Y; positions[b + 8] = tri.V2.Z;
-            // Flat shading: same face normal repeated for all 3 vertices of the triangle
+        }
+
+        return positions;
+    }
+
+    private static float[] BuildLegacyNormals(LoadedGeometry geometry)
+    {
+        var normals = new float[geometry.Triangles.Count * 9];
+        for (int i = 0; i < geometry.Triangles.Count; i++)
+        {
+            var tri = geometry.Triangles[i];
+            int b = i * 9;
             normals[b + 0] = tri.Normal.X; normals[b + 1] = tri.Normal.Y; normals[b + 2] = tri.Normal.Z;
             normals[b + 3] = tri.Normal.X; normals[b + 4] = tri.Normal.Y; normals[b + 5] = tri.Normal.Z;
             normals[b + 6] = tri.Normal.X; normals[b + 7] = tri.Normal.Y; normals[b + 8] = tri.Normal.Z;
         }
 
-        return new JsonResult(new
-        {
-            positions,
-            normals,
-            triangleCount = geometry.Triangles.Count,
-            sphereRadius  = geometry.SphereRadius,
-            sphereCentre  = new { geometry.SphereCentre.X, geometry.SphereCentre.Y, geometry.SphereCentre.Z },
-            dimensionXMm  = geometry.DimensionXMm,
-            dimensionYMm  = geometry.DimensionYMm,
-            dimensionZMm  = geometry.DimensionZMm
-        });
+        return normals;
     }
 }

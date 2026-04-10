@@ -104,8 +104,8 @@ export async function fetchModel(id: string): Promise<Model> {
 }
 
 export interface GeometryResponse {
-  positions: number[];
-  normals: number[];
+  positions: Float32Array;
+  indices: Uint16Array | Uint32Array;
   triangleCount: number;
   sphereRadius: number;
   sphereCentre: { x: number; y: number; z: number };
@@ -124,9 +124,133 @@ export interface RelatedModel {
 }
 
 export async function fetchGeometry(id: string): Promise<GeometryResponse> {
-  const r = await fetch(`/api/models/${id}/geometry`);
+  const r = await fetch(`/api/models/${id}/geometry`, {
+    headers: {
+      Accept: 'application/vnd.findamodel.mesh',
+    },
+  });
   if (!r.ok) throw new Error('Failed to fetch geometry');
-  return r.json();
+
+  const contentType = r.headers.get('content-type') ?? '';
+  if (contentType.includes('application/vnd.findamodel.mesh')) {
+    return decodeBinaryGeometry(await r.arrayBuffer());
+  }
+
+  const legacy = (await r.json()) as {
+    positions: number[];
+    normals: number[];
+    triangleCount: number;
+    sphereRadius: number;
+    sphereCentre: { x: number; y: number; z: number };
+    dimensionXMm: number;
+    dimensionYMm: number;
+    dimensionZMm: number;
+  };
+
+  const triangleIndices = new Uint32Array(legacy.triangleCount * 3);
+  for (let i = 0; i < triangleIndices.length; i++) triangleIndices[i] = i;
+
+  return {
+    positions: new Float32Array(legacy.positions),
+    indices: triangleIndices,
+    triangleCount: legacy.triangleCount,
+    sphereRadius: legacy.sphereRadius,
+    sphereCentre: legacy.sphereCentre,
+    dimensionXMm: legacy.dimensionXMm,
+    dimensionYMm: legacy.dimensionYMm,
+    dimensionZMm: legacy.dimensionZMm,
+  };
+}
+
+const BINARY_MESH_MAGIC = 0x48534d46;
+const BINARY_MESH_HEADER_SIZE = 56;
+
+function decodeBinaryGeometry(buffer: ArrayBuffer): GeometryResponse {
+  if (buffer.byteLength < BINARY_MESH_HEADER_SIZE) {
+    throw new Error('Binary mesh payload too small');
+  }
+
+  const view = new DataView(buffer);
+  const magic = view.getUint32(0, true);
+  if (magic !== BINARY_MESH_MAGIC) {
+    throw new Error('Unexpected binary mesh format');
+  }
+
+  const version = view.getUint8(4);
+  if (version !== 1) {
+    throw new Error(`Unsupported binary mesh version ${version}`);
+  }
+
+  const indexElementSize = view.getUint8(5);
+  const quantizationBits = view.getUint8(6);
+  if (quantizationBits !== 16) {
+    throw new Error(`Unsupported mesh quantization ${quantizationBits}`);
+  }
+
+  const vertexCount = view.getUint32(8, true);
+  const triangleCount = view.getUint32(12, true);
+  const dimensionXMm = view.getFloat32(16, true);
+  const dimensionYMm = view.getFloat32(20, true);
+  const dimensionZMm = view.getFloat32(24, true);
+  const sphereCentre = {
+    x: view.getFloat32(28, true),
+    y: view.getFloat32(32, true),
+    z: view.getFloat32(36, true),
+  };
+  const sphereRadius = view.getFloat32(40, true);
+  const positionsByteLength = view.getUint32(44, true);
+  const indexOffset = view.getUint32(48, true);
+  const indicesByteLength = view.getUint32(52, true);
+
+  const expectedPositionsByteLength = vertexCount * 3 * Uint16Array.BYTES_PER_ELEMENT;
+  if (positionsByteLength !== expectedPositionsByteLength) {
+    throw new Error('Corrupt binary mesh positions section');
+  }
+
+  if (indexOffset + indicesByteLength > buffer.byteLength) {
+    throw new Error('Corrupt binary mesh index section');
+  }
+
+  const quantized = new Uint16Array(buffer, BINARY_MESH_HEADER_SIZE, vertexCount * 3);
+  const positions = new Float32Array(vertexCount * 3);
+  const xScale = dimensionXMm === 0 ? 0 : dimensionXMm / 65535;
+  const yScale = dimensionYMm === 0 ? 0 : dimensionYMm / 65535;
+  const zScale = dimensionZMm === 0 ? 0 : dimensionZMm / 65535;
+  const minX = -dimensionXMm / 2;
+  const minZ = -dimensionZMm / 2;
+
+  for (let i = 0; i < quantized.length; i += 3) {
+    positions[i] = minX + quantized[i] * xScale;
+    positions[i + 1] = quantized[i + 1] * yScale;
+    positions[i + 2] = minZ + quantized[i + 2] * zScale;
+  }
+
+  const indexCount = triangleCount * 3;
+  let indices: Uint16Array | Uint32Array;
+  if (indexElementSize === Uint16Array.BYTES_PER_ELEMENT) {
+    if (indicesByteLength !== indexCount * Uint16Array.BYTES_PER_ELEMENT) {
+      throw new Error('Corrupt Uint16 mesh index data');
+    }
+    indices = new Uint16Array(buffer, indexOffset, indexCount);
+  } else if (indexElementSize === Uint32Array.BYTES_PER_ELEMENT) {
+    if (indicesByteLength !== indexCount * Uint32Array.BYTES_PER_ELEMENT) {
+      throw new Error('Corrupt Uint32 mesh index data');
+    }
+    indices = new Uint32Array(buffer, indexOffset, indexCount);
+  } else {
+    throw new Error(`Unsupported mesh index size ${indexElementSize}`);
+  }
+
+  return {
+    positions,
+    indices,
+    triangleCount,
+    sphereRadius,
+    sphereCentre,
+    dimensionXMm,
+    dimensionYMm,
+    dimensionZMm,
+  };
 }
 
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {

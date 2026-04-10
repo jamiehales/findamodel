@@ -106,8 +106,9 @@ function GeometryModel({
 
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    geo.computeVertexNormals();
     return geo;
   }, [data]);
 
@@ -141,7 +142,7 @@ function GeometryModel({
   return (
     <group>
       <mesh geometry={bufferGeometry}>
-        <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} flatShading />
       </mesh>
       <HullPolygon coordinates={hullCoords} color="#818cf8" />
       <HullLine coordinates={hullCoords} color="#818cf8" />

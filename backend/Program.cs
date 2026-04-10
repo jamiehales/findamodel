@@ -26,6 +26,7 @@ builder.Services.AddAuthentication("AutoAdmin")
     .AddScheme<AuthenticationSchemeOptions, AutoAdminAuthHandler>("AutoAdmin", null);
 
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
+builder.Services.AddSingleton<findamodel.Services.MeshTransferService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
 builder.Services.AddSingleton<findamodel.Services.ModelPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
@@ -54,7 +55,7 @@ ResponseCompressionOptions responseCompressionOptions = new();
 responseCompressionOptions.Providers.Add<GzipCompressionProvider>();
 responseCompressionOptions.Providers.Add<BrotliCompressionProvider>();
 responseCompressionOptions.EnableForHttps = true;
-responseCompressionOptions.MimeTypes = ["application/json", "application/3mf", "model/gltf-binary"];
+responseCompressionOptions.MimeTypes = ["application/json", "application/3mf", "model/gltf-binary", findamodel.Services.MeshTransferService.ContentType];
 
 builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
 {
