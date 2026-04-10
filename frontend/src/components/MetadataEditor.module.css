@@ -93,16 +93,20 @@
 .actions {
   display: flex;
   gap: 8px;
+  align-items: center;
   justify-content: flex-end;
   margin-top: 4px;
 }
 
+.inlineError {
+  margin-right: auto !important;
+  line-height: 1.2 !important;
+}
+
 .closeBtn {
-  text-transform: none !important;
   color: #64748b !important;
 }
 
 .saveBtn {
-  text-transform: none !important;
-  min-width: 80px !important;
+  min-width: 0 !important;
 }

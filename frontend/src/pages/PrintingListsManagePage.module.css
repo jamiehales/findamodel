@@ -75,6 +75,22 @@
   padding: 0.875rem 1rem;
   border-radius: 12px;
   flex-wrap: wrap;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.listItemClickable {
+  cursor: pointer;
+}
+
+.listItemClickable:hover {
+  transform: translateY(-1px);
+  border-color: rgba(129, 140, 248, 0.55);
+  background: rgba(99, 102, 241, 0.12);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
 
 .listItemDefault {
@@ -190,16 +206,6 @@
   color: #6366f1 !important;
 }
 
-/* Pill button base */
-.pill {
-  border-radius: 999px !important;
-  padding: 0.4rem 1rem !important;
-  font-size: 0.85rem !important;
-  font-weight: 500 !important;
-  text-transform: none !important;
-  min-width: 0 !important;
-}
-
 .pillCreate {
   background: rgba(99, 102, 241, 0.85) !important;
   color: #fff !important;
@@ -224,15 +230,6 @@
   color: #64748b !important;
 }
 
-.pillActivate {
-  color: #818cf8 !important;
-  border: 1px solid rgba(99, 102, 241, 0.3) !important;
-}
-
-.pillActivate:hover {
-  background: rgba(99, 102, 241, 0.1) !important;
-}
-
 .pillView {
   color: #94a3b8 !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -241,13 +238,4 @@
 .pillView:hover {
   background: rgba(255, 255, 255, 0.06) !important;
   color: #e2e8f0 !important;
-}
-
-.pillDelete {
-  color: #f87171 !important;
-  border: 1px solid rgba(248, 113, 113, 0.25) !important;
-}
-
-.pillDelete:hover {
-  background: rgba(248, 113, 113, 0.1) !important;
 }

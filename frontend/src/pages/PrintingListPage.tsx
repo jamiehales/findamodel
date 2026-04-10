@@ -1,7 +1,15 @@
-import { Stack, Box, Button, CircularProgress, Typography, Menu, MenuItem } from '@mui/material';
+import {
+  Stack,
+  Box,
+  Button,
+  CircularProgress,
+  Typography,
+  Menu,
+  MenuItem,
+} from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { generatePlate, type SpawnType, type HullMode } from '../lib/api';
 import {
   useModels,
@@ -11,6 +19,7 @@ import {
   useUpdatePrintingListSettings,
 } from '../lib/queries';
 import ModelCard from '../components/ModelCard';
+import ConfirmDialog from '../components/ConfirmDialog';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
 import styles from './PrintingListPage.module.css';
 
@@ -25,6 +34,7 @@ function PrintingListPage() {
   const [savingPlate, setSavingPlate] = useState(false);
   const [simulationPaused, setSimulationPaused] = useState(false);
   const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -89,6 +99,16 @@ function PrintingListPage() {
     }
   }
 
+  function handleClearList() {
+    setClearDialogOpen(true);
+  }
+
+  function handleConfirmClearList() {
+    if (!list) return;
+    clearItems(list.id);
+    setClearDialogOpen(false);
+  }
+
   return (
     <Box className={styles.page}>
       <Stack direction="column" spacing={2} alignItems="left">
@@ -96,9 +116,43 @@ function PrintingListPage() {
           <Typography component="h1" className={styles.title}>
             {listName}
           </Typography>
-          <Button component={Link} to="/printing-lists" className={styles.manageLink}>
-            Manage lists
-          </Button>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {listedModels.length > 0 && (
+              <>
+                <Box sx={{ display: 'flex' }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleSavePlate('3mf')}
+                    disabled={savingPlate || !simulationPaused}
+                    startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+                    sx={{
+                      borderRadius: '999px 0 0 999px',
+                      borderRight: 'none',
+                    }}
+                  >
+                    {savingPlate ? 'Preparing…' : 'Export plate'}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={(e) => setFormatMenuAnchor(e.currentTarget)}
+                    disabled={savingPlate || !simulationPaused}
+                    aria-label="export format options"
+                    aria-haspopup="menu"
+                    sx={{
+                      borderRadius: '0 999px 999px 0',
+                      px: '0.55rem',
+                      minWidth: 0,
+                    }}
+                  >
+                    <ArrowDropDownIcon fontSize="small" />
+                  </Button>
+                </Box>
+                <Button variant="warning" onClick={handleClearList}>
+                  Clear list
+                </Button>
+              </>
+            )}
+          </Stack>
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center">
@@ -107,68 +161,40 @@ function PrintingListPage() {
               Set active
             </Button>
           )}
-
-          {listedModels.length > 0 && (
-            <>
-              <Box className={styles.exportGroup}>
-                <Button
-                  onClick={() => handleSavePlate('3mf')}
-                  disabled={savingPlate || !simulationPaused}
-                  startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
-                  className={styles.btnExportMain}
-                >
-                  {savingPlate ? 'Preparing…' : 'Export plate'}
-                </Button>
-                <Button
-                  onClick={(e) => setFormatMenuAnchor(e.currentTarget)}
-                  disabled={savingPlate || !simulationPaused}
-                  className={styles.btnExportArrow}
-                  aria-label="export format options"
-                  aria-haspopup="menu"
-                >
-                  <ArrowDropDownIcon fontSize="small" />
-                </Button>
-              </Box>
-
-              <Menu
-                anchorEl={formatMenuAnchor}
-                open={Boolean(formatMenuAnchor)}
-                onClose={() => setFormatMenuAnchor(null)}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-              >
-                <MenuItem
-                  onClick={() => {
-                    setFormatMenuAnchor(null);
-                    handleSavePlate('3mf');
-                  }}
-                >
-                  Export as 3MF
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setFormatMenuAnchor(null);
-                    handleSavePlate('stl');
-                  }}
-                >
-                  Export as STL
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setFormatMenuAnchor(null);
-                    handleSavePlate('glb');
-                  }}
-                >
-                  Export as GLB
-                </MenuItem>
-              </Menu>
-
-              <Button onClick={() => list && clearItems(list.id)} className={styles.btnClear}>
-                Clear list
-              </Button>
-            </>
-          )}
         </Stack>
+
+        <Menu
+          anchorEl={formatMenuAnchor}
+          open={Boolean(formatMenuAnchor)}
+          onClose={() => setFormatMenuAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('3mf');
+            }}
+          >
+            Export as 3MF
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('stl');
+            }}
+          >
+            Export as STL
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('glb');
+            }}
+          >
+            Export as GLB
+          </MenuItem>
+        </Menu>
       </Stack>
 
       {isPending ? (
@@ -176,9 +202,12 @@ function PrintingListPage() {
           <CircularProgress color="primary" />
         </Box>
       ) : listedModels.length === 0 ? (
-        <Typography color="text.secondary" className={styles.emptyText}>
-          No models added yet. Browse models and use "Add to printing list" to add them here.
-        </Typography>
+        <Box className={styles.emptyState}>
+          <Typography className={styles.emptyTitle}>No models added yet</Typography>
+          <Typography color="text.secondary" className={styles.emptySubtext}>
+            Browse models and use "Add to printing list" to add them here.
+          </Typography>
+        </Box>
       ) : (
         <>
           <Box className={styles.grid}>
@@ -205,6 +234,15 @@ function PrintingListPage() {
           </Box>
         </>
       )}
+
+      <ConfirmDialog
+        open={clearDialogOpen}
+        title="Clear list?"
+        message={`Are you sure you want to clear all items from "${list?.name ?? 'this list'}"?`}
+        confirmLabel="Clear list"
+        onConfirm={handleConfirmClearList}
+        onCancel={() => setClearDialogOpen(false)}
+      />
     </Box>
   );
 }

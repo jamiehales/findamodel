@@ -64,11 +64,19 @@ function toPath(
   return 'M ' + pts.map(([x, z]) => `${x},${z}`).join(' L ') + ' Z';
 }
 
+function toPatternId(label: string): string {
+  return `grid-${label.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}`;
+}
+
 function EmptyPanel({ label }: { label: string }) {
   return (
     <Box className={styles.emptyPanel}>
-      <Typography className={styles.emptyLabel}>{label}</Typography>
-      <Typography className={styles.emptyNoData}>No data</Typography>
+      <Box className={styles.emptyPanelHeader}>
+        <Typography className={styles.panelLabel}>{label}</Typography>
+      </Box>
+      <Box className={styles.emptyNoDataWrap}>
+        <Typography className={styles.emptyNoData}>No data</Typography>
+      </Box>
     </Box>
   );
 }
@@ -82,6 +90,7 @@ interface PanelProps {
 function HullPanel({ label, layers }: PanelProps) {
   const bounds = computeBounds(layers.map((l) => l.coords));
   if (!bounds) return <EmptyPanel label={label} />;
+  const patternId = toPatternId(label);
 
   return (
     <Box className={styles.panel}>
@@ -103,11 +112,11 @@ function HullPanel({ label, layers }: PanelProps) {
         style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }}
       >
         <defs>
-          <pattern id={`grid-${label}`} width="20" height="20" patternUnits="userSpaceOnUse">
+          <pattern id={patternId} width="20" height="20" patternUnits="userSpaceOnUse">
             <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#3a4559" strokeWidth="0.5" />
           </pattern>
         </defs>
-        <rect width={SVG_SIZE} height={SVG_SIZE} fill={`url(#grid-${label})`} />
+        <rect width={SVG_SIZE} height={SVG_SIZE} fill={`url(#${patternId})`} />
 
         {layers.map((l, i) => (
           <g key={i}>

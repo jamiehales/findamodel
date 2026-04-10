@@ -29,7 +29,7 @@
   margin-right: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
@@ -44,14 +44,39 @@
   gap: 0.375rem;
 }
 
+.headerMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tagRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .fileTypeBadge {
-  align-self: flex-start;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 0.25rem 0.625rem;
   border-radius: 4px;
-  margin-bottom: 0.25rem;
+}
+
+.fileSizeInline {
+  font-size: 0.8rem !important;
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
 }
 
 .modelTitle {
@@ -73,19 +98,10 @@
   color: #475569 !important;
 }
 
-.addToListBtn {
-  border-radius: 12px !important;
-  padding: 0.875rem !important;
-  font-size: 0.95rem !important;
-  font-weight: 600 !important;
-  text-transform: none !important;
-  border-color: rgba(99, 102, 241, 0.5) !important;
-  color: #818cf8 !important;
-}
-
-.addToListBtn:hover {
-  border-color: #818cf8 !important;
-  background: rgba(99, 102, 241, 0.08) !important;
+.actionIconBtn {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px !important;
 }
 
 .qtyControl {

@@ -14,31 +14,12 @@
   }
 }
 
-.breadcrumbWrapper {
+.headerRow {
   margin-bottom: 0.75rem;
-}
-
-.metaAccordion {
-  margin-bottom: 1.5rem !important;
-  border: 1px solid rgba(99, 102, 241, 0.2) !important;
-  border-radius: 8px !important;
-  background: rgba(15, 23, 42, 0.4) !important;
-  box-shadow: none !important;
-  max-width: 900px !important;
-  align-self: center;
-  width: 100%;
-}
-
-.metaAccordion::before {
-  display: none !important;
-}
-
-.metaAccordionSummary {
-  min-height: 40px !important;
-}
-
-.metaAccordionDetails {
-  padding: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .grid {

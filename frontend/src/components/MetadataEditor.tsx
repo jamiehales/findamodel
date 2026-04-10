@@ -12,14 +12,11 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
 import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries';
 import { ConfigValidationError } from '../lib/api';
 import type { MetadataFields } from '../lib/api';
+import AppDialog from './AppDialog';
 import styles from './MetadataEditor.module.css';
 
 type FieldMode = 'value' | 'rule';
@@ -169,9 +166,20 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
   );
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth scroll="paper">
-      <DialogTitle sx={{ pb: 1 }}>Rules System</DialogTitle>
-      <DialogContent dividers>
+    <AppDialog
+      open={open}
+      onClose={onClose}
+      title="Rules System"
+      maxWidth="sm"
+      fullWidth
+      scroll="paper"
+      contentDividers
+      actions={
+        <Button size="small" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
         {para(
           "Rules let you automatically derive a field's value from each model's file path, rather than setting a fixed value. Rules defined on a folder are inherited by all subfolders and models within it.",
         )}
@@ -284,13 +292,7 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
         {para(
           'If a folder has a plain value set for a field, that value takes precedence over any inherited rule.',
         )}
-      </DialogContent>
-      <DialogActions>
-        <Button size="small" onClick={onClose}>
-          Close
-        </Button>
-      </DialogActions>
-    </Dialog>
+    </AppDialog>
   );
 }
 
@@ -440,9 +442,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
   return (
     <Box className={styles.form}>
       <RulesHelpDialog open={rulesHelpOpen} onClose={() => setRulesHelpOpen(false)} />
-      <Typography variant="subtitle2" color="text.secondary" className={styles.sectionLabel}>
-        Metadata — local values override inherited ones
-      </Typography>
 
       {FIELDS.map((field) => {
         const isRuleMode = fieldModes[field.yamlName] === 'rule';
@@ -612,13 +611,17 @@ export default function MetadataEditor({ path, onClose }: Props) {
       })}
 
       <Box className={styles.actions}>
+        {mutation.isError && (
+          <Typography variant="caption" color="error.main" className={styles.inlineError}>
+            Failed to save — please try again.
+          </Typography>
+        )}
         {onClose && (
-          <Button size="small" onClick={onClose} className={styles.closeBtn}>
+          <Button onClick={onClose} variant="outlined" color="inherit" className={styles.closeBtn}>
             Close
           </Button>
         )}
         <Button
-          size="small"
           variant="contained"
           onClick={() => doSave(fields)}
           disabled={mutation.isPending || hasValidationErrors()}
@@ -633,12 +636,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
           )}
         </Button>
       </Box>
-
-      {mutation.isError && (
-        <Typography variant="caption" color="error.main">
-          Failed to save — please try again.
-        </Typography>
-      )}
     </Box>
   );
 }

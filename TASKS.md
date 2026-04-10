@@ -35,3 +35,5 @@
 * Potentially investigate some sort of model simplification algorithm?
 
 * Determine the feasibility of rendering supports transparently
+
+* Show the edit metadata in a mui dialog instead of in a dynamically generated dropdown. The width should be max of about 600px wide, min of 400?

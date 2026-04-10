@@ -27,6 +27,7 @@ function ModelCard({ model, href, showControls = true }: ModelCardProps) {
   return (
     <AppCard
       href={href}
+      interactive
       className={styles.card}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

@@ -1045,7 +1045,7 @@ export default function PrintingListCanvas({
         style={{
           width: CANVAS_WIDTH_PX,
           height: CANVAS_HEIGHT_PX,
-          borderRadius: 12,
+          borderRadius: 0,
           overflow: 'hidden',
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
           cursor: 'default',

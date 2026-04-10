@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import type { ExplorerFolder } from '../lib/api';
+import AppDialog from './AppDialog';
 import MetadataEditor from './MetadataEditor';
 import AppCard from './AppCard';
 import styles from './FolderCard.module.css';
@@ -87,7 +87,7 @@ export default function FolderCard({ folder, href }: Props) {
   return (
     <Box className={styles.wrapper}>
       {/* Card face */}
-      <AppCard href={href} className={styles.card}>
+      <AppCard href={href} interactive className={styles.card}>
         {/* Index button — enqueues model indexing for this folder */}
         <Tooltip
           title={
@@ -99,7 +99,7 @@ export default function FolderCard({ folder, href }: Props) {
           }
           placement="top"
         >
-          <span>
+          <span className={styles.indexBtnWrap}>
             <IconButton
               size="medium"
               className={`${styles.indexBtn}${indexingState === 'queued' ? ` ${styles.indexBtnQueued}` : ''}`}
@@ -129,7 +129,7 @@ export default function FolderCard({ folder, href }: Props) {
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setEditorOpen((v) => !v);
+              setEditorOpen(true);
             }}
           >
             {/* Pencil icon (SVG inline) */}
@@ -209,12 +209,15 @@ export default function FolderCard({ folder, href }: Props) {
         </Stack>
       </AppCard>
 
-      {/* Collapsible metadata editor */}
-      <Collapse in={editorOpen} unmountOnExit>
-        <Box className={styles.metaEditorWrapper}>
-          <MetadataEditor path={folder.path} onClose={() => setEditorOpen(false)} />
-        </Box>
-      </Collapse>
+      <AppDialog
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title="Edit metadata"
+        maxWidth="md"
+        fullWidth
+      >
+        <MetadataEditor path={folder.path} onClose={() => setEditorOpen(false)} />
+      </AppDialog>
     </Box>
   );
 }

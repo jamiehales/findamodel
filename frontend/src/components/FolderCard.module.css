@@ -11,22 +11,26 @@
   justify-content: center;
   gap: 6px;
   padding: 16px 8px 14px;
-  background: #1e293b;
-  border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 8px;
   transition:
     transform 120ms ease,
-    box-shadow 120ms ease,
-    border-color 120ms ease,
-    background 120ms ease;
+    box-shadow 120ms ease;
   min-height: 160px;
   width: 100%;
   box-sizing: border-box;
+  z-index: 0;
 }
 
-.card:hover {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: #243049;
+.card> :not(.editBtn):not(.indexBtnWrap) {
+  position: relative;
+  z-index: 2;
+}
+
+.indexBtnWrap {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 3;
 }
 
 .editBtn {
@@ -50,9 +54,6 @@
 }
 
 .indexBtn {
-  position: absolute !important;
-  top: 4px;
-  left: 4px;
   padding: 8px !important;
   color: rgba(226, 232, 240, 0.5) !important;
   min-width: 44px !important;
@@ -135,13 +136,6 @@
 
 .metaBadgeUnset {
   background-color: rgba(0, 0, 0, 0.1);
-}
-
-.metaEditorWrapper {
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  border-top: none;
-  border-radius: 0 0 8px 8px;
-  background-color: rgba(15, 23, 42, 0.8);
 }
 
 .name {

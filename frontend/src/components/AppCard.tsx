@@ -8,6 +8,7 @@ interface AppCardProps {
   children: React.ReactNode;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  interactive?: boolean;
 }
 
 export default function AppCard({
@@ -16,8 +17,9 @@ export default function AppCard({
   children,
   onMouseEnter,
   onMouseLeave,
+  interactive = false,
 }: AppCardProps) {
-  const combinedClass = `${styles.base}${className ? ` ${className}` : ''}`;
+  const combinedClass = `${styles.base}${interactive ? ` ${styles.interactiveSurface}` : ''}${className ? ` ${className}` : ''}`;
 
   if (!href) {
     return (

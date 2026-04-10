@@ -3,7 +3,6 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
 import { useModels, useQueryModels } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import ModelCard from './ModelCard';
@@ -24,7 +23,6 @@ function FilteredGrid({ filter }: { filter: ModelFilter }) {
 
   return (
     <Box className={styles.container}>
-      <Typography variant="section-label">Models</Typography>
       <Box className={styles.grid}>
         {data.models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
@@ -49,7 +47,6 @@ function UnfilteredGrid() {
 
   return (
     <Box className={styles.container}>
-      <Typography variant="section-label">Models</Typography>
       <Box className={styles.grid}>
         {models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
@@ -62,7 +59,6 @@ function UnfilteredGrid() {
 function LoadingState() {
   return (
     <Box className={styles.container}>
-      <Typography variant="section-label">Models</Typography>
       <Box className={styles.loadingCenter}>
         <CircularProgress color="primary" />
       </Box>

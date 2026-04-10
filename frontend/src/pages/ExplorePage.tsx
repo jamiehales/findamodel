@@ -1,12 +1,11 @@
 import Box from '@mui/material/Box';
-import Accordion from '@mui/material/Accordion';
-import AccordionSummary from '@mui/material/AccordionSummary';
-import AccordionDetails from '@mui/material/AccordionDetails';
+import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Typography from '@mui/material/Typography';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useExplorer } from '../lib/queries';
+import AppDialog from '../components/AppDialog';
 import FolderCard from '../components/FolderCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
 import MetadataEditor from '../components/MetadataEditor';
@@ -74,23 +73,28 @@ function ExplorePageInner({ path }: { path: string }) {
 export default function ExplorePage() {
   const params = useParams();
   const path = params['*'] ?? '';
+  const [metadataOpen, setMetadataOpen] = useState(false);
 
   return (
     <Box className={styles.page}>
-      <Box className={styles.breadcrumbWrapper}>
+      <Box className={styles.headerRow}>
         <PathBreadcrumb path={path} />
+        <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
+          Edit metadata
+        </Button>
       </Box>
 
-      <Accordion className={styles.metaAccordion} disableGutters>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />} className={styles.metaAccordionSummary}>
-          <Typography variant="body2">Edit metadata</Typography>
-        </AccordionSummary>
-        <AccordionDetails className={styles.metaAccordionDetails}>
-          <MetadataEditor path={path} />
-        </AccordionDetails>
-      </Accordion>
-
       <ExplorePageInner path={path} />
+
+      <AppDialog
+        open={metadataOpen}
+        onClose={() => setMetadataOpen(false)}
+        title="Edit metadata"
+        maxWidth="md"
+        fullWidth
+      >
+        <MetadataEditor path={path} onClose={() => setMetadataOpen(false)} />
+      </AppDialog>
     </Box>
   );
 }

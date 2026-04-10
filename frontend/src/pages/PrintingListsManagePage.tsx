@@ -12,6 +12,7 @@ import {
   useDeletePrintingList,
   useActivatePrintingList,
 } from '../lib/queries';
+import ConfirmDialog from '../components/ConfirmDialog';
 import styles from './PrintingListsManagePage.module.css';
 
 function PrintingListsManagePage() {
@@ -25,6 +26,7 @@ function PrintingListsManagePage() {
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +46,16 @@ function PrintingListsManagePage() {
     renameList.mutate({ id, name }, { onSuccess: () => setEditingId(null) });
   }
 
+  function handleDelete(id: string, name: string) {
+    setDeleteTarget({ id, name });
+  }
+
+  function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    deleteList.mutate(deleteTarget.id);
+    setDeleteTarget(null);
+  }
+
   return (
     <Box className={styles.page}>
       <Typography component="h1" className={styles.title}>
@@ -60,10 +72,11 @@ function PrintingListsManagePage() {
           className={styles.createTextField}
         />
         <Button
+          variant="contained"
           type="submit"
           disabled={!newName.trim() || createList.isPending}
           startIcon={createList.isPending ? <CircularProgress size={14} color="inherit" /> : null}
-          className={`${styles.pill} ${styles.pillCreate}`}
+          className={styles.pillCreate}
         >
           Create
         </Button>
@@ -81,7 +94,13 @@ function PrintingListsManagePage() {
           {lists.map((list) => (
             <Box
               key={list.id}
-              className={`${styles.listItem} ${list.isActive ? styles.listItemActive : styles.listItemDefault}`}
+              className={`${styles.listItem} ${list.isActive ? styles.listItemActive : styles.listItemDefault} ${!list.isActive && editingId !== list.id ? styles.listItemClickable : ''}`}
+              onClick={() => {
+                if (editingId === list.id) return;
+                if (list.isActive) return;
+                if (activateList.isPending) return;
+                activateList.mutate(list.id);
+              }}
             >
               {/* Name / rename */}
               <Box className={styles.listItemName}>
@@ -92,6 +111,7 @@ function PrintingListsManagePage() {
                       e.preventDefault();
                       handleRename(list.id);
                     }}
+                    onClick={(e) => e.stopPropagation()}
                     className={styles.editForm}
                   >
                     <TextField
@@ -105,17 +125,19 @@ function PrintingListsManagePage() {
                       className={styles.editTextField}
                     />
                     <Button
+                      variant="contained"
                       type="submit"
                       size="small"
                       disabled={renameList.isPending}
-                      className={`${styles.pill} ${styles.pillSave}`}
+                      className={styles.pillSave}
                     >
                       Save
                     </Button>
                     <Button
+                      variant="contained"
                       size="small"
                       onClick={() => setEditingId(null)}
-                      className={`${styles.pill} ${styles.pillCancel}`}
+                      className={styles.pillCancel}
                     >
                       Cancel
                     </Button>
@@ -124,7 +146,8 @@ function PrintingListsManagePage() {
                   <Box className={styles.nameMeta}>
                     <Typography
                       className={`${styles.nameText} ${list.isActive ? styles.nameTextActive : styles.nameTextDefault}${!list.isDefault ? ` ${styles.nameTextClickable}` : ''}`}
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (!list.isDefault) startEdit(list.id, list.name);
                       }}
                     >
@@ -146,42 +169,41 @@ function PrintingListsManagePage() {
 
               {/* Actions */}
               {editingId !== list.id && (
-                <Box className={styles.actions}>
-                  {!list.isActive && (
-                    <Button
-                      size="small"
-                      disabled={activateList.isPending}
-                      onClick={() => activateList.mutate(list.id)}
-                      className={`${styles.pill} ${styles.pillActivate}`}
-                    >
-                      Set active
-                    </Button>
-                  )}
-                  {list.itemCount > 0 && (
-                    <Button
-                      size="small"
-                      onClick={() => navigate(`/printing-list/${list.id}`)}
-                      className={`${styles.pill} ${styles.pillView}`}
-                    >
-                      View
-                    </Button>
-                  )}
+                <Box className={styles.actions} onClick={(e) => e.stopPropagation()}>
                   {!list.isDefault && (
                     <Button
+                      variant="warning"
                       size="small"
                       disabled={deleteList.isPending}
-                      onClick={() => deleteList.mutate(list.id)}
-                      className={`${styles.pill} ${styles.pillDelete}`}
+                      onClick={() => handleDelete(list.id, list.name)}
                     >
                       Delete
                     </Button>
                   )}
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => navigate(`/printing-list/${list.id}`)}
+                    className={styles.pillView}
+                  >
+                    View
+                  </Button>
                 </Box>
               )}
             </Box>
           ))}
         </Box>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete printing list?"
+        message={`Are you sure you want to delete "${deleteTarget?.name ?? ''}"?`}
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+        pending={deleteList.isPending}
+      />
     </Box>
   );
 }

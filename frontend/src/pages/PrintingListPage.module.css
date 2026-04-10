@@ -15,24 +15,6 @@
   }
 }
 
-.manageLink {
-  border-radius: 999px !important;
-  padding: 0.4rem 1rem !important;
-  font-size: 0.8rem !important;
-  font-weight: 500 !important;
-  text-transform: none !important;
-  color: #94a3b8 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  white-space: nowrap;
-  flex-shrink: 0;
-  text-decoration: none !important;
-}
-
-.manageLink:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #e2e8f0 !important;
-}
-
 .canvasWrapper {
   align-self: center;
 }
@@ -69,71 +51,6 @@
   color: #e2e8f0 !important;
 }
 
-.exportGroup {
-  display: flex;
-}
-
-.btnExportMain {
-  background: rgba(99, 102, 241, 0.85) !important;
-  backdrop-filter: blur(8px);
-  color: #fff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.22) !important;
-  border-radius: 999px 0 0 999px !important;
-  padding: 0.5rem 1.25rem !important;
-  font-size: 0.9rem !important;
-  font-weight: 600 !important;
-  text-transform: none !important;
-  min-width: 0 !important;
-}
-
-.btnExportMain:hover {
-  background: rgba(79, 82, 211, 0.9) !important;
-}
-
-.btnExportMain.Mui-disabled {
-  background: rgba(99, 102, 241, 0.4) !important;
-  color: rgba(255, 255, 255, 0.6) !important;
-}
-
-.btnExportArrow {
-  background: rgba(99, 102, 241, 0.85) !important;
-  backdrop-filter: blur(8px);
-  color: #fff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-left: none !important;
-  border-radius: 0 999px 999px 0 !important;
-  padding: 0.5rem 0.55rem !important;
-  min-width: 0 !important;
-}
-
-.btnExportArrow:hover {
-  background: rgba(79, 82, 211, 0.9) !important;
-}
-
-.btnExportArrow.Mui-disabled {
-  background: rgba(99, 102, 241, 0.4) !important;
-  color: rgba(255, 255, 255, 0.6) !important;
-}
-
-.btnClear {
-  background: rgba(255, 255, 255, 0.06) !important;
-  backdrop-filter: blur(8px);
-  color: #94a3b8 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 999px !important;
-  padding: 0.5rem 1.25rem !important;
-  font-size: 0.9rem !important;
-  font-weight: 500 !important;
-  text-transform: none !important;
-  min-width: 0 !important;
-}
-
-.btnClear:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #e2e8f0 !important;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -148,4 +65,28 @@
 
 .emptyText {
   font-size: 1rem !important;
+}
+
+.emptyState {
+  flex: 1;
+  min-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+}
+
+.emptyTitle {
+  font-size: 2rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  color: #f1f5f9 !important;
+  line-height: 1.15 !important;
+}
+
+.emptySubtext {
+  font-size: 1rem !important;
+  max-width: 50ch;
 }

@@ -44,12 +44,11 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             query = query.Where(l => l.OwnerId == userId);
 
         return await query
-            .OrderByDescending(l => l.IsActive)
-            .ThenBy(l => l.CreatedAt)
+            .OrderByDescending(l => l.CreatedAt)
             .Select(l => new PrintingListSummaryDto(
                 l.Id, l.Name, l.IsActive, l.IsDefault, l.SpawnType, l.HullMode, l.CreatedAt,
                 l.Owner.Username,
-                l.Items.Count))
+                l.Items.Sum(i => i.Quantity)))
             .ToListAsync();
     }
 
@@ -115,7 +114,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         list.Name = name;
         await db.SaveChangesAsync();
         return (PrintingListMutateResult.Success,
-            new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.SpawnType, list.HullMode, list.CreatedAt, list.Owner.Username, list.Items.Count));
+            new PrintingListSummaryDto(list.Id, list.Name, list.IsActive, list.IsDefault, list.SpawnType, list.HullMode, list.CreatedAt, list.Owner.Username, list.Items.Sum(i => i.Quantity)));
     }
 
     public async Task<PrintingListDetailDto?> UpdateSettingsAsync(

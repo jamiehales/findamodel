@@ -76,3 +76,34 @@
   color: #818cf8;
   line-height: 1;
 }
+
+.printingGroup {
+  display: inline-flex;
+  align-items: center;
+}
+
+.printingGroup:hover .navLink {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.printingOpen .navLink {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.printingMenuPaper {
+  margin-top: 4px;
+  background: rgba(15, 23, 42, 0.96) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+  box-shadow: none !important;
+}
+
+.printingManageItem {
+  white-space: nowrap;
+  color: #e2e8f0 !important;
+}
+
+.printingManageItem:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}

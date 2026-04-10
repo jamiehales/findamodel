@@ -18,6 +18,7 @@ declare module '@mui/material/Typography' {
 declare module '@mui/material/Button' {
   interface ButtonPropsVariantOverrides {
     back: true;
+    warning: true;
   }
 }
 
@@ -126,6 +127,30 @@ const theme = createTheme({
       ],
     },
     MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: '999px',
+          padding: '0.4rem 1rem',
+          fontSize: '0.85rem',
+          fontWeight: 500,
+          textTransform: 'none',
+          minWidth: 0,
+        },
+        contained: {
+          color: '#94a3b8',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backgroundColor: 'transparent',
+          boxShadow: 'none',
+          '&:hover': {
+            backgroundColor: 'rgba(255, 255, 255, 0.06)',
+            color: '#e2e8f0',
+            boxShadow: 'none',
+          },
+        },
+      },
       variants: [
         {
           props: { variant: 'back' },
@@ -148,7 +173,68 @@ const theme = createTheme({
             '&:active': { background: 'rgba(30,41,59,0.9)' },
           },
         },
+        {
+          props: { variant: 'warning' },
+          style: {
+            borderRadius: '999px',
+            padding: '0.4rem 1rem',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            textTransform: 'none',
+            minWidth: 0,
+            color: '#f87171',
+            border: '1px solid rgba(248, 113, 113, 0.25)',
+            backgroundColor: 'transparent',
+            '&:hover': {
+              backgroundColor: 'rgba(248, 113, 113, 0.1)',
+            },
+          },
+        },
       ],
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: '#070b14',
+          border: '1px solid rgba(99, 102, 241, 0.25)',
+        },
+      },
+    },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          padding: '0.875rem 1rem',
+          color: '#f8fafc',
+        },
+      },
+    },
+    MuiDialogContent: {
+      styleOverrides: {
+        root: {
+          padding: '0.875rem 1rem',
+          color: '#e2e8f0',
+        },
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          padding: '0.875rem 1rem',
+          gap: '4px',
+          '& .MuiButton-root': {
+            borderRadius: '999px',
+            textTransform: 'none',
+          },
+          '& .MuiButton-outlined': {
+            borderColor: 'rgba(148, 163, 184, 0.65)',
+            color: '#e2e8f0',
+          },
+          '& .MuiButton-outlined:hover': {
+            borderColor: 'rgba(226, 232, 240, 0.9)',
+            backgroundColor: 'rgba(148, 163, 184, 0.12)',
+          },
+        },
+      },
     },
   },
 });

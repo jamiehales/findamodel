@@ -122,6 +122,7 @@ export default function ExplorerModelCard({ model, href }: Props) {
   return (
     <AppCard
       href={href}
+      interactive
       className={`${styles.card}${!isIndexed ? ` ${styles.cardUnindexed}` : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
