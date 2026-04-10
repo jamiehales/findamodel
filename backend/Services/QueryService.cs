@@ -72,7 +72,7 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
                 ConvexHull         = m.ConvexHullCoordinates,
                 ConcaveHull        = m.ConcaveHullCoordinates,
                 ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-                RaftOffsetMm       = HullCalculationService.RaftOffset,
+                RaftOffsetMm       = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
                 DimensionXMm  = m.DimensionXMm,
                 DimensionYMm  = m.DimensionYMm,
                 DimensionZMm  = m.DimensionZMm,

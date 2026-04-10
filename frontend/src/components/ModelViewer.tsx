@@ -36,17 +36,12 @@ function HullLine({ coordinates, color, yOffset = 0 }: HullLineProps) {
   if (!coordinates || coordinates.length < 2) return null
 
   const points = coordinates.map(([x, z]) => new THREE.Vector3(x, yOffset, z))
-  // Close the polygon if not already closed
-  if (points[0].distanceTo(points[points.length - 1]) > 0.001) {
-    points.push(points[0].clone())
-  }
-
   const geometry = new THREE.BufferGeometry().setFromPoints(points)
 
   return (
-    <lineSegments geometry={geometry} position={[0, 0.01, 0]}>
+    <lineLoop geometry={geometry} position={[0, 0.01, 0]}>
       <lineBasicMaterial color={color} />
-    </lineSegments>
+    </lineLoop>
   )
 }
 
@@ -90,11 +85,12 @@ interface GeometryModelProps {
   modelId: string
   color: string
   convexHull: string | null
+  concaveHull: string | null
   convexSansRaftHull: string | null
   raftOffsetMm: number
 }
 
-function GeometryModel({ modelId, color, convexHull, convexSansRaftHull, raftOffsetMm }: GeometryModelProps) {
+function GeometryModel({ modelId, color, convexHull, concaveHull, convexSansRaftHull, raftOffsetMm }: GeometryModelProps) {
   const { data } = useGeometry(modelId)
 
   const bufferGeometry = useMemo(() => {
@@ -116,6 +112,12 @@ function GeometryModel({ modelId, color, convexHull, convexSansRaftHull, raftOff
     catch { return null }
   }, [convexSansRaftHull])
 
+  const concaveCoords = useMemo((): Array<[number, number]> | null => {
+    if (!concaveHull) return null
+    try { return JSON.parse(concaveHull) }
+    catch { return null }
+  }, [concaveHull])
+
   return (
     <group>
       <mesh geometry={bufferGeometry}>
@@ -123,6 +125,8 @@ function GeometryModel({ modelId, color, convexHull, convexSansRaftHull, raftOff
       </mesh>
       <HullPolygon coordinates={hullCoords} color="#818cf8" />
       <HullLine coordinates={hullCoords} color="#818cf8" />
+      <HullPolygon coordinates={concaveCoords} color="#34d399" yOffset={0.02} opacity={0.22} />
+      <HullLine coordinates={concaveCoords} color="#34d399" yOffset={0.02} />
       <HullPolygon coordinates={sansRaftCoords} color="#f59e0b" yOffset={raftOffsetMm} opacity={0.18} />
       <HullLine coordinates={sansRaftCoords} color="#f59e0b" yOffset={raftOffsetMm} />
     </group>
@@ -152,10 +156,11 @@ interface ModelViewerProps {
   modelId: string
   fileType: string   // used for accent colour only
   convexHull?: string | null
+  concaveHull?: string | null
   convexSansRaftHull?: string | null
 }
 
-export default function ModelViewer({ modelId, fileType, convexHull, convexSansRaftHull }: ModelViewerProps) {
+export default function ModelViewer({ modelId, fileType, convexHull, concaveHull, convexSansRaftHull }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId)
   const color = ACCENT[fileType.toLowerCase()] ?? '#94a3b8'
 
@@ -211,7 +216,14 @@ export default function ModelViewer({ modelId, fileType, convexHull, convexSansR
             </Html>
           }
         >
-          <GeometryModel modelId={modelId} color={color} convexHull={convexHull ?? null} convexSansRaftHull={convexSansRaftHull ?? null} raftOffsetMm={model.raftOffsetMm} />
+          <GeometryModel
+            modelId={modelId}
+            color={color}
+            convexHull={convexHull ?? null}
+            concaveHull={concaveHull ?? null}
+            convexSansRaftHull={convexSansRaftHull ?? null}
+            raftOffsetMm={model.raftOffsetMm}
+          />
         </React.Suspense>
         <OrbitControls
           target={orbitTarget}

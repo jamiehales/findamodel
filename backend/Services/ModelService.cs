@@ -44,7 +44,7 @@ public class ModelService(
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm = HullCalculationService.RaftOffset,
+            RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
             DimensionXMm  = m.DimensionXMm,
             DimensionYMm  = m.DimensionYMm,
             DimensionZMm  = m.DimensionZMm,
@@ -84,6 +84,7 @@ public class ModelService(
                 m.ConvexHullCoordinates,
                 m.ConcaveHullCoordinates,
                 m.ConvexSansRaftHullCoordinates,
+                m.HullRaftOffsetMm,
                 m.DimensionXMm,
                 m.DimensionYMm,
                 m.DimensionZMm,
@@ -115,7 +116,7 @@ public class ModelService(
             ConvexHull         = m.ConvexHullCoordinates,
             ConcaveHull        = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm       = HullCalculationService.RaftOffset,
+            RaftOffsetMm       = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
             DimensionXMm       = m.DimensionXMm,
             DimensionYMm  = m.DimensionYMm,
             DimensionZMm  = m.DimensionZMm,
@@ -176,9 +177,9 @@ public class ModelService(
         // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
         var existingModels = (await db.Models
-            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum })
+            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.HullGenerationVersion, m.HullRaftOffsetMm })
             .ToListAsync())
-            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum));
+            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.HullGenerationVersion, m.HullRaftOffsetMm));
 
         var newCount = 0;
         var updatedCount = 0;
@@ -193,15 +194,31 @@ public class ModelService(
             if (existingModels.TryGetValue((directory, fileName), out var existingEntry))
             {
                 var currentChecksum = await ComputeChecksumAsync(file);
-                if (currentChecksum == existingEntry.Checksum) continue;
-
-                logger.LogInformation("Model content changed, updating: {FilePath}", file);
+                var hullMetadataMismatch = NeedsHullRegeneration(existingEntry.HullGenerationVersion, existingEntry.HullRaftOffsetMm);
+                if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch) continue;
 
                 var entity = await db.Models.FindAsync(existingEntry.Id);
                 if (entity == null) continue;
 
-                var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum);
-                ApplyFileData(entity, data, info);
+                if (currentChecksum != existingEntry.Checksum)
+                {
+                    logger.LogInformation("Model content changed, updating: {FilePath}", file);
+                    var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum);
+                    ApplyFileData(entity, data, info);
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Hull metadata mismatch detected, regenerating hulls for: {FilePath} (stored version: {StoredVersion}, stored raft offset: {StoredRaftOffset})",
+                        file,
+                        entity.HullGenerationVersion,
+                        entity.HullRaftOffsetMm);
+                    await RefreshHullDataAsync(entity, file, fileType);
+                    entity.CachedAt = DateTime.UtcNow;
+                    entity.FileModifiedAt = info.LastWriteTimeUtc;
+                    entity.FileSize = info.Length;
+                }
+
                 await db.SaveChangesAsync();
                 updatedCount++;
                 continue;
@@ -224,7 +241,11 @@ public class ModelService(
             ApplyFileData(newEntity, newData, info);
             db.Models.Add(newEntity);
             await db.SaveChangesAsync();
-            existingModels[(directory, fileName)] = (newEntity.Id, newData.Checksum);
+            existingModels[(directory, fileName)] = (
+                newEntity.Id,
+                newData.Checksum,
+                newEntity.HullGenerationVersion,
+                newEntity.HullRaftOffsetMm);
             newCount++;
         }
 
@@ -288,18 +309,25 @@ public class ModelService(
             .FirstOrDefaultAsync(m => m.Directory == directory && m.FileName == fileName);
 
         var checksum = await ComputeChecksumAsync(fullPath);
-        if (existing is not null && existing.Checksum == checksum)
+        if (existing is not null
+            && existing.Checksum == checksum
+            && !NeedsHullRegeneration(existing.HullGenerationVersion, existing.HullRaftOffsetMm))
             return false;
 
-        if (existing is not null)
+        if (existing is not null && existing.Checksum != checksum)
             logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
+        else if (existing is not null)
+            logger.LogInformation(
+                "Single-model index refreshing hulls due to metadata mismatch: {FilePath} (stored version: {StoredVersion}, stored raft offset: {StoredRaftOffset})",
+                fullPath,
+                existing.HullGenerationVersion,
+                existing.HullRaftOffsetMm);
         else
             logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
 
-        var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum);
-
         if (existing is null)
         {
+            var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum);
             existing = new CachedModel
             {
                 Id = Guid.NewGuid(),
@@ -313,9 +341,23 @@ public class ModelService(
         }
         else
         {
-            existing.FileType = fileType;
-            existing.DirectoryConfigId = data.DirConfig?.Id;
-            ApplyFileData(existing, data, info);
+            if (existing.Checksum != checksum)
+            {
+                var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum);
+                existing.FileType = fileType;
+                existing.DirectoryConfigId = data.DirConfig?.Id;
+                ApplyFileData(existing, data, info);
+            }
+            else
+            {
+                existing.FileType = fileType;
+                if (directoryConfigs.TryGetValue(directory, out var dirConfig))
+                    existing.DirectoryConfigId = dirConfig.Id;
+                await RefreshHullDataAsync(existing, fullPath, fileType);
+                existing.CachedAt = DateTime.UtcNow;
+                existing.FileModifiedAt = info.LastWriteTimeUtc;
+                existing.FileSize = info.Length;
+            }
         }
 
         await db.SaveChangesAsync();
@@ -328,10 +370,11 @@ public class ModelService(
         var source = await db.Models.FirstOrDefaultAsync(m => m.Id == id);
         if (source == null) return [];
 
-        if (string.IsNullOrWhiteSpace(source.CalculatedCreator)
-            || string.IsNullOrWhiteSpace(source.CalculatedCollection)
-            || string.IsNullOrWhiteSpace(source.CalculatedSubcollection))
+        if (string.IsNullOrWhiteSpace(source.CalculatedCreator))
             return [];
+
+        var sourceCollection = NormalizePartGrouping(source.CalculatedCollection);
+        var sourceSubcollection = NormalizePartGrouping(source.CalculatedSubcollection);
 
         var sourceName = string.IsNullOrWhiteSpace(source.CalculatedModelName)
             ? Path.GetFileNameWithoutExtension(source.FileName)
@@ -339,20 +382,20 @@ public class ModelService(
 
         var candidates = await db.Models
             .Where(m => m.Id != id
-                        && m.CalculatedCreator == source.CalculatedCreator
-                        && m.CalculatedCollection == source.CalculatedCollection
-                        && m.CalculatedSubcollection == source.CalculatedSubcollection)
+                        && m.CalculatedCreator == source.CalculatedCreator)
             .OrderBy(m => m.Directory)
             .ThenBy(m => m.FileName)
             .ToListAsync();
 
         return candidates
-            .Where(m => string.Equals(
-                string.IsNullOrWhiteSpace(m.CalculatedModelName)
-                    ? Path.GetFileNameWithoutExtension(m.FileName)
-                    : m.CalculatedModelName,
-                sourceName,
-                StringComparison.OrdinalIgnoreCase))
+            .Where(m => NormalizePartGrouping(m.CalculatedCollection) == sourceCollection
+                        && NormalizePartGrouping(m.CalculatedSubcollection) == sourceSubcollection
+                        && string.Equals(
+                            string.IsNullOrWhiteSpace(m.CalculatedModelName)
+                                ? Path.GetFileNameWithoutExtension(m.FileName)
+                                : m.CalculatedModelName,
+                            sourceName,
+                            StringComparison.OrdinalIgnoreCase))
             .Select(m => new RelatedModelDto(
                 m.Id,
                 m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
@@ -362,6 +405,9 @@ public class ModelService(
                 m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null))
             .ToList();
     }
+
+    private static string NormalizePartGrouping(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
     private sealed record ModelFileData(
         string Checksum,
@@ -399,10 +445,7 @@ public class ModelService(
         entity.CachedAt                      = DateTime.UtcNow;
         entity.PreviewImagePath              = d.PreviewImagePath;
         entity.PreviewGeneratedAt            = d.PreviewImagePath != null ? DateTime.UtcNow : null;
-        entity.ConvexHullCoordinates         = d.ConvexHull;
-        entity.ConcaveHullCoordinates        = d.ConcaveHull;
-        entity.ConvexSansRaftHullCoordinates = d.ConvexSansRaftHull;
-        entity.HullGeneratedAt               = d.ConvexHull != null || d.ConcaveHull != null || d.ConvexSansRaftHull != null ? DateTime.UtcNow : null;
+        ApplyHullData(entity, d.ConvexHull, d.ConcaveHull, d.ConvexSansRaftHull, d.Geometry is not null);
         entity.CalculatedCreator             = d.Metadata.Creator;
         entity.CalculatedCollection          = d.Metadata.Collection;
         entity.CalculatedSubcollection       = d.Metadata.Subcollection;
@@ -419,6 +462,39 @@ public class ModelService(
         entity.SphereRadius                  = d.Geometry?.SphereRadius;
         entity.GeometryCalculatedAt          = d.Geometry is not null ? DateTime.UtcNow : null;
     }
+
+    private async Task RefreshHullDataAsync(CachedModel entity, string filePath, string fileType)
+    {
+        var geometry = await loaderService.LoadModelAsync(filePath, fileType);
+        if (geometry is null)
+        {
+            ApplyHullData(entity, null, null, null, false);
+            return;
+        }
+
+        var (convexHull, concaveHull, convexSansRaftHull) = await hullCalculationService.CalculateHullsAsync(geometry);
+        ApplyHullData(entity, convexHull, concaveHull, convexSansRaftHull, true);
+    }
+
+    private static void ApplyHullData(
+        CachedModel entity,
+        string? convexHull,
+        string? concaveHull,
+        string? convexSansRaftHull,
+        bool hullsCalculated)
+    {
+        entity.ConvexHullCoordinates         = convexHull;
+        entity.ConcaveHullCoordinates        = concaveHull;
+        entity.ConvexSansRaftHullCoordinates = convexSansRaftHull;
+        entity.HullGeneratedAt               = hullsCalculated ? DateTime.UtcNow : null;
+        entity.HullGenerationVersion         = hullsCalculated ? HullCalculationService.CurrentHullGenerationVersion : null;
+        entity.HullRaftOffsetMm              = hullsCalculated ? HullCalculationService.RaftOffset : null;
+    }
+
+    private static bool NeedsHullRegeneration(int? version, float? raftOffsetMm) =>
+        version != HullCalculationService.CurrentHullGenerationVersion
+        || raftOffsetMm is null
+        || Math.Abs(raftOffsetMm.Value - HullCalculationService.RaftOffset) > 1e-6f;
 
     private static async Task<string> ComputeChecksumAsync(string filePath)
     {

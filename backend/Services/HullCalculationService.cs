@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
+using NetTopologySuite.Algorithm.Hull;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Simplify;
 
 namespace findamodel.Services;
 
@@ -10,6 +12,10 @@ public class HullCalculationService(
 {
     private static readonly GeometryFactory Factory = new();
     public const int DefaultMaxHullVertices = 20;
+    public const int CurrentHullGenerationVersion = 3;
+    private const int MaxConcaveHullInputPoints = 30000;
+    private const double MinConcaveRatio = 0.08;
+    private const double MaxConcaveRatio = 0.95;
 
     public const float RaftOffset = 2f; // 2mm offset for raft/brim removal, to be configurable later
 
@@ -25,7 +31,7 @@ public class HullCalculationService(
     {
         try
         {
-            var allVertices = geometry.Triangles.SelectMany(t => new[] { t.V0, t.V1, t.V2 });
+            var allVertices = geometry.Triangles.SelectMany(t => new[] { t.V0, t.V1, t.V2 }).ToArray();
 
             // Extract unique X-Z coordinates from triangle vertices.
             // float → double widening is intentional: NTS uses double precision internally.
@@ -41,6 +47,7 @@ public class HullCalculationService(
             }
 
             var convexCoords = CalculateEnclosingConvexHull(points2D, maxHullVertices);
+            var concaveCoords = CalculateConcaveHull(points2D, maxHullVertices);
 
             // Sans-raft: exclude vertices at or below defined raft offset (Y-up, 1 unit = 1mm)
             var sansRaftPoints2D = allVertices
@@ -54,12 +61,12 @@ public class HullCalculationService(
                 : null;
 
             logger.LogInformation(
-                "Hull calculation complete: {ConvexCount} convex vertices, {SansRaftCount} sans-raft vertices (max {MaxHullVertices})",
-                convexCoords?.Length ?? 0, convexSansRaftCoords?.Length ?? 0, maxHullVertices);
+                "Hull calculation complete: {ConvexCount} convex vertices, {ConcaveCount} concave vertices, {SansRaftCount} sans-raft vertices (max {MaxHullVertices})",
+                convexCoords?.Length ?? 0, concaveCoords?.Length ?? 0, convexSansRaftCoords?.Length ?? 0, maxHullVertices);
 
             return Task.FromResult<(string?, string?, string?)>((
                 convexCoords is not null ? ConvertCoordinatesToJson(convexCoords) : null,
-                null,
+                concaveCoords is not null ? ConvertCoordinatesToJson(concaveCoords) : null,
                 convexSansRaftCoords is not null ? ConvertCoordinatesToJson(convexSansRaftCoords) : null));
         }
         catch (Exception ex)
@@ -67,6 +74,88 @@ public class HullCalculationService(
             logger.LogError(ex, "Error calculating hull from geometry");
             return Task.FromResult<(string?, string?, string?)>((null, null, null));
         }
+    }
+
+    private Coordinate[]? CalculateConcaveHull(Coordinate[] points, int maxVertices)
+    {
+        if (points.Length < 3) return null;
+
+        var reducedPoints = DownsampleForConcaveHull(points, MaxConcaveHullInputPoints, 1e-6);
+        var convexRing = NormalizeRing(Factory.CreateMultiPointFromCoords(points).ConvexHull().Coordinates);
+        var reducedWithBoundary = reducedPoints
+            .Concat(convexRing)
+            .Distinct(new CoordinateComparer(1e-6))
+            .ToArray();
+
+        var multiPoint = Factory.CreateMultiPointFromCoords(reducedWithBoundary);
+        var convexArea = Math.Max(Math.Abs(SignedArea(convexRing)), 1e-9);
+
+        var initialRatio = EstimateInitialConcaveRatio(reducedPoints.Length, maxVertices);
+        var candidateRatios = new[]
+        {
+            initialRatio,
+            Math.Clamp(initialRatio + 0.08, MinConcaveRatio, MaxConcaveRatio),
+            Math.Clamp(initialRatio + 0.18, MinConcaveRatio, MaxConcaveRatio),
+            Math.Clamp(initialRatio + 0.35, MinConcaveRatio, MaxConcaveRatio),
+            MaxConcaveRatio,
+        }
+        .Distinct()
+        .ToArray();
+
+        Coordinate[]? best = null;
+        double bestAreaRatio = double.NegativeInfinity;
+
+        foreach (var ratio in candidateRatios)
+        {
+            Geometry hullGeometry;
+            try
+            {
+                hullGeometry = ConcaveHull.ConcaveHullByLengthRatio(multiPoint, ratio, isHolesAllowed: false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Concave hull attempt failed at ratio {Ratio}", ratio);
+                continue;
+            }
+
+            var ring = ExtractLargestPolygonShell(hullGeometry);
+            if (ring is null || ring.Length < 3) continue;
+
+            if (ring.Length > maxVertices)
+                ring = SimplifyRingToVertexBudget(ring, maxVertices);
+
+            if (ring.Length < 3 || !IsValidRing(ring))
+                continue;
+
+            var ringArea = Math.Abs(SignedArea(ring));
+            var areaRatio = ringArea / convexArea;
+
+            // Reject unstable shapes that collapse too far inside the outer envelope.
+            if (areaRatio < 0.60)
+                continue;
+
+            if (areaRatio > bestAreaRatio)
+            {
+                bestAreaRatio = areaRatio;
+                best = ring;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool IsValidRing(Coordinate[] ring)
+    {
+        if (ring.Length < 3)
+            return false;
+
+        var closed = CloseRing(ring);
+        var linearRing = Factory.CreateLinearRing(closed);
+        if (!linearRing.IsSimple || !linearRing.IsValid)
+            return false;
+
+        var polygon = Factory.CreatePolygon(linearRing);
+        return polygon.IsValid && polygon.Area > 0;
     }
 
     /// <summary>
@@ -201,6 +290,151 @@ public class HullCalculationService(
             new Coordinate(maxX, maxY),
             new Coordinate(minX, maxY),
         ];
+    }
+
+    private static Coordinate[] DownsampleForConcaveHull(Coordinate[] points, int maxPoints, double epsilon)
+    {
+        if (points.Length <= maxPoints)
+            return points;
+
+        var minX = points.Min(p => p.X);
+        var maxX = points.Max(p => p.X);
+        var minY = points.Min(p => p.Y);
+        var maxY = points.Max(p => p.Y);
+
+        var width = Math.Max(maxX - minX, epsilon);
+        var height = Math.Max(maxY - minY, epsilon);
+        var area = Math.Max(width * height, epsilon);
+        var cellSize = Math.Max(Math.Sqrt(area / maxPoints), epsilon);
+
+        var sampled = new Dictionary<(long X, long Y), Coordinate>();
+        foreach (var p in points)
+        {
+            var gx = (long)Math.Floor((p.X - minX) / cellSize);
+            var gy = (long)Math.Floor((p.Y - minY) / cellSize);
+            var key = (gx, gy);
+            if (!sampled.ContainsKey(key))
+                sampled[key] = p;
+        }
+
+        return sampled.Values.ToArray();
+    }
+
+    private static double EstimateInitialConcaveRatio(int pointCount, int maxVertices)
+    {
+        if (pointCount <= 0 || maxVertices <= 0) return 0.22;
+
+        var density = Math.Clamp((double)maxVertices / pointCount, 0.0, 1.0);
+        var ratio = 0.16 + (0.55 * density);
+        return Math.Clamp(ratio, MinConcaveRatio, 0.45);
+    }
+
+    private Coordinate[]? ExtractLargestPolygonShell(Geometry geometry)
+    {
+        switch (geometry)
+        {
+            case Polygon polygon:
+            {
+                var shell = NormalizeRing(polygon.ExteriorRing.Coordinates);
+                return shell.Length >= 3 ? shell : null;
+            }
+            case MultiPolygon multiPolygon:
+            {
+                Polygon? largest = null;
+                var largestArea = double.NegativeInfinity;
+                for (var i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    if (multiPolygon.GetGeometryN(i) is not Polygon p) continue;
+                    var area = p.Area;
+                    if (area > largestArea)
+                    {
+                        largestArea = area;
+                        largest = p;
+                    }
+                }
+
+                return largest is not null ? NormalizeRing(largest.ExteriorRing.Coordinates) : null;
+            }
+            case GeometryCollection collection:
+            {
+                Coordinate[]? best = null;
+                var bestArea = double.NegativeInfinity;
+
+                for (var i = 0; i < collection.NumGeometries; i++)
+                {
+                    var candidate = ExtractLargestPolygonShell(collection.GetGeometryN(i));
+                    if (candidate is null || candidate.Length < 3) continue;
+                    var area = Math.Abs(SignedArea(candidate));
+                    if (area > bestArea)
+                    {
+                        bestArea = area;
+                        best = candidate;
+                    }
+                }
+
+                return best;
+            }
+            default:
+                return null;
+        }
+    }
+
+    private Coordinate[] SimplifyRingToVertexBudget(Coordinate[] ring, int maxVertices)
+    {
+        if (ring.Length <= maxVertices || maxVertices < 3)
+            return ring;
+
+        var polygon = Factory.CreatePolygon(CloseRing(ring));
+
+        var minX = ring.Min(c => c.X);
+        var maxX = ring.Max(c => c.X);
+        var minY = ring.Min(c => c.Y);
+        var maxY = ring.Max(c => c.Y);
+        var diagonal = Math.Sqrt(Math.Pow(maxX - minX, 2) + Math.Pow(maxY - minY, 2));
+        if (diagonal <= 0)
+            return ring;
+
+        Coordinate[] best = ring;
+        var low = 0.0;
+        var high = diagonal;
+
+        for (var i = 0; i < 18; i++)
+        {
+            var mid = (low + high) / 2.0;
+            var simplified = TopologyPreservingSimplifier.Simplify(polygon, mid);
+            var candidate = ExtractLargestPolygonShell(simplified);
+            if (candidate is null || candidate.Length < 3)
+            {
+                low = mid;
+                continue;
+            }
+
+            if (candidate.Length > maxVertices)
+            {
+                low = mid;
+            }
+            else
+            {
+                best = candidate;
+                high = mid;
+            }
+        }
+
+        return best;
+    }
+
+    private static Coordinate[] CloseRing(Coordinate[] ring)
+    {
+        if (ring.Length == 0)
+            return [];
+        if (ring[0].Equals2D(ring[^1]))
+            return ring;
+
+        var closed = new Coordinate[ring.Length + 1];
+        for (var i = 0; i < ring.Length; i++)
+            closed[i] = new Coordinate(ring[i].X, ring[i].Y);
+        closed[^1] = new Coordinate(ring[0].X, ring[0].Y);
+        return closed;
     }
 
     private static bool ContainsAllPoints(Coordinate[] polygon, Coordinate[] points, double epsilon)
