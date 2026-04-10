@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Box, Chip, Typography, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
 import AppCard from './AppCard';
@@ -18,19 +17,14 @@ function getFileName(relativePath: string): string {
 interface ModelCardProps {
   model: Model;
   href: string;
-  showControls?: boolean;
 }
 
-function ModelCard({ model, href, showControls = true }: ModelCardProps) {
-  const [hovered, setHovered] = useState(false);
-
+function ModelCard({ model, href }: ModelCardProps) {
   return (
     <AppCard
       href={href}
       interactive
       className={styles.card}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {model.previewUrl && (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
@@ -55,7 +49,7 @@ function ModelCard({ model, href, showControls = true }: ModelCardProps) {
         <Typography className={styles.size}>{formatBytes(model.fileSize)}</Typography>
       </Box>
 
-      {showControls && <PrintingListControls modelId={model.id} showButtons={hovered} />}
+      <PrintingListControls modelId={model.id} />
     </AppCard>
   );
 }

@@ -46,7 +46,6 @@ function PrintingListPage() {
   );
 
   const listName = list?.name ?? 'Printing list';
-  const showControls = list?.isActive === true;
   const isPending = modelsPending || listPending;
 
   function handleSpawnOrderChange(next: SpawnType) {
@@ -216,7 +215,6 @@ function PrintingListPage() {
                 key={model.id}
                 model={model}
                 href={`/model/${encodeURIComponent(model.id)}`}
-                showControls={showControls}
               />
             ))}
           </Box>

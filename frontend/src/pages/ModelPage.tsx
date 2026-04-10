@@ -17,7 +17,8 @@ import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import ModelViewer from '../components/ModelViewer';
 import HullPreview from '../components/HullPreview';
 import PathBreadcrumb from '../components/PathBreadcrumb';
-import AppCard from '../components/AppCard';
+import ModelCard from '../components/ModelCard';
+import gridStyles from '../components/ModelGrid.module.css';
 import styles from './ModelPage.module.css';
 
 function formatBytes(bytes: number): string {
@@ -35,6 +36,10 @@ function ModelPage() {
   const navigate = useNavigate();
 
   const decodedId = decodeURIComponent(id ?? '');
+
+  React.useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [decodedId]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
   const { data: otherParts } = useModelOtherParts(decodedId);
@@ -205,36 +210,36 @@ function ModelPage() {
           />
         )}
 
-        {(otherParts?.length ?? 0) > 0 && (
-          <Box className={styles.otherPartsSection}>
+      </Box>
+
+      {(otherParts?.length ?? 0) > 0 && (
+        <Box className={styles.otherPartsSection}>
+          <Box className={gridStyles.container}>
             <Typography variant="h6" className={styles.otherPartsTitle}>
               Other parts
             </Typography>
-            <Box className={styles.otherPartsGrid}>
+            <Box className={gridStyles.grid}>
               {otherParts!.map((part) => (
-                <AppCard
+                <ModelCard
                   key={part.id}
                   href={`/model/${encodeURIComponent(part.id)}`}
-                  className={styles.otherPartCard}
-                >
-                  {part.previewUrl && (
-                    <Box
-                      component="img"
-                      src={part.previewUrl}
-                      alt=""
-                      className={styles.otherPartPreview}
-                    />
-                  )}
-                  <Box className={styles.otherPartOverlay}>
-                    <Typography className={styles.otherPartName}>{part.name}</Typography>
-                    <Typography className={styles.otherPartPath}>{part.relativePath}</Typography>
-                  </Box>
-                </AppCard>
+                  model={{
+                    ...model,
+                    id: part.id,
+                    name: part.name,
+                    relativePath: part.relativePath,
+                    fileType: part.fileType,
+                    fileSize: part.fileSize,
+                    fileUrl: '',
+                    hasPreview: part.previewUrl != null,
+                    previewUrl: part.previewUrl,
+                  }}
+                />
               ))}
             </Box>
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
     </Box>
   );
 }

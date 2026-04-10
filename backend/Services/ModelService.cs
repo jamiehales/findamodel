@@ -45,13 +45,13 @@ public class ModelService(
             ConcaveHull = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
             RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-            DimensionXMm  = m.DimensionXMm,
-            DimensionYMm  = m.DimensionYMm,
-            DimensionZMm  = m.DimensionZMm,
+            DimensionXMm = m.DimensionXMm,
+            DimensionYMm = m.DimensionYMm,
+            DimensionZMm = m.DimensionZMm,
             SphereCentreX = m.SphereCentreX,
             SphereCentreY = m.SphereCentreY,
             SphereCentreZ = m.SphereCentreZ,
-            SphereRadius  = m.SphereRadius
+            SphereRadius = m.SphereRadius
         }).ToList();
     }
 
@@ -99,31 +99,31 @@ public class ModelService(
 
         return new ModelDto
         {
-            Id            = m.Id,
-            Name          = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-            RelativePath  = ComputeRelativePath(m.Directory, m.FileName),
-            FileType      = m.FileType,
-            FileSize      = m.FileSize,
-            FileUrl       = $"/api/models/{m.Id}/file",
-            HasPreview    = m.HasPreview,
-            PreviewUrl    = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
-            Creator        = m.CalculatedCreator,
-            Collection    = m.CalculatedCollection,
+            Id = m.Id,
+            Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
+            RelativePath = ComputeRelativePath(m.Directory, m.FileName),
+            FileType = m.FileType,
+            FileSize = m.FileSize,
+            FileUrl = $"/api/models/{m.Id}/file",
+            HasPreview = m.HasPreview,
+            PreviewUrl = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
+            Creator = m.CalculatedCreator,
+            Collection = m.CalculatedCollection,
             Subcollection = m.CalculatedSubcollection,
-            Category      = m.CalculatedCategory,
-            Type          = m.CalculatedType,
-            Supported     = m.CalculatedSupported,
-            ConvexHull         = m.ConvexHullCoordinates,
-            ConcaveHull        = m.ConcaveHullCoordinates,
+            Category = m.CalculatedCategory,
+            Type = m.CalculatedType,
+            Supported = m.CalculatedSupported,
+            ConvexHull = m.ConvexHullCoordinates,
+            ConcaveHull = m.ConcaveHullCoordinates,
             ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm       = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-            DimensionXMm       = m.DimensionXMm,
-            DimensionYMm  = m.DimensionYMm,
-            DimensionZMm  = m.DimensionZMm,
+            RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
+            DimensionXMm = m.DimensionXMm,
+            DimensionYMm = m.DimensionYMm,
+            DimensionZMm = m.DimensionZMm,
             SphereCentreX = m.SphereCentreX,
             SphereCentreY = m.SphereCentreY,
             SphereCentreZ = m.SphereCentreZ,
-            SphereRadius  = m.SphereRadius,
+            SphereRadius = m.SphereRadius,
         };
     }
 
@@ -390,6 +390,7 @@ public class ModelService(
         return candidates
             .Where(m => NormalizePartGrouping(m.CalculatedCollection) == sourceCollection
                         && NormalizePartGrouping(m.CalculatedSubcollection) == sourceSubcollection
+                        && m.CalculatedSupported == source.CalculatedSupported
                         && string.Equals(
                             string.IsNullOrWhiteSpace(m.CalculatedModelName)
                                 ? Path.GetFileNameWithoutExtension(m.FileName)
@@ -439,28 +440,28 @@ public class ModelService(
 
     private static void ApplyFileData(CachedModel entity, ModelFileData d, FileInfo info)
     {
-        entity.Checksum                      = d.Checksum;
-        entity.FileSize                      = info.Length;
-        entity.FileModifiedAt                = info.LastWriteTimeUtc;
-        entity.CachedAt                      = DateTime.UtcNow;
-        entity.PreviewImagePath              = d.PreviewImagePath;
-        entity.PreviewGeneratedAt            = d.PreviewImagePath != null ? DateTime.UtcNow : null;
+        entity.Checksum = d.Checksum;
+        entity.FileSize = info.Length;
+        entity.FileModifiedAt = info.LastWriteTimeUtc;
+        entity.CachedAt = DateTime.UtcNow;
+        entity.PreviewImagePath = d.PreviewImagePath;
+        entity.PreviewGeneratedAt = d.PreviewImagePath != null ? DateTime.UtcNow : null;
         ApplyHullData(entity, d.ConvexHull, d.ConcaveHull, d.ConvexSansRaftHull, d.Geometry is not null);
-        entity.CalculatedCreator             = d.Metadata.Creator;
-        entity.CalculatedCollection          = d.Metadata.Collection;
-        entity.CalculatedSubcollection       = d.Metadata.Subcollection;
-        entity.CalculatedCategory            = d.Metadata.Category;
-        entity.CalculatedType                = d.Metadata.Type;
-        entity.CalculatedSupported           = d.Metadata.Supported;
-        entity.CalculatedModelName           = d.Metadata.ModelName;
-        entity.DimensionXMm                  = d.Geometry?.DimensionXMm;
-        entity.DimensionYMm                  = d.Geometry?.DimensionYMm;
-        entity.DimensionZMm                  = d.Geometry?.DimensionZMm;
-        entity.SphereCentreX                 = d.Geometry?.SphereCentre.X;
-        entity.SphereCentreY                 = d.Geometry?.SphereCentre.Y;
-        entity.SphereCentreZ                 = d.Geometry?.SphereCentre.Z;
-        entity.SphereRadius                  = d.Geometry?.SphereRadius;
-        entity.GeometryCalculatedAt          = d.Geometry is not null ? DateTime.UtcNow : null;
+        entity.CalculatedCreator = d.Metadata.Creator;
+        entity.CalculatedCollection = d.Metadata.Collection;
+        entity.CalculatedSubcollection = d.Metadata.Subcollection;
+        entity.CalculatedCategory = d.Metadata.Category;
+        entity.CalculatedType = d.Metadata.Type;
+        entity.CalculatedSupported = d.Metadata.Supported;
+        entity.CalculatedModelName = d.Metadata.ModelName;
+        entity.DimensionXMm = d.Geometry?.DimensionXMm;
+        entity.DimensionYMm = d.Geometry?.DimensionYMm;
+        entity.DimensionZMm = d.Geometry?.DimensionZMm;
+        entity.SphereCentreX = d.Geometry?.SphereCentre.X;
+        entity.SphereCentreY = d.Geometry?.SphereCentre.Y;
+        entity.SphereCentreZ = d.Geometry?.SphereCentre.Z;
+        entity.SphereRadius = d.Geometry?.SphereRadius;
+        entity.GeometryCalculatedAt = d.Geometry is not null ? DateTime.UtcNow : null;
     }
 
     private async Task RefreshHullDataAsync(CachedModel entity, string filePath, string fileType)
@@ -483,12 +484,12 @@ public class ModelService(
         string? convexSansRaftHull,
         bool hullsCalculated)
     {
-        entity.ConvexHullCoordinates         = convexHull;
-        entity.ConcaveHullCoordinates        = concaveHull;
+        entity.ConvexHullCoordinates = convexHull;
+        entity.ConcaveHullCoordinates = concaveHull;
         entity.ConvexSansRaftHullCoordinates = convexSansRaftHull;
-        entity.HullGeneratedAt               = hullsCalculated ? DateTime.UtcNow : null;
-        entity.HullGenerationVersion         = hullsCalculated ? HullCalculationService.CurrentHullGenerationVersion : null;
-        entity.HullRaftOffsetMm              = hullsCalculated ? HullCalculationService.RaftOffset : null;
+        entity.HullGeneratedAt = hullsCalculated ? DateTime.UtcNow : null;
+        entity.HullGenerationVersion = hullsCalculated ? HullCalculationService.CurrentHullGenerationVersion : null;
+        entity.HullRaftOffsetMm = hullsCalculated ? HullCalculationService.RaftOffset : null;
     }
 
     private static bool NeedsHullRegeneration(int? version, float? raftOffsetMm) =>
