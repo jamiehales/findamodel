@@ -7,10 +7,7 @@ import { useBodyGeometry, useGeometry, useModel, useSupportGeometry } from '../l
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
 
-const ACCENT: Record<string, string> = {
-  stl: '#818cf8',
-  obj: '#34d399',
-};
+const MODEL_COLOR = '#818cf8';
 
 function Lighting() {
   return (
@@ -283,7 +280,6 @@ class ViewerErrorBoundary extends React.Component<
 
 interface ModelViewerProps {
   modelId: string;
-  fileType: string; // used for accent colour only
   convexHull?: string | null;
   concaveHull?: string | null;
   convexSansRaftHull?: string | null;
@@ -292,7 +288,6 @@ interface ModelViewerProps {
 
 export default function ModelViewer({
   modelId,
-  fileType,
   convexHull,
   concaveHull,
   convexSansRaftHull,
@@ -301,7 +296,7 @@ export default function ModelViewer({
   const { data: model, isPending, isError } = useModel(modelId);
   const { data: supportData } = useSupportGeometry(modelId);
   const [showSupports, setShowSupports] = useState(true);
-  const color = ACCENT[fileType.toLowerCase()] ?? '#94a3b8';
+  const color = MODEL_COLOR;
 
   const hasSupportMesh = supported === true && supportData != null;
 

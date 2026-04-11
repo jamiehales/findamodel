@@ -92,8 +92,8 @@ public sealed class GlPreviewContext : IDisposable
         //   directionalLight position={[-4,  2, -2]} intensity={0.4}
         //   directionalLight position={[ 0, -3, -5]} intensity={0.25}
         uniform vec3 uCameraPos;
+        uniform vec3 uAlbedo;  // file-type accent colour (set per render)
 
-        const vec3  kAlbedo    = vec3(0.86, 0.86, 0.89);  // off-white neutral plastic
         const float kAmbient   = 0.40;
         const float kDiffuse   = 0.70;
         const float kSpecular  = 0.15;
@@ -110,11 +110,11 @@ public sealed class GlPreviewContext : IDisposable
             vec3 N = normalize(vNormal);
             vec3 V = normalize(uCameraPos - vFragPos);
 
-            vec3 color = kAmbient * kAlbedo;
+            vec3 color = kAmbient * uAlbedo;
 
             for (int i = 0; i < 3; ++i) {
                 float diff = max(dot(N, lights[i].dir), 0.0);
-                color += kDiffuse * diff * lights[i].intensity * kAlbedo;
+                color += kDiffuse * diff * lights[i].intensity * uAlbedo;
 
                 vec3 R = reflect(-lights[i].dir, N);
                 float spec = pow(max(dot(V, R), 0.0), kShininess);
@@ -157,13 +157,18 @@ public sealed class GlPreviewContext : IDisposable
     /// Renders <paramref name="triangles"/> to a PNG and returns the bytes,
     /// or null if the GL context is unavailable.
     /// </summary>
-    public async Task<byte[]?> RenderAsync(List<Triangle3D> triangles, int width, int height)
+    public async Task<byte[]?> RenderAsync(
+        List<Triangle3D> triangles,
+        int width, int height,
+        System.Numerics.Vector3 albedo,
+        List<Triangle3D>? supportTriangles = null,
+        System.Numerics.Vector3 supportAlbedo = default)
     {
         await _ready.Task.ConfigureAwait(false);
         if (_failed) return null;
 
         var tcs = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await _channel.Writer.WriteAsync(new RenderRequest(tcs, triangles, width, height))
+        await _channel.Writer.WriteAsync(new RenderRequest(tcs, triangles, width, height, albedo, supportTriangles, supportAlbedo))
                              .ConfigureAwait(false);
         return await tcs.Task.ConfigureAwait(false);
     }
@@ -227,7 +232,7 @@ public sealed class GlPreviewContext : IDisposable
             {
                 try
                 {
-                    byte[]? png = RenderInternal(req.Triangles, req.Width, req.Height);
+                    byte[]? png = RenderInternal(req.Triangles, req.Width, req.Height, req.Albedo, req.SupportTriangles, req.SupportAlbedo);
                     req.Tcs.TrySetResult(png);
                 }
                 catch (Exception ex)
@@ -258,14 +263,19 @@ public sealed class GlPreviewContext : IDisposable
 
     // ── Render ────────────────────────────────────────────────────────────────
 
-    private byte[]? RenderInternal(List<Triangle3D> triangles, int width, int height)
+    private byte[]? RenderInternal(List<Triangle3D> triangles, int width, int height, System.Numerics.Vector3 albedo,
+        List<Triangle3D>? supportTriangles, System.Numerics.Vector3 supportAlbedo)
     {
         var gl = _gl!;
 
         EnsureFbo(width, height);
 
         // ── Camera matrices (exact port of calculateCameraDistanceForBox in ModelViewer.tsx) ──
-        var (center, halfExtents) = BoundingBox(triangles);
+        // Frame on all geometry (body + supports combined) so nothing is clipped.
+        var framingTris = supportTriangles is { Count: > 0 }
+            ? triangles.Concat(supportTriangles).ToList()
+            : triangles;
+        var (center, halfExtents) = BoundingBox(framingTris);
         float aspect = (float)width / height;
         float dist = CalculateCameraDistanceForBox(halfExtents, CamDir, FovY, aspect);
         var eye = center + CamDir * dist;
@@ -277,18 +287,7 @@ public sealed class GlPreviewContext : IDisposable
         // ── Build vertex buffer: [pos(3), normal(3)] per vertex ───────────────
         // Pre-computed flat normals live on Triangle3D.Normal; we duplicate to all 3 verts.
         int vertCount = triangles.Count * 3;
-        float[] verts = new float[vertCount * 6];
-        int vi = 0;
-        foreach (var tri in triangles)
-        {
-            float nx = tri.Normal.X, ny = tri.Normal.Y, nz = tri.Normal.Z;
-            verts[vi++] = tri.V0.X; verts[vi++] = tri.V0.Y; verts[vi++] = tri.V0.Z;
-            verts[vi++] = nx; verts[vi++] = ny; verts[vi++] = nz;
-            verts[vi++] = tri.V1.X; verts[vi++] = tri.V1.Y; verts[vi++] = tri.V1.Z;
-            verts[vi++] = nx; verts[vi++] = ny; verts[vi++] = nz;
-            verts[vi++] = tri.V2.X; verts[vi++] = tri.V2.Y; verts[vi++] = tri.V2.Z;
-            verts[vi++] = nx; verts[vi++] = ny; verts[vi++] = nz;
-        }
+        float[] verts = BuildVertexBuffer(triangles);
 
         // ── GL draw ───────────────────────────────────────────────────────────
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
@@ -313,7 +312,18 @@ public sealed class GlPreviewContext : IDisposable
         SetUniformMatrix4(gl, "uProj", proj);
         gl.Uniform3(gl.GetUniformLocation(_program, "uCameraPos"), eye.X, eye.Y, eye.Z);
 
+        // ── Draw body ─────────────────────────────────────────────────────────
+        gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), albedo.X, albedo.Y, albedo.Z);
         gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertCount);
+
+        // ── Draw supports (second pass — depth test still active) ─────────────
+        if (supportTriangles is { Count: > 0 })
+        {
+            var suppVerts = BuildVertexBuffer(supportTriangles);
+            gl.BufferData<float>(BufferTargetARB.ArrayBuffer, suppVerts.AsSpan(), BufferUsageARB.StreamDraw);
+            gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), supportAlbedo.X, supportAlbedo.Y, supportAlbedo.Z);
+            gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)(supportTriangles.Count * 3));
+        }
 
         // ── MSAA resolve ──────────────────────────────────────────────────────
         gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFbo);
@@ -343,6 +353,23 @@ public sealed class GlPreviewContext : IDisposable
         using var ms = new MemoryStream();
         image.SaveAsPng(ms);
         return ms.ToArray();
+    }
+
+    private static float[] BuildVertexBuffer(List<Triangle3D> tris)
+    {
+        float[] buf = new float[tris.Count * 3 * 6];
+        int vi = 0;
+        foreach (var tri in tris)
+        {
+            float nx = tri.Normal.X, ny = tri.Normal.Y, nz = tri.Normal.Z;
+            buf[vi++] = tri.V0.X; buf[vi++] = tri.V0.Y; buf[vi++] = tri.V0.Z;
+            buf[vi++] = nx; buf[vi++] = ny; buf[vi++] = nz;
+            buf[vi++] = tri.V1.X; buf[vi++] = tri.V1.Y; buf[vi++] = tri.V1.Z;
+            buf[vi++] = nx; buf[vi++] = ny; buf[vi++] = nz;
+            buf[vi++] = tri.V2.X; buf[vi++] = tri.V2.Y; buf[vi++] = tri.V2.Z;
+            buf[vi++] = nx; buf[vi++] = ny; buf[vi++] = nz;
+        }
+        return buf;
     }
 
     private void SetUniformMatrix4(GL gl, string name, Matrix4x4 m)
@@ -551,5 +578,8 @@ public sealed class GlPreviewContext : IDisposable
         TaskCompletionSource<byte[]?> Tcs,
         List<Triangle3D> Triangles,
         int Width,
-        int Height);
+        int Height,
+        System.Numerics.Vector3 Albedo,
+        List<Triangle3D>? SupportTriangles,
+        System.Numerics.Vector3 SupportAlbedo);
 }

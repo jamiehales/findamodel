@@ -44,13 +44,18 @@ internal static class MeshRenderer
         int MinX, int MaxX, int MinY, int MaxY,
         float Area, float InvArea);
 
-    public static byte[] Render(List<Triangle3D> triangles, int width, int height)
+    public static byte[] Render(List<Triangle3D> triangles, int width, int height, Vec3 albedo,
+        List<Triangle3D>? supportTriangles = null, Vec3 supportAlbedo = default)
     {
         int ssW = width * SuperSample;
         int ssH = height * SuperSample;
 
         // ── Bounding-box framing ─────────────────────────────────────────────
-        var (center, halfExtents) = BoundingBox(triangles);
+        // Frame on all geometry combined so supports aren't clipped.
+        var framingTris = supportTriangles is { Count: > 0 }
+            ? triangles.Concat(supportTriangles).ToList()
+            : triangles;
+        var (center, halfExtents) = BoundingBox(framingTris);
 
         // Camera direction matches DEFAULT_VIEW_DIRECTION in ModelViewer.tsx
         float fovY = MathF.PI / 4f;
@@ -67,9 +72,14 @@ internal static class MeshRenderer
 
         // ── Pre-process triangles in parallel ────────────────────────────────
         // BuildPTri has no shared mutable state — each i writes to ptris[i] only.
-        var ptris = new PTri[triangles.Count];
-        Parallel.For(0, triangles.Count, i =>
-            ptris[i] = BuildPTri(triangles[i], eye, forward, right, up, tanHalfFov, aspect, ssW, ssH));
+        int bodyCount = triangles.Count;
+        int suppCount = supportTriangles?.Count ?? 0;
+        var ptris = new PTri[bodyCount + suppCount];
+        Parallel.For(0, bodyCount, i =>
+            ptris[i] = BuildPTri(triangles[i], eye, forward, right, up, tanHalfFov, aspect, ssW, ssH, albedo));
+        if (supportTriangles is { Count: > 0 })
+            Parallel.For(0, suppCount, i =>
+                ptris[bodyCount + i] = BuildPTri(supportTriangles[i], eye, forward, right, up, tanHalfFov, aspect, ssW, ssH, supportAlbedo));
 
         // ── Parallel tile rasterisation ──────────────────────────────────────
         // Each tile owns its own pixel/zbuf region — no synchronisation needed.
@@ -96,7 +106,7 @@ internal static class MeshRenderer
     private static PTri BuildPTri(
         in Triangle3D tri,
         Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
-        float tanHalfFov, float aspect, int width, int height)
+        float tanHalfFov, float aspect, int width, int height, Vec3 albedo)
     {
         var n = (tri.V1 - tri.V0).Cross(tri.V2 - tri.V0);
         if (n.LengthSq < 1e-12f) return default;        // degenerate
@@ -121,7 +131,7 @@ internal static class MeshRenderer
             (tri.V0.X + tri.V1.X + tri.V2.X) * (1f / 3f),
             (tri.V0.Y + tri.V1.Y + tri.V2.Y) * (1f / 3f),
             (tri.V0.Z + tri.V1.Z + tri.V2.Z) * (1f / 3f));
-        var (fr, fg, fb) = Shade(n, centroid, eye);
+        var (fr, fg, fb) = Shade(n, centroid, eye, albedo);
         var color = new Rgba32(
             (byte)Math.Clamp((int)(fr * 255f + 0.5f), 0, 255),
             (byte)Math.Clamp((int)(fg * 255f + 0.5f), 0, 255),
@@ -244,10 +254,9 @@ internal static class MeshRenderer
     private static float EdgeFunc(float ax, float ay, float bx, float by, float px, float py)
         => (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 
-    private static (float r, float g, float b) Shade(Vec3 normal, Vec3 position, Vec3 eye)
+    private static (float r, float g, float b) Shade(Vec3 normal, Vec3 position, Vec3 eye, Vec3 albedo)
     {
-        // Off-white neutral plastic — approximate of meshStandardMaterial roughness=0.55 metalness=0.15
-        const float mr = 0.86f, mg = 0.86f, mb = 0.89f;
+        float mr = albedo.X, mg = albedo.Y, mb = albedo.Z;
         const float ka = 0.40f;  // ambient — matches Three.js ambientLight intensity={0.4}
         const float kd = 0.70f;  // diffuse
         const float ks = 0.15f;  // specular (low: high roughness in frontend material)
