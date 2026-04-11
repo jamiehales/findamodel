@@ -52,6 +52,11 @@ export { LAYOUT_LOCALSTORAGE_KEY };
 
 const GRID_PX = 10 * PX_PER_MM;
 
+const PAGE_H_PADDING = 128; // ~4rem per side at wide viewports
+function getCanvasScale(): number {
+  return Math.min(1.5, Math.max(1, (window.innerWidth - PAGE_H_PADDING) / CANVAS_WIDTH_PX));
+}
+
 export default function PrintingListCanvas({
   models,
   items,
@@ -64,6 +69,32 @@ export default function PrintingListCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
   const [resetCount, setResetCount] = useState(0);
+  const [canvasScale, setCanvasScale] = useState(getCanvasScale);
+  const canvasScaleRef = useRef(canvasScale);
+  useEffect(() => {
+    const handleResize = () => {
+      const s = getCanvasScale();
+      canvasScaleRef.current = s;
+      setCanvasScale(s);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Resize the live PIXI app when scale changes (no simulation restart)
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app) return;
+    displayScaleRef.current = canvasScale;
+    app.renderer.resize(CANVAS_WIDTH_PX * canvasScale, VIEW_HEIGHT_PX * canvasScale);
+    app.stage.hitArea = new PIXI.Rectangle(
+      0,
+      0,
+      CANVAS_WIDTH_PX * canvasScale,
+      VIEW_HEIGHT_PX * canvasScale,
+    );
+    redrawStaticsRef.current?.(canvasScale);
+  }, [canvasScale]);
   const [pauseOnDrag, setPauseOnDrag] = useState(
     () => localStorage.getItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY) === 'true',
   );
@@ -97,6 +128,8 @@ export default function PrintingListCanvas({
   const pausedRef = useRef(false);
   const prevItemsRef = useRef<Record<string, number>>({});
   const saveLayoutRef = useRef<(() => void) | null>(null);
+  const displayScaleRef = useRef(canvasScale);
+  const redrawStaticsRef = useRef<((sc: number) => void) | null>(null);
   // Always-current mirrors updated every render
   const itemsKeyRef = useRef(itemsKey);
   itemsKeyRef.current = itemsKey;
@@ -110,9 +143,10 @@ export default function PrintingListCanvas({
     if (!container) return;
 
     // ── Pixi application ───────────────────────────────────────────────────
+    const initScale = canvasScaleRef.current;
     const app = new PIXI.Application({
-      width: CANVAS_WIDTH_PX,
-      height: VIEW_HEIGHT_PX,
+      width: CANVAS_WIDTH_PX * initScale,
+      height: VIEW_HEIGHT_PX * initScale,
       backgroundColor: 0x0f172a,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -121,7 +155,12 @@ export default function PrintingListCanvas({
     appRef.current = app;
     container.appendChild(app.view as HTMLCanvasElement);
     app.stage.eventMode = 'static';
-    app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, VIEW_HEIGHT_PX);
+    app.stage.hitArea = new PIXI.Rectangle(
+      0,
+      0,
+      CANVAS_WIDTH_PX * initScale,
+      VIEW_HEIGHT_PX * initScale,
+    );
 
     // ── planck.js world ────────────────────────────────────────────────────
     const world = new World(Vec2(0, 20));
@@ -175,31 +214,46 @@ export default function PrintingListCanvas({
 
     // ── Background ─────────────────────────────────────────────────────────
     const gridGfx = new PIXI.Graphics();
-    gridGfx.lineStyle(0.5, 0x334155, 0.6);
-    for (let x = GRID_PX; x < CANVAS_WIDTH_PX; x += GRID_PX)
-      gridGfx.moveTo(x, VIEW_TOP_MARGIN_PX).lineTo(x, VIEW_TOP_MARGIN_PX + CANVAS_HEIGHT_PX);
-    for (let y = GRID_PX; y < CANVAS_HEIGHT_PX; y += GRID_PX)
-      gridGfx.moveTo(0, VIEW_TOP_MARGIN_PX + y).lineTo(CANVAS_WIDTH_PX, VIEW_TOP_MARGIN_PX + y);
     app.stage.addChild(gridGfx);
-
     const borderGfx = new PIXI.Graphics();
-    borderGfx.lineStyle({ width: 2, color: 0x64748b, alpha: 1, alignment: 0 });
-    borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX);
     app.stage.addChild(borderGfx);
-
     const outOfBoundsBorderGfx = new PIXI.Graphics();
-    outOfBoundsBorderGfx.lineStyle({ width: 2, color: 0xef4444, alpha: 1, alignment: 0 });
-    drawDottedRect(
-      outOfBoundsBorderGfx,
-      0,
-      VIEW_TOP_MARGIN_PX,
-      CANVAS_WIDTH_PX,
-      CANVAS_HEIGHT_PX,
-      12,
-      8,
-    );
     outOfBoundsBorderGfx.visible = false;
     app.stage.addChild(outOfBoundsBorderGfx);
+
+    function redrawStatics(sc: number) {
+      const scaledGridPx = GRID_PX * sc;
+      gridGfx.clear();
+      gridGfx.lineStyle(0.5, 0x334155, 0.6);
+      for (let x = scaledGridPx; x < CANVAS_WIDTH_PX * sc; x += scaledGridPx)
+        gridGfx
+          .moveTo(x, VIEW_TOP_MARGIN_PX * sc)
+          .lineTo(x, (VIEW_TOP_MARGIN_PX + CANVAS_HEIGHT_PX) * sc);
+      for (let y = scaledGridPx; y < CANVAS_HEIGHT_PX * sc; y += scaledGridPx)
+        gridGfx
+          .moveTo(0, VIEW_TOP_MARGIN_PX * sc + y)
+          .lineTo(CANVAS_WIDTH_PX * sc, VIEW_TOP_MARGIN_PX * sc + y);
+
+      borderGfx.clear();
+      borderGfx.lineStyle({ width: 2, color: 0x64748b, alpha: 1, alignment: 0 });
+      borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX * sc, CANVAS_WIDTH_PX * sc, CANVAS_HEIGHT_PX * sc);
+
+      const wasVisible = outOfBoundsBorderGfx.visible;
+      outOfBoundsBorderGfx.clear();
+      outOfBoundsBorderGfx.lineStyle({ width: 2, color: 0xef4444, alpha: 1, alignment: 0 });
+      drawDottedRect(
+        outOfBoundsBorderGfx,
+        0,
+        VIEW_TOP_MARGIN_PX * sc,
+        CANVAS_WIDTH_PX * sc,
+        CANVAS_HEIGHT_PX * sc,
+        12 * sc,
+        8 * sc,
+      );
+      outOfBoundsBorderGfx.visible = wasVisible;
+    }
+    redrawStaticsRef.current = redrawStatics;
+    redrawStatics(initScale);
 
     // ── Saved layout ───────────────────────────────────────────────────────
     let savedLayout: SavedLayout | null = null;
@@ -263,11 +317,12 @@ export default function PrintingListCanvas({
       const labelStr = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name;
       const label = new PIXI.Text(labelStr, {
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        fontSize: 8,
+        fontSize: 12,
         fill: 0xffffff,
         align: 'center',
       });
       label.anchor.set(0.5);
+      label.roundPixels = true;
       app.stage.addChild(label);
 
       entries.push({
@@ -296,6 +351,7 @@ export default function PrintingListCanvas({
 
     // ── Render helper ──────────────────────────────────────────────────────
     function renderEntries(overlapping: Set<Body>) {
+      const sc = displayScaleRef.current;
       let hasOutOfBounds = false;
       for (const {
         body,
@@ -307,9 +363,18 @@ export default function PrintingListCanvas({
       } of entries) {
         const outOfBounds = isOutOfBounds(body, bVerts);
         const renderColor = overlapping.has(body) ? color : darkenColor(color, 0.45);
-        drawBody(gfx, body, visualLocalVerts, bVerts, renderColor, outOfBounds, VIEW_TOP_MARGIN_PX);
+        drawBody(
+          gfx,
+          body,
+          visualLocalVerts,
+          bVerts,
+          renderColor,
+          outOfBounds,
+          VIEW_TOP_MARGIN_PX * sc,
+          sc,
+        );
         const pos = body.getPosition();
-        label.position.set(toPixels(pos.x), toPixels(pos.y) + VIEW_TOP_MARGIN_PX);
+        label.position.set(toPixels(pos.x) * sc, toPixels(pos.y) * sc + VIEW_TOP_MARGIN_PX * sc);
         hasOutOfBounds ||= outOfBounds;
       }
       outOfBoundsBorderGfx.visible = hasOutOfBounds;
@@ -345,7 +410,8 @@ export default function PrintingListCanvas({
         settleFrames = 0;
       }
 
-      const { x, y } = e.global;
+      const x = e.global.x / canvasScaleRef.current;
+      const y = e.global.y / canvasScaleRef.current;
       const worldY = y - VIEW_TOP_MARGIN_PX;
       const hit = queryPointPx(world, x, worldY);
       if (hit) {
@@ -362,7 +428,8 @@ export default function PrintingListCanvas({
 
     app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
       if (!drag) return;
-      const { x, y } = e.global;
+      const x = e.global.x / canvasScaleRef.current;
+      const y = e.global.y / canvasScaleRef.current;
       const worldY = y - VIEW_TOP_MARGIN_PX;
       drag.body.setPosition(Vec2(toPhysics(x - drag.ox), toPhysics(worldY - drag.oy)));
     });
@@ -428,6 +495,7 @@ export default function PrintingListCanvas({
       dynamicBodiesRef.current = [];
       modelColorRef.current = new Map();
       saveLayoutRef.current = null;
+      redrawStaticsRef.current = null;
       app.destroy(true, { children: true, texture: true, baseTexture: true });
       // planck world is GC'd when ref is released — no explicit clear needed
     };
@@ -492,12 +560,13 @@ export default function PrintingListCanvas({
             model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name,
             {
               fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontSize: 8,
+              fontSize: 12,
               fill: 0xffffff,
               align: 'center',
             },
           );
           label.anchor.set(0.5);
+          label.roundPixels = true;
           app.stage.addChild(label);
 
           entriesRef.current.push({
@@ -650,8 +719,8 @@ export default function PrintingListCanvas({
       <div
         ref={containerRef}
         style={{
-          width: CANVAS_WIDTH_PX,
-          height: VIEW_HEIGHT_PX,
+          width: CANVAS_WIDTH_PX * canvasScale,
+          height: VIEW_HEIGHT_PX * canvasScale,
           borderRadius: 0,
           overflow: 'hidden',
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',

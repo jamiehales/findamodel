@@ -134,13 +134,14 @@ export function drawBody(
   color: number,
   highlightOutOfBounds = false,
   yOffset = 0,
+  scale = 1,
 ) {
   gfx.clear();
   if (!visualLocalVerts.length) return;
 
   const pos = body.getPosition();
-  const px = toPixels(pos.x);
-  const py = toPixels(pos.y);
+  const px = toPixels(pos.x) * scale;
+  const py = toPixels(pos.y) * scale;
   const angle = body.getAngle();
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -148,10 +149,16 @@ export function drawBody(
   gfx.beginFill(color, highlightOutOfBounds ? 0.62 : 0.45);
   gfx.lineStyle(highlightOutOfBounds ? 3 : 1.5, highlightOutOfBounds ? 0xef4444 : color, 0.95);
   const v0 = visualLocalVerts[0];
-  gfx.moveTo(v0.x * cos - v0.y * sin + px, v0.x * sin + v0.y * cos + py + yOffset);
+  gfx.moveTo(
+    (v0.x * cos - v0.y * sin) * scale + px,
+    (v0.x * sin + v0.y * cos) * scale + py + yOffset,
+  );
   for (let i = 1; i < visualLocalVerts.length; i++) {
     const v = visualLocalVerts[i];
-    gfx.lineTo(v.x * cos - v.y * sin + px, v.x * sin + v.y * cos + py + yOffset);
+    gfx.lineTo(
+      (v.x * cos - v.y * sin) * scale + px,
+      (v.x * sin + v.y * cos) * scale + py + yOffset,
+    );
   }
   gfx.closePath();
   gfx.endFill();
@@ -160,10 +167,16 @@ export function drawBody(
   if (highlightOutOfBounds && borderLocalVerts.length) {
     gfx.lineStyle(3, 0xef4444, 0.98);
     const b0 = borderLocalVerts[0];
-    gfx.moveTo(b0.x * cos - b0.y * sin + px, b0.x * sin + b0.y * cos + py + yOffset);
+    gfx.moveTo(
+      (b0.x * cos - b0.y * sin) * scale + px,
+      (b0.x * sin + b0.y * cos) * scale + py + yOffset,
+    );
     for (let i = 1; i < borderLocalVerts.length; i++) {
       const v = borderLocalVerts[i];
-      gfx.lineTo(v.x * cos - v.y * sin + px, v.x * sin + v.y * cos + py + yOffset);
+      gfx.lineTo(
+        (v.x * cos - v.y * sin) * scale + px,
+        (v.x * sin + v.y * cos) * scale + py + yOffset,
+      );
     }
     gfx.closePath();
   }
@@ -183,10 +196,10 @@ export function drawBody(
             0.5,
           );
           const wp0 = body.getWorldPoint(poly.m_vertices[0]);
-          gfx.moveTo(toPixels(wp0.x), toPixels(wp0.y) + yOffset);
+          gfx.moveTo(toPixels(wp0.x) * scale, toPixels(wp0.y) * scale + yOffset);
           for (let vi = 1; vi < vCount; vi++) {
             const wp = body.getWorldPoint(poly.m_vertices[vi]);
-            gfx.lineTo(toPixels(wp.x), toPixels(wp.y) + yOffset);
+            gfx.lineTo(toPixels(wp.x) * scale, toPixels(wp.y) * scale + yOffset);
           }
           gfx.closePath();
         }
