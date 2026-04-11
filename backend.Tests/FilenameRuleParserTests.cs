@@ -74,7 +74,8 @@ public class FilenameRuleParserTests
             ["include_extension"] = JsonDocument.Parse("\"true\"").RootElement,
         };
         var result = FilenameRuleParser.ParseValue("/models/dragon.stl", NoFields, options);
-        Assert.Contains(".stl", result.ToLowerInvariant());
+        Assert.NotNull(result);
+        Assert.Contains(".stl", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -85,7 +86,8 @@ public class FilenameRuleParserTests
             ["include_extension"] = JsonDocument.Parse("\"false\"").RootElement,
         };
         var result = FilenameRuleParser.ParseValue("/models/dragon.stl", NoFields, options);
-        Assert.DoesNotContain("stl", result.ToLowerInvariant());
+        Assert.NotNull(result);
+        Assert.DoesNotContain("stl", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

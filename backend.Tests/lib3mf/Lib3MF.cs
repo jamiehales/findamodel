@@ -37,6 +37,8 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 
+#pragma warning disable CS0108, CS8600, CS8603, CS8604, CS8605
+
 namespace Lib3MF {
 
 	/// <summary>
@@ -9969,3 +9971,5 @@ namespace Lib3MF {
 	}
 
 }
+
+#pragma warning restore CS0108, CS8600, CS8603, CS8604, CS8605
