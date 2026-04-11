@@ -82,12 +82,20 @@ public record ExplorerModelItemDto(
     ConfigFieldsDto? ResolvedMetadata = null,
     Dictionary<string, string>? RuleConfigs = null);
 
+/// <summary>A previewable non-model file entry (image or text) in the explorer grid.</summary>
+public record ExplorerFileItemDto(
+    string FileName,
+    string RelativePath,
+    string FileType,
+    long FileSize);
+
 /// <summary>Response for GET /api/explorer.</summary>
 public record ExplorerResponseDto(
     string CurrentPath,
     string? ParentPath,
     List<FolderItemDto> Folders,
-    List<ExplorerModelItemDto> Models);
+    List<ExplorerModelItemDto> Models,
+    List<ExplorerFileItemDto> Files);
 
 /// <summary>Response body for 422 validation errors on config update.</summary>
 public record ConfigValidationErrorResponse(Dictionary<string, string> FieldErrors);

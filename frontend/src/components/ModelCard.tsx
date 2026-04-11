@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import { Box, Chip, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
 import AppCard from './AppCard';
@@ -18,6 +19,7 @@ interface ModelCardProps {
 
 function ModelCard({ model, href }: ModelCardProps) {
   const [hovered, setHovered] = useState(false);
+  const showSlicerPlaceholder = !model.previewUrl && !model.canExportToPlate;
 
   return (
     <AppCard
@@ -29,6 +31,11 @@ function ModelCard({ model, href }: ModelCardProps) {
     >
       {model.previewUrl ? (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
+      ) : showSlicerPlaceholder ? (
+        <Box className={styles.previewPlaceholder}>
+          <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
+          <p className={styles.previewPlaceholderLabel}>{model.fileType.toUpperCase()}</p>
+        </Box>
       ) : (
         <Box className={styles.previewPlaceholder} />
       )}

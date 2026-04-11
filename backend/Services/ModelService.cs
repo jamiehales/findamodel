@@ -16,7 +16,9 @@ public class ModelService(
     AppConfigService appConfigService)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Models);
-    private static readonly string[] ModelExtensions = [".stl", ".obj"];
+    private static readonly string[] ModelExtensions = [".stl", ".obj", ".lys", ".lyt", ".ctb"];
+    private static readonly HashSet<string> NonGeometryTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "lys", "lyt", "ctb" };
 
     public async Task<List<ModelDto>> GetModelsAsync(int? limit = null)
     {
@@ -194,8 +196,10 @@ public class ModelService(
             {
                 var currentChecksum = await ComputeChecksumAsync(file);
                 var expectedRaftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
-                var hullMetadataMismatch = NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
-                var previewStale = NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
+                var hullMetadataMismatch = !IsNonGeometryType(fileType)
+                    && NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
+                var previewStale = !IsNonGeometryType(fileType)
+                    && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
                 if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale) continue;
 
                 var entity = await db.Models.FindAsync(existingEntry.Id);
@@ -328,13 +332,13 @@ public class ModelService(
         var checksum = await ComputeChecksumAsync(fullPath);
         if (existing is not null
             && existing.Checksum == checksum
-            && !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm)
-            && !NeedsPreviewRegeneration(existing.PreviewGenerationVersion))
+            && (IsNonGeometryType(fileType) || !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
+            && (IsNonGeometryType(fileType) || !NeedsPreviewRegeneration(existing.PreviewGenerationVersion)))
             return false;
 
         if (existing is not null && existing.Checksum != checksum)
             logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
-        else if (existing is not null && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
+        else if (existing is not null && !IsNonGeometryType(fileType) && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             logger.LogInformation(
                 "Single-model index refreshing hulls due to config mismatch: {FilePath} (stored checksum: {StoredChecksum}, expected checksum: {ExpectedChecksum})",
                 fullPath,
@@ -372,7 +376,7 @@ public class ModelService(
                 existing.DirectoryConfigId = data.DirConfig?.Id;
                 ApplyFileData(existing, data, info);
             }
-            else if (NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
+            else if (!IsNonGeometryType(fileType) && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             {
                 existing.FileType = fileType;
                 if (directoryConfigs.TryGetValue(directory, out var dirConfig))
@@ -461,18 +465,33 @@ public class ModelService(
         float defaultRaftHeightMm = HullCalculationService.DefaultRaftHeightMm)
     {
         var checksum = knownChecksum ?? await ComputeChecksumAsync(file);
-        var geometry = await loaderService.LoadModelAsync(file, fileType);
-        var previewImagePath = geometry is not null
-            ? await previewService.GeneratePreviewAsync(geometry, checksum)
-            : null;
         var raftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
-        var (convexHull, concaveHull, convexSansRaftHull) = geometry is not null
-            ? await hullCalculationService.CalculateHullsAsync(geometry, raftHeightMm: raftHeightMm)
-            : (null, null, null);
+
+        // Skip expensive geometry pipeline for file types that do not contain mesh geometry.
+        LoadedGeometry? geometry = null;
+        string? previewImagePath = null;
+        string? convexHull = null, concaveHull = null, convexSansRaftHull = null;
+
+        if (!IsNonGeometryType(fileType))
+        {
+            geometry = await loaderService.LoadModelAsync(file, fileType);
+            previewImagePath = geometry is not null
+                ? await previewService.GeneratePreviewAsync(geometry, checksum)
+                : null;
+
+            if (geometry is not null)
+            {
+                (convexHull, concaveHull, convexSansRaftHull) =
+                    await hullCalculationService.CalculateHullsAsync(geometry, raftHeightMm: raftHeightMm);
+            }
+        }
+
         directoryConfigs.TryGetValue(directory, out var dirConfig);
         var metadata = ModelMetadataHelper.Compute(file, dirConfig);
         return new ModelFileData(checksum, geometry, previewImagePath, convexHull, concaveHull, convexSansRaftHull, raftHeightMm, metadata, dirConfig);
     }
+
+    private static bool IsNonGeometryType(string fileType) => NonGeometryTypes.Contains(fileType);
 
     private static void ApplyFileData(CachedModel entity, ModelFileData d, FileInfo info)
     {

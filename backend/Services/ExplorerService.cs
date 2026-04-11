@@ -13,7 +13,13 @@ public class ExplorerService(
 {
     // Extensible: add new supported file types here
     private static readonly HashSet<string> SupportedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { "stl", "obj" };
+        new(StringComparer.OrdinalIgnoreCase) { "stl", "obj", "lys", "lyt", "ctb" };
+
+    private static readonly HashSet<string> ImageExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { "png", "jpg", "jpeg", "gif", "webp" };
+
+    private static readonly HashSet<string> TextExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { "txt", "md" };
 
     /// <summary>
     /// Lists the contents of <paramref name="relativePath"/> within the models root:
@@ -48,6 +54,17 @@ public class ExplorerService(
         var modelFileNames = Directory.GetFiles(fullPath)
             .Select(f => new FileInfo(f))
             .Where(f => SupportedExtensions.Contains(f.Extension.TrimStart('.')))
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // ---- Previewable non-model files ----
+        var previewableFiles = Directory.GetFiles(fullPath)
+            .Select(f => new FileInfo(f))
+            .Where(f =>
+            {
+                var ext = f.Extension.TrimStart('.').ToLowerInvariant();
+                return ImageExtensions.Contains(ext) || TextExtensions.Contains(ext);
+            })
             .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -163,7 +180,14 @@ public class ExplorerService(
             ? null
             : (relativePath.Contains('/') ? relativePath[..relativePath.LastIndexOf('/')] : "");
 
-        return new ExplorerResponseDto(relativePath, parentPath, folders, models);
+        var files = previewableFiles.Select(fi =>
+        {
+            var relPath = relativePath == "" ? fi.Name : $"{relativePath}/{fi.Name}";
+            var ext = fi.Extension.TrimStart('.').ToLowerInvariant();
+            return new ExplorerFileItemDto(fi.Name, relPath, ext, fi.Length);
+        }).ToList();
+
+        return new ExplorerResponseDto(relativePath, parentPath, folders, models, files);
     }
 
     // ---- Helpers ----

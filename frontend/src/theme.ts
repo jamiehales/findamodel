@@ -422,6 +422,16 @@ export function buildAppColors(_themeName: ThemeName) {
     fileType: {
       stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
       obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
+      ctb: { bg: 'rgba(217, 119, 6, 0.2)', color: '#fdba74' },
+      lys: { bg: 'rgba(190, 24, 93, 0.2)', color: '#f9a8d4' },
+      lyt: { bg: 'rgba(225, 29, 72, 0.2)', color: '#fda4af' },
+      png: { bg: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd' },
+      jpg: { bg: 'rgba(56, 189, 248, 0.2)', color: '#7dd3fc' },
+      jpeg: { bg: 'rgba(56, 189, 248, 0.2)', color: '#7dd3fc' },
+      gif: { bg: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7' },
+      webp: { bg: 'rgba(20, 184, 166, 0.2)', color: '#99f6e4' },
+      txt: { bg: 'rgba(148, 163, 184, 0.2)', color: '#cbd5e1' },
+      md: { bg: 'rgba(129, 140, 248, 0.2)', color: '#c7d2fe' },
       // add new file types here
     } as Record<string, { bg: string; color: string }>,
     metaBadge: {

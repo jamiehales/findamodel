@@ -7,6 +7,7 @@ import { useExplorer } from '../lib/queries';
 import AppDialog from '../components/AppDialog';
 import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
+import ExplorerFileCard from '../components/ExplorerFileCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
 import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
@@ -22,7 +23,7 @@ function ExplorePageInner({ path }: { path: string }) {
 
   if (isError) return <ErrorView message="Failed to load directory. Check that the path exists." />;
 
-  const isEmpty = data.folders.length === 0 && data.models.length === 0;
+  const isEmpty = data.folders.length === 0 && data.models.length === 0 && data.files.length === 0;
 
   return (
     <>
@@ -33,7 +34,11 @@ function ExplorePageInner({ path }: { path: string }) {
       )}
 
       {data.folders.length > 0 && (
-        <Box className={data.models.length > 0 ? styles.sectionWithMargin : undefined}>
+        <Box
+          className={
+            data.models.length > 0 || data.files.length > 0 ? styles.sectionWithMargin : undefined
+          }
+        >
           <Typography variant="section-label">Folders</Typography>
           <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
             {data.folders.map((folder) => (
@@ -44,7 +49,7 @@ function ExplorePageInner({ path }: { path: string }) {
       )}
 
       {data.models.length > 0 && (
-        <Box>
+        <Box className={data.files.length > 0 ? styles.sectionWithMargin : undefined}>
           <Typography variant="section-label">Models</Typography>
           <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
             {data.models.map((model) => (
@@ -53,6 +58,17 @@ function ExplorePageInner({ path }: { path: string }) {
                 model={model}
                 href={model.id ? `/model/${encodeURIComponent(model.id)}` : undefined}
               />
+            ))}
+          </CardGrid>
+        </Box>
+      )}
+
+      {data.files.length > 0 && (
+        <Box>
+          <Typography variant="section-label">Files</Typography>
+          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
+            {data.files.map((file) => (
+              <ExplorerFileCard key={file.relativePath} file={file} />
             ))}
           </CardGrid>
         </Box>

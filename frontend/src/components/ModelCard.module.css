@@ -19,6 +19,24 @@
   flex: 1;
   min-height: 0;
   background: var(--color-bg-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.previewPlaceholderIcon {
+  font-size: 2.4rem !important;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.previewPlaceholderLabel {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.92);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .infoBlock {

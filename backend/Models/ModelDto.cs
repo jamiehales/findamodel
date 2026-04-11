@@ -7,6 +7,7 @@ public class ModelDto
     public string? PartName { get; set; }
     public string RelativePath { get; set; } = "";
     public string FileType { get; set; } = "";
+    public bool CanExportToPlate { get; set; }
     public long FileSize { get; set; }
     public string FileUrl { get; set; } = "";
     public bool HasPreview { get; set; }

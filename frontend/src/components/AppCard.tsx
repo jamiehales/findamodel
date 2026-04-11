@@ -8,6 +8,7 @@ interface AppCardProps {
   children: React.ReactNode;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onClick?: () => void;
   interactive?: boolean;
 }
 
@@ -17,13 +18,19 @@ export default function AppCard({
   children,
   onMouseEnter,
   onMouseLeave,
+  onClick,
   interactive = false,
 }: AppCardProps) {
   const combinedClass = `${styles.base}${interactive ? ` ${styles.interactiveSurface}` : ''}${className ? ` ${className}` : ''}`;
 
   if (!href) {
     return (
-      <Box className={combinedClass} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+      <Box
+        className={combinedClass}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        onClick={onClick}
+      >
         {children}
       </Box>
     );

@@ -36,11 +36,23 @@ export interface ExplorerModel {
   ruleConfigs: Record<string, string> | null;
 }
 
+export interface ExplorerFile {
+  fileName: string;
+  relativePath: string;
+  fileType: string;
+  fileSize: number;
+}
+
 export interface ExplorerResponse {
   currentPath: string;
   parentPath: string | null;
   folders: ExplorerFolder[];
   models: ExplorerModel[];
+  files: ExplorerFile[];
+}
+
+export function explorerFileUrl(relativePath: string): string {
+  return `/api/explorer/file?path=${encodeURIComponent(relativePath)}`;
 }
 
 export interface DirectoryConfigDetail {

@@ -4,6 +4,7 @@ export interface Model {
   partName: string | null;
   relativePath: string;
   fileType: string;
+  canExportToPlate: boolean;
   fileSize: number;
   fileUrl: string;
   hasPreview: boolean;
@@ -345,15 +346,38 @@ export interface PlatePlacement {
   angleRad: number;
 }
 
+export interface PlateGenerationResult {
+  blob: Blob;
+  warning: string | null;
+  skippedModels: string[];
+}
+
 export async function generatePlate(
   placements: PlatePlacement[],
   format: '3mf' | 'stl' | 'glb' = '3mf',
-): Promise<Blob> {
+): Promise<PlateGenerationResult> {
   const r = await fetch('/api/plate/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ placements, format }),
   });
-  if (!r.ok) throw new Error('Failed to generate plate');
-  return r.blob();
+  if (!r.ok) {
+    const message = await r.text();
+    throw new Error(message || 'Failed to generate plate');
+  }
+
+  const warning = r.headers.get('X-Plate-Warning');
+  const skippedRaw = r.headers.get('X-Plate-Skipped-Models');
+  const skippedModels = skippedRaw
+    ? skippedRaw
+        .split(',')
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0)
+    : [];
+
+  return {
+    blob: await r.blob(),
+    warning,
+    skippedModels,
+  };
 }

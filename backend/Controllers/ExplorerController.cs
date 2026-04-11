@@ -11,6 +11,9 @@ public class ExplorerController(
     MetadataConfigService metadataConfigService,
     IConfiguration configuration) : ControllerBase
 {
+    private static readonly HashSet<string> PreviewableFileExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { "png", "jpg", "jpeg", "gif", "webp", "txt", "md" };
+
     /// <summary>
     /// GET /api/explorer?path=some/relative/path
     /// Lists subdirectories and model files at the given path (empty = root).
@@ -27,6 +30,47 @@ public class ExplorerController(
         {
             return NotFound($"Directory not found: {path}");
         }
+    }
+
+    /// <summary>
+    /// GET /api/explorer/file?path=some/relative/file
+    /// Streams an explorer-previewable file (image/text) directly from the models root.
+    /// </summary>
+    [HttpGet("file")]
+    public IActionResult GetFile([FromQuery] string path)
+    {
+        var modelsRoot = configuration["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsRoot))
+            return StatusCode(500, "Models:DirectoryPath is not configured.");
+
+        if (string.IsNullOrWhiteSpace(path))
+            return BadRequest("File path is required.");
+
+        var resolvedPath = Path.Combine(modelsRoot, path.Replace('/', Path.DirectorySeparatorChar));
+        var fullPath = Path.GetFullPath(resolvedPath);
+        var fullRoot = Path.GetFullPath(modelsRoot);
+
+        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Invalid file path.");
+
+        var ext = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
+        if (!PreviewableFileExtensions.Contains(ext))
+            return BadRequest("Unsupported file type.");
+
+        if (!System.IO.File.Exists(fullPath))
+            return NotFound();
+
+        var contentType = ext switch
+        {
+            "png" => "image/png",
+            "jpg" or "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "txt" or "md" => "text/plain; charset=utf-8",
+            _ => "application/octet-stream",
+        };
+
+        return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
     }
 
     /// <summary>

@@ -13,6 +13,9 @@ public class PlateController(
     ModelSaverService saverService,
     IConfiguration config) : ControllerBase
 {
+    private static readonly HashSet<string> NonGeometryTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "lys", "lyt", "ctb" };
+
     /// <summary>
     /// Generates a build-plate file from the supplied model placements.
     ///
@@ -35,6 +38,8 @@ public class PlateController(
             return BadRequest($"Unsupported format '{request.Format}'. Supported: 3mf, stl, glb");
 
         // Load each unique model once.
+        var exportPlacements = new List<PlacementDto>(request.Placements.Count);
+        var skippedModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var geometryByModelId = new Dictionary<Guid, LoadedGeometry>();
         var objectIdByModelId = new Dictionary<Guid, int>();
         int nextObjectId = 1;
@@ -45,11 +50,20 @@ public class PlateController(
                 return BadRequest($"Invalid model ID: {placement.ModelId}");
 
             if (geometryByModelId.ContainsKey(modelId))
+            {
+                exportPlacements.Add(placement);
                 continue;
+            }
 
             var model = await modelService.GetModelAsync(modelId);
             if (model == null)
                 return NotFound($"Model not found: {placement.ModelId}");
+
+            if (NonGeometryTypes.Contains(model.FileType))
+            {
+                skippedModelNames.Add(model.FileName);
+                continue;
+            }
 
             var fullPath = string.IsNullOrEmpty(model.Directory)
                 ? Path.Combine(modelsPath, model.FileName)
@@ -64,22 +78,37 @@ public class PlateController(
 
             geometryByModelId[modelId] = geometry;
             objectIdByModelId[modelId] = nextObjectId++;
+            exportPlacements.Add(placement);
         }
+
+        if (skippedModelNames.Count > 0)
+        {
+            Response.Headers.Append("X-Plate-Skipped-Models", string.Join(',', skippedModelNames));
+            Response.Headers.Append(
+                "X-Plate-Warning",
+                "Some models were skipped because they do not contain exportable geometry (LYS/LYT/CTB).");
+        }
+
+        if (exportPlacements.Count == 0)
+            return UnprocessableEntity("No geometry-based models were included in the export request.");
 
         switch (format)
         {
             case "3mf":
-                return Generate3mf(request, geometryByModelId, objectIdByModelId);
+                return Generate3mf(exportPlacements, geometryByModelId, objectIdByModelId);
             case "stl":
-                return GenerateStl(request, geometryByModelId);
+                return GenerateStl(exportPlacements, geometryByModelId);
             case "glb":
-                return GenerateGlb(request, geometryByModelId, objectIdByModelId);
+                return GenerateGlb(exportPlacements, geometryByModelId, objectIdByModelId);
             default:
                 throw new NotImplementedException($"Unhandled format '{format}'");
         }
     }
 
-    private IActionResult Generate3mf(GeneratePlateRequest request, Dictionary<Guid, LoadedGeometry> geometryByModelId, Dictionary<Guid, int> objectIdByModelId)
+    private IActionResult Generate3mf(
+        IReadOnlyList<PlacementDto> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        Dictionary<Guid, int> objectIdByModelId)
     {
         /// <summary>
         /// Computes the 3MF transform string for a placement, expressed in Z-up space.
@@ -110,7 +139,7 @@ public class PlateController(
         }
 
         var items = new List<(int ObjectId, string Transform)>();
-        foreach (var placement in request.Placements)
+        foreach (var placement in placements)
         {
             var modelId = Guid.Parse(placement.ModelId);
             items.Add((objectIdByModelId[modelId], Compute3mfTransform(placement.AngleRad, placement.XMm, placement.YMm)));
@@ -119,7 +148,7 @@ public class PlateController(
         return File(saverService.Save3mf(objects, items), "application/vnd.ms-3mf", "plate.3mf");
     }
 
-    private IActionResult GenerateStl(GeneratePlateRequest request, Dictionary<Guid, LoadedGeometry> geometryByModelId)
+    private IActionResult GenerateStl(IReadOnlyList<PlacementDto> placements, Dictionary<Guid, LoadedGeometry> geometryByModelId)
     {
         /// <summary>Rotate around Y axis then translate in the XZ plane (used for STL output).</summary>
         Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
@@ -131,7 +160,7 @@ public class PlateController(
 
         // Merge all placements into a single triangle soup, converting to Z-up.
         var merged = new List<Triangle3D>();
-        foreach (var placement in request.Placements)
+        foreach (var placement in placements)
         {
             var modelId = Guid.Parse(placement.ModelId);
             var geometry = geometryByModelId[modelId];
@@ -149,7 +178,10 @@ public class PlateController(
         return File(saverService.SaveStl(merged, "findamodel plate"), "model/stl", "plate.stl");
     }
 
-    private IActionResult GenerateGlb(GeneratePlateRequest request, Dictionary<Guid, LoadedGeometry> geometryByModelId, Dictionary<Guid, int> objectIdByModelId)
+    private IActionResult GenerateGlb(
+        IReadOnlyList<PlacementDto> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        Dictionary<Guid, int> objectIdByModelId)
     {
         /// <summary>
         /// Computes the Y-up placement transform for GLB output as a System.Numerics matrix.
@@ -163,18 +195,18 @@ public class PlateController(
         /// </summary>
         Matrix4x4 ComputeGlbTransform(double angleRad, double xMm, double yMm)
         {
-            var rotation    = Matrix4x4.CreateRotationY((float)angleRad);
+            var rotation = Matrix4x4.CreateRotationY((float)angleRad);
             var translation = Matrix4x4.CreateTranslation((float)xMm, 0f, (float)yMm);
             return rotation * translation;
         }
-        
+
         // GLB: geometry stays in Y-up (glTF's native system — no axis conversion).
         // Each unique mesh is stored once; node-level instancing references it N times.
         var glbObjects = geometryByModelId
             .Select(kvp => (objectIdByModelId[kvp.Key], (IReadOnlyList<Triangle3D>)kvp.Value.Triangles))
             .ToList();
 
-        var glbItems = request.Placements
+        var glbItems = placements
             .Select(p => (objectIdByModelId[Guid.Parse(p.ModelId)], ComputeGlbTransform(p.AngleRad, p.XMm, p.YMm)))
             .ToList();
 

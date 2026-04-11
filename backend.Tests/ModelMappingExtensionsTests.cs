@@ -16,6 +16,7 @@ public class ModelMappingExtensionsTests
         FileType = "stl",
         FileSize = 1024,
         PreviewImagePath = "preview/abc.png",
+        PreviewGenerationVersion = ModelPreviewService.CurrentPreviewGenerationVersion,
         CalculatedCreator = "Alice",
         CalculatedCollection = "Fantasy",
         CalculatedSubcollection = "Creatures",

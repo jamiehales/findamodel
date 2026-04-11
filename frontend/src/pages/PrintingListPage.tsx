@@ -52,6 +52,7 @@ function PrintingListPage() {
   const [archiveJob, setArchiveJob] = useState<PrintingListArchiveJob | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiveDownloading, setArchiveDownloading] = useState(false);
+  const [plateWarning, setPlateWarning] = useState<string | null>(null);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -64,6 +65,7 @@ function PrintingListPage() {
 
   const listName = list?.name ?? 'Printing list';
   const isPending = modelsPending || listPending;
+  const hasNonExportableModels = listedModels.some((m) => !m.canExportToPlate);
   const archiveInProgress =
     archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
   const archiveBusy = archiveInProgress || archiveDownloading;
@@ -159,6 +161,7 @@ function PrintingListPage() {
   }
 
   async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
+    setPlateWarning(null);
     setSavingPlate(true);
     try {
       let placements: Parameters<typeof generatePlate>[0] = [];
@@ -186,13 +189,21 @@ function PrintingListPage() {
         /* proceed with empty placements */
       }
 
-      const blob = await generatePlate(placements, format);
-      const url = URL.createObjectURL(blob);
+      const result = await generatePlate(placements, format);
+      if (result.warning) {
+        const skippedList =
+          result.skippedModels.length > 0 ? ` Skipped: ${result.skippedModels.join(', ')}.` : '';
+        setPlateWarning(`${result.warning}${skippedList}`);
+      }
+
+      const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = format === 'stl' ? 'plate.stl' : format === 'glb' ? 'plate.glb' : 'plate.3mf';
       a.click();
       URL.revokeObjectURL(url);
+    } catch (error) {
+      setPlateWarning(error instanceof Error ? error.message : 'Failed to generate plate');
     } finally {
       setSavingPlate(false);
     }
@@ -372,6 +383,13 @@ function PrintingListPage() {
             </Alert>
           )}
         </Box>
+      )}
+
+      {(hasNonExportableModels || plateWarning) && (
+        <Alert severity="warning" onClose={() => setPlateWarning(null)}>
+          {plateWarning ??
+            'Some files in this list (LYS, LYT, CTB) cannot be included in exported plates and will be skipped during plate generation.'}
+        </Alert>
       )}
 
       {isPending ? (

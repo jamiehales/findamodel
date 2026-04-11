@@ -232,6 +232,7 @@ function ModelPage() {
                       name: part.name,
                       relativePath: part.relativePath,
                       fileType: part.fileType,
+                      canExportToPlate: part.fileType === 'stl' || part.fileType === 'obj',
                       fileSize: part.fileSize,
                       fileUrl: '',
                       hasPreview: part.previewUrl != null,

@@ -5,6 +5,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import CircularProgress from '@mui/material/CircularProgress';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import type { ExplorerModel } from '../lib/api';
 import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import AppCard from './AppCard';
@@ -100,12 +101,17 @@ interface Props {
 
 function ExplorerModelCard({ model, href }: Props) {
   const fileType = model.fileType.toLowerCase();
+  const isNonGeometry = fileType === 'lys' || fileType === 'lyt' || fileType === 'ctb';
   const badgeClass =
     fileType === 'stl'
       ? styles.badgeStl
       : fileType === 'obj'
         ? styles.badgeObj
-        : styles.badgeDefault;
+        : fileType === 'ctb'
+          ? styles.badgeCtb
+          : fileType === 'lys' || fileType === 'lyt'
+            ? styles.badgeLychee
+            : styles.badgeDefault;
   const isIndexed = model.id != null;
   const [hovered, setHovered] = useState(false);
   const indexModel = useIndexModel(model.relativePath);
@@ -119,9 +125,16 @@ function ExplorerModelCard({ model, href }: Props) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {model.previewUrl && (
+      {model.previewUrl ? (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
-      )}
+      ) : isNonGeometry ? (
+        <Box className={styles.previewPlaceholder}>
+          <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
+          <Typography className={styles.previewPlaceholderText}>
+            {model.fileType.toUpperCase()}
+          </Typography>
+        </Box>
+      ) : null}
 
       <Box className={styles.overlay}>
         <span className={`${styles.badge} ${badgeClass}`}>{model.fileType.toUpperCase()}</span>

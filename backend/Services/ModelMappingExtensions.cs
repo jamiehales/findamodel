@@ -14,6 +14,7 @@ internal static class ModelMappingExtensions
             PartName = model.CalculatedPartName,
             RelativePath = ComputeRelativePath(model.Directory, model.FileName),
             FileType = model.FileType,
+            CanExportToPlate = model.FileType is "stl" or "obj",
             FileSize = model.FileSize,
             FileUrl = $"/api/models/{model.Id}/file",
             HasPreview = model.PreviewImagePath != null,

@@ -1,0 +1,121 @@
+.card {
+  composes: card from './CardBase.module.css';
+  background: var(--color-info-block);
+  cursor: pointer;
+}
+
+.previewImage {
+  composes: preview from './CardBase.module.css';
+  height: 100%;
+  object-fit: cover;
+}
+
+.previewText {
+  composes: preview from './CardBase.module.css';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.45rem;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.12) 0%, rgba(30, 41, 59, 0.5) 100%);
+}
+
+.previewTextIcon {
+  font-size: 2.4rem !important;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.previewTextType {
+  font-size: 0.7rem !important;
+  letter-spacing: 0.08em !important;
+  font-weight: 700 !important;
+  color: rgba(203, 213, 225, 0.9) !important;
+}
+
+.overlay {
+  composes: overlay from './CardBase.module.css';
+  background: linear-gradient(
+    to top,
+    var(--color-overlay-strong) 0%,
+    var(--color-overlay-mid) 58%,
+    transparent 100%
+  );
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  padding: 0.26rem 0.58rem;
+  border-radius: 999px;
+  margin-bottom: 0.25rem;
+}
+
+.name {
+  color: var(--color-text-primary);
+  font-size: 0.86rem !important;
+  font-weight: 600 !important;
+  line-height: 1.28 !important;
+  display: -webkit-box !important;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden !important;
+}
+
+.size {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem !important;
+}
+
+.dialogTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dialogTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialogBody {
+  padding-top: 0.5rem;
+}
+
+.imageDialog {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  max-height: 76vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.textContent {
+  margin: 0;
+  max-height: 68vh;
+  overflow: auto;
+  white-space: pre;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.75rem;
+  padding: 0.9rem;
+}
+
+.textInfo {
+  color: var(--color-text-secondary) !important;
+}

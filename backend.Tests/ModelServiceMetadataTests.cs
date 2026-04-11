@@ -211,6 +211,46 @@ public class ModelServiceMetadataTests
         }
     }
 
+    [Fact]
+    public async Task ScanAndCacheSingleAsync_IndexesNonGeometryFile_WithoutGeometryArtifacts()
+    {
+        var dbFactory = CreateFactory(nameof(ScanAndCacheSingleAsync_IndexesNonGeometryFile_WithoutGeometryArtifacts));
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        var ctbPath = Path.Combine(modelsRoot, "sample.ctb");
+        await File.WriteAllBytesAsync(ctbPath, [0x43, 0x54, 0x42, 0x00, 0x01, 0x02]);
+
+        try
+        {
+            var sut = CreateSut(CreateConfiguration(modelsRoot), dbFactory);
+
+            var indexed = await sut.ScanAndCacheSingleAsync("sample.ctb");
+            Assert.True(indexed);
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var model = await db.Models.SingleAsync(m => m.FileName == "sample.ctb");
+
+            Assert.Equal("ctb", model.FileType);
+            Assert.Null(model.PreviewImagePath);
+            Assert.Null(model.PreviewGenerationVersion);
+            Assert.Null(model.ConvexHullCoordinates);
+            Assert.Null(model.ConcaveHullCoordinates);
+            Assert.Null(model.ConvexSansRaftHullCoordinates);
+            Assert.Null(model.ScanConfigChecksum);
+            Assert.Null(model.GeometryCalculatedAt);
+
+            // Re-index should no-op for unchanged non-geometry files.
+            var indexedAgain = await sut.ScanAndCacheSingleAsync("sample.ctb");
+            Assert.False(indexedAgain);
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
     private static async Task<string> ComputeChecksumAsync(string filePath)
     {
         await using var stream = File.OpenRead(filePath);
