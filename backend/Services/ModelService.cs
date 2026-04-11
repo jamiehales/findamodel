@@ -454,15 +454,18 @@ public class ModelService(
         entity.CalculatedType = d.Metadata.Type;
         entity.CalculatedSupported = d.Metadata.Supported;
         entity.CalculatedModelName = d.Metadata.ModelName;
-        entity.DimensionXMm = d.Geometry?.DimensionXMm;
-        entity.DimensionYMm = d.Geometry?.DimensionYMm;
-        entity.DimensionZMm = d.Geometry?.DimensionZMm;
-        entity.SphereCentreX = d.Geometry?.SphereCentre.X;
-        entity.SphereCentreY = d.Geometry?.SphereCentre.Y;
-        entity.SphereCentreZ = d.Geometry?.SphereCentre.Z;
-        entity.SphereRadius = d.Geometry?.SphereRadius;
+        entity.DimensionXMm = ToFiniteOrNull(d.Geometry?.DimensionXMm);
+        entity.DimensionYMm = ToFiniteOrNull(d.Geometry?.DimensionYMm);
+        entity.DimensionZMm = ToFiniteOrNull(d.Geometry?.DimensionZMm);
+        entity.SphereCentreX = ToFiniteOrNull(d.Geometry?.SphereCentre.X);
+        entity.SphereCentreY = ToFiniteOrNull(d.Geometry?.SphereCentre.Y);
+        entity.SphereCentreZ = ToFiniteOrNull(d.Geometry?.SphereCentre.Z);
+        entity.SphereRadius = ToFiniteOrNull(d.Geometry?.SphereRadius);
         entity.GeometryCalculatedAt = d.Geometry is not null ? DateTime.UtcNow : null;
     }
+
+    private static float? ToFiniteOrNull(float? value) =>
+        value.HasValue && float.IsFinite(value.Value) ? value.Value : null;
 
     private async Task RefreshHullDataAsync(CachedModel entity, string filePath, string fileType)
     {

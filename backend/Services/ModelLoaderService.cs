@@ -26,7 +26,7 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
             {
                 "stl" => await ParseStlAsync(filePath),
                 "obj" => await ParseObjAsync(filePath),
-                _     => null
+                _ => null
             };
 
             if (rawTriangles == null || rawTriangles.Count == 0)
@@ -38,47 +38,102 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
             // ── 1. Z-up → Y-up ───────────────────────────────────────────────
             var yUpTriangles = ApplyZUpToYUp(rawTriangles);
 
-            // ── 2. AABB before centring ──────────────────────────────────────
+            // ── 2. AABB before centring (finite vertices only) ───────────────
             float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
             float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
+            var validTriangles = new List<Triangle3D>(yUpTriangles.Count);
+            var discardedTriangleCount = 0;
 
             foreach (var tri in yUpTriangles)
             {
+                if (!IsFinite(tri.V0) || !IsFinite(tri.V1) || !IsFinite(tri.V2))
+                {
+                    discardedTriangleCount++;
+                    continue;
+                }
+
+                validTriangles.Add(tri);
                 ExpandAabb(tri.V0, ref minX, ref maxX, ref minY, ref maxY, ref minZ, ref maxZ);
                 ExpandAabb(tri.V1, ref minX, ref maxX, ref minY, ref maxY, ref minZ, ref maxZ);
                 ExpandAabb(tri.V2, ref minX, ref maxX, ref minY, ref maxY, ref minZ, ref maxZ);
             }
 
+            if (validTriangles.Count == 0)
+            {
+                logger.LogWarning("No finite geometry found in {FilePath}", filePath);
+                return null;
+            }
+
+            if (discardedTriangleCount > 0)
+                logger.LogWarning("Discarded {Count} invalid triangles containing non-finite coordinates in {FilePath}", discardedTriangleCount, filePath);
+
             float dimX = maxX - minX;
             float dimY = maxY - minY;
             float dimZ = maxZ - minZ;
+
+            if (!IsFinite(dimX) || !IsFinite(dimY) || !IsFinite(dimZ) || dimX < 0f || dimY < 0f || dimZ < 0f)
+            {
+                logger.LogWarning("Computed invalid model dimensions for {FilePath}: X={DimX}, Y={DimY}, Z={DimZ}", filePath, dimX, dimY, dimZ);
+                return null;
+            }
 
             // ── 3. Centre (X/Z midpoint → 0, base Y → 0) ────────────────────
             float offsetX = -(minX + maxX) * 0.5f;
             float offsetY = -minY;
             float offsetZ = -(minZ + maxZ) * 0.5f;
 
-            var centred = new List<Triangle3D>(yUpTriangles.Count);
-            foreach (var tri in yUpTriangles)
+            var centred = new List<Triangle3D>(validTriangles.Count);
+            foreach (var tri in validTriangles)
             {
-                centred.Add(new Triangle3D(
-                    Translate(tri.V0, offsetX, offsetY, offsetZ),
-                    Translate(tri.V1, offsetX, offsetY, offsetZ),
-                    Translate(tri.V2, offsetX, offsetY, offsetZ),
-                    tri.Normal));  // normals are directions — translation doesn't affect them
+                var v0 = Translate(tri.V0, offsetX, offsetY, offsetZ);
+                var v1 = Translate(tri.V1, offsetX, offsetY, offsetZ);
+                var v2 = Translate(tri.V2, offsetX, offsetY, offsetZ);
+                if (!IsFinite(v0) || !IsFinite(v1) || !IsFinite(v2))
+                    continue;
+
+                centred.Add(new Triangle3D(v0, v1, v2, tri.Normal)); // normals are directions — translation doesn't affect them
+            }
+
+            if (centred.Count == 0)
+            {
+                logger.LogWarning("No finite centred geometry found in {FilePath}", filePath);
+                return null;
             }
 
             // ── 4. Bounding sphere of centred model ──────────────────────────
             // Sphere centre = AABB centre of centred model = (0, dimY/2, 0)
             var sphereCentre = new Vec3(0f, dimY * 0.5f, 0f);
+            if (!IsFinite(sphereCentre))
+            {
+                logger.LogWarning("Computed invalid sphere centre for {FilePath}", filePath);
+                return null;
+            }
+
             float sphereRadius = 0f;
+            var anyValidDistance = false;
             foreach (var tri in centred)
             {
-                sphereRadius = MathF.Max(sphereRadius, (tri.V0 - sphereCentre).Length);
-                sphereRadius = MathF.Max(sphereRadius, (tri.V1 - sphereCentre).Length);
-                sphereRadius = MathF.Max(sphereRadius, (tri.V2 - sphereCentre).Length);
+                if (TryDistance(tri.V0, sphereCentre, out var d0))
+                {
+                    sphereRadius = MathF.Max(sphereRadius, d0);
+                    anyValidDistance = true;
+                }
+
+                if (TryDistance(tri.V1, sphereCentre, out var d1))
+                {
+                    sphereRadius = MathF.Max(sphereRadius, d1);
+                    anyValidDistance = true;
+                }
+
+                if (TryDistance(tri.V2, sphereCentre, out var d2))
+                {
+                    sphereRadius = MathF.Max(sphereRadius, d2);
+                    anyValidDistance = true;
+                }
             }
-            if (sphereRadius < 1e-6f) sphereRadius = 1f;
+
+            if (!anyValidDistance || !IsFinite(sphereRadius) || sphereRadius < 1e-6f)
+                sphereRadius = 1f;
 
             logger.LogInformation(
                 "Loaded {FilePath}: {Count} triangles, {X:F2}×{Y:F2}×{Z:F2} mm, sphere r={R:F2} mm",
@@ -86,7 +141,7 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
 
             return new LoadedGeometry
             {
-                Triangles    = centred,
+                Triangles = centred,
                 SphereCentre = sphereCentre,
                 SphereRadius = sphereRadius,
                 DimensionXMm = dimX,
@@ -121,6 +176,34 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
 
     private static Vec3 Translate(Vec3 v, float dx, float dy, float dz)
         => new(v.X + dx, v.Y + dy, v.Z + dz);
+
+    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+    private static bool IsFinite(Vec3 v) => IsFinite(v.X) && IsFinite(v.Y) && IsFinite(v.Z);
+
+    private static bool TryDistance(Vec3 a, Vec3 b, out float distance)
+    {
+        var dx = (double)a.X - b.X;
+        var dy = (double)a.Y - b.Y;
+        var dz = (double)a.Z - b.Z;
+
+        var distSq = dx * dx + dy * dy + dz * dz;
+        if (double.IsNaN(distSq) || double.IsInfinity(distSq) || distSq < 0)
+        {
+            distance = 0f;
+            return false;
+        }
+
+        var dist = Math.Sqrt(distSq);
+        if (double.IsNaN(dist) || double.IsInfinity(dist) || dist > float.MaxValue)
+        {
+            distance = 0f;
+            return false;
+        }
+
+        distance = (float)dist;
+        return true;
+    }
 
     private static void ExpandAabb(Vec3 v,
         ref float minX, ref float maxX,
@@ -170,7 +253,7 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
         {
             await stream.ReadExactlyAsync(buf);
             var normal = new Vec3(
-                BitConverter.ToSingle(buf,  0), BitConverter.ToSingle(buf,  4), BitConverter.ToSingle(buf,  8));
+                BitConverter.ToSingle(buf, 0), BitConverter.ToSingle(buf, 4), BitConverter.ToSingle(buf, 8));
             var v0 = new Vec3(
                 BitConverter.ToSingle(buf, 12), BitConverter.ToSingle(buf, 16), BitConverter.ToSingle(buf, 20));
             var v1 = new Vec3(
@@ -229,8 +312,8 @@ public class ModelLoaderService(ILogger<ModelLoaderService> logger)
 
     private static async Task<List<Triangle3D>?> ParseObjAsync(string path)
     {
-        var vertices  = new List<Vec3>();
-        var normals   = new List<Vec3>();
+        var vertices = new List<Vec3>();
+        var normals = new List<Vec3>();
         var triangles = new List<Triangle3D>();
 
         await foreach (var rawLine in File.ReadLinesAsync(path))
