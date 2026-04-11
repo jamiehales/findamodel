@@ -782,7 +782,21 @@ export default function PrintingListCanvas({
     pauseOnDragRef.current = pauseOnDrag;
   }, [pauseOnDrag]);
 
-  const [isPaused, setIsPaused] = useState(false);
+  const [hasSavedLayout, setHasSavedLayout] = useState(
+    () => localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY) !== null,
+  );
+  const [isLayoutClean, setIsLayoutClean] = useState(
+    () => localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY) !== null,
+  );
+  const [undoLayoutData, setUndoLayoutData] = useState<string | null>(null);
+  const notifySavedLayoutRef = useRef<((v: boolean) => void) | null>(null);
+  notifySavedLayoutRef.current = setHasSavedLayout;
+  // Drives isLayoutClean + the parent Export-button gate (onPausedChange)
+  const notifyLayoutCleanRef = useRef<((v: boolean) => void) | null>(null);
+  notifyLayoutCleanRef.current = (v) => {
+    setIsLayoutClean(v);
+    onPausedChange?.(v);
+  };
 
   // Refs that let the incremental-update effect reach into the running simulation
   const appRef = useRef<PIXI.Application | null>(null);
@@ -792,12 +806,6 @@ export default function PrintingListCanvas({
   const modelColorRef = useRef<Map<string, number>>(new Map());
   const pausedRef = useRef(false);
   const prevItemsRef = useRef<Record<string, number>>({});
-  // Lets the effect's ticker/handlers sync paused state back to React without stale closures
-  const notifyPausedRef = useRef<((v: boolean) => void) | null>(null);
-  notifyPausedRef.current = (v) => {
-    setIsPaused(v);
-    onPausedChange?.(v);
-  };
   const saveLayoutRef = useRef<(() => void) | null>(null);
   // Always-current mirrors updated every render
   const itemsKeyRef = useRef(itemsKey);
@@ -987,8 +995,11 @@ export default function PrintingListCanvas({
 
     // ── Simulation state ───────────────────────────────────────────────────
     // Start paused if positions were restored from storage; user clicks to resume.
+    // Only autosave on settle when there was no prior layout — with an existing
+    // layout the user must explicitly save after adjusting positions.
+    const shouldAutosave = savedLayout === null;
     pausedRef.current = savedLayout !== null;
-    notifyPausedRef.current?.(pausedRef.current);
+    notifyLayoutCleanRef.current?.(savedLayout !== null);
     // Record which items are now in the simulation (for incremental updates)
     prevItemsRef.current = { ...items };
     let settleFrames = 0;
@@ -1031,6 +1042,8 @@ export default function PrintingListCanvas({
         }),
       };
       localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, JSON.stringify(layout));
+      notifySavedLayoutRef.current?.(true);
+      notifyLayoutCleanRef.current?.(true);
     }
     saveLayoutRef.current = saveLayout;
 
@@ -1039,7 +1052,7 @@ export default function PrintingListCanvas({
       // Resume simulation on any click when paused
       if (pausedRef.current) {
         pausedRef.current = false;
-        notifyPausedRef.current?.(false);
+        notifyLayoutCleanRef.current?.(false);
         settleFrames = 0;
       }
 
@@ -1054,7 +1067,6 @@ export default function PrintingListCanvas({
         hit.setAngularVelocity(0);
         if (pauseOnDragRef.current) {
           pausedRef.current = true;
-          notifyPausedRef.current?.(true);
         }
       }
     });
@@ -1074,7 +1086,6 @@ export default function PrintingListCanvas({
       drag.body.setAwake(true);
       drag = null;
       pausedRef.current = false;
-      notifyPausedRef.current?.(false);
       settleFrames = 0;
     };
     app.stage.on('pointerup', endDrag);
@@ -1109,8 +1120,9 @@ export default function PrintingListCanvas({
           settleFrames++;
           if (settleFrames >= SETTLE_FRAMES) {
             pausedRef.current = true;
-            notifyPausedRef.current?.(true);
-            saveLayout();
+            if (shouldAutosave) {
+              saveLayout();
+            }
           }
         } else {
           settleFrames = 0;
@@ -1212,6 +1224,7 @@ export default function PrintingListCanvas({
         }
 
         pausedRef.current = false; // let new bodies fall in
+        notifyLayoutCleanRef.current?.(false);
       } else {
         // Remove the models at the top of the build plate first
         for (let i = prevQty; i > currQty; i--) {
@@ -1260,6 +1273,8 @@ export default function PrintingListCanvas({
             onChange={(e) => {
               const next = e.target.value as SpawnType;
               localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+              setHasSavedLayout(false);
+              setUndoLayoutData(null);
               onSpawnOrderChange?.(next);
             }}
           >
@@ -1277,6 +1292,8 @@ export default function PrintingListCanvas({
             onChange={(e) => {
               const next = e.target.value as HullMode;
               localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+              setHasSavedLayout(false);
+              setUndoLayoutData(null);
               onHullModeChange?.(next);
             }}
           >
@@ -1286,13 +1303,12 @@ export default function PrintingListCanvas({
         </FormControl>
         <Button
           size="large"
-          variant="outlined"
+          variant={isLayoutClean ? 'outlined' : 'primary'}
           onClick={() => {
             pausedRef.current = true;
-            notifyPausedRef.current?.(true);
             saveLayoutRef.current?.();
           }}
-          disabled={isPaused}
+          disabled={isLayoutClean}
         >
           Save
         </Button>
@@ -1300,7 +1316,27 @@ export default function PrintingListCanvas({
           size="large"
           variant="outlined"
           onClick={() => {
+            if (undoLayoutData !== null) {
+              localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, undoLayoutData);
+              setHasSavedLayout(true);
+              setIsLayoutClean(true);
+              setUndoLayoutData(null);
+            }
+            setResetCount((c) => c + 1);
+          }}
+          disabled={undoLayoutData === null && (isLayoutClean || !hasSavedLayout)}
+        >
+          Undo
+        </Button>
+        <Button
+          size="large"
+          variant="outlined"
+          onClick={() => {
+            const existing = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
+            if (existing) setUndoLayoutData(existing);
             localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+            setHasSavedLayout(false);
+            setIsLayoutClean(false);
             setResetCount((c) => c + 1);
           }}
         >
