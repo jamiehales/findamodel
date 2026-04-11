@@ -6,6 +6,13 @@
   gap: 0.75rem;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .sectionWithMargin {
   margin-bottom: 2rem;
 }

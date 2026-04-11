@@ -1,9 +1,14 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import CircularProgress from '@mui/material/CircularProgress';
+import Tooltip from '@mui/material/Tooltip';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useExplorer } from '../lib/queries';
+import { useExplorer, useIndexFolder, useIsFolderIndexing } from '../lib/queries';
 import AppDialog from '../components/AppDialog';
 import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
@@ -81,14 +86,45 @@ export default function ExplorePage() {
   const params = useParams();
   const path = params['*'] ?? '';
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const indexFolder = useIndexFolder(path);
+  const indexingState = useIsFolderIndexing(path);
+  const isIndexing = indexingState === 'running';
 
   return (
     <PageLayout>
       <Box className={styles.headerRow}>
         <PathBreadcrumb path={path} />
-        <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
-          Edit metadata
-        </Button>
+        <Stack direction="row" alignItems="center" className={styles.headerActions}>
+          <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
+            Edit metadata
+          </Button>
+          <Tooltip
+            title={
+              indexingState === 'running'
+                ? 'Indexing...'
+                : indexingState === 'queued'
+                  ? 'Queued...'
+                  : 'Index folder'
+            }
+            placement="top"
+          >
+            <span>
+              <IconButton
+                size="small"
+                color="primary"
+                aria-label="Index folder"
+                onClick={() => indexFolder.mutate()}
+                disabled={indexingState !== null}
+              >
+                {isIndexing ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <RefreshRoundedIcon fontSize="small" />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
       </Box>
 
       <ExplorePageInner path={path} />

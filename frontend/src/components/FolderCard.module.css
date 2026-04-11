@@ -129,6 +129,7 @@
   font-weight: 600 !important;
   color: var(--color-text-primary) !important;
   line-height: 1.3 !important;
+  text-align: center;
   display: -webkit-box !important;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

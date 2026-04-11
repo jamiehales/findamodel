@@ -28,7 +28,21 @@ export default function AppDialog({
   contentDividers = false,
 }: AppDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth={maxWidth} fullWidth={fullWidth} scroll={scroll}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth={maxWidth}
+      fullWidth={fullWidth}
+      scroll={scroll}
+      slotProps={{
+        paper: {
+          sx: {
+            backgroundColor: 'var(--color-bg-paper)',
+            backgroundImage: 'none',
+          },
+        },
+      }}
+    >
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers={contentDividers}>{children}</DialogContent>
       {actions ? <DialogActions>{actions}</DialogActions> : null}

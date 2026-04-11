@@ -345,7 +345,8 @@ function buildDefaultTheme() {
       MuiDialog: {
         styleOverrides: {
           paper: {
-            backgroundColor: '#070b14',
+            backgroundColor: 'var(--color-bg-paper)',
+            backgroundImage: 'none',
             border: '1px solid rgba(99, 102, 241, 0.25)',
           },
         },
@@ -400,7 +401,8 @@ function buildNordTheme() {
       MuiDialog: {
         styleOverrides: {
           paper: {
-            backgroundColor: '#434c5e',
+            backgroundColor: 'var(--color-bg-paper)',
+            backgroundImage: 'none',
             border: '1px solid rgba(136, 192, 208, 0.25)',
           },
         },
