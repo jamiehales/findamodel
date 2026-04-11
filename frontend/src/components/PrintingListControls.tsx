@@ -14,7 +14,8 @@ export default function PrintingListControls({ modelId, showButtons = true }: Pr
   const { mutate: upsert } = useUpsertPrintingListItem();
 
   const activeListId = activeList?.id ?? '';
-  const quantity = activeList?.items.find((i) => i.modelId === modelId)?.quantity;
+  const listItem = activeList?.items.find((i) => i.modelId === modelId);
+  const quantity = listItem?.quantity;
 
   return (
     <Box className={styles.container}>
@@ -30,12 +31,10 @@ export default function PrintingListControls({ modelId, showButtons = true }: Pr
         −
       </Box>
 
-      {quantity != null && quantity > 0 ? (
+      {quantity == null ? null : quantity > 0 ? (
         <Chip label={`×${quantity}`} size="small" className={styles.chip} />
       ) : (
-        <Typography className={styles.count} style={{ visibility: 'hidden' }}>
-          ×0
-        </Typography>
+        <Typography className={styles.count}>×0</Typography>
       )}
 
       <Box

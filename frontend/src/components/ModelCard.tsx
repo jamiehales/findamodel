@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Box, Chip, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
 import AppCard from './AppCard';
@@ -17,8 +17,16 @@ interface ModelCardProps {
 }
 
 function ModelCard({ model, href }: ModelCardProps) {
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <AppCard href={href} interactive className={styles.card}>
+    <AppCard
+      href={href}
+      interactive
+      className={styles.card}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       {model.previewUrl ? (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
       ) : (
@@ -53,7 +61,7 @@ function ModelCard({ model, href }: ModelCardProps) {
         <p className={styles.size}>{formatBytes(model.fileSize)}</p>
       </Box>
 
-      <PrintingListControls modelId={model.id} />
+      <PrintingListControls modelId={model.id} showButtons={hovered} />
     </AppCard>
   );
 }
