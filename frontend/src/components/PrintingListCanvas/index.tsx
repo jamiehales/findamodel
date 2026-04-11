@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ConfirmDialog from '../ConfirmDialog';
 import * as PIXI from 'pixi.js';
 import { World, Vec2, Box } from 'planck';
 import type { Body } from 'planck';
@@ -127,6 +128,9 @@ export default function PrintingListCanvas({
     setIsLayoutClean(v);
     onPausedChange?.(v);
   };
+
+  const [warnSaveOpen, setWarnSaveOpen] = useState(false);
+  const hasOutOfBoundsRef = useRef(false);
 
   // Refs that let the incremental-update effect reach into the running simulation
   const appRef = useRef<PIXI.Application | null>(null);
@@ -357,6 +361,7 @@ export default function PrintingListCanvas({
     prevItemsRef.current = { ...items };
     let settleFrames = 0;
     let drag: { body: Body; ox: number; oy: number } | null = null;
+    let prevHasOutOfBounds = false;
 
     // ── Render helper ──────────────────────────────────────────────────────
     function renderEntries(overlapping: Set<Body>) {
@@ -388,6 +393,10 @@ export default function PrintingListCanvas({
         hasOutOfBounds ||= outOfBounds;
       }
       outOfBoundsBorderGfx.visible = hasOutOfBounds;
+      if (hasOutOfBounds !== prevHasOutOfBounds) {
+        prevHasOutOfBounds = hasOutOfBounds;
+        hasOutOfBoundsRef.current = hasOutOfBounds;
+      }
     }
 
     // ── Layout persistence ─────────────────────────────────────────────────
@@ -734,13 +743,29 @@ export default function PrintingListCanvas({
             size="large"
             variant={isLayoutClean ? 'outlined' : 'primary'}
             onClick={() => {
-              pausedRef.current = true;
-              saveLayoutRef.current?.();
+              if (hasOutOfBoundsRef.current) {
+                setWarnSaveOpen(true);
+              } else {
+                pausedRef.current = true;
+                saveLayoutRef.current?.();
+              }
             }}
             disabled={isLayoutClean}
           >
             Save
           </Button>
+          <ConfirmDialog
+            open={warnSaveOpen}
+            title="Models off canvas"
+            message="Some models are outside the print area and will not be included in the exported plate. Save anyway?"
+            confirmLabel="Save"
+            onConfirm={() => {
+              setWarnSaveOpen(false);
+              pausedRef.current = true;
+              saveLayoutRef.current?.();
+            }}
+            onCancel={() => setWarnSaveOpen(false)}
+          />
         </Stack>
       </Stack>
       <div
