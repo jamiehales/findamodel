@@ -55,6 +55,85 @@ public class ModelService(
             .FirstOrDefaultAsync();
     }
 
+    public async Task<ModelDto?> UpdateModelMetadataAsync(Guid id, UpdateModelMetadataRequest request)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var model = await db.Models.FirstOrDefaultAsync(m => m.Id == id);
+        if (model == null) return null;
+
+        var modelsPath = config["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsPath))
+            throw new InvalidOperationException("Models:DirectoryPath is not configured.");
+
+        var fullDirectoryPath = string.IsNullOrEmpty(model.Directory)
+            ? modelsPath
+            : Path.Combine(modelsPath, model.Directory.Replace('/', Path.DirectorySeparatorChar));
+        var configPath = Path.Combine(fullDirectoryPath, DirectoryConfigReader.ConfigFileName);
+
+        var data = await ReadConfigDataAsync(configPath);
+        var modelMetadata = GetOrCreateModelMetadataNode(data);
+
+        var sanitized = new ModelMetadataEntry(
+            request.Name,
+            request.PartName,
+            request.Creator,
+            request.Collection,
+            request.Subcollection,
+            MetadataFieldRegistry.ValidateEnumValue("category", request.Category),
+            MetadataFieldRegistry.ValidateEnumValue("type", request.Type),
+            MetadataFieldRegistry.ValidateEnumValue("material", request.Material),
+            request.Supported);
+
+        if (IsEmptyModelMetadataEntry(sanitized))
+            modelMetadata.Remove(model.FileName);
+        else
+            modelMetadata[model.FileName] = ToYamlModelMetadataEntry(sanitized);
+
+        if (modelMetadata.Count == 0)
+            RemoveKeyCaseInsensitive(data, "model_metadata");
+        else
+            data["model_metadata"] = modelMetadata;
+
+        if (data.Count == 0)
+        {
+            if (File.Exists(configPath)) File.Delete(configPath);
+        }
+        else
+        {
+            var yaml = DirectoryConfigReader.YamlSerializer.Serialize(data);
+            await File.WriteAllTextAsync(configPath, yaml);
+        }
+
+        var relativePath = string.IsNullOrEmpty(model.Directory)
+            ? model.FileName
+            : $"{model.Directory}/{model.FileName}";
+        await ScanAndCacheSingleAsync(relativePath);
+
+        return await GetModelDtoAsync(id);
+    }
+
+    public async Task<ModelMetadataEntry?> GetModelMetadataAsync(Guid id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var model = await db.Models.FirstOrDefaultAsync(m => m.Id == id);
+        if (model == null) return null;
+
+        var rawJson = await db.DirectoryConfigs
+            .Where(d => d.DirectoryPath == model.Directory)
+            .Select(d => d.RawModelMetadataJson)
+            .FirstOrDefaultAsync();
+
+        if (rawJson == null) return new ModelMetadataEntry(null, null);
+
+        var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ModelMetadataEntry>>(
+            rawJson,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        return dict?.FirstOrDefault(kv =>
+            string.Equals(kv.Key, model.FileName, StringComparison.OrdinalIgnoreCase)).Value
+            ?? new ModelMetadataEntry(null, null);
+    }
+
     public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)
     {
         var modelsPath = config["Models:DirectoryPath"];
@@ -485,6 +564,60 @@ public class ModelService(
         using var stream = File.OpenRead(filePath);
         var hash = await System.Security.Cryptography.SHA256.HashDataAsync(stream);
         return Convert.ToHexString(hash).ToLower();
+    }
+
+    private static async Task<Dictionary<string, object>> ReadConfigDataAsync(string configPath)
+    {
+        if (!File.Exists(configPath)) return [];
+        var yaml = await File.ReadAllTextAsync(configPath);
+        return DirectoryConfigReader.YamlDeserializer.Deserialize<Dictionary<string, object>>(yaml) ?? [];
+    }
+
+    private static Dictionary<object, object> GetOrCreateModelMetadataNode(Dictionary<string, object> data)
+    {
+        foreach (var kvp in data)
+        {
+            if (!string.Equals(kvp.Key, "model_metadata", StringComparison.OrdinalIgnoreCase)) continue;
+            if (kvp.Value is Dictionary<object, object> dict) return dict;
+            if (kvp.Value is Dictionary<string, object> dictString)
+                return dictString.ToDictionary(k => (object)k.Key, v => v.Value);
+            break;
+        }
+
+        return new Dictionary<object, object>();
+    }
+
+    private static Dictionary<object, object> ToYamlModelMetadataEntry(ModelMetadataEntry entry)
+    {
+        var result = new Dictionary<object, object>();
+        if (!string.IsNullOrWhiteSpace(entry.Name)) result["name"] = entry.Name;
+        if (!string.IsNullOrWhiteSpace(entry.PartName)) result["part_name"] = entry.PartName;
+        if (!string.IsNullOrWhiteSpace(entry.Creator)) result["creator"] = entry.Creator;
+        if (!string.IsNullOrWhiteSpace(entry.Collection)) result["collection"] = entry.Collection;
+        if (!string.IsNullOrWhiteSpace(entry.Subcollection)) result["subcollection"] = entry.Subcollection;
+        if (!string.IsNullOrWhiteSpace(entry.Category)) result["category"] = entry.Category;
+        if (!string.IsNullOrWhiteSpace(entry.Type)) result["type"] = entry.Type;
+        if (!string.IsNullOrWhiteSpace(entry.Material)) result["material"] = entry.Material;
+        if (entry.Supported.HasValue) result["supported"] = entry.Supported.Value;
+        return result;
+    }
+
+    private static bool IsEmptyModelMetadataEntry(ModelMetadataEntry entry) =>
+        string.IsNullOrWhiteSpace(entry.Name)
+        && string.IsNullOrWhiteSpace(entry.PartName)
+        && string.IsNullOrWhiteSpace(entry.Creator)
+        && string.IsNullOrWhiteSpace(entry.Collection)
+        && string.IsNullOrWhiteSpace(entry.Subcollection)
+        && string.IsNullOrWhiteSpace(entry.Category)
+        && string.IsNullOrWhiteSpace(entry.Type)
+        && string.IsNullOrWhiteSpace(entry.Material)
+        && !entry.Supported.HasValue;
+
+    private static void RemoveKeyCaseInsensitive(Dictionary<string, object> data, string key)
+    {
+        var matched = data.Keys.FirstOrDefault(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+            data.Remove(matched);
     }
 
 }

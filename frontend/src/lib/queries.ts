@@ -2,6 +2,8 @@ import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tansta
 import {
   fetchModels,
   fetchModel,
+  fetchModelMetadata,
+  updateModelMetadata,
   fetchGeometry,
   fetchSplitGeometry,
   fetchOtherParts,
@@ -40,6 +42,7 @@ export const queryKeys = {
   models: (limit?: number) =>
     limit !== undefined ? (['models', limit] as const) : (['models'] as const),
   model: (id: string) => ['model', id] as const,
+  modelMetadata: (id: string) => ['model', id, 'metadata'] as const,
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
   splitGeometry: (id: string) => ['split-geometry', id] as const,
@@ -66,6 +69,38 @@ export function useModel(id: string) {
   return useQuery({
     queryKey: queryKeys.model(id),
     queryFn: () => fetchModel(id),
+  });
+}
+
+export function useUpdateModelMetadata(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      name: string | null;
+      partName: string | null;
+      creator: string | null;
+      collection: string | null;
+      subcollection: string | null;
+      category: string | null;
+      type: string | null;
+      material: string | null;
+      supported: boolean | null;
+    }) => updateModelMetadata(id, request),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.model(id), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.modelMetadata(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.modelOtherParts(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.models() });
+      queryClient.invalidateQueries({ queryKey: ['query', 'models'] });
+    },
+  });
+}
+
+export function useModelMetadata(id: string) {
+  return useQuery({
+    queryKey: queryKeys.modelMetadata(id),
+    queryFn: () => fetchModelMetadata(id),
+    enabled: !!id,
   });
 }
 

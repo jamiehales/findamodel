@@ -81,6 +81,22 @@ public class ModelsController(
         return PhysicalFile(fullPath, "image/png");
     }
 
+    [HttpPut("{id:guid}/metadata")]
+    public async Task<IActionResult> UpdateMetadata(Guid id, [FromBody] UpdateModelMetadataRequest request)
+    {
+        var model = await modelService.UpdateModelMetadataAsync(id, request);
+        if (model == null) return NotFound();
+        return Ok(model);
+    }
+
+    [HttpGet("{id:guid}/metadata")]
+    public async Task<IActionResult> GetMetadata(Guid id)
+    {
+        var metadata = await modelService.GetModelMetadataAsync(id);
+        if (metadata == null) return NotFound();
+        return Ok(metadata);
+    }
+
     /// <summary>
     /// Returns pre-processed geometry for a model: Y-up, mm scale, centred (X/Z at origin, base at Y=0).
     /// Binary response contains indexed, 16-bit quantised positions plus 16/32-bit triangle indices.

@@ -1,6 +1,7 @@
 export interface Model {
   id: string;
   name: string;
+  partName: string | null;
   relativePath: string;
   fileType: string;
   fileSize: number;
@@ -290,6 +291,49 @@ export async function fetchSplitGeometry(id: string): Promise<SplitGeometryRespo
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
   const r = await fetch(`/api/models/${id}/other-parts`);
   if (!r.ok) throw new Error('Failed to fetch other parts');
+  return r.json();
+}
+
+export interface UpdateModelMetadataRequest {
+  name: string | null;
+  partName: string | null;
+  creator: string | null;
+  collection: string | null;
+  subcollection: string | null;
+  category: string | null;
+  type: string | null;
+  material: string | null;
+  supported: boolean | null;
+}
+
+export interface ModelMetadata {
+  name: string | null;
+  partName: string | null;
+  creator: string | null;
+  collection: string | null;
+  subcollection: string | null;
+  category: string | null;
+  type: string | null;
+  material: string | null;
+  supported: boolean | null;
+}
+
+export async function fetchModelMetadata(id: string): Promise<ModelMetadata> {
+  const r = await fetch(`/api/models/${id}/metadata`);
+  if (!r.ok) throw new Error('Failed to fetch model metadata');
+  return r.json();
+}
+
+export async function updateModelMetadata(
+  id: string,
+  request: UpdateModelMetadataRequest,
+): Promise<Model> {
+  const r = await fetch(`/api/models/${id}/metadata`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!r.ok) throw new Error('Failed to update model metadata');
   return r.json();
 }
 

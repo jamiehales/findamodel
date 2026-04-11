@@ -144,4 +144,117 @@ public class ModelMetadataHelperTests
         Assert.Equal("Fantasy", result.Collection);
         Assert.Equal("Dragon", result.ModelName);
     }
+
+    // ── model_metadata overrides ──────────────────────────────────────────────
+
+    [Fact]
+    public void Compute_ModelMetadataName_OverridesResolvedModelName()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            ModelName = "Generic Name",
+            RawModelMetadataJson = """{"dragon.stl":{"Name":"Fire Dragon","PartName":null}}"""
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
+
+        Assert.Equal("Fire Dragon", result.ModelName);
+    }
+
+    [Fact]
+    public void Compute_ModelMetadataPartName_SetFromConfig()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            RawModelMetadataJson = """{"bust_torso.stl":{"Name":"Knight Bust","PartName":"Torso"}}"""
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/bust_torso.stl", dirConfig);
+
+        Assert.Equal("Knight Bust", result.ModelName);
+        Assert.Equal("Torso", result.PartName);
+    }
+
+    [Fact]
+    public void Compute_ModelMetadata_FilenameLookupIsCaseInsensitive()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            RawModelMetadataJson = """{"Dragon.STL":{"Name":"Fire Dragon","PartName":null}}"""
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
+
+        Assert.Equal("Fire Dragon", result.ModelName);
+    }
+
+    [Fact]
+    public void Compute_ModelMetadata_UnmatchedFilename_DoesNotOverride()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            ModelName = "Generic Name",
+            RawModelMetadataJson = """{"other.stl":{"Name":"Other","PartName":null}}"""
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
+
+        Assert.Equal("Generic Name", result.ModelName);
+        Assert.Null(result.PartName);
+    }
+
+    [Fact]
+    public void Compute_NullModelMetadataJson_PartNameIsNull()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            ModelName = "Generic Name",
+            RawModelMetadataJson = null
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
+
+        Assert.Equal("Generic Name", result.ModelName);
+        Assert.Null(result.PartName);
+    }
+
+    // ── GetModelMetadataEntry ─────────────────────────────────────────────────
+
+    [Fact]
+    public void GetModelMetadataEntry_ReturnsEntry_ForMatchingFilename()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            RawModelMetadataJson = """{"dragon.stl":{"Name":"Fire Dragon","PartName":"Body"}}"""
+        };
+
+        var entry = ModelMetadataHelper.GetModelMetadataEntry(dirConfig, "dragon.stl");
+
+        Assert.NotNull(entry);
+        Assert.Equal("Fire Dragon", entry.Name);
+        Assert.Equal("Body", entry.PartName);
+    }
+
+    [Fact]
+    public void GetModelMetadataEntry_ReturnsNull_ForNullJson()
+    {
+        var dirConfig = new DirectoryConfig { RawModelMetadataJson = null };
+
+        var entry = ModelMetadataHelper.GetModelMetadataEntry(dirConfig, "dragon.stl");
+
+        Assert.Null(entry);
+    }
+
+    [Fact]
+    public void GetModelMetadataEntry_ReturnsNull_ForMissingFilename()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            RawModelMetadataJson = """{"other.stl":{"Name":"Other","PartName":null}}"""
+        };
+
+        var entry = ModelMetadataHelper.GetModelMetadataEntry(dirConfig, "dragon.stl");
+
+        Assert.Null(entry);
+    }
 }

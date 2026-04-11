@@ -11,6 +11,7 @@ internal static class ModelMappingExtensions
         {
             Id = model.Id,
             Name = model.CalculatedModelName ?? Path.GetFileNameWithoutExtension(model.FileName),
+            PartName = model.CalculatedPartName,
             RelativePath = ComputeRelativePath(model.Directory, model.FileName),
             FileType = model.FileType,
             FileSize = model.FileSize,
@@ -48,6 +49,7 @@ internal static class ModelMappingExtensions
         entity.CalculatedMaterial = metadata.Material;
         entity.CalculatedSupported = metadata.Supported;
         entity.CalculatedModelName = metadata.ModelName;
+        entity.CalculatedPartName = metadata.PartName;
     }
 
     private static string ComputeRelativePath(string directory, string fileName) =>

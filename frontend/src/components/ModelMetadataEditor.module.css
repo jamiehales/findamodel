@@ -1,0 +1,38 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.inlineError {
+  margin-right: auto !important;
+  line-height: 1.2 !important;
+}
+
+.fieldInput {
+  font-size: 0.875rem !important;
+}
+
+.selectSmall {
+  font-size: 0.875rem !important;
+}
+
+.supportedRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.helperText {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}

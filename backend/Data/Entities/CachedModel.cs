@@ -27,6 +27,7 @@ public class CachedModel
     public string? CalculatedMaterial { get; set; }
     public bool? CalculatedSupported { get; set; }
     public string? CalculatedModelName { get; set; }
+    public string? CalculatedPartName { get; set; }
 
     // Hull coordinates as JSON arrays: [[x1,y1],[x2,y2],...]
     // Projected onto X-Z plane with Y-up coordinate system (bird's eye view)

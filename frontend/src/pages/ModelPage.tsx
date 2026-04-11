@@ -22,6 +22,8 @@ import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
 import gridStyles from '../components/ModelGrid.module.css';
 import PageLayout from '../components/layouts/PageLayout';
+import AppDialog from '../components/AppDialog';
+import ModelMetadataEditor from '../components/ModelMetadataEditor';
 import styles from './ModelPage.module.css';
 import { formatBytes } from '../lib/utils';
 import { appColors } from '../theme';
@@ -31,6 +33,7 @@ function ModelPage() {
   const navigate = useNavigate();
 
   const decodedId = decodeURIComponent(id ?? '');
+  const [metadataOpen, setMetadataOpen] = React.useState(false);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -78,6 +81,7 @@ function ModelPage() {
 
   const metaRows: { label: string; value: React.ReactNode }[] = [
     model.name && { label: 'Name', value: model.name },
+    model.partName && { label: 'Part Name', value: model.partName },
     model.creator && { label: 'Creator', value: model.creator },
     model.collection && { label: 'Collection', value: model.collection },
     model.subcollection && { label: 'Subcollection', value: model.subcollection },
@@ -87,152 +91,170 @@ function ModelPage() {
   ].filter(Boolean) as { label: string; value: React.ReactNode }[];
 
   return (
-    <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
-      {backButton}
+    <>
+      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
+        {backButton}
 
-      <Box className={styles.content}>
-        <Box className={styles.titleGroup}>
-          <Typography component="h1" variant="page-title">
-            {model.name}
-          </Typography>
+        <Box className={styles.content}>
+          <Box className={styles.titleGroup}>
+            <Typography component="h1" variant="page-title">
+              {model.name}
+            </Typography>
 
-          <PathBreadcrumb path={model.relativePath} />
+            <PathBreadcrumb path={model.relativePath} />
 
-          <Box className={styles.headerMetaRow}>
-            <Box className={styles.tagRow}>
-              <span
-                className={styles.fileTypeBadge}
-                style={{ background: badge.bg, color: badge.color }}
-              >
-                {model.fileType.toUpperCase()}
-              </span>
-              <Typography component="span" className={styles.fileSizeInline}>
-                {formatBytes(model.fileSize)}
-              </Typography>
-              {model.supported != null && (
+            <Box className={styles.headerMetaRow}>
+              <Box className={styles.tagRow}>
                 <span
-                  className={styles.supportedBadge}
-                  style={{
-                    background: model.supported ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-                    color: model.supported ? '#34d399' : '#f87171',
-                  }}
+                  className={styles.fileTypeBadge}
+                  style={{ background: badge.bg, color: badge.color }}
                 >
-                  {model.supported ? 'SUPPORTED' : 'UNSUPPORTED'}
+                  {model.fileType.toUpperCase()}
                 </span>
-              )}
-            </Box>
-
-            <Box className={styles.headerActions}>
-              <IconButton
-                component="a"
-                href={model.fileUrl}
-                download={`${model.name}.${model.fileType}`}
-                aria-label={`Download .${model.fileType}`}
-                color="primary"
-                className={styles.actionIconBtn}
-              >
-                <DownloadRoundedIcon fontSize="small" />
-              </IconButton>
-
-              <IconButton
-                onClick={() => indexModel()}
-                aria-label="Reindex model"
-                color="primary"
-                className={styles.actionIconBtn}
-                disabled={isReindexing}
-              >
-                {isReindexing ? (
-                  <CircularProgress size={16} className={styles.reindexSpinner} />
-                ) : (
-                  <RefreshRoundedIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Box>
-          </Box>
-        </Box>
-
-        <Box className={styles.qtyControl}>
-          <IconButton
-            onClick={() =>
-              upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })
-            }
-            aria-label="Decrease quantity"
-            className={styles.qtyBtn}
-          >
-            −
-          </IconButton>
-          <Typography className={styles.qtyValue}>{qty}</Typography>
-          <IconButton
-            onClick={() =>
-              upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })
-            }
-            aria-label="Increase quantity"
-            className={styles.qtyBtn}
-          >
-            +
-          </IconButton>
-        </Box>
-
-        {metaRows.length > 0 && (
-          <Box className={styles.metaGrid}>
-            {metaRows.map(({ label, value }) => (
-              <React.Fragment key={label}>
-                <Typography className={styles.metaLabel}>{label}</Typography>
-                <Typography component="div" className={styles.metaValue}>
-                  {value}
+                <Typography component="span" className={styles.fileSizeInline}>
+                  {formatBytes(model.fileSize)}
                 </Typography>
-              </React.Fragment>
-            ))}
+                {model.supported != null && (
+                  <span
+                    className={styles.supportedBadge}
+                    style={{
+                      background: model.supported
+                        ? 'rgba(16,185,129,0.15)'
+                        : 'rgba(239,68,68,0.15)',
+                      color: model.supported ? '#34d399' : '#f87171',
+                    }}
+                  >
+                    {model.supported ? 'SUPPORTED' : 'UNSUPPORTED'}
+                  </span>
+                )}
+              </Box>
+
+              <Box className={styles.headerActions}>
+                <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
+                  Edit metadata
+                </Button>
+
+                <IconButton
+                  component="a"
+                  href={model.fileUrl}
+                  download={`${model.name}.${model.fileType}`}
+                  aria-label={`Download .${model.fileType}`}
+                  color="primary"
+                  className={styles.actionIconBtn}
+                >
+                  <DownloadRoundedIcon fontSize="small" />
+                </IconButton>
+
+                <IconButton
+                  onClick={() => indexModel()}
+                  aria-label="Reindex model"
+                  color="primary"
+                  className={styles.actionIconBtn}
+                  disabled={isReindexing}
+                >
+                  {isReindexing ? (
+                    <CircularProgress size={16} className={styles.reindexSpinner} />
+                  ) : (
+                    <RefreshRoundedIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Box>
+            </Box>
           </Box>
-        )}
 
-        <Box className={styles.viewerBox}>
-          <ModelViewer
-            modelId={model.id}
-            convexHull={model.convexHull}
-            concaveHull={model.concaveHull}
-            convexSansRaftHull={model.convexSansRaftHull}
-            supported={model.supported}
-          />
-        </Box>
+          <Box className={styles.qtyControl}>
+            <IconButton
+              onClick={() =>
+                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })
+              }
+              aria-label="Decrease quantity"
+              className={styles.qtyBtn}
+            >
+              −
+            </IconButton>
+            <Typography className={styles.qtyValue}>{qty}</Typography>
+            <IconButton
+              onClick={() =>
+                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })
+              }
+              aria-label="Increase quantity"
+              className={styles.qtyBtn}
+            >
+              +
+            </IconButton>
+          </Box>
 
-        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
-          <HullPreview
-            convexHull={model.convexHull}
-            concaveHull={model.concaveHull}
-            convexSansRaftHull={model.convexSansRaftHull}
-            label="Hull Projections"
-          />
-        )}
-      </Box>
-
-      {(otherParts?.length ?? 0) > 0 && (
-        <Box className={styles.otherPartsSection}>
-          <Box className={gridStyles.container}>
-            <Typography variant="h6">Other parts</Typography>
-            <Box className={gridStyles.grid}>
-              {otherParts!.map((part) => (
-                <ModelCard
-                  key={part.id}
-                  href={`/model/${encodeURIComponent(part.id)}`}
-                  model={{
-                    ...model,
-                    id: part.id,
-                    name: part.name,
-                    relativePath: part.relativePath,
-                    fileType: part.fileType,
-                    fileSize: part.fileSize,
-                    fileUrl: '',
-                    hasPreview: part.previewUrl != null,
-                    previewUrl: part.previewUrl,
-                  }}
-                />
+          {metaRows.length > 0 && (
+            <Box className={styles.metaGrid}>
+              {metaRows.map(({ label, value }) => (
+                <React.Fragment key={label}>
+                  <Typography className={styles.metaLabel}>{label}</Typography>
+                  <Typography component="div" className={styles.metaValue}>
+                    {value}
+                  </Typography>
+                </React.Fragment>
               ))}
             </Box>
+          )}
+
+          <Box className={styles.viewerBox}>
+            <ModelViewer
+              modelId={model.id}
+              convexHull={model.convexHull}
+              concaveHull={model.concaveHull}
+              convexSansRaftHull={model.convexSansRaftHull}
+              supported={model.supported}
+            />
           </Box>
+
+          {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
+            <HullPreview
+              convexHull={model.convexHull}
+              concaveHull={model.concaveHull}
+              convexSansRaftHull={model.convexSansRaftHull}
+              label="Hull Projections"
+            />
+          )}
         </Box>
-      )}
-    </PageLayout>
+
+        {(otherParts?.length ?? 0) > 0 && (
+          <Box className={styles.otherPartsSection}>
+            <Box className={gridStyles.container}>
+              <Typography variant="h6">Other parts</Typography>
+              <Box className={gridStyles.grid}>
+                {otherParts!.map((part) => (
+                  <ModelCard
+                    key={part.id}
+                    href={`/model/${encodeURIComponent(part.id)}`}
+                    model={{
+                      ...model,
+                      id: part.id,
+                      name: part.name,
+                      relativePath: part.relativePath,
+                      fileType: part.fileType,
+                      fileSize: part.fileSize,
+                      fileUrl: '',
+                      hasPreview: part.previewUrl != null,
+                      previewUrl: part.previewUrl,
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        )}
+      </PageLayout>
+
+      <AppDialog
+        open={metadataOpen}
+        onClose={() => setMetadataOpen(false)}
+        title="Edit model metadata"
+        maxWidth="sm"
+        fullWidth
+      >
+        <ModelMetadataEditor model={model} onClose={() => setMetadataOpen(false)} />
+      </AppDialog>
+    </>
   );
 }
 

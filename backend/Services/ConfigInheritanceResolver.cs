@@ -86,6 +86,7 @@ internal static class ConfigInheritanceResolver
         record.RawRaftHeightMm = fields?.RaftHeightMm;
         record.RawModelName = fields?.ModelName;
         record.RawRulesYaml = fields?.RulesYaml;
+        record.RawModelMetadataJson = fields?.ModelMetadataJson;
     }
 
     /// <summary>

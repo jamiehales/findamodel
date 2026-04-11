@@ -42,5 +42,12 @@ public class DirectoryConfig
     public string? LocalConfigFileHash { get; set; }
     public DateTime UpdatedAt { get; set; }
 
+    /// <summary>
+    /// JSON-serialized Dictionary&lt;string, ModelMetadataEntry&gt; parsed from this directory's
+    /// findamodel.yaml model_metadata section.  Key = filename (case-insensitive on lookup).
+    /// Null means the section was absent.
+    /// </summary>
+    public string? RawModelMetadataJson { get; set; }
+
     public List<CachedModel> Models { get; set; } = [];
 }

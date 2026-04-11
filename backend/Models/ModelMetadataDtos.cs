@@ -1,0 +1,16 @@
+namespace findamodel.Models;
+
+/// <summary>
+/// Plain-value per-model metadata overrides stored under findamodel.yaml:model_metadata.
+/// All fields are optional; null means no override for that field.
+/// </summary>
+public record UpdateModelMetadataRequest(
+    string? Name,
+    string? PartName,
+    string? Creator,
+    string? Collection,
+    string? Subcollection,
+    string? Category,
+    string? Type,
+    string? Material,
+    bool? Supported);

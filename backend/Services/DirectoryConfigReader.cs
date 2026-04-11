@@ -15,7 +15,8 @@ internal sealed record RawConfigFields(
     bool? Supported,
     float? RaftHeightMm,
     string? ModelName = null,
-    string? RulesYaml = null);
+    string? RulesYaml = null,
+    string? ModelMetadataJson = null);
 
 /// <summary>
 /// Handles reading and writing findamodel.yaml config files, including
@@ -56,7 +57,8 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                 Supported: TryGetBool(parsed, "supported"),
                 RaftHeightMm: TryGetFloat(parsed, "raftHeight"),
                 ModelName: TryGetString(parsed, "model_name"),
-                RulesYaml: ExtractRulesYaml(parsed)
+                RulesYaml: ExtractRulesYaml(parsed),
+                ModelMetadataJson: ExtractModelMetadataJson(parsed)
             );
         }
         catch (Exception ex)
@@ -201,6 +203,54 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
         }
 
         return rules.Count > 0 ? YamlSerializer.Serialize(rules) : null;
+    }
+
+    private static string? ExtractModelMetadataJson(Dictionary<string, object> parsed)
+    {
+        if (!parsed.TryGetValue("model_metadata", out var raw) || raw is not Dictionary<object, object> dict)
+            return null;
+
+        var entries = new Dictionary<string, ModelMetadataEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, val) in dict)
+        {
+            if (key is not string fileName) continue;
+            if (val is not Dictionary<object, object> entryDict) continue;
+
+            var name = entryDict.TryGetValue("name", out var n) ? n?.ToString() : null;
+            var partName = entryDict.TryGetValue("part_name", out var pn) ? pn?.ToString() : null;
+            var creator = entryDict.TryGetValue("creator", out var c) ? c?.ToString() : null;
+            var collection = entryDict.TryGetValue("collection", out var co) ? co?.ToString() : null;
+            var subcollection = entryDict.TryGetValue("subcollection", out var sc) ? sc?.ToString() : null;
+            var category = entryDict.TryGetValue("category", out var cat) ? cat?.ToString() : null;
+            var type = entryDict.TryGetValue("type", out var t) ? t?.ToString() : null;
+            var material = entryDict.TryGetValue("material", out var m) ? m?.ToString() : null;
+            var supported = entryDict.TryGetValue("supported", out var s)
+                ? s switch
+                {
+                    bool b => b,
+                    string st when bool.TryParse(st, out var parsedBool) => parsedBool,
+                    _ => (bool?)null
+                }
+                : (bool?)null;
+
+            if (name != null || partName != null || creator != null ||
+                collection != null || subcollection != null || category != null || type != null ||
+                material != null || supported != null)
+            {
+                entries[fileName] = new ModelMetadataEntry(
+                    name,
+                    partName,
+                    creator,
+                    collection,
+                    subcollection,
+                    category,
+                    type,
+                    material,
+                    supported);
+            }
+        }
+
+        return entries.Count == 0 ? null : JsonSerializer.Serialize(entries);
     }
 
     private static string? TryGetString(Dictionary<string, object> data, string propertyName)
