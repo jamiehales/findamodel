@@ -103,10 +103,6 @@
   line-height: 1.2 !important;
 }
 
-.closeBtn {
-  color: var(--color-text-secondary) !important;
-}
-
 .saveBtn {
   min-width: 0 !important;
 }

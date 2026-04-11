@@ -226,6 +226,30 @@ interface Props {
   onClose?: () => void;
 }
 
+function normalizeRuleMap(
+  ruleContents: Record<string, string> | null | undefined,
+  localRuleFields: string[] | null | undefined,
+) {
+  const normalized: Record<string, string> = {};
+  for (const yamlName of localRuleFields ?? []) {
+    const text = (ruleContents?.[yamlName] ?? '').trim();
+    if (text) normalized[yamlName] = text;
+  }
+  return normalized;
+}
+
+function areRuleMapsEqual(a: Record<string, string>, b: Record<string, string>) {
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i += 1) {
+    const key = aKeys[i];
+    if (key !== bKeys[i]) return false;
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
 export default function MetadataEditor({ path, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
@@ -298,6 +322,28 @@ export default function MetadataEditor({ path, onClose }: Props) {
     return FIELDS.some((f) => fieldModes[f.yamlName] === 'rule' && !!ruleErrors[f.yamlName]);
   }
 
+  function hasChanges(currentFields: MetadataFields): boolean {
+    if (!detail) return false;
+
+    for (const field of FIELDS) {
+      const current = currentFields[field.key] as string | boolean | number | null;
+      const original = detail.localValues[field.key] as string | boolean | number | null;
+      if (current !== original) return true;
+    }
+
+    const currentRuleMap: Record<string, string> = {};
+    for (const field of FIELDS) {
+      if (field.supportsRules === false) continue;
+      if (fieldModes[field.yamlName] === 'rule') {
+        const text = (fieldRuleTexts[field.yamlName] ?? '').trim();
+        if (text) currentRuleMap[field.yamlName] = text;
+      }
+    }
+
+    const originalRuleMap = normalizeRuleMap(detail.localRuleContents, detail.localRuleFields);
+    return !areRuleMapsEqual(currentRuleMap, originalRuleMap);
+  }
+
   async function doSave(f: MetadataFields) {
     if (mutation.isPending) return;
 
@@ -339,6 +385,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
       await mutation.mutateAsync({ ...cleanFields, fieldRules: fieldRulesMap });
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
+      onClose?.();
     } catch (err) {
       if (err instanceof ConfigValidationError) {
         setRuleErrors((prev) => ({ ...prev, ...err.fieldErrors }));
@@ -361,6 +408,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
   }
 
   const p = detail?.parentResolvedValues ?? null;
+  const isDirty = hasChanges(fields);
 
   if (isLoading) {
     return (
@@ -560,15 +608,11 @@ export default function MetadataEditor({ path, onClose }: Props) {
             Failed to save — please try again.
           </Typography>
         )}
-        {onClose && (
-          <Button onClick={onClose} variant="outlined" color="inherit" className={styles.closeBtn}>
-            Close
-          </Button>
-        )}
+        {onClose && <Button onClick={onClose}>Close</Button>}
         <Button
-          variant="contained"
+          variant={isDirty ? 'affirmative' : 'outlined'}
           onClick={() => doSave(fields)}
-          disabled={mutation.isPending || hasValidationErrors()}
+          disabled={mutation.isPending || hasValidationErrors() || !isDirty}
           className={styles.saveBtn}
         >
           {mutation.isPending ? (

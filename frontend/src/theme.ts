@@ -22,6 +22,7 @@ declare module '@mui/material/Button' {
     warning: true;
     primary: true;
     activate: true;
+    affirmative: true;
   }
 }
 
@@ -253,6 +254,31 @@ const sharedComponents = {
           '&:hover': {
             background: 'rgba(255, 255, 255, 0.1)',
             color: '#e2e8f0',
+          },
+        },
+      },
+      {
+        props: { variant: 'affirmative' as const },
+        style: {
+          borderRadius: '999px',
+          padding: '0.4rem 1rem',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          textTransform: 'none' as const,
+          minWidth: 0,
+          color: '#052e16',
+          border: '1px solid rgba(52, 211, 153, 0.85)',
+          backgroundColor: '#34d399',
+          boxShadow: 'none',
+          '&:hover': {
+            backgroundColor: '#10b981',
+            border: '1px solid rgba(16, 185, 129, 0.95)',
+            boxShadow: 'none',
+          },
+          '&:disabled': {
+            backgroundColor: 'rgba(52, 211, 153, 0.18)',
+            color: 'rgba(148, 163, 184, 0.9)',
+            border: '1px solid rgba(52, 211, 153, 0.2)',
           },
         },
       },

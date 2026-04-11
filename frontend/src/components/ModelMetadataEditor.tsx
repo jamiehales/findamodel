@@ -52,6 +52,21 @@ function getModelValue(data: FormState, key: SharedModelKey): string | boolean |
   return data[modelKey] as string | boolean | number | null;
 }
 
+function hasFormChanges(current: FormState, original: FormState): boolean {
+  return (
+    current.name !== original.name ||
+    current.partName !== original.partName ||
+    current.creator !== original.creator ||
+    current.collection !== original.collection ||
+    current.subcollection !== original.subcollection ||
+    current.category !== original.category ||
+    current.type !== original.type ||
+    current.material !== original.material ||
+    current.supported !== original.supported ||
+    current.raftHeightMm !== original.raftHeightMm
+  );
+}
+
 export default function ModelMetadataEditor({ model, onClose }: Props) {
   const mutation = useUpdateModelMetadata(model.id);
   const { data: detail } = useModelMetadata(model.id);
@@ -73,7 +88,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
   }
 
   async function onSave() {
-    if (mutation.isPending) return;
+    if (mutation.isPending || !detail) return;
     setError(null);
 
     try {
@@ -91,10 +106,13 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
       });
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save model metadata');
     }
   }
+
+  const isDirty = detail ? hasFormChanges(form, detail.localValues) : false;
 
   function getSelectOptions(field: SharedFieldDef, localValue: string | null): string[] {
     if (field.optionsField == null) return [];
@@ -222,7 +240,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
         );
       })}
 
-      <Stack className={styles.actions}>
+      <Stack direction="row" className={styles.actions}>
         {error && (
           <Typography variant="caption" color="error" className={styles.inlineError}>
             {error}
@@ -234,7 +252,11 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
           </Typography>
         )}
         <Button onClick={onClose}>Close</Button>
-        <Button onClick={onSave} variant="contained" disabled={mutation.isPending}>
+        <Button
+          onClick={onSave}
+          variant={isDirty ? 'affirmative' : 'outlined'}
+          disabled={mutation.isPending || !isDirty}
+        >
           {mutation.isPending ? <CircularProgress size={16} /> : 'Save'}
         </Button>
       </Stack>

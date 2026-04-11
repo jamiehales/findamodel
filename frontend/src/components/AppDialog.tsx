@@ -45,7 +45,7 @@ export default function AppDialog({
     >
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers={contentDividers}>{children}</DialogContent>
-      {actions ? <DialogActions>{actions}</DialogActions> : null}
+      {actions ? <DialogActions sx={{ flexWrap: 'nowrap' }}>{actions}</DialogActions> : null}
     </Dialog>
   );
 }
