@@ -294,7 +294,7 @@ const sharedComponents = {
       },
     },
   },
-} as const;
+};
 
 function buildDefaultTheme() {
   return createTheme({
