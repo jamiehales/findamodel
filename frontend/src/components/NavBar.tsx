@@ -1,10 +1,12 @@
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Toolbar from '@mui/material/Toolbar';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { NavLink, Link, useMatch } from 'react-router-dom';
 import { useActivePrintingList } from '../lib/queries';
@@ -16,6 +18,7 @@ export default function NavBar() {
   const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0;
   const printingListMatch = useMatch('/printing-list/*');
   const printingListsMatch = useMatch('/printing-lists');
+  const settingsMatch = useMatch('/settings');
   const printingActive = !!(printingListMatch || printingListsMatch);
   const [printingAnchorEl, setPrintingAnchorEl] = useState<HTMLElement | null>(null);
   const printingGroupRef = useRef<HTMLDivElement | null>(null);
@@ -69,14 +72,6 @@ export default function NavBar() {
           >
             Explore
           </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`
-            }
-          >
-            Settings
-          </NavLink>
           <Box
             ref={printingGroupRef}
             className={`${styles.printingGroup}${printingMenuOpen ? ` ${styles.printingOpen}` : ''}`}
@@ -128,7 +123,17 @@ export default function NavBar() {
             </Menu>
           </Box>
         </Stack>
-        <IndexerStatus />
+        <Stack direction="row" spacing={0.5} alignItems="center" className={styles.actionsRight}>
+          <IconButton
+            component={Link}
+            to="/settings"
+            size="small"
+            className={`${styles.settingsIconButton}${settingsMatch ? ` ${styles.settingsIconButtonActive}` : ''}`}
+          >
+            <SettingsRoundedIcon fontSize="small" />
+          </IconButton>
+          <IndexerStatus />
+        </Stack>
       </Toolbar>
     </AppBar>
   );
