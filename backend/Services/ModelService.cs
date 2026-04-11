@@ -96,9 +96,9 @@ public class ModelService(
         // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
         var existingModels = (await db.Models
-            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.HullGenerationVersion, m.HullRaftHeightMm })
+            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.ScanConfigChecksum })
             .ToListAsync())
-            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.HullGenerationVersion, m.HullRaftHeightMm));
+            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.ScanConfigChecksum));
 
         var newCount = 0;
         var updatedCount = 0;
@@ -114,7 +114,7 @@ public class ModelService(
             {
                 var currentChecksum = await ComputeChecksumAsync(file);
                 var expectedRaftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
-                var hullMetadataMismatch = NeedsHullRegeneration(existingEntry.HullGenerationVersion, existingEntry.HullRaftHeightMm, expectedRaftHeightMm);
+                var hullMetadataMismatch = NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
                 if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch) continue;
 
                 var entity = await db.Models.FindAsync(existingEntry.Id);
@@ -129,11 +129,10 @@ public class ModelService(
                 else
                 {
                     logger.LogInformation(
-                        "Hull metadata mismatch detected, regenerating hulls for: {FilePath} (stored version: {StoredVersion}, stored raft height: {StoredRaftHeight}, expected raft height: {ExpectedRaftHeight})",
+                        "Hull config mismatch detected, regenerating hulls for: {FilePath} (stored checksum: {StoredChecksum}, expected checksum: {ExpectedChecksum})",
                         file,
-                        entity.HullGenerationVersion,
-                        entity.HullRaftHeightMm,
-                        expectedRaftHeightMm);
+                        entity.ScanConfigChecksum,
+                        ScanConfig.Compute(expectedRaftHeightMm));
                     await RefreshHullDataAsync(entity, file, fileType, expectedRaftHeightMm);
                     entity.CachedAt = DateTime.UtcNow;
                     entity.FileModifiedAt = info.LastWriteTimeUtc;
@@ -165,8 +164,7 @@ public class ModelService(
             existingModels[(directory, fileName)] = (
                 newEntity.Id,
                 newData.Checksum,
-                newEntity.HullGenerationVersion,
-                newEntity.HullRaftHeightMm);
+                newEntity.ScanConfigChecksum);
             newCount++;
         }
 
@@ -234,18 +232,17 @@ public class ModelService(
         var checksum = await ComputeChecksumAsync(fullPath);
         if (existing is not null
             && existing.Checksum == checksum
-            && !NeedsHullRegeneration(existing.HullGenerationVersion, existing.HullRaftHeightMm, expectedRaftHeightMm))
+            && !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             return false;
 
         if (existing is not null && existing.Checksum != checksum)
             logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
         else if (existing is not null)
             logger.LogInformation(
-                "Single-model index refreshing hulls due to metadata mismatch: {FilePath} (stored version: {StoredVersion}, stored raft height: {StoredRaftHeight}, expected raft height: {ExpectedRaftHeight})",
+                "Single-model index refreshing hulls due to config mismatch: {FilePath} (stored checksum: {StoredChecksum}, expected checksum: {ExpectedChecksum})",
                 fullPath,
-                existing.HullGenerationVersion,
-                existing.HullRaftHeightMm,
-                expectedRaftHeightMm);
+                existing.ScanConfigChecksum,
+                ScanConfig.Compute(expectedRaftHeightMm));
         else
             logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
 
@@ -415,12 +412,11 @@ public class ModelService(
         entity.HullGeneratedAt = hullsCalculated ? DateTime.UtcNow : null;
         entity.HullGenerationVersion = hullsCalculated ? HullCalculationService.CurrentHullGenerationVersion : null;
         entity.HullRaftHeightMm = hullsCalculated ? raftHeightMm : null;
+        entity.ScanConfigChecksum = hullsCalculated ? ScanConfig.Compute(raftHeightMm) : null;
     }
 
-    private static bool NeedsHullRegeneration(int? version, float? storedRaftHeightMm, float expectedRaftHeightMm) =>
-        version != HullCalculationService.CurrentHullGenerationVersion
-        || storedRaftHeightMm is null
-        || Math.Abs(storedRaftHeightMm.Value - expectedRaftHeightMm) > 1e-6f;
+    private static bool NeedsHullRegeneration(string? storedChecksum, float expectedRaftHeightMm) =>
+        storedChecksum != ScanConfig.Compute(expectedRaftHeightMm);
 
     private static float ResolveRaftHeightMm(
         string directory,

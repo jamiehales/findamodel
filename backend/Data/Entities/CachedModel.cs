@@ -34,6 +34,7 @@ public class CachedModel
     public string? ConvexSansRaftHullCoordinates { get; set; }   // Convex hull excluding vertices below Y=2mm (JSON)
     public int? HullGenerationVersion { get; set; }              // Version of hull generation algorithm/settings
     public float? HullRaftHeightMm { get; set; }                 // Raft cutoff used when generating hulls
+    public string? ScanConfigChecksum { get; set; }              // Hash of all config inputs that affect hull generation (null = needs regeneration)
     public DateTime? HullGeneratedAt { get; set; }
 
     // Geometry metadata — Y-up, mm, centred (X/Z at origin, base at Y=0)

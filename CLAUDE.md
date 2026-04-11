@@ -20,3 +20,4 @@ Backend:
 * Use standard asp.net authorization/authentication checks for generated api calls
 * If there are any changes to EF Core entities they must be accompanied by a new EF migration
 * Performance monitor: `ToModelDto()` and similar extension-method mapping can cause full-entity materialization in EF Core queries. If model list/query endpoints become slow, prioritize SQL-translatable projection (`Select` with expression) and `AsNoTracking()` on read paths.
+* Scan config checksum: `ScanConfig.Compute(float raftHeightMm)` in `backend/Services/ScanConfig.cs` is the single canonical source for the hull/scan staleness checksum. If any new input affects hull generation (e.g. a new algorithm version constant, mesh tolerance, additional raft parameter), add it to that method's format string AND bump `HullCalculationService.CurrentHullGenerationVersion`. Do not add staleness checks anywhere else.

@@ -19,6 +19,7 @@ declare module '@mui/material/Button' {
   interface ButtonPropsVariantOverrides {
     back: true;
     warning: true;
+    primary: true;
   }
 }
 
@@ -187,6 +188,30 @@ const theme = createTheme({
             backgroundColor: 'transparent',
             '&:hover': {
               backgroundColor: 'rgba(248, 113, 113, 0.1)',
+            },
+          },
+        },
+        {
+          props: { variant: 'primary' },
+          style: {
+            borderRadius: '999px',
+            padding: '0.4rem 1rem',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            textTransform: 'none',
+            minWidth: 0,
+            color: '#ffffff',
+            border: '1px solid #4f46e5',
+            backgroundColor: '#6366f1',
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: '#4f46e5',
+              boxShadow: 'none',
+            },
+            '&:disabled': {
+              backgroundColor: 'rgba(99, 102, 241, 0.2)',
+              color: 'rgba(255,255,255,0.3)',
+              border: '1px solid rgba(99, 102, 241, 0.15)',
             },
           },
         },
