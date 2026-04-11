@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Button, Chip, Divider, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Chip,
+  Divider,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from '@mui/material';
 import {
   useAppConfig,
   useCreateMetadataDictionaryValue,
@@ -136,10 +146,14 @@ export default function SettingsPage() {
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
   const updateAppConfigMutation = useUpdateAppConfig();
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
+  const [theme, setTheme] = useState<string>('nord');
   const { data, isPending, isError } = useMetadataDictionaryOverview();
 
   useEffect(() => {
-    if (appConfig) setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
+    if (appConfig) {
+      setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
+      setTheme(appConfig.theme);
+    }
   }, [appConfig]);
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -150,30 +164,55 @@ export default function SettingsPage() {
 
   return (
     <PageLayout variant="medium" spacing={2}>
-      <Typography variant="h5">Metadata settings</Typography>
+      <Typography component="h1" variant="page-title">
+        Settings
+      </Typography>
 
       <Box className={styles.globalSettingsSection}>
-        <Typography variant="h6">Default Values</Typography>
-        <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
-          <TextField
-            size="small"
-            type="number"
-            label="Raft height (mm)"
-            value={defaultRaftHeightMm}
-            onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
-          />
-          <Button
-            variant="contained"
-            disabled={
-              updateAppConfigMutation.isPending ||
-              !defaultRaftHeightMm.trim() ||
-              Number(defaultRaftHeightMm) < 0 ||
-              !Number.isFinite(Number(defaultRaftHeightMm))
-            }
-            onClick={() => updateAppConfigMutation.mutate(Number(defaultRaftHeightMm))}
-          >
-            Save
-          </Button>
+        <Typography variant="h5">Default Values</Typography>
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
+            <TextField
+              size="small"
+              type="number"
+              label="Raft height (mm)"
+              value={defaultRaftHeightMm}
+              onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
+            />
+          </Stack>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Typography>Theme</Typography>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={theme}
+              onChange={(_, v) => {
+                if (v) setTheme(v);
+              }}
+            >
+              <ToggleButton value="default">Default</ToggleButton>
+              <ToggleButton value="nord">Nord</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="contained"
+              disabled={
+                updateAppConfigMutation.isPending ||
+                !defaultRaftHeightMm.trim() ||
+                Number(defaultRaftHeightMm) < 0 ||
+                !Number.isFinite(Number(defaultRaftHeightMm))
+              }
+              onClick={() =>
+                updateAppConfigMutation.mutate({
+                  defaultRaftHeightMm: Number(defaultRaftHeightMm),
+                  theme,
+                })
+              }
+            >
+              Save
+            </Button>
+          </Stack>
         </Stack>
       </Box>
 

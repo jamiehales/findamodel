@@ -12,7 +12,6 @@ import CodeTooltip from './CodeTooltip';
 import styles from './FolderCard.module.css';
 import { Divider, Stack } from '@mui/material';
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries';
-import { appColors } from '../theme';
 
 interface Props {
   folder: ExplorerFolder;
@@ -45,7 +44,7 @@ function MetaBadge({
     <Box
       component="span"
       className={`${styles.metaBadge} ${source === 'unset' ? styles.metaBadgeUnset : styles.metaBadgeSet}`}
-      style={ruleYaml ? { border: `1px dashed ${appColors.metaBadge.rule}` } : undefined}
+      style={ruleYaml ? { border: `1px dashed var(--color-warning)` } : undefined}
     >
       <span className={styles.metaType}>{type}</span>
       <span className={styles.metaValue}>{valueLabel}</span>
@@ -119,17 +118,18 @@ function FolderCard({ folder, href }: Props) {
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
             size="medium"
+            className={styles.editBtnWrap}
             sx={{
               position: 'absolute',
               top: 4,
               right: 4,
               padding: '8px',
-              color: editorOpen ? '#818cf8' : 'rgba(226, 232, 240, 0.5)',
+              color: editorOpen ? 'var(--color-primary-light)' : 'rgba(226, 232, 240, 0.5)',
               minWidth: 44,
               minHeight: 44,
               '&:hover': {
-                color: '#818cf8',
-                backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                color: 'var(--color-primary-light)',
+                backgroundColor: 'var(--color-surface-hover)',
               },
             }}
             onClick={(e) => {
@@ -147,7 +147,7 @@ function FolderCard({ folder, href }: Props) {
 
         {/* Folder icon */}
         <Box className={styles.icon}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="rgba(99,102,241,0.7)">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10 4H4c-1.11 0-2 .89-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
           </svg>
         </Box>

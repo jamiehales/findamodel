@@ -21,9 +21,16 @@
   z-index: 0;
 }
 
-.card > :not(.indexBtnWrap) {
+.card > :not(.indexBtnWrap):not(.editBtnWrap) {
   position: relative;
   z-index: 2;
+}
+
+.editBtnWrap {
+  position: absolute !important;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
 }
 
 .indexBtnWrap {
@@ -47,7 +54,7 @@
 .indexBtn:hover,
 .indexBtnQueued:hover {
   color: var(--color-primary-light) !important;
-  background-color: rgba(99, 102, 241, 0.15) !important;
+  background-color: var(--color-surface-hover) !important;
 }
 
 .icon {
@@ -55,6 +62,7 @@
   align-items: center;
   justify-content: center;
   margin-bottom: 4px;
+  color: var(--color-primary);
 }
 
 .spinner {
@@ -70,7 +78,7 @@
   border-radius: 4px;
   font-size: 0.7rem;
   font-weight: 600;
-  color: #a5b4fc;
+  color: var(--color-primary-light);
   margin-bottom: 2px;
   overflow: hidden;
   max-width: 100%;
@@ -81,7 +89,7 @@
 }
 
 .metaValue {
-  color: #c7d2fe;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -95,8 +103,8 @@
 }
 
 .sourceSet {
-  color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.2);
+  color: var(--color-success);
+  background-color: var(--color-success-bg);
 }
 
 .sourceInherited {
@@ -110,7 +118,7 @@
 }
 
 .metaBadgeSet {
-  background-color: rgba(99, 102, 241, 0.18);
+  background-color: var(--color-border-primary);
 }
 
 .metaBadgeUnset {

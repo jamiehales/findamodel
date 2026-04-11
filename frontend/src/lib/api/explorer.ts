@@ -74,6 +74,12 @@ export interface MetadataDictionaryOverview {
 
 export interface AppConfig {
   defaultRaftHeightMm: number;
+  theme: string;
+}
+
+export interface UpdateAppConfigRequest {
+  defaultRaftHeightMm: number;
+  theme: string;
 }
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
@@ -124,11 +130,11 @@ export async function fetchAppConfig(): Promise<AppConfig> {
   return r.json();
 }
 
-export async function updateAppConfig(defaultRaftHeightMm: number): Promise<AppConfig> {
+export async function updateAppConfig(request: UpdateAppConfigRequest): Promise<AppConfig> {
   const r = await fetch('/api/settings/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ defaultRaftHeightMm }),
+    body: JSON.stringify(request),
   });
   if (!r.ok) throw new Error('Failed to update app settings');
   return r.json();

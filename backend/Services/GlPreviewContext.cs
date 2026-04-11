@@ -292,7 +292,7 @@ public sealed class GlPreviewContext : IDisposable
         // ── GL draw ───────────────────────────────────────────────────────────
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
         gl.Viewport(0, 0, (uint)width, (uint)height);
-        gl.ClearColor(15 / 255f, 23 / 255f, 42 / 255f, 1f);  // #0f172a
+        gl.ClearColor(0f, 0f, 0f, 0f);  // transparent
         gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         gl.Enable(EnableCap.DepthTest);
         gl.DepthFunc(DepthFunction.Less);

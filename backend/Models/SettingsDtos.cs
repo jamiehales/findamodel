@@ -1,5 +1,5 @@
 namespace findamodel.Models;
 
-public record AppConfigDto(float DefaultRaftHeightMm);
+public record AppConfigDto(float DefaultRaftHeightMm, string Theme);
 
-public record UpdateAppConfigRequest(float DefaultRaftHeightMm);
+public record UpdateAppConfigRequest(float DefaultRaftHeightMm, string Theme);

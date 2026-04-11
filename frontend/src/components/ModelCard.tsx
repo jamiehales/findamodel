@@ -19,19 +19,28 @@ interface ModelCardProps {
 function ModelCard({ model, href }: ModelCardProps) {
   return (
     <AppCard href={href} interactive className={styles.card}>
-      {model.previewUrl && (
+      {model.previewUrl ? (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
+      ) : (
+        <Box className={styles.previewPlaceholder} />
       )}
 
-      <Box className={styles.overlay}>
-        <Stack direction="row" spacing={0.5} flexWrap="wrap">
-          <Chip variant="badge-enabled" label={model.fileType.toUpperCase()} />
+      <Box className={styles.infoBlock}>
+        <Stack direction="row" className={styles.chipRow} spacing={0.5} flexWrap="wrap">
+          <Chip
+            variant="badge-enabled"
+            className={styles.chip}
+            label={model.fileType.toUpperCase()}
+          />
 
-          {model.material && <Chip variant="badge-enabled" label={model.material} />}
+          {model.material && (
+            <Chip variant="badge-enabled" className={styles.chip} label={model.material} />
+          )}
 
           {model.supported !== null && (
             <Chip
               variant={model.supported ? 'badge-enabled' : 'badge-disabled'}
+              className={`${styles.chip}${model.supported ? '' : ` ${styles.chipDisabled}`}`}
               label={model.supported ? 'Supported' : 'Unsupported'}
             />
           )}

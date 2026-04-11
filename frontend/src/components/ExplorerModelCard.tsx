@@ -12,7 +12,6 @@ import CodeTooltip from './CodeTooltip';
 import PrintingListControls from './PrintingListControls';
 import styles from './ExplorerModelCard.module.css';
 import { formatBytes } from '../lib/utils';
-import { appColors } from '../theme';
 
 function MetaBadge({
   value,
@@ -26,8 +25,7 @@ function MetaBadge({
   const badge = (
     <Box
       component="span"
-      className={styles.metaBadge}
-      style={{ color: isRule ? appColors.metaBadge.rule : appColors.metaBadge.value }}
+      className={`${styles.metaBadge} ${isRule ? styles.metaBadgeRule : styles.metaBadgeValue}`}
     >
       {value}
     </Box>
@@ -101,10 +99,13 @@ interface Props {
 }
 
 function ExplorerModelCard({ model, href }: Props) {
-  const badge = appColors.fileType[model.fileType] ?? {
-    bg: 'rgba(255,255,255,0.1)',
-    color: '#94a3b8',
-  };
+  const fileType = model.fileType.toLowerCase();
+  const badgeClass =
+    fileType === 'stl'
+      ? styles.badgeStl
+      : fileType === 'obj'
+        ? styles.badgeObj
+        : styles.badgeDefault;
   const isIndexed = model.id != null;
   const [hovered, setHovered] = useState(false);
   const indexModel = useIndexModel(model.relativePath);
@@ -123,9 +124,7 @@ function ExplorerModelCard({ model, href }: Props) {
       )}
 
       <Box className={styles.overlay}>
-        <span className={styles.badge} style={{ background: badge.bg, color: badge.color }}>
-          {model.fileType.toUpperCase()}
-        </span>
+        <span className={`${styles.badge} ${badgeClass}`}>{model.fileType.toUpperCase()}</span>
 
         <Typography className={styles.name}>
           {model.resolvedMetadata?.modelName ?? model.fileName.replace(/\.[^.]+$/, '')}

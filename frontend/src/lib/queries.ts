@@ -131,7 +131,8 @@ export function useAppConfig() {
 export function useUpdateAppConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (defaultRaftHeightMm: number) => updateAppConfig(defaultRaftHeightMm),
+    mutationFn: (request: { defaultRaftHeightMm: number; theme: string }) =>
+      updateAppConfig(request),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.appConfig, updated);
     },

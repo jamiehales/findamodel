@@ -85,7 +85,7 @@ internal static class MeshRenderer
         // Each tile owns its own pixel/zbuf region — no synchronisation needed.
         var ssPixels = new Rgba32[ssW * ssH];
         var zbuf = new float[ssW * ssH];
-        Array.Fill(ssPixels, new Rgba32(15, 23, 42));  // #0f172a
+        Array.Fill(ssPixels, new Rgba32(0, 0, 0, 0));  // transparent
         Array.Fill(zbuf, float.MaxValue);
 
         int tilesX = (ssW + TileSize - 1) / TileSize;
@@ -186,15 +186,22 @@ internal static class MeshRenderer
                 var row = accessor.GetRowSpan(y);
                 for (int x = 0; x < w; x++)
                 {
-                    int r = 0, g = 0, b = 0;
+                    int r = 0, g = 0, b = 0, a = 0, hit = 0;
                     for (int dy = 0; dy < SuperSample; dy++)
                         for (int dx = 0; dx < SuperSample; dx++)
                         {
                             var c = ssPixels[(y * SuperSample + dy) * ssW + x * SuperSample + dx];
-                            r += c.R; g += c.G; b += c.B;
+                            // Only accumulate RGB from opaque samples to avoid darkening
+                            // anti-aliased edges against the transparent background.
+                            if (c.A > 0) { r += c.R; g += c.G; b += c.B; hit++; }
+                            a += c.A;
                         }
                     int n = SuperSample * SuperSample;
-                    row[x] = new Rgba32((byte)(r / n), (byte)(g / n), (byte)(b / n), 255);
+                    row[x] = new Rgba32(
+                        (byte)(hit > 0 ? r / hit : 0),
+                        (byte)(hit > 0 ? g / hit : 0),
+                        (byte)(hit > 0 ? b / hit : 0),
+                        (byte)(a / n));
                 }
             }
         });

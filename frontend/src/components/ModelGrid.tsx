@@ -6,7 +6,7 @@ import Stack from '@mui/material/Stack';
 import { useModels, useQueryModels } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import ModelCard from './ModelCard';
-import CardGrid from './CardGrid';
+import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from './CardGrid';
 import styles from './ModelGrid.module.css';
 
 const PAGE_SIZE = 25;
@@ -24,7 +24,7 @@ function FilteredGrid({ filter }: { filter: ModelFilter }) {
 
   return (
     <Box className={styles.container}>
-      <CardGrid>
+      <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
         {data.models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}
@@ -48,7 +48,7 @@ function UnfilteredGrid() {
 
   return (
     <Box className={styles.container}>
-      <CardGrid>
+      <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
         {models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,6 +9,10 @@ const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
 
 const MODEL_COLOR = '#818cf8';
+
+function SceneBg({ color }: { color: string }) {
+  return <color attach="background" args={[color]} />;
+}
 
 function Lighting() {
   return (
@@ -293,6 +298,7 @@ export default function ModelViewer({
   const { data: splitData } = useSplitGeometry(modelId);
   const [showSupports, setShowSupports] = useState(true);
   const color = MODEL_COLOR;
+  const theme = useTheme();
 
   const hasSupportMesh = supported === true && splitData?.supports != null;
 
@@ -342,6 +348,7 @@ export default function ModelViewer({
     <ViewerErrorBoundary fallback={errorFallback}>
       <div style={wrapperStyle}>
         <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
+          <SceneBg color={theme.palette.background.default} />
           <CameraInit
             target={orbitTarget}
             halfExtents={halfExtents}
@@ -412,7 +419,7 @@ const wrapperStyle: React.CSSProperties = {
 const containerStyle: React.CSSProperties = {
   width: '100%',
   height: '100%',
-  background: '#0f172a',
+  background: 'var(--color-bg-default)',
 };
 
 const toggleButtonStyle: React.CSSProperties = {

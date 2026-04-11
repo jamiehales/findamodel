@@ -22,7 +22,7 @@ public class SettingsController(
     {
         try
         {
-            var result = await appConfigService.UpdateDefaultRaftHeightAsync(request.DefaultRaftHeightMm);
+            var result = await appConfigService.UpdateAsync(request);
             return Ok(result);
         }
         catch (ArgumentException ex)

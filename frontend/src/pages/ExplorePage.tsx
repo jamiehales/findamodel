@@ -12,7 +12,7 @@ import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import PageLayout from '../components/layouts/PageLayout';
-import CardGrid from '../components/CardGrid';
+import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import styles from './ExplorePage.module.css';
 
 function ExplorePageInner({ path }: { path: string }) {
@@ -35,7 +35,7 @@ function ExplorePageInner({ path }: { path: string }) {
       {data.folders.length > 0 && (
         <Box className={data.models.length > 0 ? styles.sectionWithMargin : undefined}>
           <Typography variant="section-label">Folders</Typography>
-          <CardGrid>
+          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
             {data.folders.map((folder) => (
               <FolderCard key={folder.path} folder={folder} href={`/explore/${folder.path}`} />
             ))}
@@ -46,7 +46,7 @@ function ExplorePageInner({ path }: { path: string }) {
       {data.models.length > 0 && (
         <Box>
           <Typography variant="section-label">Models</Typography>
-          <CardGrid>
+          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
             {data.models.map((model) => (
               <ExplorerModelCard
                 key={model.relativePath}

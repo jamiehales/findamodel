@@ -4,6 +4,7 @@
   --color-primary: #6366f1;
   --color-primary-light: #818cf8;
   --color-success: #34d399;
+  --color-success-bg: rgba(34, 197, 94, 0.2);
   --color-warning: #fbbf24;
   --color-text-primary: #e2e8f0;
   --color-text-secondary: #64748b;
@@ -12,6 +13,32 @@
   --color-border-primary-hover: rgba(99, 102, 241, 0.5);
   --color-surface-hover: rgba(99, 102, 241, 0.12);
   --color-surface-interactive: #243049;
+  --color-info-block: #364154;
+  --color-overlay-strong: rgba(15, 23, 42, 0.95);
+  --color-overlay-mid: rgba(15, 23, 42, 0.5);
+  --color-overlay-card-bg: rgba(15, 23, 42, 0.55);
+  --color-overlay-flat: rgba(15, 23, 42, 0.82);
   --radius-card: 14px;
   --radius-pill: 999px;
+}
+
+:root[data-theme='nord'] {
+  --color-bg-default: #2e3440;
+  --color-bg-paper: #3b4252;
+  --color-primary: #88c0d0;
+  --color-primary-light: #81a1c1;
+  --color-success: #a3be8c;
+  --color-success-bg: rgba(163, 190, 140, 0.2);
+  --color-warning: #ebcb8b;
+  --color-text-primary: #eceff4;
+  --color-text-secondary: #d8dee9;
+  --color-border-primary: rgba(136, 192, 208, 0.2);
+  --color-border-primary-hover: rgba(136, 192, 208, 0.5);
+  --color-surface-hover: rgba(136, 192, 208, 0.08);
+  --color-surface-interactive: #434c5e;
+  --color-info-block: #4d5566;
+  --color-overlay-strong: rgba(46, 52, 64, 0.95);
+  --color-overlay-mid: rgba(46, 52, 64, 0.5);
+  --color-overlay-card-bg: rgba(46, 52, 64, 0.55);
+  --color-overlay-flat: rgba(46, 52, 64, 0.88);
 }

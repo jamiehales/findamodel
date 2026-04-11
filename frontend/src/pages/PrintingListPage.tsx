@@ -34,7 +34,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
 import PageLayout from '../components/layouts/PageLayout';
-import CardGrid from '../components/CardGrid';
+import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import styles from './PrintingListPage.module.css';
 
 function PrintingListPage() {
@@ -385,7 +385,7 @@ function PrintingListPage() {
         </Box>
       ) : (
         <>
-          <CardGrid minCardWidth={160}>
+          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
             {listedModels.map((model) => (
               <ModelCard
                 key={model.id}

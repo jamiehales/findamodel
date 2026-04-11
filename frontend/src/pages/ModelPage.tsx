@@ -92,7 +92,7 @@ function ModelPage() {
 
       <Box className={styles.content}>
         <Box className={styles.titleGroup}>
-          <Typography component="h1" className={styles.modelTitle}>
+          <Typography component="h1" variant="page-title">
             {model.name}
           </Typography>
 
@@ -209,9 +209,7 @@ function ModelPage() {
       {(otherParts?.length ?? 0) > 0 && (
         <Box className={styles.otherPartsSection}>
           <Box className={gridStyles.container}>
-            <Typography variant="h6" className={styles.otherPartsTitle}>
-              Other parts
-            </Typography>
+            <Typography variant="h6">Other parts</Typography>
             <Box className={gridStyles.grid}>
               {otherParts!.map((part) => (
                 <ModelCard

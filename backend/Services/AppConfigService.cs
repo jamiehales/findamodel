@@ -21,7 +21,25 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var config = await EnsureConfigAsync(db);
-        return new AppConfigDto(config.DefaultRaftHeightMm);
+        return new AppConfigDto(config.DefaultRaftHeightMm, config.Theme);
+    }
+
+    public async Task<AppConfigDto> UpdateAsync(UpdateAppConfigRequest request)
+    {
+        if (!float.IsFinite(request.DefaultRaftHeightMm) || request.DefaultRaftHeightMm < 0f)
+            throw new ArgumentException("Default raft height must be a finite number greater than or equal to 0.", nameof(request.DefaultRaftHeightMm));
+
+        var allowedThemes = new HashSet<string> { "default", "nord" };
+        if (!allowedThemes.Contains(request.Theme))
+            throw new ArgumentException($"Unknown theme '{request.Theme}'.", nameof(request.Theme));
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var config = await EnsureConfigAsync(db);
+        config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
+        config.Theme = request.Theme;
+        config.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return new AppConfigDto(config.DefaultRaftHeightMm, config.Theme);
     }
 
     public async Task<AppConfigDto> UpdateDefaultRaftHeightAsync(float defaultRaftHeightMm)
@@ -34,7 +52,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
         config.DefaultRaftHeightMm = defaultRaftHeightMm;
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
-        return new AppConfigDto(config.DefaultRaftHeightMm);
+        return new AppConfigDto(config.DefaultRaftHeightMm, config.Theme);
     }
 
     private static async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
