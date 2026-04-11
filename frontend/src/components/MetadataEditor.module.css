@@ -104,7 +104,7 @@
 }
 
 .closeBtn {
-  color: #64748b !important;
+  color: var(--color-text-secondary) !important;
 }
 
 .saveBtn {

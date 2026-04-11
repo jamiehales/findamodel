@@ -16,10 +16,10 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.375rem 0.75rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.875rem;
   font-weight: 500;
-  color: #64748b;
+  color: var(--color-text-secondary);
   text-decoration: none;
   transition:
     color 0.15s,
@@ -27,12 +27,12 @@
 }
 
 .navLink:hover {
-  color: #e2e8f0;
+  color: var(--color-text-primary);
   background: rgba(255, 255, 255, 0.06);
 }
 
 .navLinkActive {
-  color: #818cf8;
+  color: var(--color-primary-light);
   background: rgba(99, 102, 241, 0.1);
 }
 
@@ -43,11 +43,11 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.7rem;
   font-weight: 600;
   background: rgba(99, 102, 241, 0.3);
-  color: #818cf8;
+  color: var(--color-primary-light);
   line-height: 1;
 }
 
@@ -57,12 +57,12 @@
 }
 
 .printingGroup:hover .navLink {
-  color: #e2e8f0;
+  color: var(--color-text-primary);
   background: rgba(255, 255, 255, 0.06);
 }
 
 .printingOpen .navLink {
-  color: #e2e8f0;
+  color: var(--color-text-primary);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -75,23 +75,20 @@
 
 .printingManageItem {
   white-space: nowrap;
-  color: #e2e8f0 !important;
-}
-
-.printingManageItem:hover {
+  color: var(--color-text-primary) !important;
   background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .settingsIconButton {
-  color: #64748b !important;
+  color: var(--color-text-secondary) !important;
 }
 
 .settingsIconButton:hover {
-  color: #e2e8f0 !important;
+  color: var(--color-text-primary) !important;
   background: rgba(255, 255, 255, 0.06) !important;
 }
 
 .settingsIconButtonActive {
-  color: #818cf8 !important;
+  color: var(--color-primary-light) !important;
   background: rgba(99, 102, 241, 0.1) !important;
 }

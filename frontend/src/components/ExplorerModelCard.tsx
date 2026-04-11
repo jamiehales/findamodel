@@ -8,6 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import type { ExplorerModel } from '../lib/api';
 import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import AppCard from './AppCard';
+import CodeTooltip from './CodeTooltip';
 import PrintingListControls from './PrintingListControls';
 import styles from './ExplorerModelCard.module.css';
 import { formatBytes } from '../lib/utils';
@@ -35,15 +36,9 @@ function MetaBadge({
   if (!isRule || !ruleYaml) return badge;
 
   return (
-    <Tooltip
-      title={
-        <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.75rem' }}>{ruleYaml}</pre>
-      }
-      placement="top"
-      arrow
-    >
+    <CodeTooltip code={ruleYaml} placement="top">
       {badge}
-    </Tooltip>
+    </CodeTooltip>
   );
 }
 

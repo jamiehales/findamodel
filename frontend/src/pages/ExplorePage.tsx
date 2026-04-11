@@ -27,7 +27,7 @@ function ExplorePageInner({ path }: { path: string }) {
   return (
     <>
       {isEmpty && (
-        <Typography color="text.disabled" style={{ marginTop: 16 }}>
+        <Typography color="text.disabled" className={styles.statusMessage}>
           This folder is empty.
         </Typography>
       )}

@@ -14,7 +14,7 @@
 }
 
 .archiveStatusTitle {
-  color: #e2e8f0 !important;
+  color: var(--color-text-primary) !important;
   font-weight: 600 !important;
 }
 
@@ -25,7 +25,7 @@
 
 .archiveProgress {
   height: 0.5rem !important;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(148, 163, 184, 0.18) !important;
 }
 

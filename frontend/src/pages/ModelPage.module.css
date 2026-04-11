@@ -94,7 +94,7 @@
 .qtyBtn {
   border-radius: 0 !important;
   padding: 0.75rem 1.25rem !important;
-  color: #818cf8 !important;
+  color: var(--color-primary-light) !important;
   font-size: 1.25rem !important;
 }
 
@@ -107,8 +107,7 @@
   text-align: center;
   font-size: 1rem !important;
   font-weight: 600 !important;
-  color: #e2e8f0 !important;
-  user-select: none;
+  color: var(--color-text-primary) !important;
   min-width: 3rem;
 }
 
@@ -127,8 +126,8 @@
   font-size: 0.95rem !important;
   font-weight: 600 !important;
   text-transform: none !important;
-  border-color: rgba(99, 102, 241, 0.5) !important;
-  color: #818cf8 !important;
+  border-color: var(--color-border-primary-hover) !important;
+  color: var(--color-primary-light) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -136,7 +135,7 @@
 }
 
 .reindexBtn:hover:not(:disabled) {
-  border-color: #818cf8 !important;
+  border-color: var(--color-primary-light) !important;
   background: rgba(99, 102, 241, 0.08) !important;
 }
 
@@ -145,7 +144,7 @@
 }
 
 .reindexSpinner {
-  color: #818cf8 !important;
+  color: var(--color-primary-light) !important;
 }
 
 .metaGrid {
@@ -153,8 +152,8 @@
   grid-template-columns: auto 1fr;
   gap: 0.625rem 1.5rem;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background-color: #1e293b;
+  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-bg-paper);
   padding: 1rem 1.25rem;
 }
 
@@ -182,7 +181,7 @@
   height: 380px;
   border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--color-border-subtle);
 }
 
 .otherPartsSection {

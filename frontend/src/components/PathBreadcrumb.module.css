@@ -7,11 +7,7 @@
 
 .rootLink {
   font-size: 0.875rem !important;
-  color: #818cf8 !important;
-  cursor: pointer;
-}
-
-.rootLink:hover {
+  color: var(--color-primary-light) !important;
   text-decoration: underline;
 }
 
@@ -28,7 +24,7 @@
 
 .segLink {
   font-size: 0.875rem !important;
-  color: #818cf8 !important;
+  color: var(--color-primary-light) !important;
   cursor: pointer;
 }
 
@@ -38,8 +34,7 @@
 
 .segLinkLast {
   font-size: 0.875rem !important;
-  color: #e2e8f0 !important;
-  cursor: default;
+  color: var(--color-text-primary) !important;
   font-weight: 600 !important;
 }
 

@@ -19,8 +19,7 @@
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(15, 23, 42, 0.7);
-  color: #e2e8f0;
-  font-size: 1.3rem;
+  color: var(--color-text-primary);
   line-height: 1;
   cursor: pointer;
   display: flex;
@@ -43,7 +42,7 @@
 }
 
 .count {
-  color: #e2e8f0;
+  color: var(--color-text-primary);
   font-size: 0.8rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em !important;
@@ -53,7 +52,7 @@
 
 .chip {
   background: rgba(99, 102, 241, 0.85) !important;
-  color: #e2e8f0 !important;
+  color: var(--color-text-primary) !important;
   font-size: 0.8rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em !important;

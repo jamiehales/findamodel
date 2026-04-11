@@ -8,6 +8,7 @@ import type { ExplorerFolder } from '../lib/api';
 import AppDialog from './AppDialog';
 import MetadataEditor from './MetadataEditor';
 import AppCard from './AppCard';
+import CodeTooltip from './CodeTooltip';
 import styles from './FolderCard.module.css';
 import { Divider, Stack } from '@mui/material';
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries';
@@ -55,15 +56,9 @@ function MetaBadge({
   if (!ruleYaml) return badge;
 
   return (
-    <Tooltip
-      title={
-        <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '0.75rem' }}>{ruleYaml}</pre>
-      }
-      placement="right"
-      arrow
-    >
+    <CodeTooltip code={ruleYaml} placement="right">
       {badge}
-    </Tooltip>
+    </CodeTooltip>
   );
 }
 

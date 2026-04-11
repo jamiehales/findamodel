@@ -1,0 +1,17 @@
+:root {
+  --color-bg-default: #0f172a;
+  --color-bg-paper: #1e293b;
+  --color-primary: #6366f1;
+  --color-primary-light: #818cf8;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #64748b;
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
+  --color-border-primary: rgba(99, 102, 241, 0.2);
+  --color-border-primary-hover: rgba(99, 102, 241, 0.5);
+  --color-surface-hover: rgba(99, 102, 241, 0.12);
+  --color-surface-interactive: #243049;
+  --radius-card: 14px;
+  --radius-pill: 999px;
+}

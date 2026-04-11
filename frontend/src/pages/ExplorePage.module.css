@@ -9,3 +9,7 @@
 .sectionWithMargin {
   margin-bottom: 2rem;
 }
+
+.statusMessage {
+  margin-top: 1rem;
+}

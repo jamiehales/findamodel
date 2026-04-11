@@ -4,8 +4,8 @@
 }
 
 .interactiveSurface {
-  background: #1e293b;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: var(--color-bg-paper);
+  border: 1px solid var(--color-border-primary);
   transition:
     border-color 120ms ease,
     background 120ms ease;
@@ -22,10 +22,10 @@
 }
 
 .interactiveSurface:hover {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: #243049;
+  border-color: var(--color-border-primary-hover);
+  background: var(--color-surface-interactive);
 }
 
 .interactiveSurface:hover::after {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--color-surface-hover);
 }
