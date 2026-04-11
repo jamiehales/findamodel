@@ -14,6 +14,7 @@ import {
 } from '../lib/queries';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './PrintingListsManagePage.module.css';
 
 function PrintingListsManagePage() {
@@ -58,7 +59,7 @@ function PrintingListsManagePage() {
   }
 
   return (
-    <Box className={styles.page}>
+    <PageLayout variant="narrow" spacing={4}>
       <Typography component="h1" className={styles.title}>
         Printing lists
       </Typography>
@@ -203,7 +204,7 @@ function PrintingListsManagePage() {
         onCancel={() => setDeleteTarget(null)}
         pending={deleteList.isPending}
       />
-    </Box>
+    </PageLayout>
   );
 }
 

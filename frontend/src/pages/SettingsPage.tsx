@@ -12,6 +12,7 @@ import {
 import type { MetadataDictionaryField } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './SettingsPage.module.css';
 
 type FieldKey = 'category' | 'type' | 'material';
@@ -148,7 +149,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <Box className={styles.page}>
+    <PageLayout variant="medium" spacing={2}>
       <Typography variant="h5">Metadata settings</Typography>
 
       <Box className={styles.globalSettingsSection}>
@@ -186,6 +187,6 @@ export default function SettingsPage() {
         <FieldSection field="type" data={data.type} />
         <FieldSection field="material" data={data.material} />
       </Stack>
-    </Box>
+    </PageLayout>
   );
 }

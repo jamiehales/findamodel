@@ -5,6 +5,7 @@ import ModelGrid from '../components/ModelGrid';
 import ModelFilters from '../components/ModelFilters';
 import { useFilterOptions } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './ModelsPage.module.css';
 
 function toFilter(searchParams: URLSearchParams): ModelFilter {
@@ -52,14 +53,14 @@ function ModelsPage() {
   );
 
   return (
-    <Box className={styles.page}>
+    <PageLayout spacing={4}>
       {filterOptions && (
         <Box className={styles.filtersWrapper}>
           <ModelFilters value={filter} onChange={handleFilterChange} options={filterOptions} />
         </Box>
       )}
       <ModelGrid filter={filter} />
-    </Box>
+    </PageLayout>
   );
 }
 

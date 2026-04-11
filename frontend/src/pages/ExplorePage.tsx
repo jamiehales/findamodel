@@ -11,6 +11,7 @@ import ExplorerModelCard from '../components/ExplorerModelCard';
 import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './ExplorePage.module.css';
 
 function ExplorePageInner({ path }: { path: string }) {
@@ -65,7 +66,7 @@ export default function ExplorePage() {
   const [metadataOpen, setMetadataOpen] = useState(false);
 
   return (
-    <Box className={styles.page}>
+    <PageLayout>
       <Box className={styles.headerRow}>
         <PathBreadcrumb path={path} />
         <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
@@ -84,6 +85,6 @@ export default function ExplorePage() {
       >
         <MetadataEditor path={path} onClose={() => setMetadataOpen(false)} />
       </AppDialog>
-    </Box>
+    </PageLayout>
   );
 }

@@ -33,6 +33,7 @@ import ModelCard from '../components/ModelCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './PrintingListPage.module.css';
 
 function PrintingListPage() {
@@ -233,9 +234,9 @@ function PrintingListPage() {
           : null;
 
   return (
-    <Box className={styles.page}>
+    <PageLayout spacing={3}>
       <Stack direction="column" spacing={2} alignItems="left">
-        <Stack direction="row" alignItems="baseline" justifyContent="space-between">
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography component="h1" className={styles.title}>
             {listName}
           </Typography>
@@ -415,7 +416,7 @@ function PrintingListPage() {
         onConfirm={handleConfirmClearList}
         onCancel={() => setClearDialogOpen(false)}
       />
-    </Box>
+    </PageLayout>
   );
 }
 

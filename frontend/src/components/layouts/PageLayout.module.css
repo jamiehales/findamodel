@@ -1,0 +1,33 @@
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1.5rem 2rem 3rem;
+}
+
+@media (min-width: 600px) {
+  .page {
+    padding-left: 4rem;
+    padding-right: 4rem;
+  }
+}
+
+/* full: no max-width (default) */
+.full {
+  /* nothing extra needed */
+}
+
+/* medium: settings-style wide centred column */
+.medium {
+  max-width: 1080px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 20px;
+}
+
+/* narrow: model/list detail page centred column */
+.narrow {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}

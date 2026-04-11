@@ -21,6 +21,7 @@ import LoadingView from '../components/LoadingView';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
 import gridStyles from '../components/ModelGrid.module.css';
+import PageLayout from '../components/layouts/PageLayout';
 import styles from './ModelPage.module.css';
 import { formatBytes } from '../lib/utils';
 import { appColors } from '../theme';
@@ -54,19 +55,19 @@ function ModelPage() {
 
   if (isPending) {
     return (
-      <Box className={styles.page}>
+      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
         {backButton}
         <LoadingView minHeight="100vh" />
-      </Box>
+      </PageLayout>
     );
   }
 
   if (isError || model === null) {
     return (
-      <Box className={styles.page}>
+      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
         {backButton}
         <ErrorView message="Model not found." minHeight="100vh" />
-      </Box>
+      </PageLayout>
     );
   }
 
@@ -86,7 +87,7 @@ function ModelPage() {
   ].filter(Boolean) as { label: string; value: React.ReactNode }[];
 
   return (
-    <Box className={styles.page}>
+    <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
       {backButton}
 
       <Box className={styles.content}>
@@ -234,7 +235,7 @@ function ModelPage() {
           </Box>
         </Box>
       )}
-    </Box>
+    </PageLayout>
   );
 }
 
