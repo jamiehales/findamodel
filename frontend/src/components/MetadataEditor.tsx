@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
@@ -323,13 +323,11 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const [ruleErrors, setRuleErrors] = useState<Record<string, string | null>>({});
   const [savedIndicator, setSavedIndicator] = useState(false);
   const [rulesHelpOpen, setRulesHelpOpen] = useState(false);
-  const committedRef = useRef(fields);
 
   useEffect(() => {
     if (detail) {
       const loaded = { ...detail.localValues } as MetadataFields;
       setFields(loaded);
-      committedRef.current = loaded;
 
       const modes: Record<string, FieldMode> = {};
       const ruleTexts: Record<string, string> = {};
@@ -414,7 +412,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
 
     try {
       await mutation.mutateAsync({ ...cleanFields, fieldRules: fieldRulesMap });
-      committedRef.current = f;
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
     } catch (err) {
@@ -422,18 +419,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
         setRuleErrors((prev) => ({ ...prev, ...err.fieldErrors }));
       }
     }
-  }
-
-  function handleValueCommit() {
-    const c = committedRef.current;
-    const changed = (Object.keys(fields) as (keyof MetadataFields)[])
-      .filter((k) => k !== 'fieldRules')
-      .some((k) => fields[k] !== c[k]);
-    if (changed) doSave(fields);
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') handleValueCommit();
   }
 
   function getSelectOptions(
@@ -486,8 +471,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
             setFieldRuleTexts((prev) => ({ ...prev, [field.yamlName]: '' }));
           }
           // Save the cleared state
-          const cleared = { ...fields, [field.key]: null };
-          doSave(cleared);
+          setFields((prev) => ({ ...prev, [field.key]: null }));
         };
 
         return (
@@ -568,8 +552,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 value={(fields[field.key] as string | null) ?? ''}
                 placeholder={(parentValue as string | null) ?? undefined}
                 onChange={(e) => setFieldValue(field.key, (e.target.value || null) as never)}
-                onBlur={handleValueCommit}
-                onKeyDown={handleKeyDown}
                 slotProps={{ input: { className: styles.fieldInput } }}
               />
             )}
@@ -584,7 +566,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                     const val = (e.target.value || null) as never;
                     const next = { ...fields, [field.key]: val };
                     setFields(next);
-                    doSave(next);
                   }}
                   className={styles.selectSmall}
                   renderValue={(v) =>
@@ -619,7 +600,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                   const val = fields.supported == null ? true : fields.supported ? false : null;
                   const next = { ...fields, supported: val };
                   setFields(next);
-                  doSave(next);
                 }}
                 className={styles.checkbox}
               />
@@ -645,8 +625,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                     raw === '' || isValid ? (parsed as never) : (null as never),
                   );
                 }}
-                onBlur={handleValueCommit}
-                onKeyDown={handleKeyDown}
                 slotProps={{ input: { className: styles.fieldInput } }}
               />
             )}
