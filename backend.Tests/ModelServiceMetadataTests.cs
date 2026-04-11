@@ -29,14 +29,21 @@ public class ModelServiceMetadataTests
         return new InMemoryDbContextFactory(options);
     }
 
-    private static IConfiguration CreateConfiguration(string modelsRoot) =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Models:DirectoryPath"] = modelsRoot,
-                ["Preview:UseGpu"] = "false",
-            })
+    private static IConfiguration CreateConfiguration(string modelsRoot, int? fileScanThreads = null)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Models:DirectoryPath"] = modelsRoot,
+            ["Preview:UseGpu"] = "false",
+        };
+
+        if (fileScanThreads.HasValue)
+            values["Indexing:FileScanThreads"] = fileScanThreads.Value.ToString();
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
             .Build();
+    }
 
     private static ModelService CreateSut(
         IConfiguration configuration,
@@ -296,6 +303,68 @@ public class ModelServiceMetadataTests
             var storedChecksum = ScanConfig.Compute(defaultRaft);
             Assert.True(InvokeNeedsHullRegeneration(storedChecksum, expectedRaft));
             Assert.False(InvokeNeedsHullRegeneration(ScanConfig.Compute(overrideRaft), expectedRaft));
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ScanAndCacheAsync_IndexesNonGeometryFiles_WithConfiguredParallelWorkers()
+    {
+        var dbFactory = CreateFactory(nameof(ScanAndCacheAsync_IndexesNonGeometryFiles_WithConfiguredParallelWorkers));
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(modelsRoot, "alpha.ctb"), [0x43, 0x54, 0x42, 0x01]);
+            await File.WriteAllBytesAsync(Path.Combine(modelsRoot, "beta.ctb"), [0x43, 0x54, 0x42, 0x02]);
+            await File.WriteAllBytesAsync(Path.Combine(modelsRoot, "gamma.ctb"), [0x43, 0x54, 0x42, 0x03]);
+
+            var sut = CreateSut(CreateConfiguration(modelsRoot, fileScanThreads: 4), dbFactory);
+
+            var indexedCount = await sut.ScanAndCacheAsync();
+
+            Assert.Equal(3, indexedCount);
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var models = await db.Models.OrderBy(m => m.FileName).ToListAsync();
+            Assert.Collection(
+                models,
+                model => Assert.Equal("alpha.ctb", model.FileName),
+                model => Assert.Equal("beta.ctb", model.FileName),
+                model => Assert.Equal("gamma.ctb", model.FileName));
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, 10)]
+    [InlineData(0, 10)]
+    [InlineData(-3, 10)]
+    [InlineData(12, 12)]
+    public void ResolveFileScanThreads_UsesConfiguredValueOrDefault(int? configuredThreads, int expectedThreads)
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        try
+        {
+            var configuration = CreateConfiguration(modelsRoot, configuredThreads);
+            var method = typeof(ModelService).GetMethod("ResolveFileScanThreads", BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            var result = (int?)method!.Invoke(null, [configuration]);
+
+            Assert.Equal(expectedThreads, result);
         }
         finally
         {
