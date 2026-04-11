@@ -1,9 +1,11 @@
 title: FindAModel
 description: "A self-hosted 3D model library manager with smart metadata rules"
-baseurl: ""
-url: ""
+url: "https://jamiehales.github.io"
+baseurl: "/findamodel"
 
 remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
 
 # Theme settings
 color_scheme: dark
