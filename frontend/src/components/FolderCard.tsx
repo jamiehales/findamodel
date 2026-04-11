@@ -10,8 +10,9 @@ import MetadataEditor from './MetadataEditor';
 import AppCard from './AppCard';
 import CodeTooltip from './CodeTooltip';
 import styles from './FolderCard.module.css';
-import { Divider, Stack } from '@mui/material';
+import { Stack } from '@mui/material';
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries';
+import { SHARED_FIELDS } from './metadata/fieldDefs';
 
 interface Props {
   folder: ExplorerFolder;
@@ -77,6 +78,22 @@ function FolderCard({ folder, href }: Props) {
     return hasInheritedValue ? 'inherited' : 'unset';
   }
 
+  function getDisplayValue(
+    key: string,
+    value: string | number | boolean | null | undefined,
+  ): string | null {
+    if (key === 'supported') {
+      if (value == null) return null;
+      return value ? 'Supported' : 'Unsupported';
+    }
+    if (key === 'raftHeightMm') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+      return `${value} mm`;
+    }
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    return null;
+  }
+
   return (
     <Box className={styles.wrapper}>
       {/* Card face */}
@@ -124,7 +141,7 @@ function FolderCard({ folder, href }: Props) {
               top: 4,
               right: 4,
               padding: '8px',
-              color: editorOpen ? 'var(--color-primary-light)' : 'rgba(226, 232, 240, 0.5)',
+              color: editorOpen ? 'var(--color-primary-light)' : 'var(--color-text-secondary)',
               minWidth: 44,
               minHeight: 44,
               '&:hover': {
@@ -158,7 +175,7 @@ function FolderCard({ folder, href }: Props) {
         </Typography>
 
         {/* Counts */}
-        <Typography variant="caption" color="text.disabled" className={styles.counts}>
+        <Typography variant="caption" color="text.secondary" className={styles.counts}>
           {folder.subdirectoryCount > 0 &&
             `${folder.subdirectoryCount} folder${folder.subdirectoryCount !== 1 ? 's' : ''}`}
           {folder.subdirectoryCount > 0 && folder.modelCount > 0 && ' · '}
@@ -169,55 +186,26 @@ function FolderCard({ folder, href }: Props) {
 
         {/* Resolved metadata badges */}
         <Stack direction="column" spacing={1} textAlign="center" width="100%">
-          <MetaBadge
-            type="Creator"
-            value={rv.creator}
-            source={getSource(lv?.creator, rv.creator, 'creator')}
-            ruleYaml={folder.ruleConfigs?.creator}
-          />
-          <MetaBadge
-            type="Collection"
-            value={rv.collection}
-            source={getSource(lv?.collection, rv.collection, 'collection')}
-            ruleYaml={folder.ruleConfigs?.collection}
-          />
-          <MetaBadge
-            type="Subcollection"
-            value={rv.subcollection}
-            source={getSource(lv?.subcollection, rv.subcollection, 'subcollection')}
-            ruleYaml={folder.ruleConfigs?.subcollection}
-          />
-          <MetaBadge
-            type="Category"
-            value={rv.category}
-            source={getSource(lv?.category, rv.category, 'category')}
-            ruleYaml={folder.ruleConfigs?.category}
-          />
-          <MetaBadge
-            type="Type"
-            value={rv.type}
-            source={getSource(lv?.type, rv.type, 'type')}
-            ruleYaml={folder.ruleConfigs?.type}
-          />
-          <MetaBadge
-            type="Material"
-            value={rv.material}
-            source={getSource(lv?.material, rv.material, 'material')}
-            ruleYaml={folder.ruleConfigs?.material}
-          />
-          <MetaBadge
-            type="Supports"
-            value={rv.supported == null ? null : rv.supported ? 'Supported' : 'Unsupported'}
-            source={getSource(lv?.supported, rv.supported, 'supported')}
-            ruleYaml={folder.ruleConfigs?.supported}
-          />
-          <Divider />
-          <MetaBadge
-            type="Model Name"
-            value={rv.modelName}
-            source={getSource(lv?.modelName, rv.modelName, 'model_name')}
-            ruleYaml={folder.ruleConfigs?.model_name}
-          />
+          {SHARED_FIELDS.map((field) => {
+            const resolved = (rv as Record<string, unknown>)[field.key] as
+              | string
+              | number
+              | boolean
+              | null
+              | undefined;
+            const local = (lv as Record<string, unknown> | null)?.[field.key];
+            const ruleKey = field.yamlName ?? field.key;
+
+            return (
+              <MetaBadge
+                key={field.key}
+                type={field.label}
+                value={getDisplayValue(field.key, resolved)}
+                source={getSource(local, resolved, ruleKey)}
+                ruleYaml={folder.ruleConfigs?.[ruleKey]}
+              />
+            );
+          })}
         </Stack>
       </AppCard>
 

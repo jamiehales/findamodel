@@ -43,24 +43,24 @@
 }
 
 .copyBtn {
-  color: rgba(148, 163, 184, 0.7) !important;
+  color: var(--color-text-secondary) !important;
   padding: 4px !important;
   margin-left: auto !important;
   flex-shrink: 0;
 }
 
 .copyBtn:hover {
-  color: rgba(148, 163, 184, 1) !important;
+  color: var(--color-text-primary) !important;
   background-color: rgba(148, 163, 184, 0.1) !important;
 }
 
 .resetBtn {
-  color: rgba(148, 163, 184, 0.6) !important;
+  color: var(--color-text-secondary) !important;
   padding: 4px !important;
 }
 
 .resetBtn:not(:disabled):hover {
-  color: rgba(148, 163, 184, 1) !important;
+  color: var(--color-text-primary) !important;
   background-color: rgba(148, 163, 184, 0.1) !important;
 }
 

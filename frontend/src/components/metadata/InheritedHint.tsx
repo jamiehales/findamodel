@@ -44,7 +44,12 @@ export default function InheritedHint({
 
   return (
     <Stack direction="row" alignItems="flex-start" spacing={1} className={className}>
-      <Typography variant="caption" color="text.disabled" component="div" className={hintClassName}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        component="div"
+        className={hintClassName}
+      >
         {inheritedRule ? (
           <>
             Inherited rule:

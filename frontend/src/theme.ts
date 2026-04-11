@@ -317,7 +317,7 @@ function buildDefaultTheme() {
       },
       text: {
         primary: '#e2e8f0',
-        secondary: '#64748b',
+        secondary: '#94a3b8',
       },
     },
     typography: sharedTypography,

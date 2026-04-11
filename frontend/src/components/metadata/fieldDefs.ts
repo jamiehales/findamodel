@@ -18,16 +18,9 @@ export interface SharedFieldDef {
 
 /**
  * Fields shared between both the folder metadata editor and the model metadata editor.
- * Ordered for display — raftHeightMm first, then identity fields.
+ * Ordered for display across the app.
  */
 export const SHARED_FIELDS: SharedFieldDef[] = [
-  {
-    key: 'raftHeightMm',
-    yamlName: 'raftHeight',
-    label: 'Raft Height (mm)',
-    fieldType: 'number',
-    supportsRules: false,
-  },
   { key: 'modelName', yamlName: 'model_name', label: 'Model Name', fieldType: 'text' },
   { key: 'partName', yamlName: 'part_name', label: 'Part Name', fieldType: 'text' },
   { key: 'creator', yamlName: 'creator', label: 'Creator', fieldType: 'text' },
@@ -49,4 +42,11 @@ export const SHARED_FIELDS: SharedFieldDef[] = [
     optionsField: 'material',
   },
   { key: 'supported', yamlName: 'supported', label: 'Supported', fieldType: 'bool' },
+  {
+    key: 'raftHeightMm',
+    yamlName: 'raftHeight',
+    label: 'Raft Height (mm)',
+    fieldType: 'number',
+    supportsRules: false,
+  },
 ];
