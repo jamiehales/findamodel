@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
-import Matter from 'matter-js';
+import { World, Vec2, Polygon, Box, Settings } from 'planck';
+import type { Body } from 'planck';
 import {
   Stack,
   Typography,
@@ -15,6 +16,9 @@ import {
 } from '@mui/material';
 import type { Model, SpawnType, HullMode } from '../lib/api';
 
+// Allow complex convex hulls with many vertices
+Settings.maxPolygonVertices = 64;
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CANVAS_WIDTH_MM = 228;
@@ -27,16 +31,34 @@ const VIEW_TOP_MARGIN_PX = VIEW_TOP_MARGIN_MM * PX_PER_MM;
 const VIEW_HEIGHT_PX = CANVAS_HEIGHT_PX + VIEW_TOP_MARGIN_PX;
 
 const WALL_THICKNESS = 200;
-const SPEED_THRESH = 0.12;
-const ANGULAR_THRESH = 0.008;
+const SPEED_THRESH = 0.005;
+const ANGULAR_THRESH = 0.003;
 const SETTLE_FRAMES = 90; // ~1.5 s at 60 fps
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout';
 const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag';
 const DEBUG_PHYSICS_WIREFRAME = false;
+const PHYSICS_BORDER_PADDING_PX = 5;
 
 // Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
 const BODY_GAP_MM = 2;
 const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM;
+
+// ── Physics scale ─────────────────────────────────────────────────────────────
+// planck.js (Box2D) is tuned for objects 0.1–10 m.  1 physics unit = 100 px.
+const PHYSICS_SCALE = 100;
+const toPhysics = (px: number) => px / PHYSICS_SCALE;
+const toPixels = (p: number) => p * PHYSICS_SCALE;
+const CANVAS_WIDTH_PHYS = toPhysics(CANVAS_WIDTH_PX);
+const CANVAS_HEIGHT_PHYS = toPhysics(CANVAS_HEIGHT_PX);
+
+// ── Collision filtering ───────────────────────────────────────────────────────
+// Three categories allow per-fixture routing:
+//   WALL   fixtures only touch BORDER fixtures  (keeps models on the plate)
+//   OBJECT fixtures only touch other OBJECT fixtures (object-object spacing)
+//   BORDER fixtures only touch WALL   fixtures  (plate edge containment)
+const CAT_WALL = 0x0001;
+const CAT_OBJECT = 0x0002;
+const CAT_BORDER = 0x0004;
 
 const PALETTE = [
   0x818cf8, // indigo
@@ -51,7 +73,7 @@ const PALETTE = [
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Vec2 {
+interface Vec2Like {
   x: number;
   y: number;
 }
@@ -68,19 +90,23 @@ interface SavedLayout {
 }
 
 interface Entry {
-  body: Matter.Body;
+  body: Body;
   gfx: PIXI.Graphics;
   label: PIXI.Text;
   modelId: string;
   instanceIndex: number;
   color: number;
-  /** Original (non-inflated) hull vertices in body-local space, for rendering. */
-  visualLocalVerts: Vec2[];
+  /** Original (non-inflated) spawn hull vertices in body-local pixel space, for rendering. */
+  visualLocalVerts: Vec2Like[];
+  /** Border hull vertices in body-local pixel space (always with-raft), for bounds checking. */
+  borderLocalVerts: Vec2Like[];
 }
 
 interface ModelFootprintMetrics {
   bodyHullJson: string | null;
-  localVerts: Vec2[] | null;
+  borderHullJson: string | null;
+  localVerts: Vec2Like[] | null;
+  borderLocalVerts: Vec2Like[] | null;
   footprintAreaPx2: number;
   boundingWidthPx: number;
   boundingHeightPx: number;
@@ -110,7 +136,7 @@ interface Props {
  * Parse a JSON hull string ("[[x,z],[x,z],...]") into local-space pixel
  * vertices centred at the origin
  */
-function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
+function parseHullLocalPx(hullJson: string | null): Vec2Like[] | null {
   if (!hullJson) return null;
   try {
     const raw: [number, number][] = JSON.parse(hullJson);
@@ -118,10 +144,9 @@ function parseHullLocalPx(hullJson: string | null): Vec2[] | null {
 
     // Hull coords are [x, z] in model space (assumed mm for 3-D printing STLs).
     // Map z → canvas y.
-    const pts = raw.map(([x, z]): Vec2 => ({ x: x * PX_PER_MM, y: z * PX_PER_MM }));
+    const pts = raw.map(([x, z]): Vec2Like => ({ x: x * PX_PER_MM, y: z * PX_PER_MM }));
 
-    // Centre at the polygon area centroid (shoelace formula) so it matches
-    // what Matter.js uses internally, minimising the shift fromVertices applies.
+    // Centre at the polygon area centroid (shoelace formula)
     let area = 0;
     let cx = 0;
     let cy = 0;
@@ -148,13 +173,18 @@ function getSpawnHullJson(model: Model, hullMode: HullMode): string | null {
   return hullMode === 'sansRaft' ? (model.convexSansRaftHull ?? model.convexHull) : model.convexHull;
 }
 
+/** Border hull always uses the full convex hull (with raft). */
+function getBorderHullJson(model: Model): string | null {
+  return model.convexHull;
+}
+
 function getFillEstimateHullJson(model: Model, hullMode: HullMode): string | null {
   return model.concaveHull ?? getSpawnHullJson(model, hullMode);
 }
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
-function polygonArea(verts: Vec2[]): number {
+function polygonArea(verts: Vec2Like[]): number {
   if (verts.length < 3) return 0;
 
   let area = 0;
@@ -167,7 +197,7 @@ function polygonArea(verts: Vec2[]): number {
   return Math.abs(area) / 2;
 }
 
-function getBounds(verts: Vec2[]): { minX: number; maxX: number; minY: number; maxY: number } {
+function getBounds(verts: Vec2Like[]): { minX: number; maxX: number; minY: number; maxY: number } {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -183,7 +213,7 @@ function getBounds(verts: Vec2[]): { minX: number; maxX: number; minY: number; m
   return { minX, maxX, minY, maxY };
 }
 
-function getRectLocalVerts(model: Model): Vec2[] {
+function getRectLocalVerts(model: Model): Vec2Like[] {
   const w = Math.max((model.dimensionXMm ?? 20) * PX_PER_MM, 16);
   const h = Math.max((model.dimensionZMm ?? 20) * PX_PER_MM, 16);
   const hw = w / 2;
@@ -199,7 +229,9 @@ function getRectLocalVerts(model: Model): Vec2[] {
 
 function getModelFootprintMetrics(model: Model, hullMode: HullMode): ModelFootprintMetrics {
   const bodyHullJson = getSpawnHullJson(model, hullMode);
+  const borderHullJson = getBorderHullJson(model);
   const localVerts = parseHullLocalPx(bodyHullJson);
+  const borderLocalVerts = parseHullLocalPx(borderHullJson);
   const rectLocalVerts = getRectLocalVerts(model);
   const boundingVerts = localVerts && localVerts.length >= 3 ? localVerts : rectLocalVerts;
   const fillVerts = parseHullLocalPx(getFillEstimateHullJson(model, hullMode)) ?? boundingVerts;
@@ -209,7 +241,9 @@ function getModelFootprintMetrics(model: Model, hullMode: HullMode): ModelFootpr
 
   return {
     bodyHullJson,
+    borderHullJson,
     localVerts,
+    borderLocalVerts,
     footprintAreaPx2: polygonArea(fillVerts),
     boundingWidthPx,
     boundingHeightPx,
@@ -328,7 +362,7 @@ function buildSpawnPlan(
  * Winding-order agnostic: the result is flipped to face away from origin when
  * needed (verts must be centred at origin, as parseHullLocalPx guarantees).
  */
-function inflateVerts(verts: Vec2[], amount: number): Vec2[] {
+function inflateVerts(verts: Vec2Like[], amount: number): Vec2Like[] {
   const n = verts.length;
   return verts.map((v, i) => {
     const prev = verts[(i - 1 + n) % n];
@@ -347,49 +381,123 @@ function inflateVerts(verts: Vec2[], amount: number): Vec2[] {
   });
 }
 
-// ── Body factory helpers ──────────────────────────────────────────────────────
-
-const BODY_MASS = 0.01;
-
-const BODY_OPTIONS: Matter.IChamferableBodyDefinition = {
-  restitution: 0.05,
-  friction: 0.5,
-  frictionAir: 0.025,
-};
-
-function makePolygonBody(cx: number, cy: number, localVerts: Vec2[]): Matter.Body {
-  // fromVertices centres the body at (cx, cy) using the centroid of the passed
-  // vertices. Since localVerts are already centred at origin, their centroid ≈ 0,
-  // and Matter.js will correctly place the body at (cx, cy).
-  const body = Matter.Bodies.fromVertices(0, 0, [localVerts as Matter.Vector[]], BODY_OPTIONS);
-  Matter.Body.setMass(body, BODY_MASS);
-  Matter.Body.setPosition(body, { x: cx, y: cy });
-  return body;
+/**
+ * Ensure vertices are in the winding order that planck.js (Box2D) expects for
+ * valid convex polygons.  In our Y-down screen coordinate system, planck needs
+ * the signed area to be positive (screen-CW = math-CCW).
+ */
+function ensurePlanckWinding(verts: Vec2Like[]): Vec2Like[] {
+  let signedArea2 = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % verts.length];
+    signedArea2 += a.x * b.y - b.x * a.y;
+  }
+  if (signedArea2 < 0) return [...verts].reverse();
+  return verts;
 }
 
+/** Convert local pixel-space vertices to planck Vec2 in physics units. */
+function toPhysicsVerts(pxVerts: Vec2Like[]): Vec2Like[] {
+  return ensurePlanckWinding(pxVerts).map((v) => ({ x: toPhysics(v.x), y: toPhysics(v.y) }));
+}
+
+// ── Body factory helpers ──────────────────────────────────────────────────────
+
+const FIXTURE_OPT_OBJECT = {
+  density: 1.0,
+  restitution: 0.05,
+  friction: 0.5,
+  filterCategoryBits: CAT_OBJECT,
+  filterMaskBits: CAT_OBJECT,
+};
+
+const FIXTURE_OPT_BORDER = {
+  density: 0, // border fixture doesn't affect mass
+  restitution: 0.05,
+  friction: 0.5,
+  filterCategoryBits: CAT_BORDER,
+  filterMaskBits: CAT_WALL,
+};
+
+const BODY_DEF_DYNAMIC = {
+  type: 'dynamic' as const,
+  linearDamping: 1.5,
+  angularDamping: 1.5,
+};
+
 /**
- * Returns the physics body (inflated by BODY_MARGIN_PX per side), the visual
- * local vertices (original size), and the overlap-detection vertices (inflated
- * by BODY_OVERLAP_PX per side).
+ * Create a dynamic body with two fixtures:
+ *  1. Object-object collision fixture (spawn hull, inflated for gap)
+ *  2. Border collision fixture (always with-raft hull, not inflated)
+ *
+ * Returns the body and the visual/border local verts in pixel space (for rendering).
  */
-function makeRectBody(
+function createModelBody(
+  world: InstanceType<typeof World>,
+  cxPx: number,
+  cyPx: number,
+  spawnLocalVerts: Vec2Like[] | null,
+  borderLocalVerts: Vec2Like[] | null,
   model: Model,
-  cx: number,
-  cy: number,
-): { body: Matter.Body; visualLocalVerts: Vec2[] } {
-  // TODO: There is a minimum body size set here, check what we want to happen if this condition is met
-  const rectLocalVerts = getRectLocalVerts(model);
-  const bounds = getBounds(rectLocalVerts);
-  const w = bounds.maxX - bounds.minX;
-  const h = bounds.maxY - bounds.minY;
-  const body = Matter.Bodies.rectangle(
-    cx,
-    cy,
-    w + BODY_MARGIN_PX * 2,
-    h + BODY_MARGIN_PX * 2,
-    BODY_OPTIONS,
-  );
-  return { body, visualLocalVerts: rectLocalVerts };
+): { body: Body; visualLocalVerts: Vec2Like[]; borderLocalVerts: Vec2Like[] } {
+  const body = world.createDynamicBody({
+    ...BODY_DEF_DYNAMIC,
+    position: Vec2(toPhysics(cxPx), toPhysics(cyPx)),
+  });
+
+  let visualLocal: Vec2Like[];
+  let borderLocal: Vec2Like[];
+
+  // ── Object-object fixture (spawn hull) ──────────────────────────────────
+  if (spawnLocalVerts && spawnLocalVerts.length >= 3) {
+    try {
+      const inflated = inflateVerts(spawnLocalVerts, BODY_MARGIN_PX);
+      body.createFixture(new Polygon(toPhysicsVerts(inflated)), FIXTURE_OPT_OBJECT);
+      visualLocal = spawnLocalVerts;
+    } catch {
+      // Hull rejected by planck – fall back to rectangle
+      const rectVerts = getRectLocalVerts(model);
+      const bounds = getBounds(rectVerts);
+      const hw = toPhysics((bounds.maxX - bounds.minX) / 2 + BODY_MARGIN_PX);
+      const hh = toPhysics((bounds.maxY - bounds.minY) / 2 + BODY_MARGIN_PX);
+      body.createFixture(new Box(hw, hh), FIXTURE_OPT_OBJECT);
+      visualLocal = rectVerts;
+    }
+  } else {
+    const rectVerts = getRectLocalVerts(model);
+    const bounds = getBounds(rectVerts);
+    const hw = toPhysics((bounds.maxX - bounds.minX) / 2 + BODY_MARGIN_PX);
+    const hh = toPhysics((bounds.maxY - bounds.minY) / 2 + BODY_MARGIN_PX);
+    body.createFixture(new Box(hw, hh), FIXTURE_OPT_OBJECT);
+    visualLocal = rectVerts;
+  }
+
+  // ── Border fixture (always with-raft hull) ──────────────────────────────
+  if (borderLocalVerts && borderLocalVerts.length >= 3) {
+    try {
+      body.createFixture(new Polygon(toPhysicsVerts(borderLocalVerts)), FIXTURE_OPT_BORDER);
+      borderLocal = borderLocalVerts;
+    } catch {
+      // Fall back to rectangle for border too
+      const rectVerts = getRectLocalVerts(model);
+      const bounds = getBounds(rectVerts);
+      const hw = toPhysics((bounds.maxX - bounds.minX) / 2);
+      const hh = toPhysics((bounds.maxY - bounds.minY) / 2);
+      body.createFixture(new Box(hw, hh), FIXTURE_OPT_BORDER);
+      borderLocal = rectVerts;
+    }
+  } else {
+    // No border hull – use same rect as object fixture but without inflation
+    const rectVerts = getRectLocalVerts(model);
+    const bounds = getBounds(rectVerts);
+    const hw = toPhysics((bounds.maxX - bounds.minX) / 2);
+    const hh = toPhysics((bounds.maxY - bounds.minY) / 2);
+    body.createFixture(new Box(hw, hh), FIXTURE_OPT_BORDER);
+    borderLocal = rectVerts;
+  }
+
+  return { body, visualLocalVerts: visualLocal, borderLocalVerts: borderLocal };
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -403,11 +511,14 @@ function darkenColor(color: number, factor: number): number {
 
 // ── Overlap helpers ───────────────────────────────────────────────────────────
 
-/** Transform local-space vertices to world space using a body's pose. */
-function toWorldVerts(body: Matter.Body, localVerts: Vec2[]): Vec2[] {
-  const cos = Math.cos(body.angle);
-  const sin = Math.sin(body.angle);
-  const { x: px, y: py } = body.position;
+/** Transform local-space pixel vertices to world pixel space using a body's pose. */
+function toWorldVerts(body: Body, localVerts: Vec2Like[]): Vec2Like[] {
+  const pos = body.getPosition();
+  const px = toPixels(pos.x);
+  const py = toPixels(pos.y);
+  const angle = body.getAngle();
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
   return localVerts.map((v) => ({
     x: v.x * cos - v.y * sin + px,
     y: v.x * sin + v.y * cos + py,
@@ -418,7 +529,7 @@ function toWorldVerts(body: Matter.Body, localVerts: Vec2[]): Vec2[] {
  * Separating Axis Theorem overlap test for two convex polygons.
  * Returns true if they overlap (no separating axis found).
  */
-function satOverlap(a: Vec2[], b: Vec2[]): boolean {
+function satOverlap(a: Vec2Like[], b: Vec2Like[]): boolean {
   for (const poly of [a, b]) {
     const n = poly.length;
     for (let i = 0; i < n; i++) {
@@ -446,28 +557,28 @@ function satOverlap(a: Vec2[], b: Vec2[]): boolean {
   return true;
 }
 
-/** Returns the set of body IDs whose overlap-detection hulls intersect any other entry. */
-function computeOverlapping(entries: Entry[]): Set<number> {
-  const overlapping = new Set<number>();
+/** Returns the set of bodies whose visual hulls intersect any other entry. */
+function computeOverlapping(entries: Entry[]): Set<Body> {
+  const overlapping = new Set<Body>();
   const worldVerts = entries.map((e) => toWorldVerts(e.body, e.visualLocalVerts));
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       if (satOverlap(worldVerts[i], worldVerts[j])) {
-        overlapping.add(entries[i].body.id);
-        overlapping.add(entries[j].body.id);
+        overlapping.add(entries[i].body);
+        overlapping.add(entries[j].body);
       }
     }
   }
   return overlapping;
 }
 
-/** Visual bounds check (plate-space): true when any rendered vertex is outside plate rectangle. */
-function isOutOfBounds(body: Matter.Body, visualLocalVerts: Vec2[]): boolean {
-  if (!visualLocalVerts.length) return false;
-  const worldVerts = toWorldVerts(body, visualLocalVerts);
-  return worldVerts.some(
-    (v) => v.x < 0 || v.x > CANVAS_WIDTH_PX || v.y < 0 || v.y > CANVAS_HEIGHT_PX,
-  );
+/** Visual bounds check: true when any border hull vertex is outside plate rectangle. */
+function isOutOfBounds(body: Body, borderLocalVerts: Vec2Like[]): boolean {
+  if (!borderLocalVerts.length) return false;
+  return borderLocalVerts.some((v) => {
+    const w = body.getWorldPoint(Vec2(toPhysics(v.x), toPhysics(v.y)));
+    return w.x < 0 || w.x > CANVAS_WIDTH_PHYS || w.y < 0 || w.y > CANVAS_HEIGHT_PHYS;
+  });
 }
 
 function drawDottedRect(
@@ -508,24 +619,29 @@ function drawDottedRect(
 /**
  * Draw the visual (non-inflated) hull by transforming local vertices through
  * the body's current position and angle. This keeps the rendered polygon at the
- * original model size while the physics body carries the 1 mm gap margin.
+ * original model size while the physics body carries the gap margin.
  */
 function drawBody(
   gfx: PIXI.Graphics,
-  body: Matter.Body,
-  visualLocalVerts: Vec2[],
+  body: Body,
+  visualLocalVerts: Vec2Like[],
+  borderLocalVerts: Vec2Like[],
   color: number,
+  highlightOutOfBounds = false,
   yOffset = 0,
 ) {
   gfx.clear();
   if (!visualLocalVerts.length) return;
 
-  const cos = Math.cos(body.angle);
-  const sin = Math.sin(body.angle);
-  const { x: px, y: py } = body.position;
+  const pos = body.getPosition();
+  const px = toPixels(pos.x);
+  const py = toPixels(pos.y);
+  const angle = body.getAngle();
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
 
-  gfx.beginFill(color, 0.45);
-  gfx.lineStyle(1.5, color, 0.9);
+  gfx.beginFill(color, highlightOutOfBounds ? 0.62 : 0.45);
+  gfx.lineStyle(highlightOutOfBounds ? 3 : 1.5, highlightOutOfBounds ? 0xef4444 : color, 0.95);
   const v0 = visualLocalVerts[0];
   gfx.moveTo(v0.x * cos - v0.y * sin + px, v0.x * sin + v0.y * cos + py + yOffset);
   for (let i = 1; i < visualLocalVerts.length; i++) {
@@ -535,12 +651,43 @@ function drawBody(
   gfx.closePath();
   gfx.endFill();
 
-  if (DEBUG_PHYSICS_WIREFRAME) {
-    gfx.lineStyle(1, 0xff0000, 0.5);
-    gfx.moveTo(body.vertices[0].x, body.vertices[0].y + yOffset);
-    for (let i = 1; i < body.vertices.length; i++)
-      gfx.lineTo(body.vertices[i].x, body.vertices[i].y + yOffset);
+  // When out of bounds, draw a red outline using the with-raft border hull.
+  if (highlightOutOfBounds && borderLocalVerts.length) {
+    gfx.lineStyle(3, 0xef4444, 0.98);
+    const b0 = borderLocalVerts[0];
+    gfx.moveTo(b0.x * cos - b0.y * sin + px, b0.x * sin + b0.y * cos + py + yOffset);
+    for (let i = 1; i < borderLocalVerts.length; i++) {
+      const v = borderLocalVerts[i];
+      gfx.lineTo(v.x * cos - v.y * sin + px, v.x * sin + v.y * cos + py + yOffset);
+    }
     gfx.closePath();
+  }
+
+  if (DEBUG_PHYSICS_WIREFRAME) {
+    // Draw each fixture wireframe in a different colour
+    let fixture = body.getFixtureList();
+    while (fixture) {
+      const shape = fixture.getShape();
+      if (shape.getType() === 'polygon') {
+        const poly = shape as Polygon;
+        const vCount = poly.m_count;
+        if (vCount > 0) {
+          gfx.lineStyle(
+            1,
+            fixture.getFilterCategoryBits() === CAT_OBJECT ? 0xff0000 : 0x00ff00,
+            0.5,
+          );
+          const wp0 = body.getWorldPoint(poly.m_vertices[0]);
+          gfx.moveTo(toPixels(wp0.x), toPixels(wp0.y) + yOffset);
+          for (let vi = 1; vi < vCount; vi++) {
+            const wp = body.getWorldPoint(poly.m_vertices[vi]);
+            gfx.lineTo(toPixels(wp.x), toPixels(wp.y) + yOffset);
+          }
+          gfx.closePath();
+        }
+      }
+      fixture = fixture.getNext();
+    }
   }
 }
 
@@ -560,21 +707,52 @@ function getIncrementalSpawnX(
   const activeModels = models
     .filter((candidate) => (items[candidate.id] ?? 0) > 0)
     .map((candidate) => ({ candidate, metrics: getModelFootprintMetrics(candidate, hullMode) }))
-    .sort((a, b) => compareBySizeDesc(a.metrics, b.metrics) || a.candidate.name.localeCompare(b.candidate.name));
+    .sort(
+      (a, b) =>
+        compareBySizeDesc(a.metrics, b.metrics) || a.candidate.name.localeCompare(b.candidate.name),
+    );
 
   const largest = activeModels[0];
   if (!largest) {
     return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
   }
 
-  if (compareBySizeDesc(currentMetrics, largest.metrics) <= 0 && largest.candidate.id !== model.id) {
+  if (
+    compareBySizeDesc(currentMetrics, largest.metrics) <= 0 &&
+    largest.candidate.id !== model.id
+  ) {
     const anchorEntry = entries.find((entry) => entry.modelId === largest.candidate.id);
     if (anchorEntry) {
-      return clampSpawnX(anchorEntry.body.position.x, currentMetrics.boundingWidthPx);
+      return clampSpawnX(
+        toPixels(anchorEntry.body.getPosition().x),
+        currentMetrics.boundingWidthPx,
+      );
     }
   }
 
   return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+}
+
+// ── Point query helper ────────────────────────────────────────────────────────
+
+/** Find the first dynamic body whose fixture contains the given pixel-space point. */
+function queryPointPx(world: InstanceType<typeof World>, xPx: number, yPx: number): Body | null {
+  const ppx = toPhysics(xPx);
+  const ppy = toPhysics(yPx);
+  const d = toPhysics(2); // small search radius
+  let hitBody: Body | null = null;
+
+  world.queryAABB(
+    { lowerBound: Vec2(ppx - d, ppy - d), upperBound: Vec2(ppx + d, ppy + d) },
+    (fixture) => {
+      if (fixture.getBody().isDynamic() && fixture.testPoint(Vec2(ppx, ppy))) {
+        hitBody = fixture.getBody();
+        return false; // stop search
+      }
+      return true; // continue
+    },
+  );
+  return hitBody;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -603,9 +781,9 @@ export default function PrintingListCanvas({
 
   // Refs that let the incremental-update effect reach into the running simulation
   const appRef = useRef<PIXI.Application | null>(null);
-  const engineRef = useRef<Matter.Engine | null>(null);
+  const worldRef = useRef<InstanceType<typeof World> | null>(null);
   const entriesRef = useRef<Entry[]>([]);
-  const dynamicBodiesRef = useRef<Matter.Body[]>([]);
+  const dynamicBodiesRef = useRef<Body[]>([]);
   const modelColorRef = useRef<Map<string, number>>(new Map());
   const pausedRef = useRef(false);
   const prevItemsRef = useRef<Record<string, number>>({});
@@ -642,32 +820,58 @@ export default function PrintingListCanvas({
     app.stage.eventMode = 'static';
     app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, VIEW_HEIGHT_PX);
 
-    // ── Matter.js engine ───────────────────────────────────────────────────
-    const engine = Matter.Engine.create({ gravity: { x: 0, y: 1 } });
-    engineRef.current = engine;
+    // ── planck.js world ────────────────────────────────────────────────────
+    const world = new World(Vec2(0, 20));
+    worldRef.current = world;
 
-    const ground = Matter.Bodies.rectangle(
-      CANVAS_WIDTH_PX / 2,
-      CANVAS_HEIGHT_PX + WALL_THICKNESS / 2,
-      CANVAS_WIDTH_PX + WALL_THICKNESS * 2,
-      WALL_THICKNESS,
-      { isStatic: true },
+    // ── Walls (static, CAT_WALL — only collide with CAT_BORDER fixtures) ──
+    const wallFixOpt = {
+      filterCategoryBits: CAT_WALL,
+      filterMaskBits: CAT_BORDER,
+      friction: 0.5,
+    };
+
+    const ground = world.createBody({
+      type: 'static' as const,
+      position: Vec2(
+        toPhysics(CANVAS_WIDTH_PX / 2),
+        toPhysics(CANVAS_HEIGHT_PX + WALL_THICKNESS / 2 - PHYSICS_BORDER_PADDING_PX),
+      ),
+    });
+    ground.createFixture(
+      new Box(
+        toPhysics((CANVAS_WIDTH_PX + WALL_THICKNESS * 2) / 2),
+        toPhysics(WALL_THICKNESS / 2),
+      ),
+      wallFixOpt,
     );
-    const wallLeft = Matter.Bodies.rectangle(
-      -WALL_THICKNESS / 2,
-      CANVAS_HEIGHT_PX / 2,
-      WALL_THICKNESS,
-      CANVAS_HEIGHT_PX + WALL_THICKNESS * 2,
-      { isStatic: true },
+
+    const wallLeft = world.createBody({
+      type: 'static' as const,
+      position: Vec2(toPhysics(-WALL_THICKNESS / 2), toPhysics(CANVAS_HEIGHT_PX / 2)),
+    });
+    wallLeft.createFixture(
+      new Box(
+        toPhysics(WALL_THICKNESS / 2),
+        toPhysics((CANVAS_HEIGHT_PX + WALL_THICKNESS * 2) / 2),
+      ),
+      wallFixOpt,
     );
-    const wallRight = Matter.Bodies.rectangle(
-      CANVAS_WIDTH_PX + WALL_THICKNESS / 2,
-      CANVAS_HEIGHT_PX / 2,
-      WALL_THICKNESS,
-      CANVAS_HEIGHT_PX + WALL_THICKNESS * 2,
-      { isStatic: true },
+
+    const wallRight = world.createBody({
+      type: 'static' as const,
+      position: Vec2(
+        toPhysics(CANVAS_WIDTH_PX + WALL_THICKNESS / 2),
+        toPhysics(CANVAS_HEIGHT_PX / 2),
+      ),
+    });
+    wallRight.createFixture(
+      new Box(
+        toPhysics(WALL_THICKNESS / 2),
+        toPhysics((CANVAS_HEIGHT_PX + WALL_THICKNESS * 2) / 2),
+      ),
+      wallFixOpt,
     );
-    Matter.Composite.add(engine.world, [ground, wallLeft, wallRight]);
 
     // ── Background ─────────────────────────────────────────────────────────
     const GRID_PX = 10 * PX_PER_MM;
@@ -680,18 +884,18 @@ export default function PrintingListCanvas({
     app.stage.addChild(gridGfx);
 
     const borderGfx = new PIXI.Graphics();
-    borderGfx.lineStyle(2, 0x64748b, 1);
+    borderGfx.lineStyle({ width: 2, color: 0x64748b, alpha: 1, alignment: 0 });
     borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX);
     app.stage.addChild(borderGfx);
 
     const outOfBoundsBorderGfx = new PIXI.Graphics();
-    outOfBoundsBorderGfx.lineStyle(5, 0xef4444, 1);
+    outOfBoundsBorderGfx.lineStyle({ width: 2, color: 0xef4444, alpha: 1, alignment: 0 });
     drawDottedRect(
       outOfBoundsBorderGfx,
-      8,
-      VIEW_TOP_MARGIN_PX + 8,
-      CANVAS_WIDTH_PX - 16,
-      CANVAS_HEIGHT_PX - 16,
+      0,
+      VIEW_TOP_MARGIN_PX,
+      CANVAS_WIDTH_PX,
+      CANVAS_HEIGHT_PX,
       12,
       8,
     );
@@ -713,7 +917,7 @@ export default function PrintingListCanvas({
     // ── Build bodies + graphics ────────────────────────────────────────────
     const entries: Entry[] = [];
     entriesRef.current = entries;
-    const dynamicBodies: Matter.Body[] = [];
+    const dynamicBodies: Body[] = [];
     dynamicBodiesRef.current = dynamicBodies;
 
     const modelColor = new Map<string, number>();
@@ -726,34 +930,29 @@ export default function PrintingListCanvas({
 
     for (const { model, inst, spawnX, metrics } of spawnPlan) {
       const color = modelColor.get(model.id) ?? PALETTE[0];
-      const localVerts = metrics.localVerts;
 
-      // Create physics body (inflated) + keep original verts for rendering
-      let body: Matter.Body;
-      let visualLocalVerts: Vec2[];
-      if (localVerts && localVerts.length >= 3) {
-        try {
-          body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX));
-          visualLocalVerts = localVerts;
-        } catch {
-          ({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY));
-        }
-      } else {
-        ({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY));
-      }
+      const { body, visualLocalVerts, borderLocalVerts } = createModelBody(
+        world,
+        spawnX,
+        spawnY,
+        metrics.localVerts,
+        metrics.borderLocalVerts,
+        model,
+      );
 
       // If there's a saved position for this instance, move the body there
       const saved = savedLayout?.positions.find(
         (p) => p.modelId === model.id && p.instanceIndex === inst,
       );
       if (saved) {
-        Matter.Body.setPosition(body, { x: saved.xMm * PX_PER_MM, y: saved.yMm * PX_PER_MM });
-        Matter.Body.setAngle(body, saved.angle);
-        Matter.Body.setVelocity(body, { x: 0, y: 0 });
-        Matter.Body.setAngularVelocity(body, 0);
+        body.setPosition(
+          Vec2(toPhysics(saved.xMm * PX_PER_MM), toPhysics(saved.yMm * PX_PER_MM)),
+        );
+        body.setAngle(saved.angle);
+        body.setLinearVelocity(Vec2(0, 0));
+        body.setAngularVelocity(0);
       }
 
-      Matter.Composite.add(engine.world, body);
       dynamicBodies.push(body);
 
       // Spread spawn points above canvas so bodies don't all overlap
@@ -782,6 +981,7 @@ export default function PrintingListCanvas({
         instanceIndex: inst,
         color,
         visualLocalVerts,
+        borderLocalVerts,
       });
     }
 
@@ -792,16 +992,33 @@ export default function PrintingListCanvas({
     // Record which items are now in the simulation (for incremental updates)
     prevItemsRef.current = { ...items };
     let settleFrames = 0;
-    let drag: { body: Matter.Body; ox: number; oy: number } | null = null;
+    let drag: { body: Body; ox: number; oy: number } | null = null;
 
     // ── Render helper ──────────────────────────────────────────────────────
-    function renderEntries(overlapping: Set<number>) {
+    function renderEntries(overlapping: Set<Body>) {
       let hasOutOfBounds = false;
-      for (const { body, gfx, label, color, visualLocalVerts } of entries) {
-        const renderColor = overlapping.has(body.id) ? color : darkenColor(color, 0.45);
-        drawBody(gfx, body, visualLocalVerts, renderColor, VIEW_TOP_MARGIN_PX);
-        label.position.set(body.position.x, body.position.y + VIEW_TOP_MARGIN_PX);
-        hasOutOfBounds ||= isOutOfBounds(body, visualLocalVerts);
+      for (const {
+        body,
+        gfx,
+        label,
+        color,
+        visualLocalVerts,
+        borderLocalVerts: bVerts,
+      } of entries) {
+        const outOfBounds = isOutOfBounds(body, bVerts);
+        const renderColor = overlapping.has(body) ? color : darkenColor(color, 0.45);
+        drawBody(
+          gfx,
+          body,
+          visualLocalVerts,
+          bVerts,
+          renderColor,
+          outOfBounds,
+          VIEW_TOP_MARGIN_PX,
+        );
+        const pos = body.getPosition();
+        label.position.set(toPixels(pos.x), toPixels(pos.y) + VIEW_TOP_MARGIN_PX);
+        hasOutOfBounds ||= outOfBounds;
       }
       outOfBoundsBorderGfx.visible = hasOutOfBounds;
     }
@@ -810,13 +1027,16 @@ export default function PrintingListCanvas({
     function saveLayout() {
       const layout: SavedLayout = {
         itemsKey: itemsKeyRef.current,
-        positions: entries.map((e) => ({
-          modelId: e.modelId,
-          instanceIndex: e.instanceIndex,
-          xMm: e.body.position.x / PX_PER_MM,
-          yMm: e.body.position.y / PX_PER_MM,
-          angle: e.body.angle,
-        })),
+        positions: entries.map((e) => {
+          const pos = e.body.getPosition();
+          return {
+            modelId: e.modelId,
+            instanceIndex: e.instanceIndex,
+            xMm: toPixels(pos.x) / PX_PER_MM,
+            yMm: toPixels(pos.y) / PX_PER_MM,
+            angle: e.body.getAngle(),
+          };
+        }),
       };
       localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, JSON.stringify(layout));
     }
@@ -833,11 +1053,13 @@ export default function PrintingListCanvas({
 
       const { x, y } = e.global;
       const worldY = y - VIEW_TOP_MARGIN_PX;
-      const hits = Matter.Query.point(dynamicBodies, { x, y: worldY });
-      if (hits.length > 0) {
-        const hit = hits[0];
-        drag = { body: hit, ox: x - hit.position.x, oy: worldY - hit.position.y };
-        Matter.Body.setStatic(hit, true);
+      const hit = queryPointPx(world, x, worldY);
+      if (hit) {
+        const pos = hit.getPosition();
+        drag = { body: hit, ox: x - toPixels(pos.x), oy: worldY - toPixels(pos.y) };
+        hit.setType('kinematic');
+        hit.setLinearVelocity(Vec2(0, 0));
+        hit.setAngularVelocity(0);
         if (pauseOnDragRef.current) {
           pausedRef.current = true;
           notifyPausedRef.current?.(true);
@@ -849,14 +1071,15 @@ export default function PrintingListCanvas({
       if (!drag) return;
       const { x, y } = e.global;
       const worldY = y - VIEW_TOP_MARGIN_PX;
-      Matter.Body.setPosition(drag.body, { x: x - drag.ox, y: worldY - drag.oy });
+      drag.body.setPosition(Vec2(toPhysics(x - drag.ox), toPhysics(worldY - drag.oy)));
     });
 
     const endDrag = () => {
       if (!drag) return;
-      Matter.Body.setStatic(drag.body, false);
-      Matter.Body.setVelocity(drag.body, { x: 0, y: 0 });
-      Matter.Body.setAngularVelocity(drag.body, 0);
+      drag.body.setType('dynamic');
+      drag.body.setLinearVelocity(Vec2(0, 0));
+      drag.body.setAngularVelocity(0);
+      drag.body.setAwake(true);
       drag = null;
       pausedRef.current = false;
       notifyPausedRef.current?.(false);
@@ -869,7 +1092,7 @@ export default function PrintingListCanvas({
     const onWheel = (e: WheelEvent) => {
       if (!drag) return;
       e.preventDefault();
-      Matter.Body.setAngle(drag.body, drag.body.angle + e.deltaY * 0.003);
+      drag.body.setAngle(drag.body.getAngle() + e.deltaY * 0.003);
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
@@ -877,17 +1100,19 @@ export default function PrintingListCanvas({
     app.ticker.add(() => {
       if (!pausedRef.current) {
         // Cap delta to avoid physics explosion after tab becomes active again
-        const deltaMs = Math.min(app.ticker.deltaMS, 50);
-        Matter.Engine.update(engine, deltaMs);
+        const deltaSec = Math.min(app.ticker.deltaMS, 50) / 1000;
+        world.step(deltaSec, 8, 3);
       }
 
       renderEntries(computeOverlapping(entries));
 
       // Settling detection (skip when dragging or already paused)
       if (!pausedRef.current && !drag && dynamicBodies.length > 0) {
-        const allSlow = dynamicBodies.every(
-          (b) => b.speed < SPEED_THRESH && Math.abs(b.angularSpeed) < ANGULAR_THRESH,
-        );
+        const allSlow = dynamicBodies.every((b) => {
+          const vel = b.getLinearVelocity();
+          const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+          return speed < SPEED_THRESH && Math.abs(b.getAngularVelocity()) < ANGULAR_THRESH;
+        });
         if (allSlow) {
           settleFrames++;
           if (settleFrames >= SETTLE_FRAMES) {
@@ -905,21 +1130,21 @@ export default function PrintingListCanvas({
     return () => {
       canvas.removeEventListener('wheel', onWheel);
       appRef.current = null;
-      engineRef.current = null;
+      worldRef.current = null;
       entriesRef.current = [];
       dynamicBodiesRef.current = [];
       modelColorRef.current = new Map();
       saveLayoutRef.current = null;
       app.destroy(true, { children: true, texture: true, baseTexture: true });
-      Matter.Engine.clear(engine);
+      // planck world is GC'd when ref is released — no explicit clear needed
     };
   }, [spawnOrder, hullMode, resetCount]);
 
   // ── Incremental effect: add/remove bodies when item counts change ──────────
   useEffect(() => {
     const app = appRef.current;
-    const engine = engineRef.current;
-    if (!app || !engine) return; // simulation not yet initialised
+    const world = worldRef.current;
+    if (!app || !world) return; // simulation not yet initialised
 
     const prevItems = prevItemsRef.current;
     const currItems = items;
@@ -945,7 +1170,6 @@ export default function PrintingListCanvas({
         for (let inst = prevQty; inst < currQty; inst++) {
           const color = modelColorRef.current.get(modelId)!;
           const metrics = getModelFootprintMetrics(model, hullModeRef.current);
-          const localVerts = metrics.localVerts;
           const spawnX = getIncrementalSpawnX(
             spawnOrder,
             model,
@@ -955,22 +1179,17 @@ export default function PrintingListCanvas({
             hullModeRef.current,
           );
 
-          let body: Matter.Body;
-          let visualLocalVerts: Vec2[];
-          if (localVerts && localVerts.length >= 3) {
-            try {
-              body = makePolygonBody(spawnX, spawnY, inflateVerts(localVerts, BODY_MARGIN_PX));
-              visualLocalVerts = localVerts;
-            } catch {
-              ({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY));
-            }
-          } else {
-            ({ body, visualLocalVerts } = makeRectBody(model, spawnX, spawnY));
-          }
+          const { body, visualLocalVerts, borderLocalVerts } = createModelBody(
+            world,
+            spawnX,
+            spawnY,
+            metrics.localVerts,
+            metrics.borderLocalVerts,
+            model,
+          );
 
           spawnY -= 50 + Math.max(metrics.boundingHeightPx, 60);
 
-          Matter.Composite.add(engine.world, body);
           dynamicBodiesRef.current.push(body);
 
           const gfx = new PIXI.Graphics();
@@ -996,6 +1215,7 @@ export default function PrintingListCanvas({
             instanceIndex: inst,
             color,
             visualLocalVerts,
+            borderLocalVerts,
           });
         }
 
@@ -1006,14 +1226,14 @@ export default function PrintingListCanvas({
           let minY = Infinity;
           let toRemove: Entry | null = null;
           for (const e of entriesRef.current) {
-            if (e.modelId === modelId && e.body.position.y < minY) {
-              minY = e.body.position.y;
+            if (e.modelId === modelId && toPixels(e.body.getPosition().y) < minY) {
+              minY = toPixels(e.body.getPosition().y);
               toRemove = e;
             }
           }
           if (!toRemove) break;
 
-          Matter.Composite.remove(engine.world, toRemove.body);
+          world.destroyBody(toRemove.body);
           const dynIdx = dynamicBodiesRef.current.indexOf(toRemove.body);
           if (dynIdx >= 0) dynamicBodiesRef.current.splice(dynIdx, 1);
 

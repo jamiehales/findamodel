@@ -1696,6 +1696,11 @@ pixi.js@^7:
     "@pixi/text-bitmap" "7.4.3"
     "@pixi/text-html" "7.4.3"
 
+planck@^1.5.0:
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/planck/-/planck-1.5.0.tgz#87f0085821f2c52579538a5d3d36acdf2bb3bdb6"
+  integrity sha512-dlvqJE+FscZgrGUXJ5ybd0o5bvZ5XXyZNbm08xGsXp9WjXeAyWSFT6n9s/1PQcUBo4546fDXA5RMA4wbDyZw6g==
+
 postcss@^8.4.43:
   version "8.5.6"
   resolved "https://registry.yarnpkg.com/postcss/-/postcss-8.5.6.tgz#2825006615a619b4f62a9e7426cc120b349a8f3c"
