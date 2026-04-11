@@ -12,6 +12,7 @@ declare module '@mui/material/Chip' {
 declare module '@mui/material/Typography' {
   interface TypographyPropsVariantOverrides {
     'section-label': true;
+    'page-title': true;
   }
 }
 
@@ -20,6 +21,7 @@ declare module '@mui/material/Button' {
     back: true;
     warning: true;
     primary: true;
+    activate: true;
   }
 }
 
@@ -60,6 +62,30 @@ const theme = createTheme({
       styleOverrides: {
         body: {
           backgroundColor: '#0f172a',
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+          boxShadow: 'none',
+        },
+      },
+    },
+    MuiToolbar: {
+      styleOverrides: {
+        root: {
+          minHeight: 56,
+          paddingLeft: '1rem',
+          paddingRight: '1rem',
+          ['@media (min-width: 600px)']: {
+            paddingLeft: '1.5rem',
+            paddingRight: '1.5rem',
+          },
         },
       },
     },
@@ -123,6 +149,19 @@ const theme = createTheme({
             letterSpacing: '0.08em',
             marginBottom: '0.75rem',
             marginLeft: '0.25rem',
+          },
+        },
+        {
+          props: { variant: 'page-title' },
+          style: {
+            fontSize: '2rem',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            color: '#f1f5f9',
+            lineHeight: 1.2,
+            ['@media (min-width: 600px)']: {
+              fontSize: '2.5rem',
+            },
           },
         },
       ],
@@ -212,6 +251,25 @@ const theme = createTheme({
               backgroundColor: 'rgba(99, 102, 241, 0.2)',
               color: 'rgba(255,255,255,0.3)',
               border: '1px solid rgba(99, 102, 241, 0.15)',
+            },
+          },
+        },
+        {
+          props: { variant: 'activate' },
+          style: {
+            background: 'rgba(255, 255, 255, 0.06)',
+            backdropFilter: 'blur(8px)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 999,
+            padding: '0.5rem 1.25rem',
+            fontSize: '0.9rem',
+            fontWeight: 500,
+            textTransform: 'none',
+            minWidth: 0,
+            '&:hover': {
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#e2e8f0',
             },
           },
         },

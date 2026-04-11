@@ -32,27 +32,30 @@
 
 .name {
   color: #f1f5f9;
-  font-size: 0.875rem !important;
-  font-weight: 600 !important;
-  line-height: 1.3 !important;
-  display: -webkit-box !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
   line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden !important;
+  overflow: hidden;
+  margin: 0;
 }
 
 .fileName {
   color: #94a3b8;
-  font-size: 0.7rem !important;
-  font-weight: 400 !important;
-  line-height: 1.25 !important;
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin: 0;
 }
 
 .size {
   color: #64748b;
-  font-size: 0.75rem !important;
+  font-size: 0.75rem;
+  margin: 0;
 }

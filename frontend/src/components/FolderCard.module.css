@@ -21,7 +21,7 @@
   z-index: 0;
 }
 
-.card > :not(.editBtn):not(.indexBtnWrap) {
+.card > :not(.indexBtnWrap) {
   position: relative;
   z-index: 2;
 }
@@ -31,26 +31,6 @@
   top: 4px;
   left: 4px;
   z-index: 3;
-}
-
-.editBtn {
-  position: absolute !important;
-  top: 4px;
-  right: 4px;
-  padding: 8px !important;
-  color: rgba(226, 232, 240, 0.5) !important;
-  min-width: 44px !important;
-  min-height: 44px !important;
-}
-
-.editBtnActive {
-  color: #818cf8 !important;
-}
-
-.editBtn:hover,
-.editBtnActive:hover {
-  color: #818cf8 !important;
-  background-color: rgba(99, 102, 241, 0.15) !important;
 }
 
 .indexBtn {

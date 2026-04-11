@@ -237,7 +237,7 @@ function PrintingListPage() {
     <PageLayout spacing={3}>
       <Stack direction="column" spacing={2} alignItems="left">
         <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography component="h1" className={styles.title}>
+          <Typography component="h1" variant="page-title">
             {listName}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -297,7 +297,7 @@ function PrintingListPage() {
 
         <Stack direction="row" spacing={1} alignItems="center">
           {list && !list.isActive && (
-            <Button onClick={() => activateList(list.id)} className={styles.btnActivate}>
+            <Button onClick={() => activateList(list.id)} variant="activate">
               Set active
             </Button>
           )}

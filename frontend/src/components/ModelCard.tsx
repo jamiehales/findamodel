@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Box, Chip, Typography, Stack } from '@mui/material';
+import { Box, Chip, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
 import AppCard from './AppCard';
 import PrintingListControls from './PrintingListControls';
@@ -37,11 +37,11 @@ function ModelCard({ model, href }: ModelCardProps) {
           )}
         </Stack>
 
-        <Typography className={styles.name}>{model.name}</Typography>
+        <p className={styles.name}>{model.name}</p>
 
-        <Typography className={styles.fileName}>{getFileName(model.relativePath)}</Typography>
+        <p className={styles.fileName}>{getFileName(model.relativePath)}</p>
 
-        <Typography className={styles.size}>{formatBytes(model.fileSize)}</Typography>
+        <p className={styles.size}>{formatBytes(model.fileSize)}</p>
       </Box>
 
       <PrintingListControls modelId={model.id} />

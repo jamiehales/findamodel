@@ -2,38 +2,6 @@
   align-self: center;
 }
 
-.title {
-  font-size: 2rem !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em !important;
-  color: #f1f5f9 !important;
-  line-height: 1.2 !important;
-}
-
-@media (min-width: 600px) {
-  .title {
-    font-size: 2.5rem !important;
-  }
-}
-
-.btnActivate {
-  background: rgba(255, 255, 255, 0.06) !important;
-  backdrop-filter: blur(8px);
-  color: #94a3b8 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 999px !important;
-  padding: 0.5rem 1.25rem !important;
-  font-size: 0.9rem !important;
-  font-weight: 500 !important;
-  text-transform: none !important;
-  min-width: 0 !important;
-}
-
-.btnActivate:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #e2e8f0 !important;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

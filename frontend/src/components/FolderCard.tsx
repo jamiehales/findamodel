@@ -124,7 +124,19 @@ function FolderCard({ folder, href }: Props) {
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
             size="medium"
-            className={`${styles.editBtn}${editorOpen ? ` ${styles.editBtnActive}` : ''}`}
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              padding: '8px',
+              color: editorOpen ? '#818cf8' : 'rgba(226, 232, 240, 0.5)',
+              minWidth: 44,
+              minHeight: 44,
+              '&:hover': {
+                color: '#818cf8',
+                backgroundColor: 'rgba(99, 102, 241, 0.15)',
+              },
+            }}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();

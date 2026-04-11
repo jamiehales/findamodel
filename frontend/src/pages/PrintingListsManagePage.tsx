@@ -60,7 +60,7 @@ function PrintingListsManagePage() {
 
   return (
     <PageLayout variant="narrow" spacing={4}>
-      <Typography component="h1" className={styles.title}>
+      <Typography component="h1" variant="page-title">
         Printing lists
       </Typography>
 

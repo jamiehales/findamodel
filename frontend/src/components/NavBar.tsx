@@ -49,9 +49,20 @@ export default function NavBar() {
   const printingMenuOpen = Boolean(printingAnchorEl);
 
   return (
-    <AppBar position="sticky" className={styles.appBar}>
-      <Toolbar className={styles.toolbar}>
-        <Typography component={Link} to="/" className={styles.brand}>
+    <AppBar position="sticky">
+      <Toolbar>
+        <Typography
+          component={Link}
+          to="/"
+          sx={{
+            fontSize: '1.15rem',
+            fontWeight: 700,
+            letterSpacing: '-0.03em',
+            color: '#e2e8f0',
+            textDecoration: 'none',
+            lineHeight: 1,
+          }}
+        >
           find<span className={styles.brandA}>a</span>model
         </Typography>
         <Stack component="nav" direction="row" spacing={0.5} className={styles.navLinks}>
