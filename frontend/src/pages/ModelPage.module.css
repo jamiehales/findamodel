@@ -3,22 +3,6 @@
   overflow-x: hidden;
 }
 
-.loadingCenter {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-}
-
-.errorCenter {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  gap: 16px;
-}
-
 .content {
   padding-top: 5rem;
   padding-bottom: 3rem;

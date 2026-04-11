@@ -196,16 +196,6 @@
   align-items: center;
 }
 
-.loadingBox {
-  display: flex;
-  justify-content: center;
-  padding-top: 2rem;
-}
-
-.spinner {
-  color: #6366f1 !important;
-}
-
 .pillCreate {
   background: rgba(99, 102, 241, 0.85) !important;
   color: #fff !important;

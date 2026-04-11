@@ -31,6 +31,7 @@ import {
 } from '../lib/queries';
 import ModelCard from '../components/ModelCard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
 import styles from './PrintingListPage.module.css';
 
@@ -372,9 +373,7 @@ function PrintingListPage() {
       )}
 
       {isPending ? (
-        <Box className={styles.loadingCenter}>
-          <CircularProgress color="primary" />
-        </Box>
+        <LoadingView />
       ) : listedModels.length === 0 ? (
         <Box className={styles.emptyState}>
           <Typography className={styles.emptyTitle}>No models added yet</Typography>

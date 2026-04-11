@@ -1,13 +1,14 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useExplorer } from '../lib/queries';
 import AppDialog from '../components/AppDialog';
+import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
+import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import styles from './ExplorePage.module.css';
@@ -15,21 +16,9 @@ import styles from './ExplorePage.module.css';
 function ExplorePageInner({ path }: { path: string }) {
   const { data, isPending, isError } = useExplorer(path);
 
-  if (isPending) {
-    return (
-      <Box className={styles.loadingCenter}>
-        <CircularProgress color="primary" />
-      </Box>
-    );
-  }
+  if (isPending) return <LoadingView />;
 
-  if (isError) {
-    return (
-      <Typography color="error.main" style={{ marginTop: 16 }}>
-        Failed to load directory. Check that the path exists.
-      </Typography>
-    );
-  }
+  if (isError) return <ErrorView message="Failed to load directory. Check that the path exists." />;
 
   const isEmpty = data.folders.length === 0 && data.models.length === 0;
 

@@ -30,12 +30,6 @@
   align-items: start;
 }
 
-.loadingCenter {
-  display: flex;
-  justify-content: center;
-  padding: 2rem 0;
-}
-
 .sectionWithMargin {
   margin-bottom: 2rem;
 }

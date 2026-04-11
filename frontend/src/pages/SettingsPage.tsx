@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Divider,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Chip, Divider, Stack, TextField, Typography } from '@mui/material';
 import {
   useAppConfig,
   useCreateMetadataDictionaryValue,
@@ -19,6 +10,8 @@ import {
   useUpdateMetadataDictionaryValue,
 } from '../lib/queries';
 import type { MetadataDictionaryField } from '../lib/api';
+import ErrorView from '../components/ErrorView';
+import LoadingView from '../components/LoadingView';
 import styles from './SettingsPage.module.css';
 
 type FieldKey = 'category' | 'type' | 'material';
@@ -148,20 +141,10 @@ export default function SettingsPage() {
     if (appConfig) setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
   }, [appConfig]);
 
-  if (isPending || appConfigPending) {
-    return (
-      <Box className={styles.loading}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  if (isPending || appConfigPending) return <LoadingView />;
 
   if (isError || appConfigError || !data || !appConfig) {
-    return (
-      <Box className={styles.page}>
-        <Typography color="error">Failed to load settings.</Typography>
-      </Box>
-    );
+    return <ErrorView message="Failed to load settings." />;
   }
 
   return (

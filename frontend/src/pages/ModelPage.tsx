@@ -15,7 +15,9 @@ import {
 } from '../lib/queries';
 import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import ModelViewer from '../components/ModelViewer';
+import ErrorView from '../components/ErrorView';
 import HullPreview from '../components/HullPreview';
+import LoadingView from '../components/LoadingView';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
 import gridStyles from '../components/ModelGrid.module.css';
@@ -54,9 +56,7 @@ function ModelPage() {
     return (
       <Box className={styles.page}>
         {backButton}
-        <Box className={styles.loadingCenter}>
-          <CircularProgress color="primary" />
-        </Box>
+        <LoadingView minHeight="100vh" />
       </Box>
     );
   }
@@ -65,9 +65,7 @@ function ModelPage() {
     return (
       <Box className={styles.page}>
         {backButton}
-        <Box className={styles.errorCenter} color="text.secondary">
-          <Typography>Model not found.</Typography>
-        </Box>
+        <ErrorView message="Model not found." minHeight="100vh" />
       </Box>
     );
   }

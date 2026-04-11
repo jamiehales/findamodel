@@ -13,6 +13,7 @@ import {
   useActivatePrintingList,
 } from '../lib/queries';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LoadingView from '../components/LoadingView';
 import styles from './PrintingListsManagePage.module.css';
 
 function PrintingListsManagePage() {
@@ -84,9 +85,7 @@ function PrintingListsManagePage() {
 
       {/* List of printing lists */}
       {isPending ? (
-        <Box className={styles.loadingBox}>
-          <CircularProgress size={32} className={styles.spinner} />
-        </Box>
+        <LoadingView />
       ) : !lists || lists.length === 0 ? (
         <Typography color="text.secondary">No printing lists yet. Create one above.</Typography>
       ) : (
