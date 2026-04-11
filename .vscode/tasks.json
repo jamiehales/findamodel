@@ -11,14 +11,14 @@
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary"
       ],
-      "problemMatcher": "$msCompile",
       "presentation": {
         "panel": "dedicated",
         "clear": true,
         "showReuseMessage": false,
         "close": true
       },
-      "group": "build"
+      "group": "build",
+      "problemMatcher": []
     },
     {
       "label": "backend: watch",
