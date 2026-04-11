@@ -126,6 +126,12 @@ public class ExplorerService(
 
             var localRuleFields = BuildLocalRuleFields(dc?.RawRulesYaml);
 
+            // Evaluate rules against the folder's own path so the chip shows the computed value
+            var folderRulesYaml = dc != null ? dc.ResolvedRulesYaml : currentDirConfig?.ResolvedRulesYaml;
+            var folderRules = RuleRegistry.DeserializeRules(folderRulesYaml);
+            if (folderRules.Count > 0)
+                resolved = ApplyRulesToPath(resolved, folderRules, childFullPath);
+
             folders.Add(new FolderItemDto(name, childPath, subdirCount, modelCount, resolved, ruleConfigs, localValues, localRuleFields));
         }
 
@@ -258,6 +264,72 @@ public class ExplorerService(
         foreach (var (field, ruleEl) in rules)
             result[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
         return result;
+    }
+
+    /// <summary>
+    /// Evaluates <paramref name="rules"/> against <paramref name="fullPath"/> and returns a new
+    /// ConfigFieldsDto with rule-computed values merged in (rule values take precedence over plain).
+    /// </summary>
+    private static ConfigFieldsDto ApplyRulesToPath(
+        ConfigFieldsDto plain,
+        Dictionary<string, JsonElement> rules,
+        string fullPath)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["creator"] = plain.Creator,
+            ["collection"] = plain.Collection,
+            ["subcollection"] = plain.Subcollection,
+            ["category"] = plain.Category,
+            ["type"] = plain.Type,
+            ["material"] = plain.Material,
+            ["supported"] = plain.Supported,
+            ["raftHeight"] = plain.RaftHeightMm,
+            ["model_name"] = plain.ModelName,
+        };
+
+        var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["creator"] = plain.Creator,
+            ["collection"] = plain.Collection,
+            ["subcollection"] = plain.Subcollection,
+            ["category"] = plain.Category,
+            ["type"] = plain.Type,
+            ["material"] = plain.Material,
+            ["model_name"] = plain.ModelName,
+        };
+        foreach (var field in rules.Keys) available.Remove(field);
+
+        foreach (var (field, ruleEl) in rules)
+        {
+            var normalizedField = MetadataFieldRegistry.TryGet(field, out var fieldDef)
+                ? fieldDef.Key
+                : field.ToLowerInvariant();
+            var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
+            var value = RuleRegistry.Evaluate(field, fullPath, available, ruleEl, ft);
+            if (value == null) continue;
+
+            object? convertedValue = ft switch
+            {
+                RuleFieldType.Bool => value.Equals("true", StringComparison.OrdinalIgnoreCase),
+                RuleFieldType.Enum => MetadataFieldRegistry.ValidateEnumValue(normalizedField, value),
+                _ => value,
+            };
+            values[normalizedField] = convertedValue;
+        }
+
+        return new ConfigFieldsDto
+        {
+            Creator = values["creator"] as string,
+            Collection = values["collection"] as string,
+            Subcollection = values["subcollection"] as string,
+            Category = values["category"] as string,
+            Type = values["type"] as string,
+            Material = values["material"] as string,
+            Supported = values["supported"] as bool?,
+            RaftHeightMm = values["raftHeight"] as float?,
+            ModelName = values["model_name"] as string,
+        };
     }
 
     /// <summary>

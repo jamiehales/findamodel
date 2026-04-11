@@ -29,9 +29,11 @@ public static class RegexRuleParser
         var source = options.TryGetValue("source", out var sv) ? sv.GetString() : "full_path";
         var input = source?.ToLowerInvariant() switch
         {
-            "folder"    => Path.GetDirectoryName(filePath.Replace('\\', '/'))?.Replace('\\', '/'),
-            "filename"  => Path.GetFileName(filePath),
-            _           => filePath.Replace('\\', '/'),  // full_path (default)
+            "folder" => Path.HasExtension(filePath)
+                              ? (Path.GetDirectoryName(filePath.Replace('\\', '/')) ?? "").Replace('\\', '/')
+                              : filePath.Replace('\\', '/'),
+            "filename" => Path.GetFileName(filePath),
+            _ => filePath.Replace('\\', '/'),  // full_path (default)
         };
         if (input is null) return null;
 
@@ -58,9 +60,9 @@ public static class RegexRuleParser
         var sedMatch = SedPattern.Match(expression);
         if (sedMatch.Success)
         {
-            var pattern     = sedMatch.Groups[2].Value;
+            var pattern = sedMatch.Groups[2].Value;
             var replacement = ConvertSedReplacement(sedMatch.Groups[3].Value);
-            var flagsStr    = sedMatch.Groups[4].Value;
+            var flagsStr = sedMatch.Groups[4].Value;
             var sedFlags = ParseFlags(flagsStr);
             regexOptions = sedFlags | regexOptions;
             return Regex.Replace(input, pattern, replacement, regexOptions);
