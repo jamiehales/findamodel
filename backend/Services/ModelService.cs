@@ -114,26 +114,56 @@ public class ModelService(
         return await GetModelDtoAsync(id);
     }
 
-    public async Task<ModelMetadataEntry?> GetModelMetadataAsync(Guid id)
+    public async Task<ModelMetadataDetail?> GetModelMetadataAsync(Guid id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var model = await db.Models.FirstOrDefaultAsync(m => m.Id == id);
         if (model == null) return null;
 
-        var rawJson = await db.DirectoryConfigs
-            .Where(d => d.DirectoryPath == model.Directory)
-            .Select(d => d.RawModelMetadataJson)
-            .FirstOrDefaultAsync();
+        var dirConfig = await db.DirectoryConfigs
+            .FirstOrDefaultAsync(d => d.DirectoryPath == model.Directory);
 
-        if (rawJson == null) return new ModelMetadataEntry(null, null);
+        // Per-model overrides stored in model_metadata section
+        var configEntry = dirConfig != null
+            ? ModelMetadataHelper.GetModelMetadataEntry(dirConfig, model.FileName)
+            : null;
 
-        var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ModelMetadataEntry>>(
-            rawJson,
-            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var localValues = new ModelMetadataEntry(
+            configEntry?.Name,
+            configEntry?.PartName,
+            configEntry?.Creator,
+            configEntry?.Collection,
+            configEntry?.Subcollection,
+            configEntry?.Category,
+            configEntry?.Type,
+            configEntry?.Material,
+            configEntry?.Supported);
 
-        return dict?.FirstOrDefault(kv =>
-            string.Equals(kv.Key, model.FileName, StringComparison.OrdinalIgnoreCase)).Value
-            ?? new ModelMetadataEntry(null, null);
+        // Compute inherited values from folder config (without per-model overrides)
+        ModelMetadataEntry? inheritedValues = null;
+        if (dirConfig != null)
+        {
+            var modelsPath = config["Models:DirectoryPath"];
+            if (!string.IsNullOrEmpty(modelsPath))
+            {
+                var fullPath = string.IsNullOrEmpty(model.Directory)
+                    ? Path.Combine(modelsPath, model.FileName)
+                    : Path.Combine(modelsPath, model.Directory.Replace('/', Path.DirectorySeparatorChar), model.FileName);
+                var inherited = ModelMetadataHelper.ComputeInherited(fullPath, dirConfig);
+                inheritedValues = new ModelMetadataEntry(
+                    inherited.ModelName,
+                    inherited.PartName,
+                    inherited.Creator,
+                    inherited.Collection,
+                    inherited.Subcollection,
+                    inherited.Category,
+                    inherited.Type,
+                    inherited.Material,
+                    inherited.Supported);
+            }
+        }
+
+        return new ModelMetadataDetail(localValues, inheritedValues);
     }
 
     public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)

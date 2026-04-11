@@ -319,7 +319,12 @@ export interface ModelMetadata {
   supported: boolean | null;
 }
 
-export async function fetchModelMetadata(id: string): Promise<ModelMetadata> {
+export interface ModelMetadataDetail {
+  localValues: ModelMetadata;
+  inheritedValues: ModelMetadata | null;
+}
+
+export async function fetchModelMetadata(id: string): Promise<ModelMetadataDetail> {
   const r = await fetch(`/api/models/${id}/metadata`);
   if (!r.ok) throw new Error('Failed to fetch model metadata');
   return r.json();

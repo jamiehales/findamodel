@@ -24,7 +24,11 @@ internal static class ModelMetadataHelper
         public string? PartName { get; init; }
     }
 
-    public static ComputedMetadata Compute(string fullFilePath, DirectoryConfig? dirConfig)
+    /// <summary>
+    /// Computes the folder-resolved metadata a model inherits from its directory config,
+    /// WITHOUT applying any per-model overrides from the model_metadata section.
+    /// </summary>
+    public static ComputedMetadata ComputeInherited(string fullFilePath, DirectoryConfig? dirConfig)
     {
         if (dirConfig == null)
             return new ComputedMetadata();
@@ -32,7 +36,7 @@ internal static class ModelMetadataHelper
         var resolvedRules = RuleRegistry.DeserializeRules(dirConfig.ResolvedRulesYaml);
         var availableFields = new Dictionary<string, string?>();
 
-        var computed = new ComputedMetadata
+        return new ComputedMetadata
         {
             Creator = EvaluateString("creator", dirConfig.Creator, resolvedRules, fullFilePath, availableFields),
             Collection = EvaluateString("collection", dirConfig.Collection, resolvedRules, fullFilePath, availableFields),
@@ -43,6 +47,14 @@ internal static class ModelMetadataHelper
             Supported = EvaluateBool("supported", dirConfig.Supported, resolvedRules, fullFilePath, availableFields),
             ModelName = EvaluateString("model_name", dirConfig.ModelName, resolvedRules, fullFilePath, availableFields)
         };
+    }
+
+    public static ComputedMetadata Compute(string fullFilePath, DirectoryConfig? dirConfig)
+    {
+        var computed = ComputeInherited(fullFilePath, dirConfig);
+
+        if (dirConfig == null)
+            return computed;
 
         var configEntry = GetModelMetadataEntry(dirConfig, Path.GetFileName(fullFilePath));
         if (configEntry?.Name != null)

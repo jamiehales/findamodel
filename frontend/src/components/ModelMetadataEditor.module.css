@@ -26,13 +26,44 @@
   font-size: 0.875rem !important;
 }
 
-.supportedRow {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.fieldHeader {
+  margin-bottom: 4px !important;
 }
 
-.helperText {
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
+.hint {
+  margin-top: 2px !important;
+  flex: 1;
+  min-width: 0;
+}
+
+.hintContainer {
+  margin-top: 2px !important;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.copyBtn {
+  color: rgba(148, 163, 184, 0.7) !important;
+  padding: 4px !important;
+  margin-left: auto !important;
+  flex-shrink: 0;
+}
+
+.copyBtn:hover {
+  color: rgba(148, 163, 184, 1) !important;
+  background-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+.resetBtn {
+  color: rgba(148, 163, 184, 0.6) !important;
+  padding: 4px !important;
+}
+
+.resetBtn:not(:disabled):hover {
+  color: rgba(148, 163, 184, 1) !important;
+  background-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+.resetBtn:disabled {
+  opacity: 0.4 !important;
 }

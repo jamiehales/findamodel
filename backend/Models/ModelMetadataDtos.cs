@@ -14,3 +14,11 @@ public record UpdateModelMetadataRequest(
     string? Type,
     string? Material,
     bool? Supported);
+
+/// <summary>
+/// Returned by GET /api/models/{id}/metadata. Contains the per-model overrides (localValues)
+/// and the folder-resolved values a model inherits from its directory config (inheritedValues).
+/// </summary>
+public record ModelMetadataDetail(
+    ModelMetadataEntry LocalValues,
+    ModelMetadataEntry? InheritedValues);

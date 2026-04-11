@@ -115,15 +115,15 @@ public class ModelServiceMetadataTests
             var result = await sut.GetModelMetadataAsync(modelId);
 
             Assert.NotNull(result);
-            Assert.Equal("Fire Dragon", result!.Name);
-            Assert.Equal("Body", result.PartName);
-            Assert.Equal("Alice", result.Creator);
-            Assert.Equal("Fantasy", result.Collection);
-            Assert.Equal("Creatures", result.Subcollection);
-            Assert.Equal("miniature", result.Category);
-            Assert.Equal("whole", result.Type);
-            Assert.Equal("resin", result.Material);
-            Assert.True(result.Supported);
+            Assert.Equal("Fire Dragon", result!.LocalValues.Name);
+            Assert.Equal("Body", result.LocalValues.PartName);
+            Assert.Equal("Alice", result.LocalValues.Creator);
+            Assert.Equal("Fantasy", result.LocalValues.Collection);
+            Assert.Equal("Creatures", result.LocalValues.Subcollection);
+            Assert.Equal("miniature", result.LocalValues.Category);
+            Assert.Equal("whole", result.LocalValues.Type);
+            Assert.Equal("resin", result.LocalValues.Material);
+            Assert.True(result.LocalValues.Supported);
         }
         finally
         {
