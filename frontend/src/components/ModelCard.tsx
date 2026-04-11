@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Box, Chip, Typography, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
 import AppCard from './AppCard';
@@ -48,4 +49,4 @@ function ModelCard({ model, href }: ModelCardProps) {
   );
 }
 
-export default ModelCard;
+export default memo(ModelCard);

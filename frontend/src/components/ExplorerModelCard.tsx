@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -105,7 +105,7 @@ interface Props {
   href?: string;
 }
 
-export default function ExplorerModelCard({ model, href }: Props) {
+function ExplorerModelCard({ model, href }: Props) {
   const badge = appColors.fileType[model.fileType] ?? {
     bg: 'rgba(255,255,255,0.1)',
     color: '#94a3b8',
@@ -185,3 +185,4 @@ export default function ExplorerModelCard({ model, href }: Props) {
     </AppCard>
   );
 }
+export default memo(ExplorerModelCard);

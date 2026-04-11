@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -67,7 +67,7 @@ function MetaBadge({
   );
 }
 
-export default function FolderCard({ folder, href }: Props) {
+function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false);
   const rv = folder.resolvedValues;
   const lv = folder.localValues;
@@ -226,3 +226,5 @@ export default function FolderCard({ folder, href }: Props) {
     </Box>
   );
 }
+
+export default memo(FolderCard);
