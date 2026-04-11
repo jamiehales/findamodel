@@ -12,6 +12,7 @@ public class CachedModel
     public DateTime CachedAt { get; set; }
     public string? PreviewImagePath { get; set; }  // Path to PNG preview render relative to cache/renders folder (null = not yet generated)
     public DateTime? PreviewGeneratedAt { get; set; }
+    public int? PreviewGenerationVersion { get; set; }  // Version of preview rendering algorithm (null = not yet generated or version unknown)
 
     // FK to the DirectoryConfig record for this model's containing directory
     public Guid? DirectoryConfigId { get; set; }

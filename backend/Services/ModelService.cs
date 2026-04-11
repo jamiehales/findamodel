@@ -97,9 +97,9 @@ public class ModelService(
         // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
         var existingModels = (await db.Models
-            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.ScanConfigChecksum })
+            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.ScanConfigChecksum, m.PreviewGenerationVersion })
             .ToListAsync())
-            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.ScanConfigChecksum));
+            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.ScanConfigChecksum, m.PreviewGenerationVersion));
 
         var newCount = 0;
         var updatedCount = 0;
@@ -116,7 +116,8 @@ public class ModelService(
                 var currentChecksum = await ComputeChecksumAsync(file);
                 var expectedRaftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
                 var hullMetadataMismatch = NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
-                if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch) continue;
+                var previewStale = NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
+                if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale) continue;
 
                 var entity = await db.Models.FindAsync(existingEntry.Id);
                 if (entity == null) continue;
@@ -127,7 +128,7 @@ public class ModelService(
                     var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum, defaultRaftHeightMm);
                     ApplyFileData(entity, data, info);
                 }
-                else
+                else if (hullMetadataMismatch)
                 {
                     logger.LogInformation(
                         "Hull config mismatch detected, regenerating hulls for: {FilePath} (stored checksum: {StoredChecksum}, expected checksum: {ExpectedChecksum})",
@@ -135,6 +136,20 @@ public class ModelService(
                         entity.ScanConfigChecksum,
                         ScanConfig.Compute(expectedRaftHeightMm));
                     await RefreshHullDataAsync(entity, file, fileType, expectedRaftHeightMm);
+                    if (previewStale)
+                        await RefreshPreviewAsync(entity, file, fileType);
+                    entity.CachedAt = DateTime.UtcNow;
+                    entity.FileModifiedAt = info.LastWriteTimeUtc;
+                    entity.FileSize = info.Length;
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Preview version mismatch, regenerating preview for: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
+                        file,
+                        entity.PreviewGenerationVersion,
+                        ModelPreviewService.CurrentPreviewGenerationVersion);
+                    await RefreshPreviewAsync(entity, file, fileType);
                     entity.CachedAt = DateTime.UtcNow;
                     entity.FileModifiedAt = info.LastWriteTimeUtc;
                     entity.FileSize = info.Length;
@@ -165,7 +180,8 @@ public class ModelService(
             existingModels[(directory, fileName)] = (
                 newEntity.Id,
                 newData.Checksum,
-                newEntity.ScanConfigChecksum);
+                newEntity.ScanConfigChecksum,
+                newEntity.PreviewGenerationVersion);
             newCount++;
         }
 
@@ -233,17 +249,24 @@ public class ModelService(
         var checksum = await ComputeChecksumAsync(fullPath);
         if (existing is not null
             && existing.Checksum == checksum
-            && !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
+            && !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm)
+            && !NeedsPreviewRegeneration(existing.PreviewGenerationVersion))
             return false;
 
         if (existing is not null && existing.Checksum != checksum)
             logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
-        else if (existing is not null)
+        else if (existing is not null && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             logger.LogInformation(
                 "Single-model index refreshing hulls due to config mismatch: {FilePath} (stored checksum: {StoredChecksum}, expected checksum: {ExpectedChecksum})",
                 fullPath,
                 existing.ScanConfigChecksum,
                 ScanConfig.Compute(expectedRaftHeightMm));
+        else if (existing is not null)
+            logger.LogInformation(
+                "Single-model index refreshing preview due to version mismatch: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
+                fullPath,
+                existing.PreviewGenerationVersion,
+                ModelPreviewService.CurrentPreviewGenerationVersion);
         else
             logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
 
@@ -270,12 +293,21 @@ public class ModelService(
                 existing.DirectoryConfigId = data.DirConfig?.Id;
                 ApplyFileData(existing, data, info);
             }
-            else
+            else if (NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             {
                 existing.FileType = fileType;
                 if (directoryConfigs.TryGetValue(directory, out var dirConfig))
                     existing.DirectoryConfigId = dirConfig.Id;
                 await RefreshHullDataAsync(existing, fullPath, fileType, expectedRaftHeightMm);
+                if (NeedsPreviewRegeneration(existing.PreviewGenerationVersion))
+                    await RefreshPreviewAsync(existing, fullPath, fileType);
+                existing.CachedAt = DateTime.UtcNow;
+                existing.FileModifiedAt = info.LastWriteTimeUtc;
+                existing.FileSize = info.Length;
+            }
+            else
+            {
+                await RefreshPreviewAsync(existing, fullPath, fileType);
                 existing.CachedAt = DateTime.UtcNow;
                 existing.FileModifiedAt = info.LastWriteTimeUtc;
                 existing.FileSize = info.Length;
@@ -371,6 +403,7 @@ public class ModelService(
         entity.CachedAt = DateTime.UtcNow;
         entity.PreviewImagePath = d.PreviewImagePath;
         entity.PreviewGeneratedAt = d.PreviewImagePath != null ? DateTime.UtcNow : null;
+        entity.PreviewGenerationVersion = d.PreviewImagePath != null ? ModelPreviewService.CurrentPreviewGenerationVersion : null;
         ApplyHullData(entity, d.ConvexHull, d.ConcaveHull, d.ConvexSansRaftHull, d.Geometry is not null, d.RaftHeightMm);
         entity.ApplyCalculatedMetadata(d.Metadata);
         entity.DimensionXMm = ToFiniteOrNull(d.Geometry?.DimensionXMm);
@@ -385,6 +418,17 @@ public class ModelService(
 
     private static float? ToFiniteOrNull(float? value) =>
         value.HasValue && float.IsFinite(value.Value) ? value.Value : null;
+
+    private async Task RefreshPreviewAsync(CachedModel entity, string filePath, string fileType)
+    {
+        var geometry = await loaderService.LoadModelAsync(filePath, fileType);
+        if (geometry is null) return;
+
+        var previewImagePath = await previewService.GeneratePreviewAsync(geometry, entity.Checksum);
+        entity.PreviewImagePath = previewImagePath;
+        entity.PreviewGeneratedAt = previewImagePath != null ? DateTime.UtcNow : null;
+        entity.PreviewGenerationVersion = previewImagePath != null ? ModelPreviewService.CurrentPreviewGenerationVersion : null;
+    }
 
     private async Task RefreshHullDataAsync(CachedModel entity, string filePath, string fileType, float raftHeightMm)
     {
@@ -418,6 +462,9 @@ public class ModelService(
 
     private static bool NeedsHullRegeneration(string? storedChecksum, float expectedRaftHeightMm) =>
         storedChecksum != ScanConfig.Compute(expectedRaftHeightMm);
+
+    private static bool NeedsPreviewRegeneration(int? storedVersion) =>
+        storedVersion != ModelPreviewService.CurrentPreviewGenerationVersion;
 
     private static float ResolveRaftHeightMm(
         string directory,
