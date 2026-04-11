@@ -11,8 +11,7 @@ import AppCard from './AppCard';
 import styles from './FolderCard.module.css';
 import { Divider, Stack } from '@mui/material';
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries';
-
-const RULE_COLOR = '#fbbf24B0';
+import { appColors } from '../theme';
 
 interface Props {
   folder: ExplorerFolder;
@@ -45,7 +44,7 @@ function MetaBadge({
     <Box
       component="span"
       className={`${styles.metaBadge} ${source === 'unset' ? styles.metaBadgeUnset : styles.metaBadgeSet}`}
-      style={ruleYaml ? { border: `1px dashed ${RULE_COLOR}` } : undefined}
+      style={ruleYaml ? { border: `1px dashed ${appColors.metaBadge.rule}` } : undefined}
     >
       <span className={styles.metaType}>{type}</span>
       <span className={styles.metaValue}>{valueLabel}</span>

@@ -265,3 +265,16 @@ const theme = createTheme({
 });
 
 export default theme;
+
+/** Semantic colour tokens shared across components — derived from theme palette */
+export const appColors = {
+  fileType: {
+    stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
+    obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
+    // add new file types here
+  } as Record<string, { bg: string; color: string }>,
+  metaBadge: {
+    rule: '#fbbf24', // matches theme.palette.warning.main
+    value: '#a5b4fc', // matches theme.palette.primary.light
+  },
+} as const;

@@ -20,16 +20,8 @@ import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
 import gridStyles from '../components/ModelGrid.module.css';
 import styles from './ModelPage.module.css';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const badgeColors: Record<string, { bg: string; color: string }> = {
-  stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
-  obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
-};
+import { formatBytes } from '../lib/utils';
+import { appColors } from '../theme';
 
 function ModelPage() {
   const { id } = useParams<{ id: string }>();
@@ -80,7 +72,10 @@ function ModelPage() {
     );
   }
 
-  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' };
+  const badge = appColors.fileType[model.fileType] ?? {
+    bg: 'rgba(255,255,255,0.1)',
+    color: '#94a3b8',
+  };
 
   const metaRows: { label: string; value: React.ReactNode }[] = [
     model.name && { label: 'Name', value: model.name },

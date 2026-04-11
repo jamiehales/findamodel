@@ -11,16 +11,7 @@ import AppCard from './AppCard';
 import PrintingListControls from './PrintingListControls';
 import styles from './ExplorerModelCard.module.css';
 import { formatBytes } from '../lib/utils';
-
-const badgeColors: Record<string, { bg: string; color: string }> = {
-  stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
-  obj: { bg: 'rgba(16,185,129,0.2)', color: '#34d399' },
-};
-
-// Colour for fields whose value was computed by a rule (amber = dynamic/computed)
-const RULE_COLOR = '#fbbf24';
-// Colour for fields with a plain inherited/set value (indigo)
-const VALUE_COLOR = '#a5b4fc';
+import { appColors } from '../theme';
 
 function MetaBadge({
   value,
@@ -35,7 +26,7 @@ function MetaBadge({
     <Box
       component="span"
       className={styles.metaBadge}
-      style={{ color: isRule ? RULE_COLOR : VALUE_COLOR }}
+      style={{ color: isRule ? appColors.metaBadge.rule : appColors.metaBadge.value }}
     >
       {value}
     </Box>
@@ -115,7 +106,10 @@ interface Props {
 }
 
 export default function ExplorerModelCard({ model, href }: Props) {
-  const badge = badgeColors[model.fileType] ?? { bg: 'rgba(255,255,255,0.1)', color: '#94a3b8' };
+  const badge = appColors.fileType[model.fileType] ?? {
+    bg: 'rgba(255,255,255,0.1)',
+    color: '#94a3b8',
+  };
   const isIndexed = model.id != null;
   const [hovered, setHovered] = useState(false);
   const indexModel = useIndexModel(model.relativePath);
