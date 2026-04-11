@@ -22,7 +22,12 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gosu \
+    libgl1-mesa-glx \
+    libegl1-mesa \
+    libgles2-mesa \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=backend-build /app/backend/out .
 COPY --from=frontend-build /app/frontend/dist ./wwwroot
