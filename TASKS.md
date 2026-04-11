@@ -1,5 +1,3 @@
-* Use a library for DTO generation?
-
 * Add unit tests for services
 
 * Allow hulls to be calculated in a separate pass

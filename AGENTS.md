@@ -1,7 +1,6 @@
-# AI instructions (Claude compatibility file)
+# AI instructions (shared)
 
-Primary instructions now live in [AGENTS.md](AGENTS.md).
-Keep this file aligned so Claude-based tools and other agents behave consistently.
+This is the shared instruction file intended to be compatible across AI coding agents.
 
 General:
 * If there are decisions to be made related to how the user will interact with the application, you must ask before making a decision
