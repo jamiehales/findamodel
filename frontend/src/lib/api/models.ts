@@ -272,6 +272,20 @@ export async function fetchSupportGeometry(id: string): Promise<GeometryResponse
   return null;
 }
 
+export async function fetchBodyGeometry(id: string): Promise<GeometryResponse | null> {
+  const r = await fetch(`/api/models/${id}/geometry/body`, {
+    headers: { Accept: 'application/vnd.findamodel.mesh' },
+  });
+  if (r.status === 204) return null;
+  if (!r.ok) throw new Error('Failed to fetch body geometry');
+
+  const contentType = r.headers.get('content-type') ?? '';
+  if (contentType.includes('application/vnd.findamodel.mesh')) {
+    return decodeBinaryGeometry(await r.arrayBuffer());
+  }
+  return null;
+}
+
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
   const r = await fetch(`/api/models/${id}/other-parts`);
   if (!r.ok) throw new Error('Failed to fetch other parts');

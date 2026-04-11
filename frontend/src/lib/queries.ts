@@ -4,6 +4,7 @@ import {
   fetchModel,
   fetchGeometry,
   fetchSupportGeometry,
+  fetchBodyGeometry,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -43,6 +44,7 @@ export const queryKeys = {
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
   supportGeometry: (id: string) => ['support-geometry', id] as const,
+  bodyGeometry: (id: string) => ['body-geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   indexerStatus: ['indexer', 'status'] as const,
@@ -87,6 +89,14 @@ export function useSupportGeometry(id: string) {
   return useQuery({
     queryKey: queryKeys.supportGeometry(id),
     queryFn: () => fetchSupportGeometry(id),
+    enabled: !!id,
+  });
+}
+
+export function useBodyGeometry(id: string) {
+  return useQuery({
+    queryKey: queryKeys.bodyGeometry(id),
+    queryFn: () => fetchBodyGeometry(id),
     enabled: !!id,
   });
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGeometry, useModel, useSupportGeometry } from '../lib/queries';
+import { useBodyGeometry, useGeometry, useModel, useSupportGeometry } from '../lib/queries';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
@@ -151,6 +151,8 @@ interface GeometryModelProps {
   concaveHull: string | null;
   convexSansRaftHull: string | null;
   raftHeightMm: number;
+  /** When true, use body-only geometry (supports rendered separately) */
+  useBodyOnly: boolean;
 }
 
 function GeometryModel({
@@ -160,8 +162,14 @@ function GeometryModel({
   concaveHull,
   convexSansRaftHull,
   raftHeightMm,
+  useBodyOnly,
 }: GeometryModelProps) {
-  const { data } = useGeometry(modelId);
+  const { data: fullData } = useGeometry(modelId);
+  const { data: bodyData } = useBodyGeometry(modelId);
+
+  // Use body-only geometry when supports are being rendered separately
+  // and body geometry is available; otherwise fall back to full geometry.
+  const data = useBodyOnly && bodyData != null ? bodyData : fullData;
 
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -366,6 +374,7 @@ export default function ModelViewer({
               concaveHull={concaveHull ?? null}
               convexSansRaftHull={convexSansRaftHull ?? null}
               raftHeightMm={model.raftHeightMm}
+              useBodyOnly={hasSupportMesh}
             />
             {supported === true && <SupportGeometryMesh modelId={modelId} visible={showSupports} />}
           </React.Suspense>
