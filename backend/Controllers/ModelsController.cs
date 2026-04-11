@@ -75,6 +75,8 @@ public class ModelsController(
         var fullPath = Path.Combine(cacheRendersPath, previewPath);
         if (!System.IO.File.Exists(fullPath)) return NotFound();
 
+        // The URL includes ?v={version} so this specific URL is immutable — cache forever.
+        Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         return PhysicalFile(fullPath, "image/png");
     }
 

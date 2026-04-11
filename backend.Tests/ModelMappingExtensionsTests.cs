@@ -111,7 +111,7 @@ public class ModelMappingExtensionsTests
     public void ToModelDto_BuildsPreviewUrl_WhenPreviewImagePathSet()
     {
         var dto = FullModel().ToModelDto();
-        Assert.Equal("/api/models/11111111-1111-1111-1111-111111111111/preview", dto.PreviewUrl);
+        Assert.Equal($"/api/models/11111111-1111-1111-1111-111111111111/preview?v={ModelPreviewService.CurrentPreviewGenerationVersion}", dto.PreviewUrl);
     }
 
     [Fact]
