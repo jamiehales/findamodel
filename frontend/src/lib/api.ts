@@ -331,6 +331,22 @@ export interface DirectoryConfigDetail {
   parentResolvedRules: Record<string, string> | null;
 }
 
+export interface MetadataDictionaryValue {
+  id: string;
+  value: string;
+}
+
+export interface MetadataDictionaryField {
+  configured: MetadataDictionaryValue[];
+  observed: string[];
+}
+
+export interface MetadataDictionaryOverview {
+  category: MetadataDictionaryField;
+  type: MetadataDictionaryField;
+  material: MetadataDictionaryField;
+}
+
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
   const url = `/api/explorer?path=${encodeURIComponent(path)}`;
   const r = await fetch(url);
@@ -365,6 +381,45 @@ export async function updateDirectoryConfig(
   }
   if (!r.ok) throw new Error(`Failed to update config for: ${path}`);
   return r.json();
+}
+
+export async function fetchMetadataDictionaryOverview(): Promise<MetadataDictionaryOverview> {
+  const r = await fetch('/api/settings/metadata-dictionary');
+  if (!r.ok) throw new Error('Failed to fetch metadata dictionary settings');
+  return r.json();
+}
+
+export async function createMetadataDictionaryValue(
+  field: 'category' | 'type' | 'material',
+  value: string,
+): Promise<MetadataDictionaryValue> {
+  const r = await fetch('/api/settings/metadata-dictionary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ field, value }),
+  });
+  if (!r.ok) throw new Error('Failed to create metadata dictionary value');
+  return r.json();
+}
+
+export async function updateMetadataDictionaryValue(
+  id: string,
+  value: string,
+): Promise<MetadataDictionaryValue> {
+  const r = await fetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  });
+  if (!r.ok) throw new Error('Failed to update metadata dictionary value');
+  return r.json();
+}
+
+export async function deleteMetadataDictionaryValue(id: string): Promise<void> {
+  const r = await fetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) throw new Error('Failed to delete metadata dictionary value');
 }
 
 // ---- Indexer ----

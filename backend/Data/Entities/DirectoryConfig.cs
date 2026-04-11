@@ -13,9 +13,9 @@ public class DirectoryConfig
     // Raw (local) values — sourced exclusively from THIS directory's findamodel.yaml
     public string? RawCreator { get; set; }
     public string? RawCollection { get; set; }
-    public string? RawCategory { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
-    public string? RawType { get; set; }        // "Whole" | "Part" | null
-    public string? RawMaterial { get; set; }    // "FDM" | "Resin" | "Any" | null
+    public string? RawCategory { get; set; }
+    public string? RawType { get; set; }
+    public string? RawMaterial { get; set; }
     public bool? RawSupported { get; set; }
     public string? RawSubcollection { get; set; }
     public string? RawModelName { get; set; }

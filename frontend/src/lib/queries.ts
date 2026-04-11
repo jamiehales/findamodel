@@ -27,6 +27,10 @@ import {
   type HullMode,
   fetchQueryModels,
   fetchFilterOptions,
+  fetchMetadataDictionaryOverview,
+  createMetadataDictionaryValue,
+  updateMetadataDictionaryValue,
+  deleteMetadataDictionaryValue,
 } from './api';
 
 export const queryKeys = {
@@ -43,6 +47,7 @@ export const queryKeys = {
   printingList: (id: string) => ['printing-lists', id] as const,
   queryModels: (filter: ModelFilter, limit: number) => ['query', 'models', filter, limit] as const,
   filterOptions: ['query', 'options'] as const,
+  metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
 };
 
 export function useModels(limit?: number) {
@@ -93,6 +98,45 @@ export function useFilterOptions() {
     queryKey: queryKeys.filterOptions,
     queryFn: fetchFilterOptions,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useMetadataDictionaryOverview() {
+  return useQuery({
+    queryKey: queryKeys.metadataDictionaryOverview,
+    queryFn: fetchMetadataDictionaryOverview,
+  });
+}
+
+export function useCreateMetadataDictionaryValue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ field, value }: { field: 'category' | 'type' | 'material'; value: string }) =>
+      createMetadataDictionaryValue(field, value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.metadataDictionaryOverview });
+    },
+  });
+}
+
+export function useUpdateMetadataDictionaryValue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, value }: { id: string; value: string }) =>
+      updateMetadataDictionaryValue(id, value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.metadataDictionaryOverview });
+    },
+  });
+}
+
+export function useDeleteMetadataDictionaryValue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteMetadataDictionaryValue(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.metadataDictionaryOverview });
+    },
   });
 }
 

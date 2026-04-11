@@ -4,6 +4,7 @@ import ModelPage from './pages/ModelPage';
 import PrintingListPage from './pages/PrintingListPage';
 import PrintingListsManagePage from './pages/PrintingListsManagePage';
 import ExplorePage from './pages/ExplorePage';
+import SettingsPage from './pages/SettingsPage';
 import NavBar from './components/NavBar';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="/printing-lists" element={<PrintingListsManagePage />} />
         <Route path="/explore" element={<ExplorePage />} />
         <Route path="/explore/*" element={<ExplorePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </BrowserRouter>
   );

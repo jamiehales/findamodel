@@ -31,6 +31,7 @@ builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
 builder.Services.AddSingleton<findamodel.Services.ModelPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataConfigService>();
+builder.Services.AddSingleton<findamodel.Services.MetadataDictionaryService>();
 builder.Services.AddSingleton<findamodel.Services.ModelService>();
 builder.Services.AddSingleton<findamodel.Services.IndexerService>();
 builder.Services.AddSingleton<findamodel.Services.ExplorerService>();

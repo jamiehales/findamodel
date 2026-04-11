@@ -29,5 +29,3 @@
 * Improve preview render - use the same zoom/layout as the default view in threejs?
 
 * Support related parts + related models (same collection?) when viewing a model's detail page
-
-* Make configuration options (material, type, etc...) user configurable via a settings page

@@ -37,6 +37,10 @@
   margin-left: auto;
 }
 
+.actionsRight {
+  margin-left: 0.5rem;
+}
+
 .navLink {
   display: inline-flex;
   align-items: center;
@@ -106,4 +110,18 @@
 
 .printingManageItem:hover {
   background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.settingsIconButton {
+  color: #64748b !important;
+}
+
+.settingsIconButton:hover {
+  color: #e2e8f0 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.settingsIconButtonActive {
+  color: #818cf8 !important;
+  background: rgba(99, 102, 241, 0.1) !important;
 }

@@ -10,6 +10,7 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
     public DbSet<User> Users { get; set; }
     public DbSet<PrintingList> PrintingLists { get; set; }
     public DbSet<PrintingListItem> PrintingListItems { get; set; }
+    public DbSet<MetadataDictionaryValue> MetadataDictionaryValues { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,6 +38,13 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();
+
+        modelBuilder.Entity<MetadataDictionaryValue>()
+            .HasIndex(v => new { v.Field, v.NormalizedValue })
+            .IsUnique();
+
+        modelBuilder.Entity<MetadataDictionaryValue>()
+            .HasIndex(v => new { v.Field, v.Value });
 
         modelBuilder.Entity<PrintingList>()
             .HasOne(l => l.Owner)

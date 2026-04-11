@@ -101,15 +101,12 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             .OrderBy(v => v)
             .ToListAsync();
 
-        var materialsFromDb = await db.Models
+        var materials = await db.Models
             .Where(m => m.CalculatedMaterial != null)
             .Select(m => m.CalculatedMaterial!)
             .Distinct()
+            .OrderBy(v => v)
             .ToListAsync();
-        var materials = materialsFromDb
-            .Union(["Any", "FDM", "Resin"])
-            .Order()
-            .ToList();
 
         var fileTypes = await db.Models
             .Select(m => m.FileType)

@@ -13,7 +13,11 @@ import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Divider from '@mui/material/Divider';
-import { useDirectoryConfig, useUpdateDirectoryConfig } from '../lib/queries';
+import {
+  useDirectoryConfig,
+  useMetadataDictionaryOverview,
+  useUpdateDirectoryConfig,
+} from '../lib/queries';
 import { ConfigValidationError } from '../lib/api';
 import type { MetadataFields } from '../lib/api';
 import AppDialog from './AppDialog';
@@ -26,7 +30,7 @@ interface FieldDef {
   yamlName: string;
   label: string;
   fieldType: 'text' | 'select' | 'bool';
-  options?: readonly string[];
+  optionsField?: 'category' | 'type' | 'material';
 }
 
 const FIELDS: FieldDef[] = [
@@ -39,15 +43,15 @@ const FIELDS: FieldDef[] = [
     yamlName: 'category',
     label: 'Category',
     fieldType: 'select',
-    options: ['Bust', 'Miniature', 'Uncategorized'],
+    optionsField: 'category',
   },
-  { key: 'type', yamlName: 'type', label: 'Type', fieldType: 'select', options: ['Whole', 'Part'] },
+  { key: 'type', yamlName: 'type', label: 'Type', fieldType: 'select', optionsField: 'type' },
   {
     key: 'material',
     yamlName: 'material',
     label: 'Material',
     fieldType: 'select',
-    options: ['FDM', 'Resin', 'Any'],
+    optionsField: 'material',
   },
   { key: 'supported', yamlName: 'supported', label: 'Supported', fieldType: 'bool' },
 ] as const;
@@ -187,118 +191,100 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
         </Button>
       }
     >
-        {para(
-          "Rules let you automatically derive a field's value from each model's file path, rather than setting a fixed value. Rules defined on a folder are inherited by all subfolders and models within it.",
-        )}
-        {para(
-          <>
-            A rule is written in YAML. The only required key is {inline('rule:')} which names the
-            rule type. All other keys are options specific to that rule.
-          </>,
-        )}
+      {para(
+        "Rules let you automatically derive a field's value from each model's file path, rather than setting a fixed value. Rules defined on a folder are inherited by all subfolders and models within it.",
+      )}
+      {para(
+        <>
+          A rule is written in YAML. The only required key is {inline('rule:')} which names the rule
+          type. All other keys are options specific to that rule.
+        </>,
+      )}
 
-        <Divider sx={{ my: 1.5 }} />
+      <Divider sx={{ my: 1.5 }} />
 
-        {section('rule: filename')}
-        {para(
-          "Sets the field to the model's filename, title-cased and without extension by default.",
-        )}
-        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
-          Options:
-        </Typography>
-        {para(<>{inline('include_extension: true')} — include the file extension in the value</>)}
+      {section('rule: filename')}
+      {para(
+        "Sets the field to the model's filename, title-cased and without extension by default.",
+      )}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
+        Options:
+      </Typography>
+      {para(<>{inline('include_extension: true')} — include the file extension in the value</>)}
 
-        <Typography
-          variant="caption"
-          color="text.primary"
-          sx={{ display: 'block', mt: 1, mb: 0.25 }}
-        >
-          Examples:
-        </Typography>
-        {code('rule: filename')}
-        {para(
-          <>
-            A file named {inline('my-dragon.stl')} → {inline('My-Dragon')}
-          </>,
-        )}
-        {code('rule: filename\ninclude_extension: true')}
-        {para(
-          <>
-            A file named {inline('my-dragon.stl')} → {inline('My-Dragon.stl')}
-          </>,
-        )}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
+        Examples:
+      </Typography>
+      {code('rule: filename')}
+      {para(
+        <>
+          A file named {inline('my-dragon.stl')} → {inline('My-Dragon')}
+        </>,
+      )}
+      {code('rule: filename\ninclude_extension: true')}
+      {para(
+        <>
+          A file named {inline('my-dragon.stl')} → {inline('My-Dragon.stl')}
+        </>,
+      )}
 
-        <Divider sx={{ my: 1.5 }} />
+      <Divider sx={{ my: 1.5 }} />
 
-        {section('rule: regex')}
-        {para('Applies a regular expression to a value derived from the file path.')}
-        <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
-          Options:
-        </Typography>
-        {para(
-          <>
-            {inline('source: full_path | folder | filename')} — what to match against (default:{' '}
-            {inline('full_path')})
-          </>,
-        )}
-        {para(
-          <>
-            {inline('expression: <pattern>')} — a regex or sed-style substitution (
-            {inline('s|pattern|replacement|flags')})
-          </>,
-        )}
-        {para(
-          <>
-            {inline('values: \{ EnumValue: "pattern" \}')} — for select fields: try each pattern in
-            order, return the matching key
-          </>,
-        )}
+      {section('rule: regex')}
+      {para('Applies a regular expression to a value derived from the file path.')}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
+        Options:
+      </Typography>
+      {para(
+        <>
+          {inline('source: full_path | folder | filename')} — what to match against (default:{' '}
+          {inline('full_path')})
+        </>,
+      )}
+      {para(
+        <>
+          {inline('expression: <pattern>')} — a regex or sed-style substitution (
+          {inline('s|pattern|replacement|flags')})
+        </>,
+      )}
+      {para(
+        <>
+          {inline('values: \{ EnumValue: "pattern" \}')} — for select fields: try each pattern in
+          order, return the matching key
+        </>,
+      )}
 
-        <Typography
-          variant="caption"
-          color="text.primary"
-          sx={{ display: 'block', mt: 1, mb: 0.25 }}
-        >
-          Plain regex — returns first capture group, or full match:
-        </Typography>
-        {code("rule: regex\nsource: folder\nexpression: '([^/]+)/[^/]+$'")}
-        {para(
-          <>
-            For a file at {inline('Artists/Sculptor Name/dragon.stl')} → {inline('Sculptor Name')}
-          </>,
-        )}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
+        Plain regex — returns first capture group, or full match:
+      </Typography>
+      {code("rule: regex\nsource: folder\nexpression: '([^/]+)/[^/]+$'")}
+      {para(
+        <>
+          For a file at {inline('Artists/Sculptor Name/dragon.stl')} → {inline('Sculptor Name')}
+        </>,
+      )}
 
-        <Typography
-          variant="caption"
-          color="text.primary"
-          sx={{ display: 'block', mt: 1, mb: 0.25 }}
-        >
-          Sed-style substitution — transform the matched value:
-        </Typography>
-        {code("rule: regex\nsource: folder\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
-        {para(<>Same result as above but using a substitution expression</>)}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
+        Sed-style substitution — transform the matched value:
+      </Typography>
+      {code("rule: regex\nsource: folder\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
+      {para(<>Same result as above but using a substitution expression</>)}
 
-        <Typography
-          variant="caption"
-          color="text.primary"
-          sx={{ display: 'block', mt: 1, mb: 0.25 }}
-        >
-          Enum (select) field — map patterns to values:
-        </Typography>
-        {code(
-          "rule: regex\nsource: full_path\nvalues:\n  Bust: '(?i)bust'\n  Miniature: '(?i)mini'",
-        )}
-        {para('Returns the first key whose pattern matches the path.')}
+      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
+        Enum (select) field — map patterns to values:
+      </Typography>
+      {code("rule: regex\nsource: full_path\nvalues:\n  Bust: '(?i)bust'\n  Miniature: '(?i)mini'")}
+      {para('Returns the first key whose pattern matches the path.')}
 
-        <Divider sx={{ my: 1.5 }} />
+      <Divider sx={{ my: 1.5 }} />
 
-        {section('Inheritance')}
-        {para(
-          "Rules set on a parent folder cascade down to all subfolders and models unless overridden. When a subfolder defines its own rule for the same field, it replaces the parent's rule for that subtree.",
-        )}
-        {para(
-          'If a folder has a plain value set for a field, that value takes precedence over any inherited rule.',
-        )}
+      {section('Inheritance')}
+      {para(
+        "Rules set on a parent folder cascade down to all subfolders and models unless overridden. When a subfolder defines its own rule for the same field, it replaces the parent's rule for that subtree.",
+      )}
+      {para(
+        'If a folder has a plain value set for a field, that value takes precedence over any inherited rule.',
+      )}
     </AppDialog>
   );
 }
@@ -310,6 +296,7 @@ interface Props {
 
 export default function MetadataEditor({ path, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path);
+  const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const mutation = useUpdateDirectoryConfig(path);
 
   const [fields, setFields] = useState<MetadataFields>({
@@ -437,6 +424,17 @@ export default function MetadataEditor({ path, onClose }: Props) {
     if (e.key === 'Enter') handleValueCommit();
   }
 
+  function getSelectOptions(field: FieldDef, localValue: string | boolean | null): string[] {
+    if (field.optionsField == null) return [];
+
+    const configured =
+      metadataDictionary?.[field.optionsField].configured.map((v) => v.value) ?? [];
+    const values = [...configured];
+    const local = typeof localValue === 'string' ? localValue : null;
+    if (local && !values.includes(local)) values.push(local);
+    return values;
+  }
+
   const p = detail?.parentResolvedValues ?? null;
 
   if (isLoading) {
@@ -458,6 +456,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
         const parentValue = p ? (p[field.key] as string | boolean | null) : null;
         const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null;
         const localValue = fields[field.key] as string | boolean | null;
+        const selectOptions = getSelectOptions(field, localValue);
         const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null;
         const hasInheritedValue = parentValue != null || inheritedRule != null;
         const canReset = hasLocalValue && hasInheritedValue;
@@ -584,7 +583,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
                   <MenuItem value="">
                     <em>Not set</em>
                   </MenuItem>
-                  {field.options?.map((o) => (
+                  {selectOptions.map((o) => (
                     <MenuItem key={o} value={o}>
                       {o}
                     </MenuItem>

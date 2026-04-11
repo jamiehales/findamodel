@@ -69,6 +69,14 @@ export default function NavBar() {
           >
             Explore
           </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `${styles.navLink}${isActive ? ` ${styles.navLinkActive}` : ''}`
+            }
+          >
+            Settings
+          </NavLink>
           <Box
             ref={printingGroupRef}
             className={`${styles.printingGroup}${printingMenuOpen ? ` ${styles.printingOpen}` : ''}`}
