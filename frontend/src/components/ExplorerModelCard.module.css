@@ -1,5 +1,9 @@
 .card {
   composes: card from './CardBase.module.css';
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--color-info-block);
   cursor: pointer;
 }
 
@@ -23,20 +27,24 @@
 }
 
 .preview {
-  composes: preview from './CardBase.module.css';
-  height: 100%;
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  width: 100%;
   object-fit: cover;
+  display: block;
+  background: var(--color-bg-default);
 }
 
 .previewPlaceholder {
-  composes: preview from './CardBase.module.css';
-  height: 100%;
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 0.4rem;
-  background: linear-gradient(180deg, rgba(76, 86, 106, 0.2) 0%, rgba(46, 52, 64, 0.55) 100%);
+  background: var(--color-bg-default);
 }
 
 .previewPlaceholderIcon {
@@ -51,14 +59,15 @@
   font-weight: 700 !important;
 }
 
-.overlay {
-  composes: overlay from './CardBase.module.css';
-  background: linear-gradient(
-    to top,
-    var(--color-overlay-strong) 0%,
-    var(--color-overlay-mid) 60%,
-    transparent 100%
-  );
+.infoBlock {
+  flex-shrink: 0;
+  background: var(--color-info-block);
+  padding: 0 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: relative;
+  z-index: 2;
 }
 
 .badge {
@@ -70,6 +79,7 @@
   padding: 0.26rem 0.58rem;
   border-radius: 999px;
   border: 1px solid rgba(136, 192, 208, 0.35);
+  margin-top: -10px;
   margin-bottom: 0.25rem;
 }
 

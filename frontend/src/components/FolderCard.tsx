@@ -187,7 +187,7 @@ function FolderCard({ folder, href }: Props) {
         {/* Resolved metadata badges */}
         <Stack direction="column" spacing={1} textAlign="center" width="100%">
           {SHARED_FIELDS.map((field) => {
-            const resolved = (rv as Record<string, unknown>)[field.key] as
+            const resolved = (rv as unknown as Record<string, unknown>)[field.key] as
               | string
               | number
               | boolean

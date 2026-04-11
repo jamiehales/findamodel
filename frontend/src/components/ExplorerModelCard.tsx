@@ -101,7 +101,6 @@ interface Props {
 
 function ExplorerModelCard({ model, href }: Props) {
   const fileType = model.fileType.toLowerCase();
-  const isNonGeometry = fileType === 'lys' || fileType === 'lyt' || fileType === 'ctb';
   const badgeClass =
     fileType === 'stl'
       ? styles.badgeStl
@@ -127,16 +126,16 @@ function ExplorerModelCard({ model, href }: Props) {
     >
       {model.previewUrl ? (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
-      ) : isNonGeometry ? (
+      ) : (
         <Box className={styles.previewPlaceholder}>
           <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
           <Typography className={styles.previewPlaceholderText}>
             {model.fileType.toUpperCase()}
           </Typography>
         </Box>
-      ) : null}
+      )}
 
-      <Box className={styles.overlay}>
+      <Box className={styles.infoBlock}>
         <span className={`${styles.badge} ${badgeClass}`}>{model.fileType.toUpperCase()}</span>
 
         <Typography className={styles.name}>

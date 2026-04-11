@@ -85,3 +85,19 @@
   font-size: 0.75rem;
   margin: 0;
 }
+
+.editMetadataButton {
+  position: absolute !important;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  color: var(--color-text-secondary) !important;
+  background: rgba(15, 23, 42, 0.2) !important;
+}
+
+.editMetadataButton:hover {
+  color: var(--color-primary-light) !important;
+  background: var(--color-surface-hover) !important;
+}

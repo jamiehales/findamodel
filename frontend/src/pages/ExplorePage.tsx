@@ -9,17 +9,58 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useExplorer, useIndexFolder, useIsFolderIndexing } from '../lib/queries';
+import type { ExplorerModel, Model } from '../lib/api';
+import { explorerFileUrl } from '../lib/api';
 import AppDialog from '../components/AppDialog';
 import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
 import ExplorerFileCard from '../components/ExplorerFileCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
+import ModelCard from '../components/ModelCard';
 import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import PageLayout from '../components/layouts/PageLayout';
 import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import styles from './ExplorePage.module.css';
+
+function toProcessedModel(model: ExplorerModel): Model | null {
+  if (!model.id) return null;
+
+  const nameFromFile = model.fileName.replace(/\.[^.]+$/, '');
+
+  return {
+    id: model.id,
+    name: model.resolvedMetadata?.modelName ?? nameFromFile,
+    partName: model.resolvedMetadata?.partName ?? null,
+    relativePath: model.relativePath,
+    fileType: model.fileType,
+    canExportToPlate:
+      model.fileType.toLowerCase() === 'stl' || model.fileType.toLowerCase() === 'obj',
+    fileSize: model.fileSize ?? 0,
+    fileUrl: explorerFileUrl(model.relativePath),
+    hasPreview: model.hasPreview,
+    previewUrl: model.previewUrl,
+    creator: model.resolvedMetadata?.creator ?? null,
+    collection: model.resolvedMetadata?.collection ?? null,
+    subcollection: model.resolvedMetadata?.subcollection ?? null,
+    category: model.resolvedMetadata?.category ?? null,
+    type: model.resolvedMetadata?.type ?? null,
+    material: model.resolvedMetadata?.material ?? null,
+    supported: model.resolvedMetadata?.supported ?? null,
+    convexHull: null,
+    concaveHull: null,
+    convexSansRaftHull: null,
+    raftHeightMm: model.resolvedMetadata?.raftHeightMm ?? 0,
+    dimensionXMm: null,
+    dimensionYMm: null,
+    dimensionZMm: null,
+    sphereCentreX: null,
+    sphereCentreY: null,
+    sphereCentreZ: null,
+    sphereRadius: null,
+  };
+}
 
 function ExplorePageInner({ path }: { path: string }) {
   const { data, isPending, isError } = useExplorer(path);
@@ -57,13 +98,26 @@ function ExplorePageInner({ path }: { path: string }) {
         <Box className={data.files.length > 0 ? styles.sectionWithMargin : undefined}>
           <Typography variant="section-label">Models</Typography>
           <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
-            {data.models.map((model) => (
-              <ExplorerModelCard
-                key={model.relativePath}
-                model={model}
-                href={model.id ? `/model/${encodeURIComponent(model.id)}` : undefined}
-              />
-            ))}
+            {data.models.map((model) => {
+              const processedModel = toProcessedModel(model);
+              if (processedModel) {
+                return (
+                  <ModelCard
+                    key={processedModel.id}
+                    model={processedModel}
+                    href={`/model/${encodeURIComponent(processedModel.id)}`}
+                  />
+                );
+              }
+
+              return (
+                <ExplorerModelCard
+                  key={model.relativePath}
+                  model={model}
+                  href={model.id ? `/model/${encodeURIComponent(model.id)}` : undefined}
+                />
+              );
+            })}
           </CardGrid>
         </Box>
       )}
