@@ -20,8 +20,94 @@ internal static class ModelMetadataHelper
         public string? Type { get; init; }
         public string? Material { get; init; }
         public bool? Supported { get; init; }
+        public float? RaftHeightMm { get; init; }
         public string? ModelName { get; init; }
         public string? PartName { get; init; }
+    }
+
+    /// <summary>
+    /// Evaluates resolved rules against <paramref name="fullFilePath"/> and merges them into the
+    /// plain values provided. Returns the merged <see cref="ComputedMetadata"/> and, optionally,
+    /// a map of field name → YAML snippet for every rule-derived field.
+    /// </summary>
+    internal static (ComputedMetadata Resolved, Dictionary<string, string>? RuleConfigs) ResolveForPath(
+        ComputedMetadata plain,
+        Dictionary<string, JsonElement> resolvedRules,
+        string fullFilePath,
+        bool collectRuleConfigs = false)
+    {
+        if (resolvedRules.Count == 0)
+            return (plain, null);
+
+        // Seed the working value map from plain fields
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["creator"] = plain.Creator,
+            ["collection"] = plain.Collection,
+            ["subcollection"] = plain.Subcollection,
+            ["category"] = plain.Category,
+            ["type"] = plain.Type,
+            ["material"] = plain.Material,
+            ["supported"] = plain.Supported,
+            ["raftHeight"] = plain.RaftHeightMm,
+            ["model_name"] = plain.ModelName,
+            ["part_name"] = plain.PartName,
+        };
+
+        // Available (non-rule) fields passed to rule evaluators
+        var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["creator"] = plain.Creator,
+            ["collection"] = plain.Collection,
+            ["subcollection"] = plain.Subcollection,
+            ["category"] = plain.Category,
+            ["type"] = plain.Type,
+            ["material"] = plain.Material,
+            ["model_name"] = plain.ModelName,
+            ["part_name"] = plain.PartName,
+        };
+        foreach (var field in resolvedRules.Keys) available.Remove(field);
+
+        Dictionary<string, string>? ruleConfigs = collectRuleConfigs
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        foreach (var (field, ruleEl) in resolvedRules)
+        {
+            var normalizedField = MetadataFieldRegistry.TryGet(field, out var fieldDef)
+                ? fieldDef.Key
+                : field.ToLowerInvariant();
+            var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
+            var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl, ft);
+            if (value == null) continue;
+
+            if (ruleConfigs != null)
+                ruleConfigs[normalizedField] = RuleConfigToYamlSnippet(field, ruleEl);
+
+            object? converted = ft switch
+            {
+                RuleFieldType.Bool => value.Equals("true", StringComparison.OrdinalIgnoreCase),
+                RuleFieldType.Enum => MetadataFieldRegistry.ValidateEnumValue(normalizedField, value),
+                _ => value,
+            };
+            values[normalizedField] = converted;
+        }
+
+        var resolved = new ComputedMetadata
+        {
+            Creator = values["creator"] as string,
+            Collection = values["collection"] as string,
+            Subcollection = values["subcollection"] as string,
+            Category = values["category"] as string,
+            Type = values["type"] as string,
+            Material = values["material"] as string,
+            Supported = values["supported"] as bool?,
+            RaftHeightMm = values["raftHeight"] as float?,
+            ModelName = values["model_name"] as string,
+            PartName = values["part_name"] as string,
+        };
+
+        return (resolved, ruleConfigs?.Count > 0 ? ruleConfigs : null);
     }
 
     /// <summary>
@@ -33,20 +119,22 @@ internal static class ModelMetadataHelper
         if (dirConfig == null)
             return new ComputedMetadata();
 
-        var resolvedRules = RuleRegistry.DeserializeRules(dirConfig.ResolvedRulesYaml);
-        var availableFields = new Dictionary<string, string?>();
-
-        return new ComputedMetadata
+        var plain = new ComputedMetadata
         {
-            Creator = EvaluateString("creator", dirConfig.Creator, resolvedRules, fullFilePath, availableFields),
-            Collection = EvaluateString("collection", dirConfig.Collection, resolvedRules, fullFilePath, availableFields),
-            Subcollection = EvaluateString("subcollection", dirConfig.Subcollection, resolvedRules, fullFilePath, availableFields),
-            Category = EvaluateString("category", dirConfig.Category, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
-            Type = EvaluateString("type", dirConfig.Type, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
-            Material = EvaluateString("material", dirConfig.Material, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
-            Supported = EvaluateBool("supported", dirConfig.Supported, resolvedRules, fullFilePath, availableFields),
-            ModelName = EvaluateString("model_name", dirConfig.ModelName, resolvedRules, fullFilePath, availableFields)
+            Creator = dirConfig.Creator,
+            Collection = dirConfig.Collection,
+            Subcollection = dirConfig.Subcollection,
+            Category = dirConfig.Category,
+            Type = dirConfig.Type,
+            Material = dirConfig.Material,
+            Supported = dirConfig.Supported,
+            RaftHeightMm = dirConfig.RaftHeightMm,
+            ModelName = dirConfig.ModelName,
+            PartName = dirConfig.PartName,
         };
+
+        var resolvedRules = RuleRegistry.DeserializeRules(dirConfig.ResolvedRulesYaml);
+        return ResolveForPath(plain, resolvedRules, fullFilePath).Resolved;
     }
 
     public static ComputedMetadata Compute(string fullFilePath, DirectoryConfig? dirConfig)
@@ -57,51 +145,21 @@ internal static class ModelMetadataHelper
             return computed;
 
         var configEntry = GetModelMetadataEntry(dirConfig, Path.GetFileName(fullFilePath));
-        if (configEntry?.Name != null)
-            computed = computed with { ModelName = configEntry.Name };
-        if (configEntry?.PartName != null)
-            computed = computed with { PartName = configEntry.PartName };
-        if (configEntry?.Creator != null)
-            computed = computed with { Creator = configEntry.Creator };
-        if (configEntry?.Collection != null)
-            computed = computed with { Collection = configEntry.Collection };
-        if (configEntry?.Subcollection != null)
-            computed = computed with { Subcollection = configEntry.Subcollection };
-        if (configEntry?.Category != null)
-            computed = computed with { Category = configEntry.Category };
-        if (configEntry?.Type != null)
-            computed = computed with { Type = configEntry.Type };
-        if (configEntry?.Material != null)
-            computed = computed with { Material = configEntry.Material };
-        if (configEntry?.Supported.HasValue == true)
-            computed = computed with { Supported = configEntry.Supported };
+        if (configEntry == null)
+            return computed;
+
+        if (configEntry.Name != null) computed = computed with { ModelName = configEntry.Name };
+        if (configEntry.PartName != null) computed = computed with { PartName = configEntry.PartName };
+        if (configEntry.Creator != null) computed = computed with { Creator = configEntry.Creator };
+        if (configEntry.Collection != null) computed = computed with { Collection = configEntry.Collection };
+        if (configEntry.Subcollection != null) computed = computed with { Subcollection = configEntry.Subcollection };
+        if (configEntry.Category != null) computed = computed with { Category = configEntry.Category };
+        if (configEntry.Type != null) computed = computed with { Type = configEntry.Type };
+        if (configEntry.Material != null) computed = computed with { Material = configEntry.Material };
+        if (configEntry.Supported.HasValue) computed = computed with { Supported = configEntry.Supported };
+        if (configEntry.RaftHeightMm.HasValue) computed = computed with { RaftHeightMm = configEntry.RaftHeightMm };
 
         return computed;
-    }
-
-    private static string? EvaluateString(
-        string fieldName,
-        string? plainValue,
-        Dictionary<string, JsonElement> resolvedRules,
-        string filePath,
-        Dictionary<string, string?> availableFields,
-        RuleFieldType fieldType = RuleFieldType.String)
-    {
-        if (resolvedRules.TryGetValue(fieldName, out var ruleEl))
-            return RuleRegistry.Evaluate(fieldName, filePath, availableFields, ruleEl, fieldType);
-        return plainValue;
-    }
-
-    private static bool? EvaluateBool(
-        string fieldName,
-        bool? plainValue,
-        Dictionary<string, JsonElement> resolvedRules,
-        string filePath,
-        Dictionary<string, string?> availableFields)
-    {
-        if (!resolvedRules.TryGetValue(fieldName, out var ruleEl)) return plainValue;
-        var result = RuleRegistry.Evaluate(fieldName, filePath, availableFields, ruleEl, RuleFieldType.Bool);
-        return result != null && bool.TryParse(result, out var b) ? b : (bool?)null;
     }
 
     internal static ModelMetadataEntry? GetModelMetadataEntry(DirectoryConfig dirConfig, string fileName)
@@ -112,5 +170,24 @@ internal static class ModelMetadataHelper
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return dict?.FirstOrDefault(kv =>
             string.Equals(kv.Key, fileName, StringComparison.OrdinalIgnoreCase)).Value;
+    }
+
+    private static string RuleConfigToYamlSnippet(string fieldName, JsonElement ruleEl)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{fieldName}:");
+        foreach (var prop in ruleEl.EnumerateObject())
+        {
+            var val = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString() ?? "",
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Number => prop.Value.GetRawText(),
+                _ => prop.Value.GetRawText()
+            };
+            sb.AppendLine($"  {prop.Name}: {val}");
+        }
+        return sb.ToString().TrimEnd();
     }
 }

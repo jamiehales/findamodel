@@ -108,6 +108,7 @@ public class ExplorerService(
                     Supported = dc.Supported,
                     RaftHeightMm = dc.RaftHeightMm,
                     ModelName = dc.ModelName,
+                    PartName = dc.PartName,
                 }
                 : new ConfigFieldsDto
                 {
@@ -120,6 +121,7 @@ public class ExplorerService(
                     Supported = currentDirConfig?.Supported,
                     RaftHeightMm = currentDirConfig?.RaftHeightMm,
                     ModelName = currentDirConfig?.ModelName,
+                    PartName = currentDirConfig?.PartName,
                 };
 
             var localValues = dc != null
@@ -134,6 +136,7 @@ public class ExplorerService(
                     Supported = dc.RawSupported,
                     RaftHeightMm = dc.RawRaftHeightMm,
                     ModelName = dc.RawModelName,
+                    PartName = dc.RawPartName,
                 }
                 : new ConfigFieldsDto();
 
@@ -204,75 +207,45 @@ public class ExplorerService(
     {
         if (dc == null && resolvedRules.Count == 0) return (null, null);
 
-        var resolvedValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        var plain = new ModelMetadataHelper.ComputedMetadata
         {
-            ["creator"] = dc?.Creator,
-            ["collection"] = dc?.Collection,
-            ["subcollection"] = dc?.Subcollection,
-            ["category"] = dc?.Category,
-            ["type"] = dc?.Type,
-            ["material"] = dc?.Material,
-            ["supported"] = dc?.Supported,
-            ["raftHeight"] = dc?.RaftHeightMm,
-            ["model_name"] = dc?.ModelName,
+            Creator = dc?.Creator,
+            Collection = dc?.Collection,
+            Subcollection = dc?.Subcollection,
+            Category = dc?.Category,
+            Type = dc?.Type,
+            Material = dc?.Material,
+            Supported = dc?.Supported,
+            RaftHeightMm = dc?.RaftHeightMm,
+            ModelName = dc?.ModelName,
+            PartName = dc?.PartName,
         };
 
-        Dictionary<string, string>? ruleConfigs = null;
+        var (resolved, ruleConfigs) = ModelMetadataHelper.ResolveForPath(
+            plain, resolvedRules, fullFilePath, collectRuleConfigs: true);
 
-        if (resolvedRules.Count > 0)
+        var dto = new ConfigFieldsDto
         {
-            // Build available (non-rule) fields to pass to parsers
-            var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["creator"] = resolvedValues["creator"] as string,
-                ["collection"] = resolvedValues["collection"] as string,
-                ["subcollection"] = resolvedValues["subcollection"] as string,
-                ["category"] = resolvedValues["category"] as string,
-                ["type"] = resolvedValues["type"] as string,
-                ["material"] = resolvedValues["material"] as string,
-                ["model_name"] = resolvedValues["model_name"] as string,
-            };
-            foreach (var field in resolvedRules.Keys) available.Remove(field);
-
-            ruleConfigs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (field, ruleEl) in resolvedRules)
-            {
-                var normalizedField = MetadataFieldRegistry.TryGet(field, out var fieldDef)
-                    ? fieldDef.Key
-                    : field.ToLowerInvariant();
-                var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
-                var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl, ft);
-                if (value == null) continue;
-
-                ruleConfigs[normalizedField] = RuleConfigToYamlSnippet(field, ruleEl);
-                object? convertedValue = ft switch
-                {
-                    RuleFieldType.Bool => value.Equals("true", StringComparison.OrdinalIgnoreCase),
-                    RuleFieldType.Enum => MetadataFieldRegistry.ValidateEnumValue(normalizedField, value),
-                    _ => value,
-                };
-                resolvedValues[normalizedField] = convertedValue;
-            }
-
-            if (ruleConfigs.Count == 0) ruleConfigs = null;
-        }
+            Creator = resolved.Creator,
+            Collection = resolved.Collection,
+            Subcollection = resolved.Subcollection,
+            Category = resolved.Category,
+            Type = resolved.Type,
+            Material = resolved.Material,
+            Supported = resolved.Supported,
+            RaftHeightMm = resolved.RaftHeightMm,
+            ModelName = resolved.ModelName,
+            PartName = resolved.PartName,
+        };
 
         // Return null metadata if all fields are null
-        if (resolvedValues.Values.All(v => v == null))
+        if (dto.Creator == null && dto.Collection == null && dto.Subcollection == null &&
+            dto.Category == null && dto.Type == null && dto.Material == null &&
+            dto.Supported == null && dto.RaftHeightMm == null && dto.ModelName == null &&
+            dto.PartName == null)
             return (null, null);
 
-        return (new ConfigFieldsDto
-        {
-            Creator = resolvedValues["creator"] as string,
-            Collection = resolvedValues["collection"] as string,
-            Subcollection = resolvedValues["subcollection"] as string,
-            Category = resolvedValues["category"] as string,
-            Type = resolvedValues["type"] as string,
-            Material = resolvedValues["material"] as string,
-            Supported = resolvedValues["supported"] as bool?,
-            RaftHeightMm = resolvedValues["raftHeight"] as float?,
-            ModelName = resolvedValues["model_name"] as string,
-        }, ruleConfigs);
+        return (dto, ruleConfigs);
     }
 
     /// <summary>
@@ -299,60 +272,34 @@ public class ExplorerService(
         Dictionary<string, JsonElement> rules,
         string fullPath)
     {
-        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        var plainMeta = new ModelMetadataHelper.ComputedMetadata
         {
-            ["creator"] = plain.Creator,
-            ["collection"] = plain.Collection,
-            ["subcollection"] = plain.Subcollection,
-            ["category"] = plain.Category,
-            ["type"] = plain.Type,
-            ["material"] = plain.Material,
-            ["supported"] = plain.Supported,
-            ["raftHeight"] = plain.RaftHeightMm,
-            ["model_name"] = plain.ModelName,
+            Creator = plain.Creator,
+            Collection = plain.Collection,
+            Subcollection = plain.Subcollection,
+            Category = plain.Category,
+            Type = plain.Type,
+            Material = plain.Material,
+            Supported = plain.Supported,
+            RaftHeightMm = plain.RaftHeightMm,
+            ModelName = plain.ModelName,
+            PartName = plain.PartName,
         };
 
-        var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["creator"] = plain.Creator,
-            ["collection"] = plain.Collection,
-            ["subcollection"] = plain.Subcollection,
-            ["category"] = plain.Category,
-            ["type"] = plain.Type,
-            ["material"] = plain.Material,
-            ["model_name"] = plain.ModelName,
-        };
-        foreach (var field in rules.Keys) available.Remove(field);
-
-        foreach (var (field, ruleEl) in rules)
-        {
-            var normalizedField = MetadataFieldRegistry.TryGet(field, out var fieldDef)
-                ? fieldDef.Key
-                : field.ToLowerInvariant();
-            var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
-            var value = RuleRegistry.Evaluate(field, fullPath, available, ruleEl, ft);
-            if (value == null) continue;
-
-            object? convertedValue = ft switch
-            {
-                RuleFieldType.Bool => value.Equals("true", StringComparison.OrdinalIgnoreCase),
-                RuleFieldType.Enum => MetadataFieldRegistry.ValidateEnumValue(normalizedField, value),
-                _ => value,
-            };
-            values[normalizedField] = convertedValue;
-        }
+        var (resolved, _) = ModelMetadataHelper.ResolveForPath(plainMeta, rules, fullPath);
 
         return new ConfigFieldsDto
         {
-            Creator = values["creator"] as string,
-            Collection = values["collection"] as string,
-            Subcollection = values["subcollection"] as string,
-            Category = values["category"] as string,
-            Type = values["type"] as string,
-            Material = values["material"] as string,
-            Supported = values["supported"] as bool?,
-            RaftHeightMm = values["raftHeight"] as float?,
-            ModelName = values["model_name"] as string,
+            Creator = resolved.Creator,
+            Collection = resolved.Collection,
+            Subcollection = resolved.Subcollection,
+            Category = resolved.Category,
+            Type = resolved.Type,
+            Material = resolved.Material,
+            Supported = resolved.Supported,
+            RaftHeightMm = resolved.RaftHeightMm,
+            ModelName = resolved.ModelName,
+            PartName = resolved.PartName,
         };
     }
 

@@ -84,12 +84,13 @@ public class ModelService(
             MetadataFieldRegistry.ValidateEnumValue("category", request.Category),
             MetadataFieldRegistry.ValidateEnumValue("type", request.Type),
             MetadataFieldRegistry.ValidateEnumValue("material", request.Material),
-            request.Supported);
+            request.Supported,
+            request.RaftHeightMm);
 
-        if (IsEmptyModelMetadataEntry(sanitized))
+        if (MetadataFieldRegistry.IsEmptyModelMetadataEntry(sanitized))
             modelMetadata.Remove(model.FileName);
         else
-            modelMetadata[model.FileName] = ToYamlModelMetadataEntry(sanitized);
+            modelMetadata[model.FileName] = MetadataFieldRegistry.ToYamlDictionary(sanitized);
 
         if (modelMetadata.Count == 0)
             RemoveKeyCaseInsensitive(data, "model_metadata");
@@ -137,7 +138,8 @@ public class ModelService(
             configEntry?.Category,
             configEntry?.Type,
             configEntry?.Material,
-            configEntry?.Supported);
+            configEntry?.Supported,
+            configEntry?.RaftHeightMm);
 
         // Compute inherited values from folder config (without per-model overrides)
         ModelMetadataEntry? inheritedValues = null;
@@ -159,7 +161,8 @@ public class ModelService(
                     inherited.Category,
                     inherited.Type,
                     inherited.Material,
-                    inherited.Supported);
+                    inherited.Supported,
+                    inherited.RaftHeightMm);
             }
         }
 
@@ -225,7 +228,11 @@ public class ModelService(
             if (existingModels.TryGetValue((directory, fileName), out var existingEntry))
             {
                 var currentChecksum = await ComputeChecksumAsync(file);
-                var expectedRaftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
+                var expectedRaftHeightMm = ResolveRaftHeightMmForModel(
+                    file,
+                    directory,
+                    directoryConfigs,
+                    defaultRaftHeightMm);
                 var hullMetadataMismatch = !IsNonGeometryType(fileType)
                     && NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
                 var previewStale = !IsNonGeometryType(fileType)
@@ -353,7 +360,11 @@ public class ModelService(
 
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, [directory]);
         var defaultRaftHeightMm = await appConfigService.GetDefaultRaftHeightMmAsync();
-        var expectedRaftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
+        var expectedRaftHeightMm = ResolveRaftHeightMmForModel(
+            fullPath,
+            directory,
+            directoryConfigs,
+            defaultRaftHeightMm);
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var existing = await db.Models
@@ -495,7 +506,13 @@ public class ModelService(
         float defaultRaftHeightMm = HullCalculationService.DefaultRaftHeightMm)
     {
         var checksum = knownChecksum ?? await ComputeChecksumAsync(file);
-        var raftHeightMm = ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
+        directoryConfigs.TryGetValue(directory, out var dirConfig);
+        var metadata = ModelMetadataHelper.Compute(file, dirConfig);
+        var raftHeightMm = metadata.RaftHeightMm.HasValue
+                   && float.IsFinite(metadata.RaftHeightMm.Value)
+                   && metadata.RaftHeightMm.Value >= 0f
+            ? metadata.RaftHeightMm.Value
+            : ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
 
         // Skip expensive geometry pipeline for file types that do not contain mesh geometry.
         LoadedGeometry? geometry = null;
@@ -516,8 +533,6 @@ public class ModelService(
             }
         }
 
-        directoryConfigs.TryGetValue(directory, out var dirConfig);
-        var metadata = ModelMetadataHelper.Compute(file, dirConfig);
         return new ModelFileData(checksum, geometry, previewImagePath, convexHull, concaveHull, convexSansRaftHull, raftHeightMm, metadata, dirConfig);
     }
 
@@ -608,6 +623,22 @@ public class ModelService(
         return defaultRaftHeightMm;
     }
 
+    private static float ResolveRaftHeightMmForModel(
+        string fullFilePath,
+        string directory,
+        Dictionary<string, DirectoryConfig> directoryConfigs,
+        float defaultRaftHeightMm)
+    {
+        directoryConfigs.TryGetValue(directory, out var dirConfig);
+        var computed = ModelMetadataHelper.Compute(fullFilePath, dirConfig);
+        if (computed.RaftHeightMm.HasValue
+            && float.IsFinite(computed.RaftHeightMm.Value)
+            && computed.RaftHeightMm.Value >= 0f)
+            return computed.RaftHeightMm.Value;
+
+        return ResolveRaftHeightMm(directory, directoryConfigs, defaultRaftHeightMm);
+    }
+
     private static async Task<string> ComputeChecksumAsync(string filePath)
     {
         using var stream = File.OpenRead(filePath);
@@ -636,31 +667,6 @@ public class ModelService(
         return new Dictionary<object, object>();
     }
 
-    private static Dictionary<object, object> ToYamlModelMetadataEntry(ModelMetadataEntry entry)
-    {
-        var result = new Dictionary<object, object>();
-        if (!string.IsNullOrWhiteSpace(entry.Name)) result["name"] = entry.Name;
-        if (!string.IsNullOrWhiteSpace(entry.PartName)) result["part_name"] = entry.PartName;
-        if (!string.IsNullOrWhiteSpace(entry.Creator)) result["creator"] = entry.Creator;
-        if (!string.IsNullOrWhiteSpace(entry.Collection)) result["collection"] = entry.Collection;
-        if (!string.IsNullOrWhiteSpace(entry.Subcollection)) result["subcollection"] = entry.Subcollection;
-        if (!string.IsNullOrWhiteSpace(entry.Category)) result["category"] = entry.Category;
-        if (!string.IsNullOrWhiteSpace(entry.Type)) result["type"] = entry.Type;
-        if (!string.IsNullOrWhiteSpace(entry.Material)) result["material"] = entry.Material;
-        if (entry.Supported.HasValue) result["supported"] = entry.Supported.Value;
-        return result;
-    }
-
-    private static bool IsEmptyModelMetadataEntry(ModelMetadataEntry entry) =>
-        string.IsNullOrWhiteSpace(entry.Name)
-        && string.IsNullOrWhiteSpace(entry.PartName)
-        && string.IsNullOrWhiteSpace(entry.Creator)
-        && string.IsNullOrWhiteSpace(entry.Collection)
-        && string.IsNullOrWhiteSpace(entry.Subcollection)
-        && string.IsNullOrWhiteSpace(entry.Category)
-        && string.IsNullOrWhiteSpace(entry.Type)
-        && string.IsNullOrWhiteSpace(entry.Material)
-        && !entry.Supported.HasValue;
 
     private static void RemoveKeyCaseInsensitive(Dictionary<string, object> data, string key)
     {

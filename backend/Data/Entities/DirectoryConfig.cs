@@ -19,6 +19,7 @@ public class DirectoryConfig
     public bool? RawSupported { get; set; }
     public string? RawSubcollection { get; set; }
     public string? RawModelName { get; set; }
+    public string? RawPartName { get; set; }
     public float? RawRaftHeightMm { get; set; }
 
     // Resolved (composed) values — computed at scan time by walking ancestors; closest non-null wins
@@ -26,6 +27,7 @@ public class DirectoryConfig
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
     public string? ModelName { get; set; }
+    public string? PartName { get; set; }
     public string? Category { get; set; }
     public string? Type { get; set; }
     public string? Material { get; set; }

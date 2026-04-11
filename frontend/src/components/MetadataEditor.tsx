@@ -2,10 +2,6 @@ import { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import FormControl from '@mui/material/FormControl';
-import Checkbox from '@mui/material/Checkbox';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -21,6 +17,11 @@ import {
 import { ConfigValidationError } from '../lib/api';
 import type { MetadataFields } from '../lib/api';
 import AppDialog from './AppDialog';
+import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
+import InheritedHint from './metadata/InheritedHint';
+import MetadataBoolField from './metadata/MetadataBoolField';
+import MetadataSelectField from './metadata/MetadataSelectField';
+import MetadataTextField from './metadata/MetadataTextField';
 import styles from './MetadataEditor.module.css';
 
 type FieldMode = 'value' | 'rule';
@@ -34,35 +35,16 @@ interface FieldDef {
   supportsRules?: boolean;
 }
 
-const FIELDS: FieldDef[] = [
-  {
-    key: 'raftHeightMm',
-    yamlName: 'raftHeight',
-    label: 'Raft Height (mm)',
-    fieldType: 'number',
-    supportsRules: false,
-  },
-  { key: 'modelName', yamlName: 'model_name', label: 'Model Name', fieldType: 'text' },
-  { key: 'creator', yamlName: 'creator', label: 'Creator', fieldType: 'text' },
-  { key: 'collection', yamlName: 'collection', label: 'Collection', fieldType: 'text' },
-  { key: 'subcollection', yamlName: 'subcollection', label: 'Subcollection', fieldType: 'text' },
-  {
-    key: 'category',
-    yamlName: 'category',
-    label: 'Category',
-    fieldType: 'select',
-    optionsField: 'category',
-  },
-  { key: 'type', yamlName: 'type', label: 'Type', fieldType: 'select', optionsField: 'type' },
-  {
-    key: 'material',
-    yamlName: 'material',
-    label: 'Material',
-    fieldType: 'select',
-    optionsField: 'material',
-  },
-  { key: 'supported', yamlName: 'supported', label: 'Supported', fieldType: 'bool' },
-] as const;
+const FIELDS: FieldDef[] = SHARED_FIELDS.filter(
+  (f): f is SharedFieldDef & { yamlName: string } => f.yamlName != null,
+).map((f) => ({
+  key: f.key as keyof Omit<MetadataFields, 'fieldRules'>,
+  yamlName: f.yamlName,
+  label: f.label,
+  fieldType: f.fieldType,
+  optionsField: f.optionsField,
+  supportsRules: f.supportsRules,
+}));
 
 function validateRuleYaml(text: string): string | null {
   const lines = text.trim().split('\n');
@@ -78,64 +60,6 @@ function validateRuleYaml(text: string): string | null {
   }
   if (!hasRule) return 'Must include a "rule:" key (e.g. rule: filename)';
   return null;
-}
-
-function InheritedHint({
-  value,
-  inheritedRule,
-}: {
-  value?: string | boolean | number | null | undefined;
-  inheritedRule?: string | null;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  if (value == null && !inheritedRule) return null;
-
-  const textToCopy = inheritedRule ?? String(value);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
-    }
-  };
-
-  return (
-    <Stack direction="row" alignItems="flex-start" spacing={1} className={styles.hintContainer}>
-      <Typography variant="caption" color="text.disabled" component="div" className={styles.hint}>
-        {inheritedRule ? (
-          <>
-            Inherited rule:
-            <br />
-            <code
-              style={{
-                display: 'block',
-                marginTop: '4px',
-                fontFamily: 'monospace',
-                fontSize: '0.75rem',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {inheritedRule}
-            </code>
-          </>
-        ) : (
-          <>Inherited: {String(value)}</>
-        )}
-      </Typography>
-      <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-        <IconButton size="small" onClick={handleCopy} className={styles.copyBtn}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
-          </svg>
-        </IconButton>
-      </Tooltip>
-    </Stack>
-  );
 }
 
 function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -317,6 +241,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     supported: null,
     raftHeightMm: null,
     modelName: null,
+    partName: null,
   });
   const [fieldModes, setFieldModes] = useState<Record<string, FieldMode>>({});
   const [fieldRuleTexts, setFieldRuleTexts] = useState<Record<string, string>>({});
@@ -546,62 +471,41 @@ export default function MetadataEditor({ path, onClose }: Props) {
 
             {/* Text input */}
             {!isRuleMode && field.fieldType === 'text' && (
-              <TextField
-                size="small"
-                fullWidth
-                value={(fields[field.key] as string | null) ?? ''}
-                placeholder={(parentValue as string | null) ?? undefined}
-                onChange={(e) => setFieldValue(field.key, (e.target.value || null) as never)}
-                slotProps={{ input: { className: styles.fieldInput } }}
+              <MetadataTextField
+                value={(fields[field.key] as string | null) ?? null}
+                inheritedValue={(parentValue as string | null) ?? null}
+                onChange={(v) => setFieldValue(field.key, v as never)}
+                inputClassName={styles.fieldInput}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
               />
             )}
 
             {/* Select input */}
             {!isRuleMode && field.fieldType === 'select' && (
-              <FormControl size="small" fullWidth>
-                <Select
-                  displayEmpty
-                  value={(fields[field.key] as string | null) ?? ''}
-                  onChange={(e) => {
-                    const val = (e.target.value || null) as never;
-                    const next = { ...fields, [field.key]: val };
-                    setFields(next);
-                  }}
-                  className={styles.selectSmall}
-                  renderValue={(v) =>
-                    v ? (
-                      String(v)
-                    ) : (
-                      <em style={{ color: 'inherit', opacity: 0.5 }}>
-                        Not set{parentValue ? ` (${parentValue})` : ''}
-                      </em>
-                    )
-                  }
-                >
-                  <MenuItem value="">
-                    <em>Not set</em>
-                  </MenuItem>
-                  {selectOptions.map((o) => (
-                    <MenuItem key={o} value={o}>
-                      {o}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <MetadataSelectField
+                value={(fields[field.key] as string | null) ?? null}
+                inheritedValue={(parentValue as string | null) ?? null}
+                options={selectOptions}
+                onChange={(v) => setFieldValue(field.key, v as never)}
+                selectClassName={styles.selectSmall}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
+              />
             )}
 
-            {/* Bool checkbox */}
+            {/* Bool input */}
             {!isRuleMode && field.fieldType === 'bool' && (
-              <Checkbox
-                size="small"
-                checked={fields.supported ?? false}
-                indeterminate={fields.supported == null}
-                onChange={() => {
-                  const val = fields.supported == null ? true : fields.supported ? false : null;
-                  const next = { ...fields, supported: val };
-                  setFields(next);
-                }}
-                className={styles.checkbox}
+              <MetadataBoolField
+                value={(fields[field.key] as boolean | null) ?? null}
+                inheritedValue={(parentValue as boolean | null) ?? null}
+                onChange={(v) => setFieldValue(field.key, v as never)}
+                selectClassName={styles.selectSmall}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -625,14 +529,26 @@ export default function MetadataEditor({ path, onClose }: Props) {
                     raw === '' || isValid ? (parsed as never) : (null as never),
                   );
                 }}
-                slotProps={{ input: { className: styles.fieldInput } }}
+                InputProps={{ className: styles.fieldInput }}
               />
             )}
 
             {isRuleMode ? (
-              <InheritedHint inheritedRule={inheritedRule} />
+              <InheritedHint
+                inheritedRule={inheritedRule}
+                className={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
+              />
             ) : (
-              <InheritedHint value={parentValue} />
+              field.fieldType === 'number' && (
+                <InheritedHint
+                  value={parentValue}
+                  className={styles.hintContainer}
+                  hintClassName={styles.hint}
+                  copyBtnClassName={styles.copyBtn}
+                />
+              )
             )}
           </Box>
         );

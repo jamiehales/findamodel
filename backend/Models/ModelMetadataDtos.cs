@@ -13,7 +13,8 @@ public record UpdateModelMetadataRequest(
     string? Category,
     string? Type,
     string? Material,
-    bool? Supported);
+    bool? Supported,
+    float? RaftHeightMm);
 
 /// <summary>
 /// Returned by GET /api/models/{id}/metadata. Contains the per-model overrides (localValues)

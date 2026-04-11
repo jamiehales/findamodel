@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
-import FormControl from '@mui/material/FormControl';
 import IconButton from '@mui/material/IconButton';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import type { Model, ModelMetadata } from '../lib/api';
+import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
+import InheritedHint from './metadata/InheritedHint';
+import MetadataBoolField from './metadata/MetadataBoolField';
+import MetadataSelectField from './metadata/MetadataSelectField';
+import MetadataTextField from './metadata/MetadataTextField';
 import {
   useMetadataDictionaryOverview,
   useModelMetadata,
@@ -24,57 +26,9 @@ interface Props {
 
 type FormState = ModelMetadata;
 
-function InheritedHint({ value }: { value?: string | boolean | number | null | undefined }) {
-  const [copied, setCopied] = useState(false);
+type SharedModelKey = keyof FormState | 'modelName';
 
-  if (value == null) return null;
-
-  const textToCopy = String(value);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
-    }
-  };
-
-  return (
-    <Stack direction="row" alignItems="flex-start" spacing={1} className={styles.hintContainer}>
-      <Typography variant="caption" color="text.disabled" component="div" className={styles.hint}>
-        Inherited: {String(value)}
-      </Typography>
-      <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-        <IconButton size="small" onClick={handleCopy} className={styles.copyBtn}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
-          </svg>
-        </IconButton>
-      </Tooltip>
-    </Stack>
-  );
-}
-
-interface FieldDef {
-  key: keyof FormState;
-  label: string;
-  fieldType: 'text' | 'select' | 'bool';
-  optionsField?: 'category' | 'type' | 'material';
-}
-
-const FIELDS: FieldDef[] = [
-  { key: 'name', label: 'Model Name', fieldType: 'text' },
-  { key: 'partName', label: 'Part Name', fieldType: 'text' },
-  { key: 'creator', label: 'Creator', fieldType: 'text' },
-  { key: 'collection', label: 'Collection', fieldType: 'text' },
-  { key: 'subcollection', label: 'Subcollection', fieldType: 'text' },
-  { key: 'category', label: 'Category', fieldType: 'select', optionsField: 'category' },
-  { key: 'type', label: 'Type', fieldType: 'select', optionsField: 'type' },
-  { key: 'material', label: 'Material', fieldType: 'select', optionsField: 'material' },
-  { key: 'supported', label: 'Supported', fieldType: 'bool' },
-];
+const MODEL_FIELDS: SharedFieldDef[] = SHARED_FIELDS;
 
 const EMPTY_FORM: FormState = {
   name: null,
@@ -86,7 +40,17 @@ const EMPTY_FORM: FormState = {
   type: null,
   material: null,
   supported: null,
+  raftHeightMm: null,
 };
+
+function toModelKey(key: SharedModelKey): keyof FormState {
+  return key === 'modelName' ? 'name' : key;
+}
+
+function getModelValue(data: FormState, key: SharedModelKey): string | boolean | number | null {
+  const modelKey = toModelKey(key);
+  return data[modelKey] as string | boolean | number | null;
+}
 
 export default function ModelMetadataEditor({ model, onClose }: Props) {
   const mutation = useUpdateModelMetadata(model.id);
@@ -103,8 +67,9 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     }
   }, [detail]);
 
-  function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  function setFieldBySharedKey(key: SharedModelKey, value: string | boolean | number | null) {
+    const modelKey = toModelKey(key);
+    setForm((prev) => ({ ...prev, [modelKey]: value }));
   }
 
   async function onSave() {
@@ -122,6 +87,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
         type: form.type,
         material: form.material,
         supported: form.supported,
+        raftHeightMm: form.raftHeightMm,
       });
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
@@ -130,7 +96,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     }
   }
 
-  function getSelectOptions(field: FieldDef, localValue: string | null): string[] {
+  function getSelectOptions(field: SharedFieldDef, localValue: string | null): string[] {
     if (field.optionsField == null) return [];
     const configured =
       metadataDictionary?.[field.optionsField].configured.map((v) => v.value) ?? [];
@@ -141,11 +107,12 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
 
   return (
     <Stack className={styles.form}>
-      {FIELDS.map((field) => {
-        const localValue = form[field.key] as string | boolean | null;
+      {MODEL_FIELDS.map((field) => {
+        const fieldKey = field.key as SharedModelKey;
+        const localValue = getModelValue(form, fieldKey);
         const inheritedValue =
           detail?.inheritedValues != null
-            ? (detail.inheritedValues[field.key] as string | boolean | null)
+            ? (getModelValue(detail.inheritedValues, fieldKey) as string | boolean | number | null)
             : null;
         const hasLocalValue = localValue != null;
         const hasInheritedValue = inheritedValue != null;
@@ -155,7 +122,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
             ? getSelectOptions(field, typeof localValue === 'string' ? localValue : null)
             : [];
 
-        const handleReset = () => setField(field.key, null as never);
+        const handleReset = () => setFieldBySharedKey(fieldKey, null);
 
         return (
           <Stack key={field.key}>
@@ -187,79 +154,70 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
             </Stack>
 
             {field.fieldType === 'text' && (
-              <TextField
-                size="small"
-                fullWidth
-                value={typeof localValue === 'string' ? localValue : ''}
-                placeholder={typeof inheritedValue === 'string' ? inheritedValue : undefined}
-                onChange={(e) => setField(field.key, (e.target.value || null) as never)}
-                InputProps={{ className: styles.fieldInput }}
+              <MetadataTextField
+                value={typeof localValue === 'string' ? localValue : null}
+                inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
+                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                inputClassName={styles.fieldInput}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
               />
             )}
 
             {field.fieldType === 'select' && (
-              <FormControl size="small" fullWidth>
-                <Select
-                  displayEmpty
-                  value={typeof localValue === 'string' ? localValue : ''}
-                  onChange={(e) => setField(field.key, (e.target.value || null) as never)}
-                  className={styles.selectSmall}
-                  renderValue={(v) =>
-                    v ? (
-                      String(v)
-                    ) : (
-                      <em style={{ color: 'inherit', opacity: 0.5 }}>
-                        Not set{inheritedValue ? ` (${inheritedValue})` : ''}
-                      </em>
-                    )
-                  }
-                >
-                  <MenuItem value="">
-                    <em>Not set</em>
-                  </MenuItem>
-                  {selectOptions.map((o) => (
-                    <MenuItem key={o} value={o}>
-                      {o}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <MetadataSelectField
+                value={typeof localValue === 'string' ? localValue : null}
+                inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
+                options={selectOptions}
+                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                selectClassName={styles.selectSmall}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
+              />
             )}
 
             {field.fieldType === 'bool' && (
-              <FormControl size="small" fullWidth>
-                <Select
-                  displayEmpty
-                  value={localValue === null ? '' : String(localValue)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setField(field.key, (v === '' ? null : v === 'true') as never);
-                  }}
-                  className={styles.selectSmall}
-                  renderValue={(v) =>
-                    v !== '' ? (
-                      v === 'true' ? (
-                        'True'
-                      ) : (
-                        'False'
-                      )
-                    ) : (
-                      <em style={{ color: 'inherit', opacity: 0.5 }}>
-                        Not set{inheritedValue != null ? ` (${String(inheritedValue)})` : ''}
-                      </em>
-                    )
-                  }
-                >
-                  <MenuItem value="">
-                    <em>Not set</em>
-                  </MenuItem>
-                  <MenuItem value="true">True</MenuItem>
-                  <MenuItem value="false">False</MenuItem>
-                </Select>
-              </FormControl>
+              <MetadataBoolField
+                value={typeof localValue === 'boolean' ? localValue : null}
+                inheritedValue={typeof inheritedValue === 'boolean' ? inheritedValue : null}
+                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                selectClassName={styles.selectSmall}
+                hintContainerClassName={styles.hintContainer}
+                hintClassName={styles.hint}
+                copyBtnClassName={styles.copyBtn}
+              />
             )}
 
-            <InheritedHint value={inheritedValue} />
+            {field.fieldType === 'number' && (
+              <>
+                <TextField
+                  size="small"
+                  fullWidth
+                  type="number"
+                  value={typeof localValue === 'number' ? localValue : ''}
+                  placeholder={
+                    typeof inheritedValue === 'number' && Number.isFinite(inheritedValue)
+                      ? String(inheritedValue)
+                      : undefined
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    const parsed = raw === '' ? null : Number(raw);
+                    const valid = parsed == null || (Number.isFinite(parsed) && parsed >= 0);
+                    setFieldBySharedKey(fieldKey, valid ? parsed : null);
+                  }}
+                  InputProps={{ className: styles.fieldInput }}
+                />
+                <InheritedHint
+                  value={typeof inheritedValue === 'number' ? inheritedValue : null}
+                  className={styles.hintContainer}
+                  hintClassName={styles.hint}
+                  copyBtnClassName={styles.copyBtn}
+                />
+              </>
+            )}
           </Stack>
         );
       })}

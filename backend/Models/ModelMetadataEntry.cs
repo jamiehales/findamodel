@@ -10,4 +10,5 @@ public record ModelMetadataEntry(
     string? Category = null,
     string? Type = null,
     string? Material = null,
-    bool? Supported = null);
+    bool? Supported = null,
+    float? RaftHeightMm = null);

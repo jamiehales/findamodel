@@ -1,13 +1,6 @@
-export interface MetadataFields {
-  creator: string | null;
-  collection: string | null;
-  subcollection: string | null;
-  category: string | null;
-  type: string | null;
-  material: string | null;
-  supported: boolean | null;
-  raftHeightMm: number | null;
-  modelName: string | null;
+import type { CommonMetadataFields } from './metadata';
+
+export interface MetadataFields extends CommonMetadataFields {
   /** When provided, fully replaces the rule set for this directory. Maps YAML field name
    *  (e.g. "creator", "model_name") to inner rule YAML (e.g. "rule: filename\nindex: -2"). */
   fieldRules?: Record<string, string> | null;

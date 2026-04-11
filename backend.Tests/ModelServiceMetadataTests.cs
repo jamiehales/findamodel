@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -184,7 +185,8 @@ public class ModelServiceMetadataTests
                 Category: "miniature",
                 Type: "whole",
                 Material: "resin",
-                Supported: true));
+                Supported: true,
+                RaftHeightMm: null));
 
             Assert.NotNull(dto);
 
@@ -249,6 +251,85 @@ public class ModelServiceMetadataTests
             if (Directory.Exists(modelsRoot))
                 Directory.Delete(modelsRoot, recursive: true);
         }
+    }
+
+    [Fact]
+    public void ModelLevelRaftOverride_ChangesExpectedChecksum_AndFlagsHullStale()
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        try
+        {
+            var fullPath = Path.Combine(modelsRoot, "dragon.stl");
+            File.WriteAllText(fullPath, "solid dragon\nendsolid dragon\n");
+
+            const float defaultRaft = 2f;
+            const float overrideRaft = 7.5f;
+            var directory = "";
+
+            var directoryConfigs = new Dictionary<string, DirectoryConfig>
+            {
+                [""] = new DirectoryConfig
+                {
+                    DirectoryPath = "",
+                    RawModelMetadataJson =
+                        $$"""
+                        {
+                          "dragon.stl": {
+                            "raftHeightMm": {{overrideRaft.ToString(System.Globalization.CultureInfo.InvariantCulture)}}
+                          }
+                        }
+                        """,
+                    RaftHeightMm = defaultRaft,
+                }
+            };
+
+            var expectedRaft = InvokeResolveRaftHeightMmForModel(
+                fullPath,
+                directory,
+                directoryConfigs,
+                defaultRaft);
+
+            Assert.Equal(overrideRaft, expectedRaft);
+
+            var storedChecksum = ScanConfig.Compute(defaultRaft);
+            Assert.True(InvokeNeedsHullRegeneration(storedChecksum, expectedRaft));
+            Assert.False(InvokeNeedsHullRegeneration(ScanConfig.Compute(overrideRaft), expectedRaft));
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    private static float InvokeResolveRaftHeightMmForModel(
+        string fullFilePath,
+        string directory,
+        Dictionary<string, DirectoryConfig> directoryConfigs,
+        float defaultRaftHeightMm)
+    {
+        var method = typeof(ModelService).GetMethod(
+            "ResolveRaftHeightMmForModel",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method!.Invoke(null, [fullFilePath, directory, directoryConfigs, defaultRaftHeightMm]);
+        Assert.IsType<float>(result);
+        return (float)result!;
+    }
+
+    private static bool InvokeNeedsHullRegeneration(string? storedChecksum, float expectedRaftHeightMm)
+    {
+        var method = typeof(ModelService).GetMethod(
+            "NeedsHullRegeneration",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method!.Invoke(null, [storedChecksum, expectedRaftHeightMm]);
+        Assert.IsType<bool>(result);
+        return (bool)result!;
     }
 
     private static async Task<string> ComputeChecksumAsync(string filePath)

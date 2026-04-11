@@ -1,3 +1,5 @@
+import type { CommonMetadataFields } from './metadata';
+
 export interface Model {
   id: string;
   name: string;
@@ -298,25 +300,27 @@ export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
 export interface UpdateModelMetadataRequest {
   name: string | null;
   partName: string | null;
-  creator: string | null;
-  collection: string | null;
-  subcollection: string | null;
-  category: string | null;
-  type: string | null;
-  material: string | null;
-  supported: boolean | null;
+  creator: CommonMetadataFields['creator'];
+  collection: CommonMetadataFields['collection'];
+  subcollection: CommonMetadataFields['subcollection'];
+  category: CommonMetadataFields['category'];
+  type: CommonMetadataFields['type'];
+  material: CommonMetadataFields['material'];
+  supported: CommonMetadataFields['supported'];
+  raftHeightMm: CommonMetadataFields['raftHeightMm'];
 }
 
 export interface ModelMetadata {
   name: string | null;
   partName: string | null;
-  creator: string | null;
-  collection: string | null;
-  subcollection: string | null;
-  category: string | null;
-  type: string | null;
-  material: string | null;
-  supported: boolean | null;
+  creator: CommonMetadataFields['creator'];
+  collection: CommonMetadataFields['collection'];
+  subcollection: CommonMetadataFields['subcollection'];
+  category: CommonMetadataFields['category'];
+  type: CommonMetadataFields['type'];
+  material: CommonMetadataFields['material'];
+  supported: CommonMetadataFields['supported'];
+  raftHeightMm: CommonMetadataFields['raftHeightMm'];
 }
 
 export interface ModelMetadataDetail {

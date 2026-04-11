@@ -339,6 +339,7 @@ public class MetadataConfigService(
                 Supported = record.RawSupported,
                 RaftHeightMm = record.RawRaftHeightMm,
                 ModelName = record.RawModelName,
+                PartName = record.RawPartName,
             }
             : new ConfigFieldsDto();
 
@@ -357,6 +358,7 @@ public class MetadataConfigService(
                 Supported = parentRecord.Supported,
                 RaftHeightMm = parentRecord.RaftHeightMm,
                 ModelName = parentRecord.ModelName,
+                PartName = parentRecord.PartName,
             };
 
         HashSet<string>? localRuleFields = null;

@@ -11,6 +11,7 @@ public record UpdateDirectoryConfigRequest(
     bool? Supported,
     float? RaftHeightMm,
     string? ModelName = null,
+    string? PartName = null,
     /// <summary>
     /// When non-null, fully defines the rule set for this directory (replaces any existing rules).
     /// Each entry maps a YAML field name (e.g. "creator", "model_name") to the inner rule YAML
@@ -30,6 +31,7 @@ public record ConfigFieldsDto
     public bool? Supported { get; init; }
     public float? RaftHeightMm { get; init; }
     public string? ModelName { get; init; }
+    public string? PartName { get; init; }
 }
 
 /// <summary>

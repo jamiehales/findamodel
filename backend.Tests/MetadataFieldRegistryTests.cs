@@ -24,6 +24,7 @@ public class MetadataFieldRegistryTests
     [InlineData("material")]
     [InlineData("supported")]
     [InlineData("model_name")]
+    [InlineData("part_name")]
     public void TryGet_ReturnsTrue_ForAllKnownKeys(string key)
     {
         Assert.True(MetadataFieldRegistry.TryGet(key, out _));
@@ -49,7 +50,7 @@ public class MetadataFieldRegistryTests
     // ── Keys ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Keys_ContainsAllEightExpectedFields()
+    public void Keys_ContainsAllNineExpectedFields()
     {
         var keys = MetadataFieldRegistry.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         Assert.Contains("creator", keys);
@@ -60,15 +61,16 @@ public class MetadataFieldRegistryTests
         Assert.Contains("material", keys);
         Assert.Contains("supported", keys);
         Assert.Contains("model_name", keys);
-        Assert.Equal(8, keys.Count);
+        Assert.Contains("part_name", keys);
+        Assert.Equal(9, keys.Count);
     }
 
     // ── Definitions ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Definitions_ContainsEightEntries()
+    public void Definitions_ContainsNineEntries()
     {
-        Assert.Equal(8, MetadataFieldRegistry.Definitions.Length);
+        Assert.Equal(9, MetadataFieldRegistry.Definitions.Length);
     }
 
     // ── GetRuleFieldType ──────────────────────────────────────────────────────
@@ -78,6 +80,7 @@ public class MetadataFieldRegistryTests
     [InlineData("collection", RuleFieldType.String)]
     [InlineData("subcollection", RuleFieldType.String)]
     [InlineData("model_name", RuleFieldType.String)]
+    [InlineData("part_name", RuleFieldType.String)]
     public void GetRuleFieldType_ReturnsString_ForStringFields(string key, RuleFieldType expected)
     {
         Assert.Equal(expected, MetadataFieldRegistry.GetRuleFieldType(key));

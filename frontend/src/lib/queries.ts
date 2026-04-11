@@ -36,6 +36,7 @@ import {
   deleteMetadataDictionaryValue,
   fetchAppConfig,
   updateAppConfig,
+  type UpdateModelMetadataRequest,
 } from './api';
 
 export const queryKeys = {
@@ -75,17 +76,7 @@ export function useModel(id: string) {
 export function useUpdateModelMetadata(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (request: {
-      name: string | null;
-      partName: string | null;
-      creator: string | null;
-      collection: string | null;
-      subcollection: string | null;
-      category: string | null;
-      type: string | null;
-      material: string | null;
-      supported: boolean | null;
-    }) => updateModelMetadata(id, request),
+    mutationFn: (request: UpdateModelMetadataRequest) => updateModelMetadata(id, request),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.model(id), updated);
       queryClient.invalidateQueries({ queryKey: queryKeys.modelMetadata(id) });
