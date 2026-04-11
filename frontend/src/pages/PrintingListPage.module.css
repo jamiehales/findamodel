@@ -2,12 +2,6 @@
   align-self: center;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.875rem;
-}
-
 .archiveStatusCard {
   display: flex;
   flex-direction: column;

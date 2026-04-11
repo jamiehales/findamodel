@@ -6,14 +6,6 @@
   gap: 0.75rem;
 }
 
-.grid {
-  --card-min-width: 240px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
-  gap: 0.875rem;
-  align-items: start;
-}
-
 .sectionWithMargin {
   margin-bottom: 2rem;
 }

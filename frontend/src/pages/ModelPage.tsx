@@ -189,7 +189,6 @@ function ModelPage() {
         <Box className={styles.viewerBox}>
           <ModelViewer
             modelId={model.id}
-            fileType={model.fileType}
             convexHull={model.convexHull}
             concaveHull={model.concaveHull}
             convexSansRaftHull={model.convexSansRaftHull}

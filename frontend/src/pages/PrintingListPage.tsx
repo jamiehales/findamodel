@@ -34,6 +34,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
 import PageLayout from '../components/layouts/PageLayout';
+import CardGrid from '../components/CardGrid';
 import styles from './PrintingListPage.module.css';
 
 function PrintingListPage() {
@@ -384,7 +385,7 @@ function PrintingListPage() {
         </Box>
       ) : (
         <>
-          <Box className={styles.grid}>
+          <CardGrid minCardWidth={160}>
             {listedModels.map((model) => (
               <ModelCard
                 key={model.id}
@@ -392,7 +393,7 @@ function PrintingListPage() {
                 href={`/model/${encodeURIComponent(model.id)}`}
               />
             ))}
-          </Box>
+          </CardGrid>
 
           <Box className={styles.canvasWrapper}>
             <PrintingListCanvas

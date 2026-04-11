@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack';
 import { useModels, useQueryModels } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import ModelCard from './ModelCard';
+import CardGrid from './CardGrid';
 import styles from './ModelGrid.module.css';
 
 const PAGE_SIZE = 25;
@@ -23,11 +24,11 @@ function FilteredGrid({ filter }: { filter: ModelFilter }) {
 
   return (
     <Box className={styles.container}>
-      <Box className={styles.grid}>
+      <CardGrid>
         {data.models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}
-      </Box>
+      </CardGrid>
       {data.hasMore && (
         <Stack alignItems="center" paddingTop={2}>
           <Button variant="outlined" onClick={() => setLimit((l) => l + PAGE_SIZE)}>
@@ -47,11 +48,11 @@ function UnfilteredGrid() {
 
   return (
     <Box className={styles.container}>
-      <Box className={styles.grid}>
+      <CardGrid>
         {models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}
-      </Box>
+      </CardGrid>
     </Box>
   );
 }
