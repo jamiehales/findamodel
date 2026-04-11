@@ -10,11 +10,7 @@ import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import AppCard from './AppCard';
 import PrintingListControls from './PrintingListControls';
 import styles from './ExplorerModelCard.module.css';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatBytes } from '../lib/utils';
 
 const badgeColors: Record<string, { bg: string; color: string }> = {
   stl: { bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },

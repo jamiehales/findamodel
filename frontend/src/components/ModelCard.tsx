@@ -3,11 +3,7 @@ import type { Model } from '../lib/api';
 import AppCard from './AppCard';
 import PrintingListControls from './PrintingListControls';
 import styles from './ModelCard.module.css';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatBytes } from '../lib/utils';
 
 function getFileName(relativePath: string): string {
   const parts = relativePath.split('/');
