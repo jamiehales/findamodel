@@ -80,22 +80,42 @@ public class ExplorerService(
 
             dirConfigs.TryGetValue(childPath, out var dc);
             var resolved = dc != null
-                ? new ConfigFieldsDto(dc.Creator, dc.Collection, dc.Subcollection,
-                                      dc.Category, dc.Type, dc.Material, dc.Supported, dc.ModelName)
-                : new ConfigFieldsDto(
-                    currentDirConfig?.Creator,
-                    currentDirConfig?.Collection,
-                    currentDirConfig?.Subcollection,
-                    currentDirConfig?.Category,
-                    currentDirConfig?.Type,
-                    currentDirConfig?.Material,
-                    currentDirConfig?.Supported,
-                    currentDirConfig?.ModelName);
+                ? new ConfigFieldsDto
+                {
+                    Creator = dc.Creator,
+                    Collection = dc.Collection,
+                    Subcollection = dc.Subcollection,
+                    Category = dc.Category,
+                    Type = dc.Type,
+                    Material = dc.Material,
+                    Supported = dc.Supported,
+                    ModelName = dc.ModelName,
+                }
+                : new ConfigFieldsDto
+                {
+                    Creator = currentDirConfig?.Creator,
+                    Collection = currentDirConfig?.Collection,
+                    Subcollection = currentDirConfig?.Subcollection,
+                    Category = currentDirConfig?.Category,
+                    Type = currentDirConfig?.Type,
+                    Material = currentDirConfig?.Material,
+                    Supported = currentDirConfig?.Supported,
+                    ModelName = currentDirConfig?.ModelName,
+                };
 
             var localValues = dc != null
-                ? new ConfigFieldsDto(dc.RawCreator, dc.RawCollection, dc.RawSubcollection,
-                                      dc.RawCategory, dc.RawType, dc.RawMaterial, dc.RawSupported, dc.RawModelName)
-                : new ConfigFieldsDto(null, null, null, null, null, null, null);
+                ? new ConfigFieldsDto
+                {
+                    Creator = dc.RawCreator,
+                    Collection = dc.RawCollection,
+                    Subcollection = dc.RawSubcollection,
+                    Category = dc.RawCategory,
+                    Type = dc.RawType,
+                    Material = dc.RawMaterial,
+                    Supported = dc.RawSupported,
+                    ModelName = dc.RawModelName,
+                }
+                : new ConfigFieldsDto();
 
             var ruleConfigs = BuildRuleConfigs(dc?.ResolvedRulesYaml);
             if (dc == null && currentDirConfig != null)
@@ -151,14 +171,17 @@ public class ExplorerService(
     {
         if (dc == null && resolvedRules.Count == 0) return (null, null);
 
-        string? creator = dc?.Creator;
-        string? collection = dc?.Collection;
-        string? subcollection = dc?.Subcollection;
-        string? category = dc?.Category;
-        string? type = dc?.Type;
-        string? material = dc?.Material;
-        bool? supported = dc?.Supported;
-        string? modelName = dc?.ModelName;
+        var resolvedValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["creator"] = dc?.Creator,
+            ["collection"] = dc?.Collection,
+            ["subcollection"] = dc?.Subcollection,
+            ["category"] = dc?.Category,
+            ["type"] = dc?.Type,
+            ["material"] = dc?.Material,
+            ["supported"] = dc?.Supported,
+            ["model_name"] = dc?.ModelName,
+        };
 
         Dictionary<string, string>? ruleConfigs = null;
 
@@ -167,54 +190,54 @@ public class ExplorerService(
             // Build available (non-rule) fields to pass to parsers
             var available = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["creator"] = creator,
-                ["collection"] = collection,
-                ["subcollection"] = subcollection,
-                ["category"] = category,
-                ["type"] = type,
-                ["material"] = material,
-                ["model_name"] = modelName,
+                ["creator"] = resolvedValues["creator"] as string,
+                ["collection"] = resolvedValues["collection"] as string,
+                ["subcollection"] = resolvedValues["subcollection"] as string,
+                ["category"] = resolvedValues["category"] as string,
+                ["type"] = resolvedValues["type"] as string,
+                ["material"] = resolvedValues["material"] as string,
+                ["model_name"] = resolvedValues["model_name"] as string,
             };
             foreach (var field in resolvedRules.Keys) available.Remove(field);
-
-            var fieldTypes = new Dictionary<string, RuleFieldType>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["supported"] = RuleFieldType.Bool,
-                ["category"] = RuleFieldType.Enum,
-                ["type"] = RuleFieldType.Enum,
-                ["material"] = RuleFieldType.Enum,
-            };
 
             ruleConfigs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (field, ruleEl) in resolvedRules)
             {
-                var ft = fieldTypes.TryGetValue(field, out var t) ? t : RuleFieldType.String;
+                var normalizedField = MetadataFieldRegistry.TryGet(field, out var fieldDef)
+                    ? fieldDef.Key
+                    : field.ToLowerInvariant();
+                var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
                 var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl, ft);
                 if (value == null) continue;
 
-                ruleConfigs[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
-                switch (field.ToLowerInvariant())
+                ruleConfigs[normalizedField] = RuleConfigToYamlSnippet(field, ruleEl);
+                object? convertedValue = ft switch
                 {
-                    case "creator": creator = value; break;
-                    case "collection": collection = value; break;
-                    case "subcollection": subcollection = value; break;
-                    case "category": category = ValidateEnumValue(value, ["Bust", "Miniature", "Uncategorized"]); break;
-                    case "type": type = ValidateEnumValue(value, ["Whole", "Part"]); break;
-                    case "material": material = ValidateEnumValue(value, ["FDM", "Resin", "Any"]); break;
-                    case "model_name": modelName = value; break;
-                    case "supported": supported = value.Equals("true", StringComparison.OrdinalIgnoreCase); break;
-                }
+                    RuleFieldType.Bool => value.Equals("true", StringComparison.OrdinalIgnoreCase),
+                    RuleFieldType.Enum => MetadataFieldRegistry.ValidateEnumValue(normalizedField, value),
+                    _ => value,
+                };
+                resolvedValues[normalizedField] = convertedValue;
             }
 
             if (ruleConfigs.Count == 0) ruleConfigs = null;
         }
 
         // Return null metadata if all fields are null
-        if (creator == null && collection == null && subcollection == null
-            && category == null && type == null && material == null && supported == null && modelName == null)
+        if (resolvedValues.Values.All(v => v == null))
             return (null, null);
 
-        return (new ConfigFieldsDto(creator, collection, subcollection, category, type, material, supported, modelName), ruleConfigs);
+        return (new ConfigFieldsDto
+        {
+            Creator = resolvedValues["creator"] as string,
+            Collection = resolvedValues["collection"] as string,
+            Subcollection = resolvedValues["subcollection"] as string,
+            Category = resolvedValues["category"] as string,
+            Type = resolvedValues["type"] as string,
+            Material = resolvedValues["material"] as string,
+            Supported = resolvedValues["supported"] as bool?,
+            ModelName = resolvedValues["model_name"] as string,
+        }, ruleConfigs);
     }
 
     /// <summary>
@@ -269,12 +292,6 @@ public class ExplorerService(
             sb.AppendLine($"  {prop.Name}: {val}");
         }
         return sb.ToString().TrimEnd();
-    }
-
-    private static string? ValidateEnumValue(string? value, string[] allowed)
-    {
-        if (value == null) return null;
-        return Array.Find(allowed, a => string.Equals(a, value, StringComparison.OrdinalIgnoreCase));
     }
 
     private static int CountSubdirectories(string fullPath)

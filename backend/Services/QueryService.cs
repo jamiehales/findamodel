@@ -56,35 +56,7 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
 
         return new ModelQueryResult
         {
-            Models = models.Select(m => new ModelDto
-            {
-                Id = m.Id,
-                Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-                RelativePath = string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
-                FileType = m.FileType,
-                FileSize = m.FileSize,
-                FileUrl = $"/api/models/{m.Id}/file",
-                HasPreview = m.PreviewImagePath != null,
-                PreviewUrl = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
-                Creator = m.CalculatedCreator,
-                Collection = m.CalculatedCollection,
-                Subcollection = m.CalculatedSubcollection,
-                Category = m.CalculatedCategory,
-                Type = m.CalculatedType,
-                Material = m.CalculatedMaterial,
-                Supported = m.CalculatedSupported,
-                ConvexHull = m.ConvexHullCoordinates,
-                ConcaveHull = m.ConcaveHullCoordinates,
-                ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-                RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-                DimensionXMm = m.DimensionXMm,
-                DimensionYMm = m.DimensionYMm,
-                DimensionZMm = m.DimensionZMm,
-                SphereCentreX = m.SphereCentreX,
-                SphereCentreY = m.SphereCentreY,
-                SphereCentreZ = m.SphereCentreZ,
-                SphereRadius = m.SphereRadius,
-            }).ToList(),
+            Models = models.Select(m => m.ToModelDto()).ToList(),
             TotalCount = totalCount,
             HasMore = request.Offset + request.Limit < totalCount,
         };

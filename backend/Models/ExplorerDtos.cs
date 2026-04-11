@@ -18,15 +18,17 @@ public record UpdateDirectoryConfigRequest(
     Dictionary<string, string>? FieldRules = null);
 
 /// <summary>A snapshot of raw or resolved metadata fields for a directory.</summary>
-public record ConfigFieldsDto(
-    string? Creator,
-    string? Collection,
-    string? Subcollection,
-    string? Category,
-    string? Type,
-    string? Material,
-    bool? Supported,
-    string? ModelName = null);
+public record ConfigFieldsDto
+{
+    public string? Creator { get; init; }
+    public string? Collection { get; init; }
+    public string? Subcollection { get; init; }
+    public string? Category { get; init; }
+    public string? Type { get; init; }
+    public string? Material { get; init; }
+    public bool? Supported { get; init; }
+    public string? ModelName { get; init; }
+}
 
 /// <summary>
 /// Full config detail for a directory, including the local (raw) values and the

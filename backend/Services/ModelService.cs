@@ -25,35 +25,7 @@ public class ModelService(
 
         var models = await (limit.HasValue ? modelsQuery.Take(limit.Value) : modelsQuery).ToListAsync();
 
-        return models.Select(m => new ModelDto
-        {
-            Id = m.Id,
-            Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-            RelativePath = ComputeRelativePath(m.Directory, m.FileName),
-            FileType = m.FileType,
-            FileSize = m.FileSize,
-            FileUrl = $"/api/models/{m.Id}/file",
-            HasPreview = m.PreviewImagePath != null,
-            PreviewUrl = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
-            Creator = m.CalculatedCreator,
-            Collection = m.CalculatedCollection,
-            Subcollection = m.CalculatedSubcollection,
-            Category = m.CalculatedCategory,
-            Type = m.CalculatedType,
-            Material = m.CalculatedMaterial,
-            Supported = m.CalculatedSupported,
-            ConvexHull = m.ConvexHullCoordinates,
-            ConcaveHull = m.ConcaveHullCoordinates,
-            ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-            DimensionXMm = m.DimensionXMm,
-            DimensionYMm = m.DimensionYMm,
-            DimensionZMm = m.DimensionZMm,
-            SphereCentreX = m.SphereCentreX,
-            SphereCentreY = m.SphereCentreY,
-            SphereCentreZ = m.SphereCentreZ,
-            SphereRadius = m.SphereRadius
-        }).ToList();
+        return models.Select(m => m.ToModelDto()).ToList();
     }
 
     public async Task<CachedModel?> GetModelAsync(Guid id)
@@ -67,67 +39,9 @@ public class ModelService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var m = await db.Models
             .Where(m => m.Id == id)
-            .Select(m => new
-            {
-                m.Id,
-                m.FileName,
-                m.Directory,
-                m.FileType,
-                m.FileSize,
-                HasPreview = m.PreviewImagePath != null,
-                m.CalculatedCreator,
-                m.CalculatedCollection,
-                m.CalculatedSubcollection,
-                m.CalculatedCategory,
-                m.CalculatedType,
-                m.CalculatedMaterial,
-                m.CalculatedSupported,
-                m.CalculatedModelName,
-                m.ConvexHullCoordinates,
-                m.ConcaveHullCoordinates,
-                m.ConvexSansRaftHullCoordinates,
-                m.HullRaftOffsetMm,
-                m.DimensionXMm,
-                m.DimensionYMm,
-                m.DimensionZMm,
-                m.SphereCentreX,
-                m.SphereCentreY,
-                m.SphereCentreZ,
-                m.SphereRadius
-            })
             .FirstOrDefaultAsync();
 
-        if (m == null) return null;
-
-        return new ModelDto
-        {
-            Id = m.Id,
-            Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-            RelativePath = ComputeRelativePath(m.Directory, m.FileName),
-            FileType = m.FileType,
-            FileSize = m.FileSize,
-            FileUrl = $"/api/models/{m.Id}/file",
-            HasPreview = m.HasPreview,
-            PreviewUrl = m.HasPreview ? $"/api/models/{m.Id}/preview" : null,
-            Creator = m.CalculatedCreator,
-            Collection = m.CalculatedCollection,
-            Subcollection = m.CalculatedSubcollection,
-            Category = m.CalculatedCategory,
-            Type = m.CalculatedType,
-            Material = m.CalculatedMaterial,
-            Supported = m.CalculatedSupported,
-            ConvexHull = m.ConvexHullCoordinates,
-            ConcaveHull = m.ConcaveHullCoordinates,
-            ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-            DimensionXMm = m.DimensionXMm,
-            DimensionYMm = m.DimensionYMm,
-            DimensionZMm = m.DimensionZMm,
-            SphereCentreX = m.SphereCentreX,
-            SphereCentreY = m.SphereCentreY,
-            SphereCentreZ = m.SphereCentreZ,
-            SphereRadius = m.SphereRadius,
-        };
+        return m?.ToModelDto();
     }
 
     public async Task<string?> GetPreviewImagePathAsync(Guid id)
@@ -403,7 +317,7 @@ public class ModelService(
             .Select(m => new RelatedModelDto(
                 m.Id,
                 m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-                ComputeRelativePath(m.Directory, m.FileName),
+                string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
                 m.FileType,
                 m.FileSize,
                 m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null))
@@ -450,14 +364,7 @@ public class ModelService(
         entity.PreviewImagePath = d.PreviewImagePath;
         entity.PreviewGeneratedAt = d.PreviewImagePath != null ? DateTime.UtcNow : null;
         ApplyHullData(entity, d.ConvexHull, d.ConcaveHull, d.ConvexSansRaftHull, d.Geometry is not null);
-        entity.CalculatedCreator = d.Metadata.Creator;
-        entity.CalculatedCollection = d.Metadata.Collection;
-        entity.CalculatedSubcollection = d.Metadata.Subcollection;
-        entity.CalculatedCategory = d.Metadata.Category;
-        entity.CalculatedType = d.Metadata.Type;
-        entity.CalculatedMaterial = d.Metadata.Material;
-        entity.CalculatedSupported = d.Metadata.Supported;
-        entity.CalculatedModelName = d.Metadata.ModelName;
+        entity.ApplyCalculatedMetadata(d.Metadata);
         entity.DimensionXMm = ToFiniteOrNull(d.Geometry?.DimensionXMm);
         entity.DimensionYMm = ToFiniteOrNull(d.Geometry?.DimensionYMm);
         entity.DimensionZMm = ToFiniteOrNull(d.Geometry?.DimensionZMm);
@@ -511,6 +418,4 @@ public class ModelService(
         return Convert.ToHexString(hash).ToLower();
     }
 
-    private static string ComputeRelativePath(string directory, string fileName) =>
-        string.IsNullOrEmpty(directory) ? fileName : $"{directory}/{fileName}";
 }
