@@ -7,5 +7,6 @@ public class FilterOptionsDto
     public List<string> Subcollections { get; set; } = [];
     public List<string> Categories { get; set; } = [];
     public List<string> Types { get; set; } = [];
+    public List<string> Materials { get; set; } = [];
     public List<string> FileTypes { get; set; } = [];
 }

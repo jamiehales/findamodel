@@ -16,25 +16,27 @@ internal static class ModelMetadataHelper
         string? Subcollection,
         string? Category,
         string? Type,
+        string? Material,
         bool? Supported,
         string? ModelName);
 
     public static ComputedMetadata Compute(string fullFilePath, DirectoryConfig? dirConfig)
     {
         if (dirConfig == null)
-            return new ComputedMetadata(null, null, null, null, null, null, null);
+            return new ComputedMetadata(null, null, null, null, null, null, null, null);
 
         var resolvedRules = RuleRegistry.DeserializeRules(dirConfig.ResolvedRulesYaml);
         var availableFields = new Dictionary<string, string?>();
 
         return new ComputedMetadata(
-            Creator:       EvaluateString("creator",       dirConfig.Creator,       resolvedRules, fullFilePath, availableFields),
-            Collection:    EvaluateString("collection",    dirConfig.Collection,    resolvedRules, fullFilePath, availableFields),
+            Creator: EvaluateString("creator", dirConfig.Creator, resolvedRules, fullFilePath, availableFields),
+            Collection: EvaluateString("collection", dirConfig.Collection, resolvedRules, fullFilePath, availableFields),
             Subcollection: EvaluateString("subcollection", dirConfig.Subcollection, resolvedRules, fullFilePath, availableFields),
-            Category:      EvaluateString("category",      dirConfig.Category,      resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
-            Type:          EvaluateString("type",          dirConfig.Type,          resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
-            Supported:     EvaluateBool  ("supported",     dirConfig.Supported,     resolvedRules, fullFilePath, availableFields),
-            ModelName:     EvaluateString("model_name",    dirConfig.ModelName,     resolvedRules, fullFilePath, availableFields)
+            Category: EvaluateString("category", dirConfig.Category, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
+            Type: EvaluateString("type", dirConfig.Type, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
+            Material: EvaluateString("material", dirConfig.Material, resolvedRules, fullFilePath, availableFields, RuleFieldType.Enum),
+            Supported: EvaluateBool("supported", dirConfig.Supported, resolvedRules, fullFilePath, availableFields),
+            ModelName: EvaluateString("model_name", dirConfig.ModelName, resolvedRules, fullFilePath, availableFields)
         );
     }
 

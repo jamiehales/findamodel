@@ -18,6 +18,7 @@ function toFilter(searchParams: URLSearchParams): ModelFilter {
     subcollection: searchParams.getAll('subcollection'),
     category: searchParams.getAll('category'),
     type: searchParams.getAll('type'),
+    material: searchParams.getAll('material'),
     fileType: searchParams.getAll('fileType'),
     supported,
   };
@@ -31,6 +32,7 @@ function toSearchParams(filter: ModelFilter): URLSearchParams {
   for (const value of filter.subcollection) params.append('subcollection', value);
   for (const value of filter.category) params.append('category', value);
   for (const value of filter.type) params.append('type', value);
+  for (const value of filter.material) params.append('material', value);
   for (const value of filter.fileType) params.append('fileType', value);
   if (filter.supported !== null) params.set('supported', String(filter.supported));
   return params;

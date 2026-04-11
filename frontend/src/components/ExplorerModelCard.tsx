@@ -93,6 +93,12 @@ function MetaBadges({
       isRule: 'type' in (ruleConfigs ?? {}),
       ruleYaml: ruleConfigs?.type,
     });
+  if (meta.material)
+    entries.push({
+      value: meta.material,
+      isRule: 'material' in (ruleConfigs ?? {}),
+      ruleYaml: ruleConfigs?.material,
+    });
   if (meta.supported != null)
     entries.push({ value: meta.supported ? 'Supported' : 'Unsupported', isRule: false });
 

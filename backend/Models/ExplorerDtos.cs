@@ -7,6 +7,7 @@ public record UpdateDirectoryConfigRequest(
     string? Subcollection,
     string? Category,
     string? Type,
+    string? Material,
     bool? Supported,
     string? ModelName = null,
     /// <summary>
@@ -23,6 +24,7 @@ public record ConfigFieldsDto(
     string? Subcollection,
     string? Category,
     string? Type,
+    string? Material,
     bool? Supported,
     string? ModelName = null);
 

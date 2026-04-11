@@ -35,6 +35,9 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         if (request.Type is { Length: > 0 })
             query = query.Where(m => m.CalculatedType != null && request.Type.Contains(m.CalculatedType));
 
+        if (request.Material is { Length: > 0 })
+            query = query.Where(m => m.CalculatedMaterial != null && request.Material.Contains(m.CalculatedMaterial));
+
         if (request.FileType is { Length: > 0 })
             query = query.Where(m => request.FileType.Contains(m.FileType));
 
@@ -55,31 +58,32 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         {
             Models = models.Select(m => new ModelDto
             {
-                Id            = m.Id,
-                Name          = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
-                RelativePath  = string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
-                FileType      = m.FileType,
-                FileSize      = m.FileSize,
-                FileUrl       = $"/api/models/{m.Id}/file",
-                HasPreview    = m.PreviewImagePath != null,
-                PreviewUrl    = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
-                Creator       = m.CalculatedCreator,
-                Collection    = m.CalculatedCollection,
+                Id = m.Id,
+                Name = m.CalculatedModelName ?? Path.GetFileNameWithoutExtension(m.FileName),
+                RelativePath = string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
+                FileType = m.FileType,
+                FileSize = m.FileSize,
+                FileUrl = $"/api/models/{m.Id}/file",
+                HasPreview = m.PreviewImagePath != null,
+                PreviewUrl = m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview" : null,
+                Creator = m.CalculatedCreator,
+                Collection = m.CalculatedCollection,
                 Subcollection = m.CalculatedSubcollection,
-                Category      = m.CalculatedCategory,
-                Type          = m.CalculatedType,
-                Supported     = m.CalculatedSupported,
-                ConvexHull         = m.ConvexHullCoordinates,
-                ConcaveHull        = m.ConcaveHullCoordinates,
+                Category = m.CalculatedCategory,
+                Type = m.CalculatedType,
+                Material = m.CalculatedMaterial,
+                Supported = m.CalculatedSupported,
+                ConvexHull = m.ConvexHullCoordinates,
+                ConcaveHull = m.ConcaveHullCoordinates,
                 ConvexSansRaftHull = m.ConvexSansRaftHullCoordinates,
-                RaftOffsetMm       = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
-                DimensionXMm  = m.DimensionXMm,
-                DimensionYMm  = m.DimensionYMm,
-                DimensionZMm  = m.DimensionZMm,
+                RaftOffsetMm = m.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
+                DimensionXMm = m.DimensionXMm,
+                DimensionYMm = m.DimensionYMm,
+                DimensionZMm = m.DimensionZMm,
                 SphereCentreX = m.SphereCentreX,
                 SphereCentreY = m.SphereCentreY,
                 SphereCentreZ = m.SphereCentreZ,
-                SphereRadius  = m.SphereRadius,
+                SphereRadius = m.SphereRadius,
             }).ToList(),
             TotalCount = totalCount,
             HasMore = request.Offset + request.Limit < totalCount,
@@ -125,6 +129,16 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             .OrderBy(v => v)
             .ToListAsync();
 
+        var materialsFromDb = await db.Models
+            .Where(m => m.CalculatedMaterial != null)
+            .Select(m => m.CalculatedMaterial!)
+            .Distinct()
+            .ToListAsync();
+        var materials = materialsFromDb
+            .Union(["Any", "FDM", "Resin"])
+            .Order()
+            .ToList();
+
         var fileTypes = await db.Models
             .Select(m => m.FileType)
             .Distinct()
@@ -133,12 +147,13 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
 
         return new FilterOptionsDto
         {
-            Creators      = creators,
-            Collections   = collections,
+            Creators = creators,
+            Collections = collections,
             Subcollections = subcollections,
-            Categories    = categories,
-            Types         = types,
-            FileTypes     = fileTypes,
+            Categories = categories,
+            Types = types,
+            Materials = materials,
+            FileTypes = fileTypes,
         };
     }
 }

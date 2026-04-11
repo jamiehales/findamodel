@@ -20,8 +20,6 @@
 
 * Make the hardcoded 2mm raft clipping configurable - it should default to 2mm, but be overridable using the findamodel.yaml metadata
 
-* Add 3D Print type to model, FDM / Resin / Any
-
 * UpdateLogger so the service/context is passed in separately from a constant as a channel, so that certain channels can be enabled or disabled, investigate logging libraries before choosing a method here
 * By default any logs of the ExecutedDbCommand should be set to Debug level, and that logging channel disabled
 * See if there's a VSCode serilog plugin or similar that can provide the ability to filter channels dynamically
@@ -33,3 +31,5 @@
 * Improve preview render - use the same zoom/layout as the default view in threejs?
 
 * Support related parts + related models (same collection?) when viewing a model's detail page
+
+* Make configuration options (material, type, etc...) user configurable via a settings page

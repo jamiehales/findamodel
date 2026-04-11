@@ -23,7 +23,7 @@ function MultiSelect({
   label: string;
   field: keyof Pick<
     ModelFilter,
-    'creator' | 'collection' | 'subcollection' | 'category' | 'type' | 'fileType'
+    'creator' | 'collection' | 'subcollection' | 'category' | 'type' | 'material' | 'fileType'
   >;
   choices: string[];
   value: string[];
@@ -126,6 +126,13 @@ export default function ModelFilters({ value, onChange, options }: Props) {
         field="type"
         choices={options.types}
         value={value.type}
+        onChange={handleMultiChange}
+      />
+      <MultiSelect
+        label="Material"
+        field="material"
+        choices={options.materials}
+        value={value.material}
         onChange={handleMultiChange}
       />
       <MultiSelect

@@ -81,20 +81,21 @@ public class ExplorerService(
             dirConfigs.TryGetValue(childPath, out var dc);
             var resolved = dc != null
                 ? new ConfigFieldsDto(dc.Creator, dc.Collection, dc.Subcollection,
-                                      dc.Category, dc.Type, dc.Supported, dc.ModelName)
+                                      dc.Category, dc.Type, dc.Material, dc.Supported, dc.ModelName)
                 : new ConfigFieldsDto(
                     currentDirConfig?.Creator,
                     currentDirConfig?.Collection,
                     currentDirConfig?.Subcollection,
                     currentDirConfig?.Category,
                     currentDirConfig?.Type,
+                    currentDirConfig?.Material,
                     currentDirConfig?.Supported,
                     currentDirConfig?.ModelName);
 
             var localValues = dc != null
                 ? new ConfigFieldsDto(dc.RawCreator, dc.RawCollection, dc.RawSubcollection,
-                                      dc.RawCategory, dc.RawType, dc.RawSupported, dc.RawModelName)
-                : new ConfigFieldsDto(null, null, null, null, null, null);
+                                      dc.RawCategory, dc.RawType, dc.RawMaterial, dc.RawSupported, dc.RawModelName)
+                : new ConfigFieldsDto(null, null, null, null, null, null, null);
 
             var ruleConfigs = BuildRuleConfigs(dc?.ResolvedRulesYaml);
             if (dc == null && currentDirConfig != null)
@@ -155,6 +156,7 @@ public class ExplorerService(
         string? subcollection = dc?.Subcollection;
         string? category = dc?.Category;
         string? type = dc?.Type;
+        string? material = dc?.Material;
         bool? supported = dc?.Supported;
         string? modelName = dc?.ModelName;
 
@@ -170,6 +172,7 @@ public class ExplorerService(
                 ["subcollection"] = subcollection,
                 ["category"] = category,
                 ["type"] = type,
+                ["material"] = material,
                 ["model_name"] = modelName,
             };
             foreach (var field in resolvedRules.Keys) available.Remove(field);
@@ -177,8 +180,9 @@ public class ExplorerService(
             var fieldTypes = new Dictionary<string, RuleFieldType>(StringComparer.OrdinalIgnoreCase)
             {
                 ["supported"] = RuleFieldType.Bool,
-                ["category"]  = RuleFieldType.Enum,
-                ["type"]      = RuleFieldType.Enum,
+                ["category"] = RuleFieldType.Enum,
+                ["type"] = RuleFieldType.Enum,
+                ["material"] = RuleFieldType.Enum,
             };
 
             ruleConfigs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -191,13 +195,14 @@ public class ExplorerService(
                 ruleConfigs[field.ToLowerInvariant()] = RuleConfigToYamlSnippet(field, ruleEl);
                 switch (field.ToLowerInvariant())
                 {
-                    case "creator":     creator     = value; break;
-                    case "collection":  collection  = value; break;
+                    case "creator": creator = value; break;
+                    case "collection": collection = value; break;
                     case "subcollection": subcollection = value; break;
-                    case "category":    category    = ValidateEnumValue(value, ["Bust", "Miniature", "Uncategorized"]); break;
-                    case "type":        type        = ValidateEnumValue(value, ["Whole", "Part"]); break;
-                    case "model_name":  modelName   = value; break;
-                    case "supported":   supported   = value.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                    case "category": category = ValidateEnumValue(value, ["Bust", "Miniature", "Uncategorized"]); break;
+                    case "type": type = ValidateEnumValue(value, ["Whole", "Part"]); break;
+                    case "material": material = ValidateEnumValue(value, ["FDM", "Resin", "Any"]); break;
+                    case "model_name": modelName = value; break;
+                    case "supported": supported = value.Equals("true", StringComparison.OrdinalIgnoreCase); break;
                 }
             }
 
@@ -206,10 +211,10 @@ public class ExplorerService(
 
         // Return null metadata if all fields are null
         if (creator == null && collection == null && subcollection == null
-            && category == null && type == null && supported == null && modelName == null)
+            && category == null && type == null && material == null && supported == null && modelName == null)
             return (null, null);
 
-        return (new ConfigFieldsDto(creator, collection, subcollection, category, type, supported, modelName), ruleConfigs);
+        return (new ConfigFieldsDto(creator, collection, subcollection, category, type, material, supported, modelName), ruleConfigs);
     }
 
     /// <summary>
@@ -256,10 +261,10 @@ public class ExplorerService(
             var val = prop.Value.ValueKind switch
             {
                 JsonValueKind.String => prop.Value.GetString() ?? "",
-                JsonValueKind.True   => "true",
-                JsonValueKind.False  => "false",
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
                 JsonValueKind.Number => prop.Value.GetRawText(),
-                _                   => prop.Value.GetRawText()
+                _ => prop.Value.GetRawText()
             };
             sb.AppendLine($"  {prop.Name}: {val}");
         }

@@ -89,6 +89,7 @@ function ModelPage() {
     model.subcollection && { label: 'Subcollection', value: model.subcollection },
     model.category && { label: 'Category', value: model.category },
     model.type && { label: 'Type', value: model.type },
+    model.material && { label: 'Material', value: model.material },
   ].filter(Boolean) as { label: string; value: React.ReactNode }[];
 
   return (

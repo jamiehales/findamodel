@@ -31,8 +31,12 @@ function ModelCard({ model, href }: ModelCardProps) {
       )}
 
       <Box className={styles.overlay}>
-        <Stack direction="row" spacing={0.5}>
+        <Stack direction="row" spacing={0.5} flexWrap="wrap">
           <Chip variant="badge-enabled" label={model.fileType.toUpperCase()} />
+
+          {model.material && (
+            <Chip variant="badge-enabled" label={model.material} />
+          )}
 
           {model.supported !== null && (
             <Chip

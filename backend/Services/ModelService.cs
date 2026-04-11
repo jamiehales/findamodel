@@ -40,6 +40,7 @@ public class ModelService(
             Subcollection = m.CalculatedSubcollection,
             Category = m.CalculatedCategory,
             Type = m.CalculatedType,
+            Material = m.CalculatedMaterial,
             Supported = m.CalculatedSupported,
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
@@ -79,6 +80,7 @@ public class ModelService(
                 m.CalculatedSubcollection,
                 m.CalculatedCategory,
                 m.CalculatedType,
+                m.CalculatedMaterial,
                 m.CalculatedSupported,
                 m.CalculatedModelName,
                 m.ConvexHullCoordinates,
@@ -112,6 +114,7 @@ public class ModelService(
             Subcollection = m.CalculatedSubcollection,
             Category = m.CalculatedCategory,
             Type = m.CalculatedType,
+            Material = m.CalculatedMaterial,
             Supported = m.CalculatedSupported,
             ConvexHull = m.ConvexHullCoordinates,
             ConcaveHull = m.ConcaveHullCoordinates,
@@ -452,6 +455,7 @@ public class ModelService(
         entity.CalculatedSubcollection = d.Metadata.Subcollection;
         entity.CalculatedCategory = d.Metadata.Category;
         entity.CalculatedType = d.Metadata.Type;
+        entity.CalculatedMaterial = d.Metadata.Material;
         entity.CalculatedSupported = d.Metadata.Supported;
         entity.CalculatedModelName = d.Metadata.ModelName;
         entity.DimensionXMm = ToFiniteOrNull(d.Geometry?.DimensionXMm);

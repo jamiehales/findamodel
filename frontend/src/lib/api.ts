@@ -12,6 +12,7 @@ export interface Model {
   subcollection: string | null;
   category: string | null;
   type: string | null;
+  material: string | null;
   supported: boolean | null;
   convexHull: string | null;
   concaveHull: string | null;
@@ -40,6 +41,7 @@ export interface ModelFilter {
   subcollection: string[];
   category: string[];
   type: string[];
+  material: string[];
   fileType: string[];
   supported: boolean | null;
 }
@@ -51,6 +53,7 @@ export const emptyFilter: ModelFilter = {
   subcollection: [],
   category: [],
   type: [],
+  material: [],
   fileType: [],
   supported: null,
 };
@@ -67,6 +70,7 @@ export interface FilterOptions {
   subcollections: string[];
   categories: string[];
   types: string[];
+  materials: string[];
   fileTypes: string[];
 }
 
@@ -84,6 +88,7 @@ export async function fetchQueryModels(
   for (const v of filter.subcollection) params.append('subcollection', v);
   for (const v of filter.category) params.append('category', v);
   for (const v of filter.type) params.append('type', v);
+  for (const v of filter.material) params.append('material', v);
   for (const v of filter.fileType) params.append('fileType', v);
   if (filter.supported !== null) params.set('supported', String(filter.supported));
   const r = await fetch(`/api/query?${params}`);
@@ -275,6 +280,7 @@ export interface MetadataFields {
   subcollection: string | null;
   category: string | null;
   type: string | null;
+  material: string | null;
   supported: boolean | null;
   modelName: string | null;
   /** When provided, fully replaces the rule set for this directory. Maps YAML field name

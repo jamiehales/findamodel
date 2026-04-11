@@ -194,6 +194,12 @@ export default function FolderCard({ folder, href }: Props) {
             ruleYaml={folder.ruleConfigs?.type}
           />
           <MetaBadge
+            type="Material"
+            value={rv.material}
+            source={getSource(lv?.material, rv.material, 'material')}
+            ruleYaml={folder.ruleConfigs?.material}
+          />
+          <MetaBadge
             type="Supports"
             value={rv.supported == null ? null : rv.supported ? 'Supported' : 'Unsupported'}
             source={getSource(lv?.supported, rv.supported, 'supported')}

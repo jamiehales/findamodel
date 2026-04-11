@@ -42,6 +42,13 @@ const FIELDS: FieldDef[] = [
     options: ['Bust', 'Miniature', 'Uncategorized'],
   },
   { key: 'type', yamlName: 'type', label: 'Type', fieldType: 'select', options: ['Whole', 'Part'] },
+  {
+    key: 'material',
+    yamlName: 'material',
+    label: 'Material',
+    fieldType: 'select',
+    options: ['FDM', 'Resin', 'Any'],
+  },
   { key: 'supported', yamlName: 'supported', label: 'Supported', fieldType: 'bool' },
 ] as const;
 
@@ -311,6 +318,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     subcollection: null,
     category: null,
     type: null,
+    material: null,
     supported: null,
     modelName: null,
   });

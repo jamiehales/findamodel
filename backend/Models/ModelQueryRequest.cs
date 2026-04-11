@@ -8,6 +8,7 @@ public class ModelQueryRequest
     public string[]? Subcollection { get; set; }
     public string[]? Category { get; set; }
     public string[]? Type { get; set; }
+    public string[]? Material { get; set; }
     public string[]? FileType { get; set; }
     public bool? Supported { get; set; }
     public int Limit { get; set; } = 25;

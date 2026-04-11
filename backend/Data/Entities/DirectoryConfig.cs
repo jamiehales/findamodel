@@ -15,6 +15,7 @@ public class DirectoryConfig
     public string? RawCollection { get; set; }
     public string? RawCategory { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? RawType { get; set; }        // "Whole" | "Part" | null
+    public string? RawMaterial { get; set; }    // "FDM" | "Resin" | "Any" | null
     public bool? RawSupported { get; set; }
     public string? RawSubcollection { get; set; }
     public string? RawModelName { get; set; }
@@ -26,6 +27,7 @@ public class DirectoryConfig
     public string? ModelName { get; set; }
     public string? Category { get; set; }
     public string? Type { get; set; }
+    public string? Material { get; set; }
     public bool? Supported { get; set; }
 
     // Rule definitions stored as YAML: Dictionary<fieldName, ruleConfigObject>

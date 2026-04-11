@@ -23,6 +23,7 @@ public class CachedModel
     public string? CalculatedSubcollection { get; set; }
     public string? CalculatedCategory { get; set; }
     public string? CalculatedType { get; set; }
+    public string? CalculatedMaterial { get; set; }
     public bool? CalculatedSupported { get; set; }
     public string? CalculatedModelName { get; set; }
 
@@ -36,12 +37,12 @@ public class CachedModel
     public DateTime? HullGeneratedAt { get; set; }
 
     // Geometry metadata — Y-up, mm, centred (X/Z at origin, base at Y=0)
-    public float? DimensionXMm       { get; set; }
-    public float? DimensionYMm       { get; set; }
-    public float? DimensionZMm       { get; set; }
-    public float? SphereCentreX      { get; set; }
-    public float? SphereCentreY      { get; set; }
-    public float? SphereCentreZ      { get; set; }
-    public float? SphereRadius       { get; set; }
+    public float? DimensionXMm { get; set; }
+    public float? DimensionYMm { get; set; }
+    public float? DimensionZMm { get; set; }
+    public float? SphereCentreX { get; set; }
+    public float? SphereCentreY { get; set; }
+    public float? SphereCentreZ { get; set; }
+    public float? SphereRadius { get; set; }
     public DateTime? GeometryCalculatedAt { get; set; }
 }
