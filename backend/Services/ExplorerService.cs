@@ -154,7 +154,7 @@ public class ExplorerService(
                 FileType: fi.Extension.TrimStart('.').ToLower(),
                 FileSize: cm?.FileSize ?? fi.Length,
                 HasPreview: cm?.PreviewImagePath != null,
-                PreviewUrl: cm?.PreviewImagePath != null ? $"{previewBase}/{cm.Id}/preview" : null,
+                PreviewUrl: cm?.PreviewImagePath != null ? $"{previewBase}/{cm.Id}/preview?v={cm.PreviewGenerationVersion ?? 0}" : null,
                 ResolvedMetadata: resolvedMeta,
                 RuleConfigs: ruleConfigs);
         }).ToList();

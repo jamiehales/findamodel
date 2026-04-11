@@ -16,7 +16,7 @@ internal static class ModelMappingExtensions
             FileSize = model.FileSize,
             FileUrl = $"/api/models/{model.Id}/file",
             HasPreview = model.PreviewImagePath != null,
-            PreviewUrl = model.PreviewImagePath != null ? $"/api/models/{model.Id}/preview?v={ModelPreviewService.CurrentPreviewGenerationVersion}" : null,
+            PreviewUrl = model.PreviewImagePath != null ? $"/api/models/{model.Id}/preview?v={model.PreviewGenerationVersion ?? 0}" : null,
             Creator = model.CalculatedCreator,
             Collection = model.CalculatedCollection,
             Subcollection = model.CalculatedSubcollection,

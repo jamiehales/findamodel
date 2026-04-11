@@ -357,7 +357,7 @@ public class ModelService(
                 string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
                 m.FileType,
                 m.FileSize,
-                m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview?v={ModelPreviewService.CurrentPreviewGenerationVersion}" : null))
+                m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview?v={m.PreviewGenerationVersion ?? 0}" : null))
             .ToList();
     }
 
