@@ -12,6 +12,12 @@
         "/consoleloggerparameters:NoSummary"
       ],
       "problemMatcher": "$msCompile",
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
+      },
       "group": "build"
     },
     {
@@ -24,6 +30,11 @@
         "${workspaceFolder}/backend/findamodel.csproj"
       ],
       "problemMatcher": "$msCompile",
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
       "isBackground": true
     },
     {
@@ -32,6 +43,12 @@
       "command": "yarn install",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
       },
       "problemMatcher": []
     },
@@ -43,6 +60,12 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
+      },
       "problemMatcher": []
     },
     {
@@ -52,6 +75,12 @@
       "args": ["-c", "rm -rf debug/data/cache"],
       "options": {
         "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
       },
       "problemMatcher": []
     },
@@ -63,6 +92,11 @@
         "cwd": "${workspaceFolder}/frontend"
       },
       "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
       "problemMatcher": {
         "pattern": {
           "regexp": "^$"
