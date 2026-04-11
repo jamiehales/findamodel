@@ -1,44 +1,51 @@
 .page {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .loading {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 48px;
 }
 
 .section {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .sectionsRow {
-    align-items: stretch;
+  align-items: stretch;
 }
 
 .group {
-    gap: 8px;
+  gap: 8px;
+}
+
+.globalSettingsSection {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .addRow {
-    align-items: center;
+  align-items: center;
 }
 
 .configRow {
-    align-items: center;
+  align-items: center;
 }
 
 .chipsWrap {
-    flex-wrap: wrap;
+  flex-wrap: wrap;
 }

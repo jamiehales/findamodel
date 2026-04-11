@@ -23,8 +23,8 @@ public class ModelDto
     // Hull coordinates as JSON: [[x,z],[x,z],...] projected onto X-Z plane (bird's eye with Y-up)
     public string? ConvexHull { get; set; }
     public string? ConcaveHull { get; set; }
-    public string? ConvexSansRaftHull { get; set; }  // Convex hull excluding vertices below RaftOffsetMm
-    public float RaftOffsetMm { get; set; }          // Y cutoff used for sans-raft hull calculation
+    public string? ConvexSansRaftHull { get; set; }  // Convex hull excluding vertices below RaftHeightMm
+    public float RaftHeightMm { get; set; }          // Y cutoff used for sans-raft hull calculation
 
     // Geometry metadata (mm, Y-up centred coordinate system: X/Z at origin, base at Y=0)
     public float? DimensionXMm { get; set; }

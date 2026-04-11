@@ -27,7 +27,7 @@ internal static class ModelMappingExtensions
             ConvexHull = model.ConvexHullCoordinates,
             ConcaveHull = model.ConcaveHullCoordinates,
             ConvexSansRaftHull = model.ConvexSansRaftHullCoordinates,
-            RaftOffsetMm = model.HullRaftOffsetMm ?? HullCalculationService.RaftOffset,
+            RaftHeightMm = model.HullRaftHeightMm ?? HullCalculationService.DefaultRaftHeightMm,
             DimensionXMm = model.DimensionXMm,
             DimensionYMm = model.DimensionYMm,
             DimensionZMm = model.DimensionZMm,

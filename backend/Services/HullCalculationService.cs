@@ -17,17 +17,19 @@ public class HullCalculationService(
     private const double MinConcaveRatio = 0.08;
     private const double MaxConcaveRatio = 0.95;
 
-    public const float RaftOffset = 2f; // 2mm offset for raft/brim removal, to be configurable later
+    public const float DefaultRaftHeightMm = 2f;
 
     /// <summary>
     /// Calculates convex, concave (alpha), and convex-sans-raft hulls from pre-loaded geometry. Preferred overload.
     /// Projects vertices onto the X-Z plane (bird's eye view with Y-up coordinate system).
     /// Returns tuple of (convex hull JSON, concave hull JSON, convex sans-raft hull JSON) as [[x,z],[x,z],...] arrays.
-    /// The sans-raft hull excludes vertices with Y &lt; 2mm before projection, removing raft/brim geometry.
+    /// The sans-raft hull excludes vertices with Y below the configured raft height before projection,
+    /// removing raft/brim geometry.
     /// </summary>
     public Task<(string? ConvexHull, string? ConcaveHull, string? ConvexSansRaftHull)> CalculateHullsAsync(
         LoadedGeometry geometry,
-        int maxHullVertices = DefaultMaxHullVertices)
+        int maxHullVertices = DefaultMaxHullVertices,
+        float raftHeightMm = DefaultRaftHeightMm)
     {
         try
         {
@@ -49,9 +51,9 @@ public class HullCalculationService(
             var convexCoords = CalculateEnclosingConvexHull(points2D, maxHullVertices);
             var concaveCoords = CalculateConcaveHull(points2D, maxHullVertices);
 
-            // Sans-raft: exclude vertices at or below defined raft offset (Y-up, 1 unit = 1mm)
+            // Sans-raft: exclude vertices at or below configured raft cutoff (Y-up, 1 unit = 1mm)
             var sansRaftPoints2D = allVertices
-                .Where(v => v.Y >= RaftOffset)
+                .Where(v => v.Y >= raftHeightMm)
                 .Select(v => new Coordinate((double)v.X, (double)v.Z))
                 .Distinct(new CoordinateComparer(1e-6))
                 .ToArray();
@@ -164,7 +166,8 @@ public class HullCalculationService(
     public async Task<(string? ConvexHull, string? ConcaveHull, string? ConvexSansRaftHull)> CalculateHullsAsync(
         string filePath,
         string fileType,
-        int maxHullVertices = DefaultMaxHullVertices)
+        int maxHullVertices = DefaultMaxHullVertices,
+        float raftHeightMm = DefaultRaftHeightMm)
     {
         try
         {
@@ -175,7 +178,7 @@ public class HullCalculationService(
                 return (null, null, null);
             }
 
-            return await CalculateHullsAsync(geometry, maxHullVertices);
+            return await CalculateHullsAsync(geometry, maxHullVertices, raftHeightMm);
         }
         catch (Exception ex)
         {
@@ -334,46 +337,46 @@ public class HullCalculationService(
         switch (geometry)
         {
             case Polygon polygon:
-            {
-                var shell = NormalizeRing(polygon.ExteriorRing.Coordinates);
-                return shell.Length >= 3 ? shell : null;
-            }
+                {
+                    var shell = NormalizeRing(polygon.ExteriorRing.Coordinates);
+                    return shell.Length >= 3 ? shell : null;
+                }
             case MultiPolygon multiPolygon:
-            {
-                Polygon? largest = null;
-                var largestArea = double.NegativeInfinity;
-                for (var i = 0; i < multiPolygon.NumGeometries; i++)
                 {
-                    if (multiPolygon.GetGeometryN(i) is not Polygon p) continue;
-                    var area = p.Area;
-                    if (area > largestArea)
+                    Polygon? largest = null;
+                    var largestArea = double.NegativeInfinity;
+                    for (var i = 0; i < multiPolygon.NumGeometries; i++)
                     {
-                        largestArea = area;
-                        largest = p;
+                        if (multiPolygon.GetGeometryN(i) is not Polygon p) continue;
+                        var area = p.Area;
+                        if (area > largestArea)
+                        {
+                            largestArea = area;
+                            largest = p;
+                        }
                     }
-                }
 
-                return largest is not null ? NormalizeRing(largest.ExteriorRing.Coordinates) : null;
-            }
+                    return largest is not null ? NormalizeRing(largest.ExteriorRing.Coordinates) : null;
+                }
             case GeometryCollection collection:
-            {
-                Coordinate[]? best = null;
-                var bestArea = double.NegativeInfinity;
-
-                for (var i = 0; i < collection.NumGeometries; i++)
                 {
-                    var candidate = ExtractLargestPolygonShell(collection.GetGeometryN(i));
-                    if (candidate is null || candidate.Length < 3) continue;
-                    var area = Math.Abs(SignedArea(candidate));
-                    if (area > bestArea)
-                    {
-                        bestArea = area;
-                        best = candidate;
-                    }
-                }
+                    Coordinate[]? best = null;
+                    var bestArea = double.NegativeInfinity;
 
-                return best;
-            }
+                    for (var i = 0; i < collection.NumGeometries; i++)
+                    {
+                        var candidate = ExtractLargestPolygonShell(collection.GetGeometryN(i));
+                        if (candidate is null || candidate.Length < 3) continue;
+                        var area = Math.Abs(SignedArea(candidate));
+                        if (area > bestArea)
+                        {
+                            bestArea = area;
+                            best = candidate;
+                        }
+                    }
+
+                    return best;
+                }
             default:
                 return null;
         }

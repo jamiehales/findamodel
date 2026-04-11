@@ -9,6 +9,7 @@ public record UpdateDirectoryConfigRequest(
     string? Type,
     string? Material,
     bool? Supported,
+    float? RaftHeightMm,
     string? ModelName = null,
     /// <summary>
     /// When non-null, fully defines the rule set for this directory (replaces any existing rules).
@@ -27,6 +28,7 @@ public record ConfigFieldsDto
     public string? Type { get; init; }
     public string? Material { get; init; }
     public bool? Supported { get; init; }
+    public float? RaftHeightMm { get; init; }
     public string? ModelName { get; init; }
 }
 

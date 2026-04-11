@@ -61,7 +61,8 @@ function PrintingListPage() {
 
   const listName = list?.name ?? 'Printing list';
   const isPending = modelsPending || listPending;
-  const archiveInProgress = archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
+  const archiveInProgress =
+    archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
   const archiveBusy = archiveInProgress || archiveDownloading;
 
   useEffect(() => {
@@ -78,7 +79,8 @@ function PrintingListPage() {
         if (!disposed) setArchiveJob(nextJob);
       } catch (error) {
         if (!disposed) {
-          const message = error instanceof Error ? error.message : 'Failed to fetch archive progress';
+          const message =
+            error instanceof Error ? error.message : 'Failed to fetch archive progress';
           setArchiveError(message);
           setArchiveJob((current) =>
             current
@@ -342,7 +344,9 @@ function PrintingListPage() {
                 <Typography className={styles.archiveStatusTitle}>{archiveStatusText}</Typography>
               </Stack>
               <LinearProgress
-                variant={archiveJob && archiveJob.totalEntries > 0 ? 'determinate' : 'indeterminate'}
+                variant={
+                  archiveJob && archiveJob.totalEntries > 0 ? 'determinate' : 'indeterminate'
+                }
                 value={archiveJob?.progressPercent ?? 0}
                 className={styles.archiveProgress}
               />

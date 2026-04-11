@@ -7,6 +7,7 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
 {
     public DbSet<CachedModel> Models { get; set; }
     public DbSet<DirectoryConfig> DirectoryConfigs { get; set; }
+    public DbSet<AppConfig> AppConfigs { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<PrintingList> PrintingLists { get; set; }
     public DbSet<PrintingListItem> PrintingListItems { get; set; }
@@ -34,6 +35,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<DirectoryConfig>()
             .HasIndex(d => d.DirectoryPath)
             .IsUnique();
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.DefaultRaftHeightMm)
+            .HasDefaultValue(2f);
 
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)

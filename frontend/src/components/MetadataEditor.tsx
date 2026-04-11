@@ -29,11 +29,19 @@ interface FieldDef {
   key: keyof Omit<MetadataFields, 'fieldRules'>;
   yamlName: string;
   label: string;
-  fieldType: 'text' | 'select' | 'bool';
+  fieldType: 'text' | 'select' | 'bool' | 'number';
   optionsField?: 'category' | 'type' | 'material';
+  supportsRules?: boolean;
 }
 
 const FIELDS: FieldDef[] = [
+  {
+    key: 'raftHeightMm',
+    yamlName: 'raftHeight',
+    label: 'Raft Height (mm)',
+    fieldType: 'number',
+    supportsRules: false,
+  },
   { key: 'modelName', yamlName: 'model_name', label: 'Model Name', fieldType: 'text' },
   { key: 'creator', yamlName: 'creator', label: 'Creator', fieldType: 'text' },
   { key: 'collection', yamlName: 'collection', label: 'Collection', fieldType: 'text' },
@@ -76,7 +84,7 @@ function InheritedHint({
   value,
   inheritedRule,
 }: {
-  value?: string | boolean | null | undefined;
+  value?: string | boolean | number | null | undefined;
   inheritedRule?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
@@ -307,6 +315,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     type: null,
     material: null,
     supported: null,
+    raftHeightMm: null,
     modelName: null,
   });
   const [fieldModes, setFieldModes] = useState<Record<string, FieldMode>>({});
@@ -373,6 +382,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     const newErrors: Record<string, string | null> = {};
     let hasErrors = false;
     for (const field of FIELDS) {
+      if (field.supportsRules === false) continue;
       if (fieldModes[field.yamlName] === 'rule') {
         const text = (fieldRuleTexts[field.yamlName] ?? '').trim();
         const error = text ? validateRuleYaml(text) : null;
@@ -386,6 +396,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     // Build fieldRules: only fields currently in rule mode with non-empty content
     const fieldRulesMap: Record<string, string> = {};
     for (const field of FIELDS) {
+      if (field.supportsRules === false) continue;
       if (fieldModes[field.yamlName] === 'rule') {
         const text = (fieldRuleTexts[field.yamlName] ?? '').trim();
         if (text) fieldRulesMap[field.yamlName] = text;
@@ -395,6 +406,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     // Clear plain values for any field in rule mode (backend uses rule instead)
     const cleanFields = { ...f };
     for (const field of FIELDS) {
+      if (field.supportsRules === false) continue;
       if (fieldModes[field.yamlName] === 'rule') {
         (cleanFields as Record<string, unknown>)[field.key] = null;
       }
@@ -424,7 +436,10 @@ export default function MetadataEditor({ path, onClose }: Props) {
     if (e.key === 'Enter') handleValueCommit();
   }
 
-  function getSelectOptions(field: FieldDef, localValue: string | boolean | null): string[] {
+  function getSelectOptions(
+    field: FieldDef,
+    localValue: string | boolean | number | null,
+  ): string[] {
     if (field.optionsField == null) return [];
 
     const configured =
@@ -450,12 +465,13 @@ export default function MetadataEditor({ path, onClose }: Props) {
       <RulesHelpDialog open={rulesHelpOpen} onClose={() => setRulesHelpOpen(false)} />
 
       {FIELDS.map((field) => {
-        const isRuleMode = fieldModes[field.yamlName] === 'rule';
+        const supportsRules = field.supportsRules !== false;
+        const isRuleMode = supportsRules && fieldModes[field.yamlName] === 'rule';
         const ruleText = fieldRuleTexts[field.yamlName] ?? '';
         const ruleError = ruleErrors[field.yamlName] ?? null;
-        const parentValue = p ? (p[field.key] as string | boolean | null) : null;
+        const parentValue = p ? (p[field.key] as string | boolean | number | null) : null;
         const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null;
-        const localValue = fields[field.key] as string | boolean | null;
+        const localValue = fields[field.key] as string | boolean | number | null;
         const selectOptions = getSelectOptions(field, localValue);
         const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null;
         const hasInheritedValue = parentValue != null || inheritedRule != null;
@@ -505,8 +521,9 @@ export default function MetadataEditor({ path, onClose }: Props) {
                   size="small"
                   variant={isRuleMode ? 'filled' : 'outlined'}
                   color={isRuleMode ? 'warning' : 'default'}
-                  onClick={() => toggleMode(field.yamlName)}
+                  onClick={supportsRules ? () => toggleMode(field.yamlName) : undefined}
                   className={styles.modeChip}
+                  clickable={supportsRules}
                 />
                 <Tooltip
                   title={canReset ? 'Reset to inherited value' : 'No inherited value to reset to'}
@@ -605,6 +622,32 @@ export default function MetadataEditor({ path, onClose }: Props) {
                   doSave(next);
                 }}
                 className={styles.checkbox}
+              />
+            )}
+
+            {!isRuleMode && field.fieldType === 'number' && (
+              <TextField
+                size="small"
+                fullWidth
+                type="number"
+                value={fields.raftHeightMm ?? ''}
+                placeholder={
+                  typeof parentValue === 'number' && Number.isFinite(parentValue)
+                    ? String(parentValue)
+                    : undefined
+                }
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const parsed = raw === '' ? null : Number(raw);
+                  const isValid = parsed != null && Number.isFinite(parsed) && parsed >= 0;
+                  setFieldValue(
+                    field.key,
+                    raw === '' || isValid ? (parsed as never) : (null as never),
+                  );
+                }}
+                onBlur={handleValueCommit}
+                onKeyDown={handleKeyDown}
+                slotProps={{ input: { className: styles.fieldInput } }}
               />
             )}
 

@@ -170,7 +170,9 @@ function parseHullLocalPx(hullJson: string | null): Vec2Like[] | null {
 }
 
 function getSpawnHullJson(model: Model, hullMode: HullMode): string | null {
-  return hullMode === 'sansRaft' ? (model.convexSansRaftHull ?? model.convexHull) : model.convexHull;
+  return hullMode === 'sansRaft'
+    ? (model.convexSansRaftHull ?? model.convexHull)
+    : model.convexHull;
 }
 
 /** Border hull always uses the full convex hull (with raft). */
@@ -317,21 +319,24 @@ function buildSpawnPlan(
       spawnX: anchorX,
     });
 
-    let remainingGapArea = Math.max(0, largest.metrics.boundingAreaPx2 - largest.metrics.footprintAreaPx2);
+    let remainingGapArea = Math.max(
+      0,
+      largest.metrics.boundingAreaPx2 - largest.metrics.footprintAreaPx2,
+    );
     if (remainingGapArea <= 0) continue;
 
     const fillers = remaining
       .filter(
         (candidate) =>
-          candidate.metrics.footprintAreaPx2 > 0
-          && candidate.metrics.boundingAreaPx2 < largest.metrics.boundingAreaPx2,
+          candidate.metrics.footprintAreaPx2 > 0 &&
+          candidate.metrics.boundingAreaPx2 < largest.metrics.boundingAreaPx2,
       )
       .sort(
         (a, b) =>
-          a.metrics.footprintAreaPx2 - b.metrics.footprintAreaPx2
-          || a.metrics.boundingAreaPx2 - b.metrics.boundingAreaPx2
-          || a.model.name.localeCompare(b.model.name)
-          || a.inst - b.inst,
+          a.metrics.footprintAreaPx2 - b.metrics.footprintAreaPx2 ||
+          a.metrics.boundingAreaPx2 - b.metrics.boundingAreaPx2 ||
+          a.model.name.localeCompare(b.model.name) ||
+          a.inst - b.inst,
       );
 
     for (const filler of fillers) {
@@ -839,10 +844,7 @@ export default function PrintingListCanvas({
       ),
     });
     ground.createFixture(
-      new Box(
-        toPhysics((CANVAS_WIDTH_PX + WALL_THICKNESS * 2) / 2),
-        toPhysics(WALL_THICKNESS / 2),
-      ),
+      new Box(toPhysics((CANVAS_WIDTH_PX + WALL_THICKNESS * 2) / 2), toPhysics(WALL_THICKNESS / 2)),
       wallFixOpt,
     );
 
@@ -945,9 +947,7 @@ export default function PrintingListCanvas({
         (p) => p.modelId === model.id && p.instanceIndex === inst,
       );
       if (saved) {
-        body.setPosition(
-          Vec2(toPhysics(saved.xMm * PX_PER_MM), toPhysics(saved.yMm * PX_PER_MM)),
-        );
+        body.setPosition(Vec2(toPhysics(saved.xMm * PX_PER_MM), toPhysics(saved.yMm * PX_PER_MM)));
         body.setAngle(saved.angle);
         body.setLinearVelocity(Vec2(0, 0));
         body.setAngularVelocity(0);
@@ -1007,15 +1007,7 @@ export default function PrintingListCanvas({
       } of entries) {
         const outOfBounds = isOutOfBounds(body, bVerts);
         const renderColor = overlapping.has(body) ? color : darkenColor(color, 0.45);
-        drawBody(
-          gfx,
-          body,
-          visualLocalVerts,
-          bVerts,
-          renderColor,
-          outOfBounds,
-          VIEW_TOP_MARGIN_PX,
-        );
+        drawBody(gfx, body, visualLocalVerts, bVerts, renderColor, outOfBounds, VIEW_TOP_MARGIN_PX);
         const pos = body.getPosition();
         label.position.set(toPixels(pos.x), toPixels(pos.y) + VIEW_TOP_MARGIN_PX);
         hasOutOfBounds ||= outOfBounds;

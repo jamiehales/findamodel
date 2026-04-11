@@ -89,6 +89,7 @@ public class ExplorerService(
                     Type = dc.Type,
                     Material = dc.Material,
                     Supported = dc.Supported,
+                    RaftHeightMm = dc.RaftHeightMm,
                     ModelName = dc.ModelName,
                 }
                 : new ConfigFieldsDto
@@ -100,6 +101,7 @@ public class ExplorerService(
                     Type = currentDirConfig?.Type,
                     Material = currentDirConfig?.Material,
                     Supported = currentDirConfig?.Supported,
+                    RaftHeightMm = currentDirConfig?.RaftHeightMm,
                     ModelName = currentDirConfig?.ModelName,
                 };
 
@@ -113,6 +115,7 @@ public class ExplorerService(
                     Type = dc.RawType,
                     Material = dc.RawMaterial,
                     Supported = dc.RawSupported,
+                    RaftHeightMm = dc.RawRaftHeightMm,
                     ModelName = dc.RawModelName,
                 }
                 : new ConfigFieldsDto();
@@ -180,6 +183,7 @@ public class ExplorerService(
             ["type"] = dc?.Type,
             ["material"] = dc?.Material,
             ["supported"] = dc?.Supported,
+            ["raftHeight"] = dc?.RaftHeightMm,
             ["model_name"] = dc?.ModelName,
         };
 
@@ -236,6 +240,7 @@ public class ExplorerService(
             Type = resolvedValues["type"] as string,
             Material = resolvedValues["material"] as string,
             Supported = resolvedValues["supported"] as bool?,
+            RaftHeightMm = resolvedValues["raftHeight"] as float?,
             ModelName = resolvedValues["model_name"] as string,
         }, ruleConfigs);
     }

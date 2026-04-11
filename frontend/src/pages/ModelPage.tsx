@@ -210,7 +210,6 @@ function ModelPage() {
             label="Hull Projections"
           />
         )}
-
       </Box>
 
       {(otherParts?.length ?? 0) > 0 && (

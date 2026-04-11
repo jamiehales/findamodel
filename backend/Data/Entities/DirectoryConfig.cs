@@ -19,6 +19,7 @@ public class DirectoryConfig
     public bool? RawSupported { get; set; }
     public string? RawSubcollection { get; set; }
     public string? RawModelName { get; set; }
+    public float? RawRaftHeightMm { get; set; }
 
     // Resolved (composed) values — computed at scan time by walking ancestors; closest non-null wins
     public string? Creator { get; set; }
@@ -29,6 +30,7 @@ public class DirectoryConfig
     public string? Type { get; set; }
     public string? Material { get; set; }
     public bool? Supported { get; set; }
+    public float? RaftHeightMm { get; set; }
 
     // Rule definitions stored as YAML: Dictionary<fieldName, ruleConfigObject>
     // e.g. "creator:\n  rule: filename\n  include_extension: false\n"

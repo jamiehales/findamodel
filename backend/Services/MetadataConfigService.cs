@@ -440,6 +440,7 @@ public class MetadataConfigService(
         if (req.Type != null) data["type"] = req.Type;
         if (req.Material != null) data["material"] = req.Material;
         if (req.Supported.HasValue) data["supported"] = req.Supported.Value;
+        if (req.RaftHeightMm.HasValue) data["raftHeight"] = req.RaftHeightMm.Value;
 
         if (req.FieldRules != null)
         {
@@ -535,6 +536,7 @@ public class MetadataConfigService(
                 Type = record.RawType,
                 Material = record.RawMaterial,
                 Supported = record.RawSupported,
+                RaftHeightMm = record.RawRaftHeightMm,
                 ModelName = record.RawModelName,
             }
             : new ConfigFieldsDto();
@@ -552,6 +554,7 @@ public class MetadataConfigService(
                 Type = parentRecord.Type,
                 Material = parentRecord.Material,
                 Supported = parentRecord.Supported,
+                RaftHeightMm = parentRecord.RaftHeightMm,
                 ModelName = parentRecord.ModelName,
             };
 
@@ -703,6 +706,28 @@ public class MetadataConfigService(
         foreach (var field in MetadataFieldRegistry.Definitions)
             field.SetResolvedValue(record, resolvedValues.GetValueOrDefault(field.Key));
 
+        if (record.RawRaftHeightMm.HasValue)
+        {
+            record.RaftHeightMm = record.RawRaftHeightMm;
+        }
+        else
+        {
+            var raftHeightFromParent = (float?)null;
+            var parent = GetParentRecord(record.DirectoryPath, allRecords);
+            while (parent != null)
+            {
+                if (parent.RawRaftHeightMm.HasValue)
+                {
+                    raftHeightFromParent = parent.RawRaftHeightMm;
+                    break;
+                }
+
+                parent = GetParentRecord(parent.DirectoryPath, allRecords);
+            }
+
+            record.RaftHeightMm = raftHeightFromParent;
+        }
+
         record.ResolvedRulesYaml = resolvedRules.Count > 0
             ? SerializeRulesToYaml(resolvedRules)
             : null;
@@ -717,6 +742,7 @@ public class MetadataConfigService(
         record.RawType = fields?.Type;
         record.RawMaterial = fields?.Material;
         record.RawSupported = fields?.Supported;
+        record.RawRaftHeightMm = fields?.RaftHeightMm;
         record.RawModelName = fields?.ModelName;
         record.RawRulesYaml = fields?.RulesYaml;
     }
@@ -744,6 +770,7 @@ public class MetadataConfigService(
                 Type: MetadataFieldRegistry.ValidateEnumValue("type", TryGetString(parsed, "type")),
                 Material: MetadataFieldRegistry.ValidateEnumValue("material", TryGetString(parsed, "material")),
                 Supported: TryGetBool(parsed, "supported"),
+                RaftHeightMm: TryGetFloat(parsed, "raftHeight"),
                 ModelName: TryGetString(parsed, "model_name"),
                 RulesYaml: ExtractRulesYaml(parsed)
             );
@@ -840,5 +867,32 @@ public class MetadataConfigService(
         return null;
     }
 
-    private sealed record RawConfigFields(string? Creator, string? Collection, string? Subcollection, string? Category, string? Type, string? Material, bool? Supported, string? ModelName = null, string? RulesYaml = null);
+    private static float? TryGetFloat(Dictionary<string, object> data, string propertyName)
+    {
+        foreach (var kvp in data)
+        {
+            if (!string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (kvp.Value is Dictionary<object, object> || kvp.Value is Dictionary<string, object>) return null;
+
+            if (kvp.Value is float f && float.IsFinite(f)) return f;
+            if (kvp.Value is double d && double.IsFinite(d)) return (float)d;
+            if (kvp.Value is decimal m)
+            {
+                var asDouble = (double)m;
+                if (asDouble <= float.MaxValue && asDouble >= float.MinValue)
+                    return (float)asDouble;
+            }
+            if (kvp.Value is int i) return i;
+            if (kvp.Value is long l && l <= float.MaxValue && l >= float.MinValue) return l;
+            if (kvp.Value is string s
+                && float.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                && float.IsFinite(parsed))
+                return parsed;
+        }
+
+        return null;
+    }
+
+    private sealed record RawConfigFields(string? Creator, string? Collection, string? Subcollection, string? Category, string? Type, string? Material, bool? Supported, float? RaftHeightMm, string? ModelName = null, string? RulesYaml = null);
 }

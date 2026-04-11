@@ -33,7 +33,7 @@ public class CachedModel
     public string? ConcaveHullCoordinates { get; set; }          // Concave/alpha hull (JSON)
     public string? ConvexSansRaftHullCoordinates { get; set; }   // Convex hull excluding vertices below Y=2mm (JSON)
     public int? HullGenerationVersion { get; set; }              // Version of hull generation algorithm/settings
-    public float? HullRaftOffsetMm { get; set; }                 // Raft cutoff used when generating hulls
+    public float? HullRaftHeightMm { get; set; }                 // Raft cutoff used when generating hulls
     public DateTime? HullGeneratedAt { get; set; }
 
     // Geometry metadata — Y-up, mm, centred (X/Z at origin, base at Y=0)

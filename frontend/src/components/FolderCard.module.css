@@ -21,7 +21,7 @@
   z-index: 0;
 }
 
-.card> :not(.editBtn):not(.indexBtnWrap) {
+.card > :not(.editBtn):not(.indexBtnWrap) {
   position: relative;
   z-index: 2;
 }

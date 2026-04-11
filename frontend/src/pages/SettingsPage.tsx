@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Box,
@@ -11,9 +11,11 @@ import {
   Typography,
 } from '@mui/material';
 import {
+  useAppConfig,
   useCreateMetadataDictionaryValue,
   useDeleteMetadataDictionaryValue,
   useMetadataDictionaryOverview,
+  useUpdateAppConfig,
   useUpdateMetadataDictionaryValue,
 } from '../lib/queries';
 import type { MetadataDictionaryField } from '../lib/api';
@@ -55,7 +57,6 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
       <Typography variant="h6">{FIELD_LABELS[field]}</Typography>
 
       <Stack spacing={1} className={styles.group}>
-        <Typography variant="subtitle2">Configured values (used by metadata editors)</Typography>
         <Stack direction="row" spacing={1} className={styles.addRow}>
           <TextField
             size="small"
@@ -115,7 +116,7 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
       </Stack>
 
       <Stack spacing={1} className={styles.group}>
-        <Divider/>
+        <Divider />
         <Stack direction="row" spacing={1} className={styles.chipsWrap}>
           {data.observed.map((value) => (
             <Chip
@@ -138,9 +139,16 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
 }
 
 export default function SettingsPage() {
+  const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
+  const updateAppConfigMutation = useUpdateAppConfig();
+  const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const { data, isPending, isError } = useMetadataDictionaryOverview();
 
-  if (isPending) {
+  useEffect(() => {
+    if (appConfig) setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
+  }, [appConfig]);
+
+  if (isPending || appConfigPending) {
     return (
       <Box className={styles.loading}>
         <CircularProgress />
@@ -148,7 +156,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (isError || !data) {
+  if (isError || appConfigError || !data || !appConfig) {
     return (
       <Box className={styles.page}>
         <Typography color="error">Failed to load settings.</Typography>
@@ -159,10 +167,31 @@ export default function SettingsPage() {
   return (
     <Box className={styles.page}>
       <Typography variant="h5">Metadata settings</Typography>
-      <Typography color="text.secondary">
-        Configure allowed values for metadata editors and review values currently present in indexed
-        metadata.
-      </Typography>
+
+      <Box className={styles.globalSettingsSection}>
+        <Typography variant="h6">Default Values</Typography>
+        <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
+          <TextField
+            size="small"
+            type="number"
+            label="Raft height (mm)"
+            value={defaultRaftHeightMm}
+            onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
+          />
+          <Button
+            variant="contained"
+            disabled={
+              updateAppConfigMutation.isPending ||
+              !defaultRaftHeightMm.trim() ||
+              Number(defaultRaftHeightMm) < 0 ||
+              !Number.isFinite(Number(defaultRaftHeightMm))
+            }
+            onClick={() => updateAppConfigMutation.mutate(Number(defaultRaftHeightMm))}
+          >
+            Save
+          </Button>
+        </Stack>
+      </Box>
 
       <Stack
         direction="row"

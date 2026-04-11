@@ -6,8 +6,31 @@ namespace findamodel.Controllers;
 
 [ApiController]
 [Route("api/settings")]
-public class SettingsController(MetadataDictionaryService metadataDictionaryService) : ControllerBase
+public class SettingsController(
+    MetadataDictionaryService metadataDictionaryService,
+    AppConfigService appConfigService) : ControllerBase
 {
+    [HttpGet("config")]
+    public async Task<ActionResult<AppConfigDto>> GetConfig()
+    {
+        var result = await appConfigService.GetAsync();
+        return Ok(result);
+    }
+
+    [HttpPut("config")]
+    public async Task<ActionResult<AppConfigDto>> UpdateConfig([FromBody] UpdateAppConfigRequest request)
+    {
+        try
+        {
+            var result = await appConfigService.UpdateDefaultRaftHeightAsync(request.DefaultRaftHeightMm);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpGet("metadata-dictionary")]
     public async Task<ActionResult<MetadataDictionaryOverviewDto>> GetMetadataDictionary()
     {

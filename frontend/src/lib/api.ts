@@ -17,7 +17,7 @@ export interface Model {
   convexHull: string | null;
   concaveHull: string | null;
   convexSansRaftHull: string | null;
-  raftOffsetMm: number;
+  raftHeightMm: number;
   dimensionXMm: number | null;
   dimensionYMm: number | null;
   dimensionZMm: number | null;
@@ -282,6 +282,7 @@ export interface MetadataFields {
   type: string | null;
   material: string | null;
   supported: boolean | null;
+  raftHeightMm: number | null;
   modelName: string | null;
   /** When provided, fully replaces the rule set for this directory. Maps YAML field name
    *  (e.g. "creator", "model_name") to inner rule YAML (e.g. "rule: filename\nindex: -2"). */
@@ -347,6 +348,10 @@ export interface MetadataDictionaryOverview {
   material: MetadataDictionaryField;
 }
 
+export interface AppConfig {
+  defaultRaftHeightMm: number;
+}
+
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
   const url = `/api/explorer?path=${encodeURIComponent(path)}`;
   const r = await fetch(url);
@@ -386,6 +391,22 @@ export async function updateDirectoryConfig(
 export async function fetchMetadataDictionaryOverview(): Promise<MetadataDictionaryOverview> {
   const r = await fetch('/api/settings/metadata-dictionary');
   if (!r.ok) throw new Error('Failed to fetch metadata dictionary settings');
+  return r.json();
+}
+
+export async function fetchAppConfig(): Promise<AppConfig> {
+  const r = await fetch('/api/settings/config');
+  if (!r.ok) throw new Error('Failed to fetch app settings');
+  return r.json();
+}
+
+export async function updateAppConfig(defaultRaftHeightMm: number): Promise<AppConfig> {
+  const r = await fetch('/api/settings/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultRaftHeightMm }),
+  });
+  if (!r.ok) throw new Error('Failed to update app settings');
   return r.json();
 }
 

@@ -113,9 +113,10 @@ function calculateCameraDistanceForBox(
   const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * aspect);
 
   const toCamera = direction.clone().normalize();
-  const worldUp = Math.abs(toCamera.dot(new THREE.Vector3(0, 1, 0))) > 0.999
-    ? new THREE.Vector3(0, 0, 1)
-    : new THREE.Vector3(0, 1, 0);
+  const worldUp =
+    Math.abs(toCamera.dot(new THREE.Vector3(0, 1, 0))) > 0.999
+      ? new THREE.Vector3(0, 0, 1)
+      : new THREE.Vector3(0, 1, 0);
   const right = new THREE.Vector3().crossVectors(worldUp, toCamera).normalize();
   const up = new THREE.Vector3().crossVectors(toCamera, right).normalize();
 
@@ -149,7 +150,7 @@ interface GeometryModelProps {
   convexHull: string | null;
   concaveHull: string | null;
   convexSansRaftHull: string | null;
-  raftOffsetMm: number;
+  raftHeightMm: number;
 }
 
 function GeometryModel({
@@ -158,7 +159,7 @@ function GeometryModel({
   convexHull,
   concaveHull,
   convexSansRaftHull,
-  raftOffsetMm,
+  raftHeightMm,
 }: GeometryModelProps) {
   const { data } = useGeometry(modelId);
 
@@ -209,10 +210,10 @@ function GeometryModel({
       <HullPolygon
         coordinates={sansRaftCoords}
         color="#f59e0b"
-        yOffset={raftOffsetMm}
+        yOffset={raftHeightMm}
         opacity={0.18}
       />
-      <HullLine coordinates={sansRaftCoords} color="#f59e0b" yOffset={raftOffsetMm} />
+      <HullLine coordinates={sansRaftCoords} color="#f59e0b" yOffset={raftHeightMm} />
     </group>
   );
 }
@@ -288,23 +289,24 @@ export default function ModelViewer({
   }
 
   const orbitTarget = useMemo<[number, number, number]>(
-    () => [
-      model.sphereCentreX ?? 0,
-      model.sphereCentreY ?? 0,
-      model.sphereCentreZ ?? 0,
-    ],
+    () => [model.sphereCentreX ?? 0, model.sphereCentreY ?? 0, model.sphereCentreZ ?? 0],
     [model.dimensionYMm, model.sphereCentreX, model.sphereCentreY, model.sphereCentreZ],
   );
 
   const halfExtents = useMemo(
-    () => new THREE.Vector3(model.dimensionXMm! / 2, model.dimensionYMm! / 2, model.dimensionZMm! / 2),
+    () =>
+      new THREE.Vector3(model.dimensionXMm! / 2, model.dimensionYMm! / 2, model.dimensionZMm! / 2),
     [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm],
   );
 
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
-        <CameraInit target={orbitTarget} halfExtents={halfExtents} direction={DEFAULT_VIEW_DIRECTION} />
+        <CameraInit
+          target={orbitTarget}
+          halfExtents={halfExtents}
+          direction={DEFAULT_VIEW_DIRECTION}
+        />
         <Lighting />
         <Grid />
         <React.Suspense
@@ -322,7 +324,7 @@ export default function ModelViewer({
             convexHull={convexHull ?? null}
             concaveHull={concaveHull ?? null}
             convexSansRaftHull={convexSansRaftHull ?? null}
-            raftOffsetMm={model.raftOffsetMm}
+            raftHeightMm={model.raftHeightMm}
           />
         </React.Suspense>
         <OrbitControls

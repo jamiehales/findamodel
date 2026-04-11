@@ -31,6 +31,8 @@ import {
   createMetadataDictionaryValue,
   updateMetadataDictionaryValue,
   deleteMetadataDictionaryValue,
+  fetchAppConfig,
+  updateAppConfig,
 } from './api';
 
 export const queryKeys = {
@@ -48,6 +50,7 @@ export const queryKeys = {
   queryModels: (filter: ModelFilter, limit: number) => ['query', 'models', filter, limit] as const,
   filterOptions: ['query', 'options'] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
+  appConfig: ['settings', 'config'] as const,
 };
 
 export function useModels(limit?: number) {
@@ -105,6 +108,23 @@ export function useMetadataDictionaryOverview() {
   return useQuery({
     queryKey: queryKeys.metadataDictionaryOverview,
     queryFn: fetchMetadataDictionaryOverview,
+  });
+}
+
+export function useAppConfig() {
+  return useQuery({
+    queryKey: queryKeys.appConfig,
+    queryFn: fetchAppConfig,
+  });
+}
+
+export function useUpdateAppConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (defaultRaftHeightMm: number) => updateAppConfig(defaultRaftHeightMm),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.appConfig, updated);
+    },
   });
 }
 

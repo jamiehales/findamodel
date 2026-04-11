@@ -21,11 +21,7 @@ interface ModelCardProps {
 
 function ModelCard({ model, href }: ModelCardProps) {
   return (
-    <AppCard
-      href={href}
-      interactive
-      className={styles.card}
-    >
+    <AppCard href={href} interactive className={styles.card}>
       {model.previewUrl && (
         <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
       )}
@@ -34,9 +30,7 @@ function ModelCard({ model, href }: ModelCardProps) {
         <Stack direction="row" spacing={0.5} flexWrap="wrap">
           <Chip variant="badge-enabled" label={model.fileType.toUpperCase()} />
 
-          {model.material && (
-            <Chip variant="badge-enabled" label={model.material} />
-          )}
+          {model.material && <Chip variant="badge-enabled" label={model.material} />}
 
           {model.supported !== null && (
             <Chip
