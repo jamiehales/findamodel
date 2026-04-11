@@ -31,6 +31,7 @@ import {
   PALETTE,
   LAYOUT_LOCALSTORAGE_KEY,
   PAUSE_ON_DRAG_LOCALSTORAGE_KEY,
+  SHOW_LABELS_LOCALSTORAGE_KEY,
   CAT_WALL,
   CAT_BORDER,
   toPhysics,
@@ -102,6 +103,14 @@ export default function PrintingListCanvas({
   useEffect(() => {
     pauseOnDragRef.current = pauseOnDrag;
   }, [pauseOnDrag]);
+
+  const [showLabels, setShowLabels] = useState(
+    () => localStorage.getItem(SHOW_LABELS_LOCALSTORAGE_KEY) !== 'false',
+  );
+  const showLabelsRef = useRef(showLabels);
+  useEffect(() => {
+    showLabelsRef.current = showLabels;
+  }, [showLabels]);
 
   const [hasSavedLayout, setHasSavedLayout] = useState(
     () => localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY) !== null,
@@ -374,6 +383,7 @@ export default function PrintingListCanvas({
           sc,
         );
         const pos = body.getPosition();
+        label.visible = showLabelsRef.current;
         label.position.set(toPixels(pos.x) * sc, toPixels(pos.y) * sc + VIEW_TOP_MARGIN_PX * sc);
         hasOutOfBounds ||= outOfBounds;
       }
@@ -659,47 +669,21 @@ export default function PrintingListCanvas({
             <MenuItem value="sansRaft">Sans raft hull</MenuItem>
           </Select>
         </FormControl>
-        <Button
-          size="large"
-          variant={isLayoutClean ? 'outlined' : 'primary'}
-          onClick={() => {
-            pausedRef.current = true;
-            saveLayoutRef.current?.();
-          }}
-          disabled={isLayoutClean}
-        >
-          Save
-        </Button>
-        <Button
-          size="large"
-          variant="outlined"
-          onClick={() => {
-            if (undoLayoutData !== null) {
-              localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, undoLayoutData);
-              setHasSavedLayout(true);
-              setIsLayoutClean(true);
-              setUndoLayoutData(null);
+        <FormGroup>
+          <FormControlLabel
+            label="Show labels"
+            control={
+              <Checkbox
+                checked={showLabels}
+                onChange={() => {
+                  const next = !showLabels;
+                  localStorage.setItem(SHOW_LABELS_LOCALSTORAGE_KEY, String(next));
+                  setShowLabels(next);
+                }}
+              />
             }
-            setResetCount((c) => c + 1);
-          }}
-          disabled={undoLayoutData === null && (isLayoutClean || !hasSavedLayout)}
-        >
-          Undo
-        </Button>
-        <Button
-          size="large"
-          variant="outlined"
-          onClick={() => {
-            const existing = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
-            if (existing) setUndoLayoutData(existing);
-            localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
-            setHasSavedLayout(false);
-            setIsLayoutClean(false);
-            setResetCount((c) => c + 1);
-          }}
-        >
-          Reset
-        </Button>
+          />
+        </FormGroup>
         <FormGroup>
           <FormControlLabel
             label="Pause on drag"
@@ -715,6 +699,49 @@ export default function PrintingListCanvas({
             }
           />
         </FormGroup>
+        <Stack direction="row" spacing={1} style={{ marginLeft: 'auto' }}>
+          <Button
+            size="large"
+            variant="outlined"
+            onClick={() => {
+              if (undoLayoutData !== null) {
+                localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, undoLayoutData);
+                setHasSavedLayout(true);
+                setIsLayoutClean(true);
+                setUndoLayoutData(null);
+              }
+              setResetCount((c) => c + 1);
+            }}
+            disabled={undoLayoutData === null && (isLayoutClean || !hasSavedLayout)}
+          >
+            Undo
+          </Button>
+          <Button
+            size="large"
+            variant="outlined"
+            onClick={() => {
+              const existing = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
+              if (existing) setUndoLayoutData(existing);
+              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+              setHasSavedLayout(false);
+              setIsLayoutClean(false);
+              setResetCount((c) => c + 1);
+            }}
+          >
+            Reset
+          </Button>
+          <Button
+            size="large"
+            variant={isLayoutClean ? 'outlined' : 'primary'}
+            onClick={() => {
+              pausedRef.current = true;
+              saveLayoutRef.current?.();
+            }}
+            disabled={isLayoutClean}
+          >
+            Save
+          </Button>
+        </Stack>
       </Stack>
       <div
         ref={containerRef}

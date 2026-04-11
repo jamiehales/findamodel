@@ -13,6 +13,7 @@ export const ANGULAR_THRESH = 0.003;
 export const SETTLE_FRAMES = 90; // ~1.5 s at 60 fps
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout';
 export const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag';
+export const SHOW_LABELS_LOCALSTORAGE_KEY = 'findamodel.printingListShowLabels';
 export const DEBUG_PHYSICS_WIREFRAME = false;
 export const PHYSICS_BORDER_PADDING_PX = 0;
 
