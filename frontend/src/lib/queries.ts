@@ -102,18 +102,19 @@ export function useSuspenseModel(id: string) {
   });
 }
 
-export function useGeometry(id: string) {
-  return useSuspenseQuery({
+export function useGeometry(id: string, enabled: boolean = true) {
+  return useQuery({
     queryKey: queryKeys.geometry(id),
     queryFn: () => fetchGeometry(id),
+    enabled: !!id && enabled,
   });
 }
 
-export function useSplitGeometry(id: string) {
+export function useSplitGeometry(id: string, enabled: boolean = true) {
   return useQuery({
     queryKey: queryKeys.splitGeometry(id),
     queryFn: () => fetchSplitGeometry(id),
-    enabled: !!id,
+    enabled: !!id && enabled,
   });
 }
 

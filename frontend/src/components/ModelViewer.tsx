@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Html } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
 
@@ -147,30 +147,22 @@ function calculateCameraDistanceForBox(
 }
 
 interface GeometryModelProps {
-  modelId: string;
+  geometry: import('../lib/api').GeometryResponse;
   color: string;
   convexHull: string | null;
   concaveHull: string | null;
   convexSansRaftHull: string | null;
   raftHeightMm: number;
-  /** When provided and non-null, use this geometry instead of the full geometry. */
-  bodyGeometry?: import('../lib/api').GeometryResponse | null;
 }
 
 function GeometryModel({
-  modelId,
+  geometry: data,
   color,
   convexHull,
   concaveHull,
   convexSansRaftHull,
   raftHeightMm,
-  bodyGeometry,
 }: GeometryModelProps) {
-  const { data: fullData } = useGeometry(modelId);
-
-  // Use provided body geometry when available; otherwise fall back to full geometry.
-  const data = bodyGeometry != null ? bodyGeometry : fullData;
-
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
@@ -295,12 +287,22 @@ export default function ModelViewer({
   supported,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
-  const { data: splitData } = useSplitGeometry(modelId);
+  const isSupportModel = supported === true;
+  const { data: splitData, isPending: isSplitPending } = useSplitGeometry(modelId, isSupportModel);
+  const shouldFetchFullGeometry = !isSupportModel || splitData === null;
+  const { data: fullData, isPending: isFullGeometryPending } = useGeometry(
+    modelId,
+    shouldFetchFullGeometry,
+  );
   const [showSupports, setShowSupports] = useState(true);
   const color = MODEL_COLOR;
   const theme = useTheme();
+  const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
 
-  const hasSupportMesh = supported === true && splitData?.supports != null;
+  const hasSupportMesh = isSupportModel && splitData?.supports != null;
+  const isGeometryPending = isSupportModel
+    ? isSplitPending || (splitData === null && isFullGeometryPending)
+    : isFullGeometryPending;
 
   const errorFallback = (
     <div style={containerStyle}>
@@ -313,6 +315,8 @@ export default function ModelViewer({
 
   if (
     isPending ||
+    isGeometryPending ||
+    geometryData == null ||
     model.dimensionXMm == null ||
     model.dimensionYMm == null ||
     model.dimensionZMm == null
@@ -327,21 +331,24 @@ export default function ModelViewer({
         }}
       >
         <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-          {isPending ? 'Loading model…' : 'Model dimensions not yet available'}
+          {isPending || isGeometryPending || geometryData == null
+            ? 'Loading model…'
+            : 'Model dimensions not yet available'}
         </span>
       </div>
     );
   }
 
-  const orbitTarget = useMemo<[number, number, number]>(
-    () => [model.sphereCentreX ?? 0, model.sphereCentreY ?? 0, model.sphereCentreZ ?? 0],
-    [model.dimensionYMm, model.sphereCentreX, model.sphereCentreY, model.sphereCentreZ],
-  );
+  const orbitTarget: [number, number, number] = [
+    model.sphereCentreX ?? 0,
+    model.sphereCentreY ?? 0,
+    model.sphereCentreZ ?? 0,
+  ];
 
-  const halfExtents = useMemo(
-    () =>
-      new THREE.Vector3(model.dimensionXMm! / 2, model.dimensionYMm! / 2, model.dimensionZMm! / 2),
-    [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm],
+  const halfExtents = new THREE.Vector3(
+    model.dimensionXMm / 2,
+    model.dimensionYMm / 2,
+    model.dimensionZMm / 2,
   );
 
   return (
@@ -356,28 +363,17 @@ export default function ModelViewer({
           />
           <Lighting />
           <Grid />
-          <React.Suspense
-            fallback={
-              <Html center>
-                <span style={{ fontSize: '0.85rem', color: '#64748b', whiteSpace: 'nowrap' }}>
-                  Loading model…
-                </span>
-              </Html>
-            }
-          >
-            <GeometryModel
-              modelId={modelId}
-              color={color}
-              convexHull={convexHull ?? null}
-              concaveHull={concaveHull ?? null}
-              convexSansRaftHull={convexSansRaftHull ?? null}
-              raftHeightMm={model.raftHeightMm}
-              bodyGeometry={hasSupportMesh ? splitData?.body : null}
-            />
-            {supported === true && (
-              <SupportGeometryMesh geometry={splitData?.supports ?? null} visible={showSupports} />
-            )}
-          </React.Suspense>
+          <GeometryModel
+            geometry={geometryData}
+            color={color}
+            convexHull={convexHull ?? null}
+            concaveHull={concaveHull ?? null}
+            convexSansRaftHull={convexSansRaftHull ?? null}
+            raftHeightMm={model.raftHeightMm}
+          />
+          {isSupportModel && (
+            <SupportGeometryMesh geometry={splitData?.supports ?? null} visible={showSupports} />
+          )}
           <OrbitControls
             target={orbitTarget}
             enableDamping
