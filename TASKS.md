@@ -4,8 +4,6 @@
 
 * Allow hulls to be calculated in a separate pass
 
-* Add a 'download all models' button to the printing list page which zips up all the model files selected, and downloads it - show a progress spinner while the zipping is happening so the user is informed. Show progress of the zip process if possible.
-
 * If there is an image in a directory, allow setting this as the collection preview, creator preview
 
 * findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name

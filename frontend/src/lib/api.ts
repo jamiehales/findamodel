@@ -448,6 +448,17 @@ export interface PrintingListDetail {
   items: PrintingListItem[];
 }
 
+export interface PrintingListArchiveJob {
+  jobId: string;
+  fileName: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  totalEntries: number;
+  completedEntries: number;
+  progressPercent: number;
+  currentEntryName: string | null;
+  errorMessage: string | null;
+}
+
 export async function fetchPrintingLists(): Promise<PrintingListSummary[]> {
   const r = await fetch('/api/printing-lists');
   if (!r.ok) throw new Error('Failed to fetch printing lists');
@@ -528,4 +539,25 @@ export async function clearPrintingListItems(listId: string): Promise<PrintingLi
   const r = await fetch(`/api/printing-lists/${listId}/items`, { method: 'DELETE' });
   if (!r.ok) throw new Error('Failed to clear printing list items');
   return r.json();
+}
+
+export async function createPrintingListArchiveJob(
+  listId: string,
+  options?: { flatten?: boolean },
+): Promise<PrintingListArchiveJob> {
+  const flatten = options?.flatten ?? true;
+  const query = new URLSearchParams({ flatten: String(flatten) }).toString();
+  const r = await fetch(`/api/printing-lists/${listId}/download-jobs?${query}`, { method: 'POST' });
+  if (!r.ok) throw new Error('Failed to start printing list archive');
+  return r.json();
+}
+
+export async function fetchPrintingListArchiveJob(jobId: string): Promise<PrintingListArchiveJob> {
+  const r = await fetch(`/api/printing-lists/download-jobs/${jobId}`);
+  if (!r.ok) throw new Error('Failed to fetch printing list archive status');
+  return r.json();
+}
+
+export function getPrintingListArchiveDownloadUrl(jobId: string): string {
+  return `/api/printing-lists/download-jobs/${jobId}/file`;
 }

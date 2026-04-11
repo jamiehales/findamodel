@@ -35,6 +35,7 @@ builder.Services.AddSingleton<findamodel.Services.ModelService>();
 builder.Services.AddSingleton<findamodel.Services.IndexerService>();
 builder.Services.AddSingleton<findamodel.Services.ExplorerService>();
 builder.Services.AddSingleton<findamodel.Services.PrintingListService>();
+builder.Services.AddSingleton<findamodel.Services.PrintingListArchiveService>();
 builder.Services.AddSingleton<findamodel.Services.QueryService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();
 

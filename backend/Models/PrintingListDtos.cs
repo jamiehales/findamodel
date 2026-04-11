@@ -36,3 +36,13 @@ public record RenamePrintingListRequest(string Name);
 public record UpdatePrintingListSettingsRequest(string SpawnType, string HullMode);
 
 public record UpsertPrintingListItemRequest(int Quantity);
+
+public record PrintingListArchiveJobDto(
+    Guid JobId,
+    string FileName,
+    string Status,
+    int TotalEntries,
+    int CompletedEntries,
+    int ProgressPercent,
+    string? CurrentEntryName,
+    string? ErrorMessage);

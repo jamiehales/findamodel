@@ -6,11 +6,22 @@ import {
   Typography,
   Menu,
   MenuItem,
+  Alert,
+  LinearProgress,
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import { useMemo, useState } from 'react';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { generatePlate, type SpawnType, type HullMode } from '../lib/api';
+import {
+  createPrintingListArchiveJob,
+  fetchPrintingListArchiveJob,
+  generatePlate,
+  getPrintingListArchiveDownloadUrl,
+  type PrintingListArchiveJob,
+  type SpawnType,
+  type HullMode,
+} from '../lib/api';
 import {
   useModels,
   usePrintingListDetail,
@@ -35,6 +46,9 @@ function PrintingListPage() {
   const [simulationPaused, setSimulationPaused] = useState(false);
   const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [archiveJob, setArchiveJob] = useState<PrintingListArchiveJob | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveDownloading, setArchiveDownloading] = useState(false);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -47,6 +61,87 @@ function PrintingListPage() {
 
   const listName = list?.name ?? 'Printing list';
   const isPending = modelsPending || listPending;
+  const archiveInProgress = archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
+  const archiveBusy = archiveInProgress || archiveDownloading;
+
+  useEffect(() => {
+    if (!archiveJob || (archiveJob.status !== 'queued' && archiveJob.status !== 'running')) return;
+
+    let disposed = false;
+    let polling = false;
+
+    const pollJob = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const nextJob = await fetchPrintingListArchiveJob(archiveJob.jobId);
+        if (!disposed) setArchiveJob(nextJob);
+      } catch (error) {
+        if (!disposed) {
+          const message = error instanceof Error ? error.message : 'Failed to fetch archive progress';
+          setArchiveError(message);
+          setArchiveJob((current) =>
+            current
+              ? {
+                  ...current,
+                  status: 'failed',
+                  errorMessage: message,
+                }
+              : current,
+          );
+        }
+      } finally {
+        polling = false;
+      }
+    };
+
+    void pollJob();
+    const intervalId = window.setInterval(() => {
+      void pollJob();
+    }, 500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [archiveJob?.jobId, archiveJob?.status]);
+
+  useEffect(() => {
+    if (!archiveJob || archiveJob.status !== 'completed' || archiveDownloading) return;
+
+    let disposed = false;
+
+    const downloadArchive = async () => {
+      setArchiveDownloading(true);
+      try {
+        if (disposed) return;
+
+        const url = getPrintingListArchiveDownloadUrl(archiveJob.jobId);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = archiveJob.fileName;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setArchiveJob(null);
+      } catch (error) {
+        if (!disposed) {
+          setArchiveError(
+            error instanceof Error ? error.message : 'Failed to download printing list archive',
+          );
+        }
+      } finally {
+        if (!disposed) setArchiveDownloading(false);
+      }
+    };
+
+    void downloadArchive();
+
+    return () => {
+      disposed = true;
+    };
+  }, [archiveDownloading, archiveJob]);
 
   function handleSpawnOrderChange(next: SpawnType) {
     if (!list) return;
@@ -102,11 +197,37 @@ function PrintingListPage() {
     setClearDialogOpen(true);
   }
 
+  async function handleDownloadAllModels(flatten = true) {
+    if (!list) return;
+
+    setArchiveError(null);
+
+    try {
+      const nextJob = await createPrintingListArchiveJob(list.id, { flatten });
+      setArchiveJob(nextJob);
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : 'Failed to start archive');
+    }
+  }
+
   function handleConfirmClearList() {
     if (!list) return;
     clearItems(list.id);
     setClearDialogOpen(false);
   }
+
+  const archiveCurrentFile = archiveJob?.currentEntryName?.split('/').pop() ?? null;
+  const archiveStatusText = archiveDownloading
+    ? 'Downloading zip…'
+    : archiveJob?.status === 'queued'
+      ? 'Queueing zip…'
+      : archiveJob?.status === 'running'
+        ? archiveJob.totalEntries > 0
+          ? `Packaging ${archiveJob.completedEntries} of ${archiveJob.totalEntries} files…`
+          : 'Packaging zip…'
+        : archiveJob?.status === 'completed'
+          ? 'Zip ready. Starting download…'
+          : null;
 
   return (
     <Box className={styles.page}>
@@ -118,6 +239,22 @@ function PrintingListPage() {
           <Stack direction="row" spacing={1} alignItems="center">
             {listedModels.length > 0 && (
               <>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    void handleDownloadAllModels();
+                  }}
+                  disabled={savingPlate || archiveBusy}
+                  startIcon={
+                    archiveBusy ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <DownloadRoundedIcon fontSize="small" />
+                    )
+                  }
+                >
+                  {archiveBusy ? 'Preparing zip…' : 'Download all models'}
+                </Button>
                 <Box sx={{ display: 'flex' }}>
                   <Button
                     variant="outlined"
@@ -195,6 +332,40 @@ function PrintingListPage() {
           </MenuItem>
         </Menu>
       </Stack>
+
+      {(archiveStatusText || archiveError || archiveJob?.errorMessage) && (
+        <Box className={styles.archiveStatusCard}>
+          {archiveStatusText && (
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={16} color="inherit" />
+                <Typography className={styles.archiveStatusTitle}>{archiveStatusText}</Typography>
+              </Stack>
+              <LinearProgress
+                variant={archiveJob && archiveJob.totalEntries > 0 ? 'determinate' : 'indeterminate'}
+                value={archiveJob?.progressPercent ?? 0}
+                className={styles.archiveProgress}
+              />
+              {archiveJob && archiveJob.totalEntries > 0 && (
+                <Typography className={styles.archiveStatusMeta}>
+                  {archiveJob.progressPercent}% complete
+                </Typography>
+              )}
+              {archiveCurrentFile && (
+                <Typography className={styles.archiveStatusMeta}>
+                  Current file: {archiveCurrentFile}
+                </Typography>
+              )}
+            </Stack>
+          )}
+
+          {(archiveError || archiveJob?.errorMessage) && (
+            <Alert severity="error" onClose={() => setArchiveError(null)}>
+              {archiveError ?? archiveJob?.errorMessage}
+            </Alert>
+          )}
+        </Box>
+      )}
 
       {isPending ? (
         <Box className={styles.loadingCenter}>

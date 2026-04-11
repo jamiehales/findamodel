@@ -63,6 +63,33 @@
   padding: 2rem 0;
 }
 
+.archiveStatusCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.125rem;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+}
+
+.archiveStatusTitle {
+  color: #e2e8f0 !important;
+  font-weight: 600 !important;
+}
+
+.archiveStatusMeta {
+  color: #94a3b8 !important;
+  font-size: 0.9rem !important;
+}
+
+.archiveProgress {
+  height: 0.5rem !important;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18) !important;
+}
+
 .emptyText {
   font-size: 1rem !important;
 }
