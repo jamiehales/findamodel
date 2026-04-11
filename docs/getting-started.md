@@ -1,0 +1,146 @@
+---
+layout: default
+title: Getting started
+nav_order: 2
+---
+
+# Getting started
+{: .no_toc }
+
+<details open markdown="block">
+  <summary>Contents</summary>
+  {: .text-delta }
+1. TOC
+{:toc}
+</details>
+
+---
+
+## Requirements
+
+- **Docker** (recommended) — the easiest way to run FindAModel.
+- Or: .NET 8 SDK and Node.js 20+ for local development.
+
+---
+
+## Running with Docker
+
+Pull and run the pre-built image from GitHub Container Registry:
+
+```bash
+docker run -d \
+  --name findamodel \
+  -p 5000:8080 \
+  -v /path/to/your/models:/models:ro \
+  -v /path/to/data:/data \
+  ghcr.io/<owner>/findamodel:latest
+```
+
+Then open [http://localhost:5000](http://localhost:5000) in your browser.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODELS_PATH` | `/models` | Path to your models directory (can be read-only) |
+| `DATA_PATH` | `/data` | Path for the database and cache files |
+| `ASPNETCORE_URLS` | `http://+:8080` | Bind address |
+
+### docker-compose example
+
+```yaml
+services:
+  findamodel:
+    image: ghcr.io/<owner>/findamodel:latest
+    ports:
+      - "5000:8080"
+    volumes:
+      - ./models:/models:ro
+      - ./data:/data
+    restart: unless-stopped
+```
+
+---
+
+## Running for development
+
+### Using VS Code (recommended)
+
+The repository includes a complete VS Code configuration. Open `findamodel.code-workspace` in VS Code and use the pre-configured launch profiles and tasks.
+
+**Prerequisites:** .NET 9 SDK, Node.js, Yarn, and Docker (for the optional Seq log viewer) must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier).
+
+**Launch profiles** (Run and Debug panel):
+
+| Profile | Description |
+|---------|-------------|
+| `Full Stack: Backend + Frontend` | Starts both the backend and the frontend dev server together, and opens Seq for structured log viewing |
+| `Backend: .NET Launch` | Starts only the .NET backend with the debugger attached |
+| `Frontend: Vite Dev Server` | Starts only the Vite frontend dev server |
+| `Seq: Dashboard` | Starts the Seq structured log viewer via Docker and opens it in the browser |
+
+**Tasks** (Terminal → Run Task):
+
+| Task | Description |
+|------|-------------|
+| `backend: build` | Builds the .NET backend |
+| `backend: watch` | Builds and watches the backend for changes |
+| `frontend: install` | Runs `yarn install` in the frontend directory |
+| `data: clear database` | Deletes the local SQLite database |
+| `data: clear cache` | Deletes the local model cache |
+
+To get started:
+
+1. Run the `frontend: install` task once to install Node dependencies.
+2. Use the **Full Stack: Backend + Frontend** launch profile to start everything.
+3. The frontend opens at `http://localhost:5173` and proxies API calls to the backend at `http://localhost:5000`.
+
+---
+
+### Manual setup
+
+If you prefer to run without VS Code, start each process in a separate terminal.
+
+#### Backend
+
+```bash
+cd backend
+dotnet run
+```
+
+The API will start at `http://localhost:5000`.
+
+#### Frontend
+
+```bash
+cd frontend
+yarn install
+yarn dev
+```
+
+The dev server will start at `http://localhost:5173` and proxy API calls to the backend.
+
+---
+
+## First run
+
+1. Open the app in your browser.
+2. The **Settings** page shows the configured models root path.
+3. Click **Index** on the Explore page (or via the indexer button) to scan your model files.
+4. FindAModel will walk your directory tree, read any `findamodel.yaml` files it finds, and populate the model library.
+
+---
+
+## Adding metadata rules
+
+Metadata is extracted automatically using `findamodel.yaml` files placed in your model directories. See the [Configuration](configuration/) and [Rules system](rules/) sections for detailed guidance.
+
+A minimal `findamodel.yaml` to set a creator and extract model names from filenames:
+
+```yaml
+creator: "Alice"
+
+model_name:
+  rule: filename
+  include_extension: false
+```
