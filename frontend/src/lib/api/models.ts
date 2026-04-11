@@ -258,32 +258,33 @@ function decodeBinaryGeometry(buffer: ArrayBuffer): GeometryResponse {
   };
 }
 
-export async function fetchSupportGeometry(id: string): Promise<GeometryResponse | null> {
-  const r = await fetch(`/api/models/${id}/geometry/support`, {
-    headers: { Accept: 'application/vnd.findamodel.mesh' },
-  });
-  if (r.status === 204) return null;
-  if (!r.ok) throw new Error('Failed to fetch support geometry');
-
-  const contentType = r.headers.get('content-type') ?? '';
-  if (contentType.includes('application/vnd.findamodel.mesh')) {
-    return decodeBinaryGeometry(await r.arrayBuffer());
-  }
-  return null;
+export interface SplitGeometryResponse {
+  body: GeometryResponse;
+  supports: GeometryResponse | null;
 }
 
-export async function fetchBodyGeometry(id: string): Promise<GeometryResponse | null> {
-  const r = await fetch(`/api/models/${id}/geometry/body`, {
-    headers: { Accept: 'application/vnd.findamodel.mesh' },
+export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {
+  const r = await fetch(`/api/models/${id}/geometry/split`, {
+    headers: { Accept: 'application/vnd.findamodel.mesh-split' },
   });
   if (r.status === 204) return null;
-  if (!r.ok) throw new Error('Failed to fetch body geometry');
+  if (!r.ok) throw new Error('Failed to fetch split geometry');
 
-  const contentType = r.headers.get('content-type') ?? '';
-  if (contentType.includes('application/vnd.findamodel.mesh')) {
-    return decodeBinaryGeometry(await r.arrayBuffer());
-  }
-  return null;
+  const buf = await r.arrayBuffer();
+  const view = new DataView(buf);
+  let offset = 0;
+
+  const bodyLength = view.getUint32(offset, true);
+  offset += 4;
+  const body = decodeBinaryGeometry(buf.slice(offset, offset + bodyLength));
+  offset += bodyLength;
+
+  const supportLength = view.getUint32(offset, true);
+  offset += 4;
+  const supports =
+    supportLength > 0 ? decodeBinaryGeometry(buf.slice(offset, offset + supportLength)) : null;
+
+  return { body, supports };
 }
 
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {

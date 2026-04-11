@@ -9,6 +9,7 @@ namespace findamodel.Services;
 public class MeshTransferService
 {
     public const string ContentType = "application/vnd.findamodel.mesh";
+    public const string ContentTypeSplit = "application/vnd.findamodel.mesh-split";
 
     private const uint Magic = 0x48534D46; // "FMSH" little-endian
     private const byte Version = 1;

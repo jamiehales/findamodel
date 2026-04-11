@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useBodyGeometry, useGeometry, useModel, useSupportGeometry } from '../lib/queries';
+import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
@@ -148,8 +148,8 @@ interface GeometryModelProps {
   concaveHull: string | null;
   convexSansRaftHull: string | null;
   raftHeightMm: number;
-  /** When true, use body-only geometry (supports rendered separately) */
-  useBodyOnly: boolean;
+  /** When provided and non-null, use this geometry instead of the full geometry. */
+  bodyGeometry?: import('../lib/api').GeometryResponse | null;
 }
 
 function GeometryModel({
@@ -159,14 +159,12 @@ function GeometryModel({
   concaveHull,
   convexSansRaftHull,
   raftHeightMm,
-  useBodyOnly,
+  bodyGeometry,
 }: GeometryModelProps) {
   const { data: fullData } = useGeometry(modelId);
-  const { data: bodyData } = useBodyGeometry(modelId);
 
-  // Use body-only geometry when supports are being rendered separately
-  // and body geometry is available; otherwise fall back to full geometry.
-  const data = useBodyOnly && bodyData != null ? bodyData : fullData;
+  // Use provided body geometry when available; otherwise fall back to full geometry.
+  const data = bodyGeometry != null ? bodyGeometry : fullData;
 
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -228,13 +226,11 @@ interface ErrorBoundaryState {
 }
 
 interface SupportGeometryMeshProps {
-  modelId: string;
+  geometry: import('../lib/api').GeometryResponse | null;
   visible: boolean;
 }
 
-function SupportGeometryMesh({ modelId, visible }: SupportGeometryMeshProps) {
-  const { data } = useSupportGeometry(modelId);
-
+function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshProps) {
   const bufferGeometry = useMemo(() => {
     if (!data) return null;
     const geo = new THREE.BufferGeometry();
@@ -294,11 +290,11 @@ export default function ModelViewer({
   supported,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
-  const { data: supportData } = useSupportGeometry(modelId);
+  const { data: splitData } = useSplitGeometry(modelId);
   const [showSupports, setShowSupports] = useState(true);
   const color = MODEL_COLOR;
 
-  const hasSupportMesh = supported === true && supportData != null;
+  const hasSupportMesh = supported === true && splitData?.supports != null;
 
   const errorFallback = (
     <div style={containerStyle}>
@@ -369,9 +365,11 @@ export default function ModelViewer({
               concaveHull={concaveHull ?? null}
               convexSansRaftHull={convexSansRaftHull ?? null}
               raftHeightMm={model.raftHeightMm}
-              useBodyOnly={hasSupportMesh}
+              bodyGeometry={hasSupportMesh ? splitData?.body : null}
             />
-            {supported === true && <SupportGeometryMesh modelId={modelId} visible={showSupports} />}
+            {supported === true && (
+              <SupportGeometryMesh geometry={splitData?.supports ?? null} visible={showSupports} />
+            )}
           </React.Suspense>
           <OrbitControls
             target={orbitTarget}
