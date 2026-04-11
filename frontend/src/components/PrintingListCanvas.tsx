@@ -19,9 +19,12 @@ import type { Model, SpawnType, HullMode } from '../lib/api';
 
 const CANVAS_WIDTH_MM = 228;
 const CANVAS_HEIGHT_MM = 128;
+const VIEW_TOP_MARGIN_MM = 12;
 const PX_PER_MM = 4;
 const CANVAS_WIDTH_PX = CANVAS_WIDTH_MM * PX_PER_MM;
 const CANVAS_HEIGHT_PX = CANVAS_HEIGHT_MM * PX_PER_MM;
+const VIEW_TOP_MARGIN_PX = VIEW_TOP_MARGIN_MM * PX_PER_MM;
+const VIEW_HEIGHT_PX = CANVAS_HEIGHT_PX + VIEW_TOP_MARGIN_PX;
 
 const WALL_THICKNESS = 200;
 const SPEED_THRESH = 0.12;
@@ -458,6 +461,48 @@ function computeOverlapping(entries: Entry[]): Set<number> {
   return overlapping;
 }
 
+/** Visual bounds check (plate-space): true when any rendered vertex is outside plate rectangle. */
+function isOutOfBounds(body: Matter.Body, visualLocalVerts: Vec2[]): boolean {
+  if (!visualLocalVerts.length) return false;
+  const worldVerts = toWorldVerts(body, visualLocalVerts);
+  return worldVerts.some(
+    (v) => v.x < 0 || v.x > CANVAS_WIDTH_PX || v.y < 0 || v.y > CANVAS_HEIGHT_PX,
+  );
+}
+
+function drawDottedRect(
+  gfx: PIXI.Graphics,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  dashPx: number,
+  gapPx: number,
+) {
+  const drawDashedLine = (x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len <= 0) return;
+
+    const ux = dx / len;
+    const uy = dy / len;
+    let t = 0;
+    while (t < len) {
+      const segStart = t;
+      const segEnd = Math.min(t + dashPx, len);
+      gfx.moveTo(x1 + ux * segStart, y1 + uy * segStart);
+      gfx.lineTo(x1 + ux * segEnd, y1 + uy * segEnd);
+      t += dashPx + gapPx;
+    }
+  };
+
+  drawDashedLine(x, y, x + w, y);
+  drawDashedLine(x + w, y, x + w, y + h);
+  drawDashedLine(x + w, y + h, x, y + h);
+  drawDashedLine(x, y + h, x, y);
+}
+
 // ── Draw helper ───────────────────────────────────────────────────────────────
 
 /**
@@ -465,7 +510,13 @@ function computeOverlapping(entries: Entry[]): Set<number> {
  * the body's current position and angle. This keeps the rendered polygon at the
  * original model size while the physics body carries the 1 mm gap margin.
  */
-function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[], color: number) {
+function drawBody(
+  gfx: PIXI.Graphics,
+  body: Matter.Body,
+  visualLocalVerts: Vec2[],
+  color: number,
+  yOffset = 0,
+) {
   gfx.clear();
   if (!visualLocalVerts.length) return;
 
@@ -476,19 +527,19 @@ function drawBody(gfx: PIXI.Graphics, body: Matter.Body, visualLocalVerts: Vec2[
   gfx.beginFill(color, 0.45);
   gfx.lineStyle(1.5, color, 0.9);
   const v0 = visualLocalVerts[0];
-  gfx.moveTo(v0.x * cos - v0.y * sin + px, v0.x * sin + v0.y * cos + py);
+  gfx.moveTo(v0.x * cos - v0.y * sin + px, v0.x * sin + v0.y * cos + py + yOffset);
   for (let i = 1; i < visualLocalVerts.length; i++) {
     const v = visualLocalVerts[i];
-    gfx.lineTo(v.x * cos - v.y * sin + px, v.x * sin + v.y * cos + py);
+    gfx.lineTo(v.x * cos - v.y * sin + px, v.x * sin + v.y * cos + py + yOffset);
   }
   gfx.closePath();
   gfx.endFill();
 
   if (DEBUG_PHYSICS_WIREFRAME) {
     gfx.lineStyle(1, 0xff0000, 0.5);
-    gfx.moveTo(body.vertices[0].x, body.vertices[0].y);
+    gfx.moveTo(body.vertices[0].x, body.vertices[0].y + yOffset);
     for (let i = 1; i < body.vertices.length; i++)
-      gfx.lineTo(body.vertices[i].x, body.vertices[i].y);
+      gfx.lineTo(body.vertices[i].x, body.vertices[i].y + yOffset);
     gfx.closePath();
   }
 }
@@ -580,7 +631,7 @@ export default function PrintingListCanvas({
     // ── Pixi application ───────────────────────────────────────────────────
     const app = new PIXI.Application({
       width: CANVAS_WIDTH_PX,
-      height: CANVAS_HEIGHT_PX,
+      height: VIEW_HEIGHT_PX,
       backgroundColor: 0x0f172a,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -589,7 +640,7 @@ export default function PrintingListCanvas({
     appRef.current = app;
     container.appendChild(app.view as HTMLCanvasElement);
     app.stage.eventMode = 'static';
-    app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX);
+    app.stage.hitArea = new PIXI.Rectangle(0, 0, CANVAS_WIDTH_PX, VIEW_HEIGHT_PX);
 
     // ── Matter.js engine ───────────────────────────────────────────────────
     const engine = Matter.Engine.create({ gravity: { x: 0, y: 1 } });
@@ -623,15 +674,29 @@ export default function PrintingListCanvas({
     const gridGfx = new PIXI.Graphics();
     gridGfx.lineStyle(0.5, 0x334155, 0.6);
     for (let x = GRID_PX; x < CANVAS_WIDTH_PX; x += GRID_PX)
-      gridGfx.moveTo(x, 0).lineTo(x, CANVAS_HEIGHT_PX);
+      gridGfx.moveTo(x, VIEW_TOP_MARGIN_PX).lineTo(x, VIEW_TOP_MARGIN_PX + CANVAS_HEIGHT_PX);
     for (let y = GRID_PX; y < CANVAS_HEIGHT_PX; y += GRID_PX)
-      gridGfx.moveTo(0, y).lineTo(CANVAS_WIDTH_PX, y);
+      gridGfx.moveTo(0, VIEW_TOP_MARGIN_PX + y).lineTo(CANVAS_WIDTH_PX, VIEW_TOP_MARGIN_PX + y);
     app.stage.addChild(gridGfx);
 
     const borderGfx = new PIXI.Graphics();
     borderGfx.lineStyle(2, 0x64748b, 1);
-    borderGfx.drawRect(0, 0, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX);
+    borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX);
     app.stage.addChild(borderGfx);
+
+    const outOfBoundsBorderGfx = new PIXI.Graphics();
+    outOfBoundsBorderGfx.lineStyle(5, 0xef4444, 1);
+    drawDottedRect(
+      outOfBoundsBorderGfx,
+      8,
+      VIEW_TOP_MARGIN_PX + 8,
+      CANVAS_WIDTH_PX - 16,
+      CANVAS_HEIGHT_PX - 16,
+      12,
+      8,
+    );
+    outOfBoundsBorderGfx.visible = false;
+    app.stage.addChild(outOfBoundsBorderGfx);
 
     // ── Saved layout ───────────────────────────────────────────────────────
     let savedLayout: SavedLayout | null = null;
@@ -731,11 +796,14 @@ export default function PrintingListCanvas({
 
     // ── Render helper ──────────────────────────────────────────────────────
     function renderEntries(overlapping: Set<number>) {
+      let hasOutOfBounds = false;
       for (const { body, gfx, label, color, visualLocalVerts } of entries) {
         const renderColor = overlapping.has(body.id) ? color : darkenColor(color, 0.45);
-        drawBody(gfx, body, visualLocalVerts, renderColor);
-        label.position.set(body.position.x, body.position.y);
+        drawBody(gfx, body, visualLocalVerts, renderColor, VIEW_TOP_MARGIN_PX);
+        label.position.set(body.position.x, body.position.y + VIEW_TOP_MARGIN_PX);
+        hasOutOfBounds ||= isOutOfBounds(body, visualLocalVerts);
       }
+      outOfBoundsBorderGfx.visible = hasOutOfBounds;
     }
 
     // ── Layout persistence ─────────────────────────────────────────────────
@@ -764,10 +832,11 @@ export default function PrintingListCanvas({
       }
 
       const { x, y } = e.global;
-      const hits = Matter.Query.point(dynamicBodies, { x, y });
+      const worldY = y - VIEW_TOP_MARGIN_PX;
+      const hits = Matter.Query.point(dynamicBodies, { x, y: worldY });
       if (hits.length > 0) {
         const hit = hits[0];
-        drag = { body: hit, ox: x - hit.position.x, oy: y - hit.position.y };
+        drag = { body: hit, ox: x - hit.position.x, oy: worldY - hit.position.y };
         Matter.Body.setStatic(hit, true);
         if (pauseOnDragRef.current) {
           pausedRef.current = true;
@@ -779,7 +848,8 @@ export default function PrintingListCanvas({
     app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
       if (!drag) return;
       const { x, y } = e.global;
-      Matter.Body.setPosition(drag.body, { x: x - drag.ox, y: y - drag.oy });
+      const worldY = y - VIEW_TOP_MARGIN_PX;
+      Matter.Body.setPosition(drag.body, { x: x - drag.ox, y: worldY - drag.oy });
     });
 
     const endDrag = () => {
@@ -1044,7 +1114,7 @@ export default function PrintingListCanvas({
         ref={containerRef}
         style={{
           width: CANVAS_WIDTH_PX,
-          height: CANVAS_HEIGHT_PX,
+          height: VIEW_HEIGHT_PX,
           borderRadius: 0,
           overflow: 'hidden',
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',

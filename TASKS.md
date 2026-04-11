@@ -20,9 +20,6 @@
 
 * Right align the reset button
 
-* Show a little bit above the top of the print plate, so that you can see clearly if any models are "out of bounds"
-* If models are out of bounds, add a thick red internal dotted border - use visual not physics data to determine this
-
 * Make the hardcoded 2mm raft clipping configurable - it should default to 2mm, but be overridable using the findamodel.yaml metadata
 
 * Add 3D Print type to model, FDM / Resin / Any
