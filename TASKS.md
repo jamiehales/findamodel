@@ -1,5 +1,3 @@
-* Add unit tests for services
-
 * Allow hulls to be calculated in a separate pass
 
 * If there is an image in a directory, allow setting this as the collection preview, creator preview

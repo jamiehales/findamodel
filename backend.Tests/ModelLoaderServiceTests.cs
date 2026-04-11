@@ -21,7 +21,7 @@ public class ModelLoaderServiceTests
                 f 1 4 3
                 """);
 
-            var sut = new ModelLoaderService(NullLogger<ModelLoaderService>.Instance);
+            var sut = new ModelLoaderService(NullLoggerFactory.Instance);
             var geometry = await sut.LoadModelAsync(path, "obj");
 
             Assert.NotNull(geometry);
@@ -51,7 +51,7 @@ public class ModelLoaderServiceTests
                 f 1 2 3
                 """);
 
-            var sut = new ModelLoaderService(NullLogger<ModelLoaderService>.Instance);
+            var sut = new ModelLoaderService(NullLoggerFactory.Instance);
             var geometry = await sut.LoadModelAsync(path, "obj");
 
             Assert.Null(geometry);
