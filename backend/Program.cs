@@ -4,8 +4,22 @@ using findamodel.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((ctx, cfg) =>
+{
+    cfg.ReadFrom.Configuration(ctx.Configuration)
+       .Enrich.FromLogContext();
+
+    // Seq integration: set Seq:ServerUrl in appsettings.Development.json (or user secrets)
+    // to stream structured logs to Seq for dynamic channel filtering.
+    // Example: "Seq": { "ServerUrl": "http://localhost:5341" }
+    var seqUrl = ctx.Configuration["Seq:ServerUrl"];
+    if (!string.IsNullOrEmpty(seqUrl))
+        cfg.WriteTo.Seq(seqUrl);
+});
 
 builder.Services.AddControllers();
 

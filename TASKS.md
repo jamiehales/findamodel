@@ -6,24 +6,6 @@
 
 * findamodel config files should have a model metadata dictionary field, these would always need to be alongside the model file itself, the key is the file path, and the object contains metadata for that model, such as preview image and name
 
-* Determine if db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;"); is needed
+* Improve preview render - use the same zoom/layout as the default view in threejs? - could threejs even be used from the command line (is there for example a chromium version that can render headless?)
 
-* On the main screen show the X most recently added models (configurable via config variable)
-
-* Add warning if there are any models off canvas when hitting save plate
-
-* Add option to show or hide labels
-
-* Right align the reset button
-
-* UpdateLogger so the service/context is passed in separately from a constant as a channel, so that certain channels can be enabled or disabled, investigate logging libraries before choosing a method here
-* By default any logs of the ExecutedDbCommand should be set to Debug level, and that logging channel disabled
-* See if there's a VSCode serilog plugin or similar that can provide the ability to filter channels dynamically
-
-* Potentially investigate some sort of model simplification algorithm?
-
-* Determine the feasibility of rendering supports transparently
-
-* Improve preview render - use the same zoom/layout as the default view in threejs?
-
-* Support related parts + related models (same collection?) when viewing a model's detail page
+* Add support for lychee (lys, lyt) and chitubox (ctb) files, but, if a lychee file is included in a printing list add a note to the printing layout page that says these files will not be included in the exported plates, and show an empty image for these on the model cards

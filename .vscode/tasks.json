@@ -85,6 +85,26 @@
       "problemMatcher": []
     },
     {
+      "label": "infra: seq",
+      "type": "shell",
+      "command": "docker run --rm --name findamodel-seq -e ACCEPT_EULA=Y -p 5341:80 datalust/seq:latest",
+      "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "reveal": "silent"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Seq listening"
+        }
+      }
+    },
+    {
       "label": "frontend: dev",
       "type": "shell",
       "command": "yarn dev",

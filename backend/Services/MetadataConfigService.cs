@@ -15,10 +15,11 @@ public class ConfigValidationException(Dictionary<string, string> fieldErrors) :
 
 public class MetadataConfigService(
     IConfiguration config,
-    ILogger<MetadataConfigService> logger,
+    ILoggerFactory loggerFactory,
     IDbContextFactory<ModelCacheContext> dbFactory,
     DirectoryConfigReader configReader)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Indexing);
     private int DirectoryBatchSize => config.GetValue("Indexing:DirectoryBatchSize", 1000);
 
     // -------------------------------------------------------------------------

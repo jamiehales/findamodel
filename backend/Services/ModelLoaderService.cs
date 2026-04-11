@@ -12,8 +12,9 @@ namespace findamodel.Services;
 ///
 /// Thread-safe: stateless; safe for singleton DI registration.
 /// </summary>
-public class ModelLoaderService(ILogger<ModelLoaderService> logger)
+public class ModelLoaderService(ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Loader);
     /// <summary>
     /// Loads, transforms, centres, and computes geometry metadata for a model file.
     /// Returns null if parsing fails or yields no triangles.

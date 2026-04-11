@@ -29,12 +29,27 @@
         "uriFormat": "http://localhost:%s",
         "action": "openExternally"
       }
+    },
+    {
+      "name": "Seq: Dashboard",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["run", "--rm", "--name", "findamodel-seq", "-e", "ACCEPT_EULA=Y", "-e", "SEQ_FIRSTRUN_NOAUTHENTICATION=true", "-p", "5341:80", "datalust/seq:latest"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "serverReadyAction": {
+        "pattern": "Seq listening",
+        "action": "openExternally",
+        "uriFormat": "http://localhost:5341"
+      }
     }
   ],
   "compounds": [
     {
       "name": "Full Stack: Backend + Frontend",
-      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server"],
+      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server", "Seq: Dashboard"],
       "stopAll": true
     }
   ]

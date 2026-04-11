@@ -10,8 +10,9 @@ namespace findamodel.Services;
 public class IndexerService(
     MetadataConfigService metadataConfigService,
     ModelService modelService,
-    ILogger<IndexerService> logger)
+    ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Indexing);
     private readonly object _lock = new();
     private readonly LinkedList<IndexEntry> _queue = new();
     private IndexEntry? _current;

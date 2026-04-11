@@ -11,8 +11,9 @@ namespace findamodel.Services;
 /// </summary>
 public class ModelPreviewService(
     ModelLoaderService loaderService,
-    ILogger<ModelPreviewService> logger)
+    ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Preview);
     private const int RenderWidth  = 512;
     private const int RenderHeight = 512;
     private string? _cacheRendersPath;

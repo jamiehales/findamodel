@@ -8,8 +8,9 @@ namespace findamodel.Services;
 
 public class HullCalculationService(
     ModelLoaderService loaderService,
-    ILogger<HullCalculationService> logger)
+    ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Hull);
     private static readonly GeometryFactory Factory = new();
     public const int DefaultMaxHullVertices = 20;
     public const int CurrentHullGenerationVersion = 3;

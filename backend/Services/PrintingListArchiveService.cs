@@ -10,8 +10,9 @@ namespace findamodel.Services;
 public sealed class PrintingListArchiveService(
     IDbContextFactory<ModelCacheContext> dbFactory,
     IConfiguration config,
-    ILogger<PrintingListArchiveService> logger)
+    ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.PrintingList);
     private static readonly TimeSpan JobRetention = TimeSpan.FromHours(1);
     private static readonly Regex InvalidFileNameChars = new($"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]+", RegexOptions.Compiled);
     private readonly ConcurrentDictionary<Guid, ArchiveJobState> jobs = new();

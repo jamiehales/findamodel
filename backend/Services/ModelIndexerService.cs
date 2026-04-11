@@ -6,8 +6,9 @@ namespace findamodel.Services;
 public class ModelIndexerService(
     IndexerService indexerService,
     IConfiguration config,
-    ILogger<ModelIndexerService> logger) : BackgroundService
+    ILoggerFactory loggerFactory) : BackgroundService
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Indexing);
     private const string DefaultSchedule = "0 3 * * *";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

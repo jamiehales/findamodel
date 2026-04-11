@@ -21,8 +21,9 @@ internal sealed record RawConfigFields(
 /// Handles reading and writing findamodel.yaml config files, including
 /// YAML parsing, file hash computation, and rule extraction.
 /// </summary>
-public sealed class DirectoryConfigReader(ILogger<DirectoryConfigReader> logger)
+public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Config);
     internal const string ConfigFileName = "findamodel.yaml";
 
     internal static readonly IDeserializer YamlDeserializer = new DeserializerBuilder().Build();

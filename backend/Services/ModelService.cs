@@ -7,7 +7,7 @@ namespace findamodel.Services;
 
 public class ModelService(
     IConfiguration config,
-    ILogger<ModelService> logger,
+    ILoggerFactory loggerFactory,
     IDbContextFactory<ModelCacheContext> dbFactory,
     ModelLoaderService loaderService,
     ModelPreviewService previewService,
@@ -15,6 +15,7 @@ public class ModelService(
     MetadataConfigService metadataConfigService,
     AppConfigService appConfigService)
 {
+    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Models);
     private static readonly string[] ModelExtensions = [".stl", ".obj"];
 
     public async Task<List<ModelDto>> GetModelsAsync(int? limit = null)
