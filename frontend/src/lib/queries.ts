@@ -3,6 +3,7 @@ import {
   fetchModels,
   fetchModel,
   fetchGeometry,
+  fetchSupportGeometry,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -41,6 +42,7 @@ export const queryKeys = {
   model: (id: string) => ['model', id] as const,
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
+  supportGeometry: (id: string) => ['support-geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   indexerStatus: ['indexer', 'status'] as const,
@@ -78,6 +80,14 @@ export function useGeometry(id: string) {
   return useSuspenseQuery({
     queryKey: queryKeys.geometry(id),
     queryFn: () => fetchGeometry(id),
+  });
+}
+
+export function useSupportGeometry(id: string) {
+  return useQuery({
+    queryKey: queryKeys.supportGeometry(id),
+    queryFn: () => fetchSupportGeometry(id),
+    enabled: !!id,
   });
 }
 

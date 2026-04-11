@@ -11,6 +11,7 @@ public class ModelsController(
     ModelService modelService,
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
+    SupportSeparationService supportSeparation,
     IConfiguration config) : ControllerBase
 {
     [HttpGet]
@@ -114,6 +115,56 @@ public class ModelsController(
             });
 
         var payload = meshTransferService.Encode(geometry);
+        return File(payload, MeshTransferService.ContentType);
+    }
+
+    /// <summary>
+    /// Returns the support geometry for a pre-supported model in the same binary mesh format
+    /// as <see cref="GetGeometry"/>.  Support triangles are identified via connected-component
+    /// analysis: components significantly smaller than the dominant body are supports.
+    ///
+    /// Returns 204 No Content when the model is not marked as supported, when no support
+    /// components are detected, or when the file cannot be loaded.
+    /// </summary>
+    [HttpGet("{id:guid}/geometry/support")]
+    public async Task<IActionResult> GetSupportGeometry(Guid id)
+    {
+        var model = await modelService.GetModelAsync(id);
+        if (model == null) return NotFound();
+
+        // Only attempt separation for models explicitly tagged as supported
+        if (model.CalculatedSupported != true)
+            return NoContent();
+
+        var modelsPath = config["Models:DirectoryPath"];
+        if (string.IsNullOrEmpty(modelsPath)) return StatusCode(500);
+
+        var fullPath = string.IsNullOrEmpty(model.Directory)
+            ? Path.Combine(modelsPath, model.FileName)
+            : Path.Combine(modelsPath, model.Directory, model.FileName);
+
+        if (!System.IO.File.Exists(fullPath)) return NotFound();
+
+        var geometry = await loaderService.LoadModelAsync(fullPath, model.FileType);
+        if (geometry == null) return NoContent();
+
+        var (_, supports) = supportSeparation.Separate(geometry.Triangles);
+        if (supports == null || supports.Count == 0)
+            return NoContent();
+
+        // Encode support triangles using the FULL model's bounding box so that
+        // decoded positions land in the same world-space as the main geometry.
+        var supportGeometry = new LoadedGeometry
+        {
+            Triangles = supports,
+            DimensionXMm = geometry.DimensionXMm,
+            DimensionYMm = geometry.DimensionYMm,
+            DimensionZMm = geometry.DimensionZMm,
+            SphereCentre = geometry.SphereCentre,
+            SphereRadius = geometry.SphereRadius,
+        };
+
+        var payload = meshTransferService.Encode(supportGeometry);
         return File(payload, MeshTransferService.ContentType);
     }
 

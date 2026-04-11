@@ -199,6 +199,7 @@ function ModelPage() {
             convexHull={model.convexHull}
             concaveHull={model.concaveHull}
             convexSansRaftHull={model.convexSansRaftHull}
+            supported={model.supported}
           />
         </Box>
 

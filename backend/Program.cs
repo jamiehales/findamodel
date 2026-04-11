@@ -28,6 +28,7 @@ builder.Services.AddAuthentication("AutoAdmin")
 builder.Services.AddSingleton<findamodel.Services.DirectoryConfigReader>();
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.MeshTransferService>();
+builder.Services.AddSingleton<findamodel.Services.SupportSeparationService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
 builder.Services.AddSingleton<findamodel.Services.ModelPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();

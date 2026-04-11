@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGeometry, useModel } from '../lib/queries';
+import { useGeometry, useModel, useSupportGeometry } from '../lib/queries';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
@@ -222,6 +222,40 @@ interface ErrorBoundaryState {
   hasError: boolean;
 }
 
+interface SupportGeometryMeshProps {
+  modelId: string;
+  visible: boolean;
+}
+
+function SupportGeometryMesh({ modelId, visible }: SupportGeometryMeshProps) {
+  const { data } = useSupportGeometry(modelId);
+
+  const bufferGeometry = useMemo(() => {
+    if (!data) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }, [data]);
+
+  if (!data || !bufferGeometry) return null;
+
+  return (
+    <mesh geometry={bufferGeometry} visible={visible}>
+      <meshStandardMaterial
+        color="#f59e0b"
+        roughness={0.55}
+        metalness={0.1}
+        transparent
+        opacity={0.5}
+        flatShading
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 class ViewerErrorBoundary extends React.Component<
   React.PropsWithChildren<{ fallback: React.ReactNode }>,
   ErrorBoundaryState
@@ -245,6 +279,7 @@ interface ModelViewerProps {
   convexHull?: string | null;
   concaveHull?: string | null;
   convexSansRaftHull?: string | null;
+  supported?: boolean | null;
 }
 
 export default function ModelViewer({
@@ -253,9 +288,14 @@ export default function ModelViewer({
   convexHull,
   concaveHull,
   convexSansRaftHull,
+  supported,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
+  const { data: supportData } = useSupportGeometry(modelId);
+  const [showSupports, setShowSupports] = useState(true);
   const color = ACCENT[fileType.toLowerCase()] ?? '#94a3b8';
+
+  const hasSupportMesh = supported === true && supportData != null;
 
   const errorFallback = (
     <div style={containerStyle}>
@@ -301,51 +341,88 @@ export default function ModelViewer({
 
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
-      <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
-        <CameraInit
-          target={orbitTarget}
-          halfExtents={halfExtents}
-          direction={DEFAULT_VIEW_DIRECTION}
-        />
-        <Lighting />
-        <Grid />
-        <React.Suspense
-          fallback={
-            <Html center>
-              <span style={{ fontSize: '0.85rem', color: '#64748b', whiteSpace: 'nowrap' }}>
-                Loading model…
-              </span>
-            </Html>
-          }
-        >
-          <GeometryModel
-            modelId={modelId}
-            color={color}
-            convexHull={convexHull ?? null}
-            concaveHull={concaveHull ?? null}
-            convexSansRaftHull={convexSansRaftHull ?? null}
-            raftHeightMm={model.raftHeightMm}
+      <div style={wrapperStyle}>
+        <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
+          <CameraInit
+            target={orbitTarget}
+            halfExtents={halfExtents}
+            direction={DEFAULT_VIEW_DIRECTION}
           />
-        </React.Suspense>
-        <OrbitControls
-          target={orbitTarget}
-          enableDamping
-          dampingFactor={0.08}
-          minDistance={0.5}
-          maxDistance={200}
-          mouseButtons={{
-            LEFT: THREE.MOUSE.ROTATE,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.PAN,
-          }}
-        />
-      </Canvas>
+          <Lighting />
+          <Grid />
+          <React.Suspense
+            fallback={
+              <Html center>
+                <span style={{ fontSize: '0.85rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                  Loading model…
+                </span>
+              </Html>
+            }
+          >
+            <GeometryModel
+              modelId={modelId}
+              color={color}
+              convexHull={convexHull ?? null}
+              concaveHull={concaveHull ?? null}
+              convexSansRaftHull={convexSansRaftHull ?? null}
+              raftHeightMm={model.raftHeightMm}
+            />
+            {supported === true && <SupportGeometryMesh modelId={modelId} visible={showSupports} />}
+          </React.Suspense>
+          <OrbitControls
+            target={orbitTarget}
+            enableDamping
+            dampingFactor={0.08}
+            minDistance={0.5}
+            maxDistance={200}
+            mouseButtons={{
+              LEFT: THREE.MOUSE.ROTATE,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.PAN,
+            }}
+          />
+        </Canvas>
+        {hasSupportMesh && (
+          <button
+            style={{
+              ...toggleButtonStyle,
+              background: showSupports ? 'rgba(245,158,11,0.25)' : 'rgba(255,255,255,0.07)',
+              color: showSupports ? '#f59e0b' : '#64748b',
+              borderColor: showSupports ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.12)',
+            }}
+            onClick={() => setShowSupports((v) => !v)}
+            title={showSupports ? 'Hide supports' : 'Show supports'}
+          >
+            {showSupports ? 'Supports: On' : 'Supports: Off'}
+          </button>
+        )}
+      </div>
     </ViewerErrorBoundary>
   );
 }
+
+const wrapperStyle: React.CSSProperties = {
+  position: 'relative',
+  width: '100%',
+  height: '100%',
+};
 
 const containerStyle: React.CSSProperties = {
   width: '100%',
   height: '100%',
   background: '#0f172a',
+};
+
+const toggleButtonStyle: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 10,
+  right: 10,
+  padding: '4px 10px',
+  border: '1px solid',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontSize: '0.75rem',
+  fontWeight: 500,
+  letterSpacing: '0.05em',
+  transition: 'background 0.15s, color 0.15s',
 };
