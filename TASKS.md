@@ -34,3 +34,7 @@
 * Potentially investigate some sort of model simplification algorithm?
 
 * Determine the feasibility of rendering supports transparently
+
+* Improve preview render - use the same zoom/layout as the default view in threejs?
+
+* Support related parts + related models (same collection?) when viewing a model's detail page

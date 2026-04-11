@@ -4,6 +4,9 @@ import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGeometry, useModel } from '../lib/queries';
 
+const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
+const FRAMING_PADDING = 1.15;
+
 const ACCENT: Record<string, string> = {
   stl: '#818cf8',
   obj: '#34d399',
@@ -71,18 +74,73 @@ function HullPolygon({ coordinates, color, yOffset = 0, opacity = 0.15 }: HullPo
 }
 
 function CameraInit({
-  position,
   target,
+  halfExtents,
+  direction,
 }: {
-  position: THREE.Vector3Tuple;
   target: THREE.Vector3Tuple;
+  halfExtents: THREE.Vector3;
+  direction: THREE.Vector3;
 }) {
   const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
+
   useEffect(() => {
-    camera.position.set(...position);
+    const distance =
+      camera instanceof THREE.PerspectiveCamera
+        ? calculateCameraDistanceForBox(halfExtents, direction, camera.fov, camera.aspect)
+        : Math.max(halfExtents.length() * 2, 1);
+
+    camera.position.set(
+      target[0] + direction.x * distance,
+      target[1] + direction.y * distance,
+      target[2] + direction.z * distance,
+    );
     camera.lookAt(...target);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [camera, direction, halfExtents, size.height, size.width, target]);
+
   return null;
+}
+
+function calculateCameraDistanceForBox(
+  halfExtents: THREE.Vector3,
+  direction: THREE.Vector3,
+  fovDegrees: number,
+  aspect: number,
+) {
+  const verticalFov = THREE.MathUtils.degToRad(fovDegrees);
+  const halfVerticalFov = verticalFov / 2;
+  const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * aspect);
+
+  const toCamera = direction.clone().normalize();
+  const worldUp = Math.abs(toCamera.dot(new THREE.Vector3(0, 1, 0))) > 0.999
+    ? new THREE.Vector3(0, 0, 1)
+    : new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(worldUp, toCamera).normalize();
+  const up = new THREE.Vector3().crossVectors(toCamera, right).normalize();
+
+  const tanHalfHorizontal = Math.tan(halfHorizontalFov);
+  const tanHalfVertical = Math.tan(halfVerticalFov);
+
+  let requiredDistance = 0;
+  const corner = new THREE.Vector3();
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        corner.set(sx * halfExtents.x, sy * halfExtents.y, sz * halfExtents.z);
+
+        const x = Math.abs(corner.dot(right));
+        const y = Math.abs(corner.dot(up));
+        const z = corner.dot(toCamera);
+
+        const dForX = z + x / tanHalfHorizontal;
+        const dForY = z + y / tanHalfVertical;
+        requiredDistance = Math.max(requiredDistance, dForX, dForY);
+      }
+    }
+  }
+
+  return Math.max(requiredDistance, 0.001) * FRAMING_PADDING;
 }
 
 interface GeometryModelProps {
@@ -229,24 +287,24 @@ export default function ModelViewer({
     );
   }
 
-  const maxDimension = Math.max(model.dimensionXMm, model.dimensionYMm, model.dimensionZMm);
+  const orbitTarget = useMemo<[number, number, number]>(
+    () => [
+      model.sphereCentreX ?? 0,
+      model.sphereCentreY ?? 0,
+      model.sphereCentreZ ?? 0,
+    ],
+    [model.dimensionYMm, model.sphereCentreX, model.sphereCentreY, model.sphereCentreZ],
+  );
 
-  const orbitTarget: [number, number, number] = [
-    model.sphereCentreX ?? 0,
-    (model.sphereCentreY ?? model.dimensionYMm) / 2,
-    model.sphereCentreZ ?? 0,
-  ];
-
-  const cameraPos: [number, number, number] = [
-    orbitTarget[0] + maxDimension,
-    orbitTarget[1] + maxDimension,
-    orbitTarget[2] - maxDimension,
-  ];
+  const halfExtents = useMemo(
+    () => new THREE.Vector3(model.dimensionXMm! / 2, model.dimensionYMm! / 2, model.dimensionZMm! / 2),
+    [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm],
+  );
 
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
-        <CameraInit position={cameraPos} target={orbitTarget} />
+        <CameraInit target={orbitTarget} halfExtents={halfExtents} direction={DEFAULT_VIEW_DIRECTION} />
         <Lighting />
         <Grid />
         <React.Suspense
