@@ -19,6 +19,7 @@ function MultiSelect({
   choices,
   value,
   onChange,
+  alwaysVisible,
 }: {
   label: string;
   field: keyof Pick<
@@ -35,8 +36,9 @@ function MultiSelect({
   choices: string[];
   value: string[];
   onChange: (field: string, selected: string[]) => void;
+  alwaysVisible?: boolean;
 }) {
-  if (choices.length === 0) return null;
+  if (!alwaysVisible && choices.length === 0) return null;
   return (
     <Grid size={1}>
       <Autocomplete
@@ -127,6 +129,7 @@ export default function ModelFilters({ value, onChange, options }: Props) {
         choices={options.tags}
         value={value.tags}
         onChange={handleMultiChange}
+        alwaysVisible
       />
       <MultiSelect
         label="Category"

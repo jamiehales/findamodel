@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import { useSearchParams } from 'react-router-dom';
 import ModelGrid from '../components/ModelGrid';
 import ModelFilters from '../components/ModelFilters';
-import { useFilterOptions } from '../lib/queries';
+import { useFilterOptions, useMetadataDictionaryOverview } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './ModelsPage.module.css';
@@ -43,9 +43,17 @@ function toSearchParams(filter: ModelFilter): URLSearchParams {
 
 function ModelsPage() {
   const { data: filterOptions } = useFilterOptions();
+  const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const filter = useMemo(() => toFilter(searchParams), [searchParams]);
+
+  const mergedOptions = useMemo(() => {
+    if (!filterOptions) return filterOptions;
+    const schemaTags = metadataDictionary?.tags.configured.map((v) => v.value) ?? [];
+    const merged = [...new Set([...schemaTags, ...filterOptions.tags])];
+    return { ...filterOptions, tags: merged };
+  }, [filterOptions, metadataDictionary]);
 
   const handleFilterChange = useCallback(
     (nextFilter: ModelFilter) => {
@@ -56,9 +64,9 @@ function ModelsPage() {
 
   return (
     <PageLayout spacing={4}>
-      {filterOptions && (
+      {mergedOptions && (
         <Box className={styles.filtersWrapper}>
-          <ModelFilters value={filter} onChange={handleFilterChange} options={filterOptions} />
+          <ModelFilters value={filter} onChange={handleFilterChange} options={mergedOptions} />
         </Box>
       )}
       <ModelGrid filter={filter} />

@@ -12,6 +12,7 @@ import InheritedHint from './metadata/InheritedHint';
 import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
+import TagEditor from './metadata/TagEditor';
 import {
   useMetadataDictionaryOverview,
   useModelMetadata,
@@ -79,14 +80,12 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const [error, setError] = useState<string | null>(null);
   const [savedIndicator, setSavedIndicator] = useState(false);
-  const [tagsText, setTagsText] = useState('');
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   useEffect(() => {
     if (detail) {
       setForm({ ...detail.localValues });
-      setTagsText((detail.localValues.tags ?? []).join(', '));
     }
   }, [detail]);
 
@@ -100,10 +99,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     setError(null);
 
     try {
-      const parsedTags = tagsText
-        .split(',')
-        .map((v) => v.trim())
-        .filter((v) => v.length > 0);
+      const parsedTags = form.tags ?? null;
 
       await mutation.mutateAsync({
         name: form.name,
@@ -111,7 +107,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
         creator: form.creator,
         collection: form.collection,
         subcollection: form.subcollection,
-        tags: parsedTags.length > 0 ? parsedTags : null,
+        tags: parsedTags,
         category: form.category,
         type: form.type,
         material: form.material,
@@ -126,16 +122,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     }
   }
 
-  const tagsDirty = detail
-    ? (detail.localValues.tags ?? []).join(', ') !==
-      tagsText
-        .split(',')
-        .map((v) => v.trim())
-        .filter((v) => v.length > 0)
-        .join(', ')
-    : false;
-
-  const isDirty = detail ? hasFormChanges(form, detail.localValues) || tagsDirty : false;
+  const isDirty = detail ? hasFormChanges(form, detail.localValues) : false;
 
   function getSelectOptions(field: SharedFieldDef, localValue: string | null): string[] {
     if (field.optionsField == null) return [];
@@ -264,29 +251,17 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
       })}
 
       <Stack>
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          className={styles.fieldHeader}
-        >
-          <Typography variant="caption" color="text.secondary">
-            Tags
-          </Typography>
-        </Stack>
-        <TextField
-          size="small"
-          fullWidth
-          value={tagsText}
-          placeholder="32mm, small, monster, metal"
-          onChange={(e) => setTagsText(e.target.value)}
-          InputProps={{ className: styles.fieldInput }}
-        />
-        <InheritedHint
-          value={(detail?.inheritedValues?.tags ?? []).join(', ') || null}
-          className={styles.hintContainer}
-          hintClassName={styles.hint}
-          copyBtnClassName={styles.copyBtn}
+        <Typography variant="caption" color="text.secondary" className={styles.fieldHeader}>
+          Tags
+        </Typography>
+        <TagEditor
+          localTags={form.tags}
+          inheritedTags={detail?.inheritedValues?.tags ?? null}
+          tagOptions={[
+            ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
+            ...(metadataDictionary?.tags.observed ?? []),
+          ].filter((v, i, arr) => arr.indexOf(v) === i)}
+          onChange={(tags) => setForm((prev) => ({ ...prev, tags }))}
         />
       </Stack>
 

@@ -1,0 +1,66 @@
+import Autocomplete from '@mui/material/Autocomplete';
+import Chip from '@mui/material/Chip';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
+import styles from './TagEditor.module.css';
+
+interface Props {
+  localTags: string[] | null;
+  inheritedTags: string[] | null;
+  tagOptions: string[];
+  onChange: (tags: string[] | null) => void;
+}
+
+export default function TagEditor({ localTags, inheritedTags, tagOptions, onChange }: Props) {
+  const local = localTags ?? [];
+  const inherited = (inheritedTags ?? []).filter((t) => !local.includes(t));
+
+  const options = tagOptions.filter((t) => !local.includes(t));
+
+  function handleChange(_: React.SyntheticEvent, newValue: string[]) {
+    onChange(newValue.length > 0 ? newValue : null);
+  }
+
+  return (
+    <Stack>
+      <Autocomplete
+        multiple
+        freeSolo
+        size="small"
+        value={local}
+        options={options}
+        onChange={handleChange}
+        renderTags={(value, getTagProps) => (
+          <>
+            {value.map((tag, index) => {
+              const { key, ...tagProps } = getTagProps({ index });
+              return <Chip key={key} label={tag} size="small" {...tagProps} />;
+            })}
+            {inherited.map((tag) => (
+              <Chip
+                key={`inherited-${tag}`}
+                label={tag}
+                size="small"
+                variant="outlined"
+                className={styles.inheritedChip}
+              />
+            ))}
+          </>
+        )}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            size="small"
+            placeholder={local.length === 0 && inherited.length === 0 ? 'Add tags…' : undefined}
+          />
+        )}
+      />
+      {inherited.length > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.25 }}>
+          Greyed tags are inherited
+        </Typography>
+      )}
+    </Stack>
+  );
+}

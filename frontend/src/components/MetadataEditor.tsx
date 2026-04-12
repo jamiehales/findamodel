@@ -22,6 +22,7 @@ import InheritedHint from './metadata/InheritedHint';
 import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
+import TagEditor from './metadata/TagEditor';
 import styles from './MetadataEditor.module.css';
 
 type FieldMode = 'value' | 'rule';
@@ -250,14 +251,6 @@ function areRuleMapsEqual(a: Record<string, string>, b: Record<string, string>) 
   return true;
 }
 
-function parseTags(text: string): string[] | null {
-  const tags = text
-    .split(',')
-    .map((v) => v.trim())
-    .filter((v) => v.length > 0);
-  return tags.length > 0 ? tags : null;
-}
-
 export default function MetadataEditor({ path, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
@@ -281,13 +274,11 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const [ruleErrors, setRuleErrors] = useState<Record<string, string | null>>({});
   const [savedIndicator, setSavedIndicator] = useState(false);
   const [rulesHelpOpen, setRulesHelpOpen] = useState(false);
-  const [tagsText, setTagsText] = useState('');
 
   useEffect(() => {
     if (detail) {
       const loaded = { ...detail.localValues } as MetadataFields;
       setFields(loaded);
-      setTagsText((detail.localValues.tags ?? []).join(', '));
 
       const modes: Record<string, FieldMode> = {};
       const ruleTexts: Record<string, string> = {};
@@ -354,7 +345,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     const originalRuleMap = normalizeRuleMap(detail.localRuleContents, detail.localRuleFields);
     if (!areRuleMapsEqual(currentRuleMap, originalRuleMap)) return true;
 
-    const currentTags = parseTags(tagsText) ?? [];
+    const currentTags = currentFields.tags ?? [];
     const originalTags = detail.localValues.tags ?? [];
     if (currentTags.length !== originalTags.length) return true;
     for (let i = 0; i < currentTags.length; i += 1) {
@@ -401,10 +392,12 @@ export default function MetadataEditor({ path, onClose }: Props) {
       }
     }
 
-    const parsedTags = parseTags(tagsText);
-
     try {
-      await mutation.mutateAsync({ ...cleanFields, tags: parsedTags, fieldRules: fieldRulesMap });
+      await mutation.mutateAsync({
+        ...cleanFields,
+        tags: cleanFields.tags ?? null,
+        fieldRules: fieldRulesMap,
+      });
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
       onClose?.();
@@ -455,19 +448,15 @@ export default function MetadataEditor({ path, onClose }: Props) {
             Tags
           </Typography>
         </Stack>
-        <TextField
-          fullWidth
-          size="small"
-          value={tagsText}
-          placeholder="32mm, small, monster"
-          onChange={(e) => setTagsText(e.target.value)}
-          slotProps={{ input: { className: styles.fieldInput } }}
+        <TagEditor
+          localTags={fields.tags}
+          inheritedTags={p?.tags ?? null}
+          tagOptions={[
+            ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
+            ...(metadataDictionary?.tags.observed ?? []),
+          ].filter((v, i, arr) => arr.indexOf(v) === i)}
+          onChange={(tags) => setFieldValue('tags', tags)}
         />
-        {p?.tags && p.tags.length > 0 && (
-          <Typography variant="caption" className={styles.hint}>
-            Inherited: {p.tags.join(', ')}
-          </Typography>
-        )}
       </Box>
 
       {FIELDS.map((field) => {
