@@ -108,12 +108,6 @@ if (!desktopMode && !disableCors && builder.Environment.IsDevelopment())
     });
 }
 
-ResponseCompressionOptions responseCompressionOptions = new();
-responseCompressionOptions.Providers.Add<GzipCompressionProvider>();
-responseCompressionOptions.Providers.Add<BrotliCompressionProvider>();
-responseCompressionOptions.EnableForHttps = true;
-responseCompressionOptions.MimeTypes = ["application/json", "application/3mf", "model/gltf-binary", findamodel.Services.MeshTransferService.ContentType];
-
 builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
 {
     options.Level = CompressionLevel.Optimal;
@@ -124,7 +118,13 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
     options.Level = CompressionLevel.Optimal;
 });
 
-builder.Services.AddResponseCompression(options => options = responseCompressionOptions);
+builder.Services.AddResponseCompression(options =>
+{
+    options.Providers.Add<GzipCompressionProvider>();
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.EnableForHttps = true;
+    options.MimeTypes = ["application/json", "application/3mf", "model/gltf-binary", findamodel.Services.MeshTransferService.ContentType];
+});
 
 var app = builder.Build();
 
