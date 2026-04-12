@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import {
   Box,
   Button,
+  FormControlLabel,
+  MenuItem,
+  Switch,
   Chip,
   Divider,
   Stack,
@@ -148,14 +151,55 @@ export default function SettingsPage() {
   const updateAppConfigMutation = useUpdateAppConfig();
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
+  const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
+  const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
+    'internal',
+  );
+  const [tagGenerationEndpoint, setTagGenerationEndpoint] = useState('http://localhost:11434');
+  const [tagGenerationModel, setTagGenerationModel] = useState('qwen2.5vl:7b');
+  const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
+  const [tagGenerationAutoApply, setTagGenerationAutoApply] = useState(true);
+  const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
+  const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
   const { data, isPending, isError } = useMetadataDictionaryOverview();
 
   useEffect(() => {
     if (appConfig) {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
       setTheme(appConfig.theme);
+      setTagGenerationEnabled(appConfig.tagGenerationEnabled);
+      setTagGenerationProvider(
+        appConfig.tagGenerationProvider === 'ollama' ? 'ollama' : 'internal',
+      );
+      setTagGenerationEndpoint(appConfig.tagGenerationEndpoint);
+      setTagGenerationModel(appConfig.tagGenerationModel);
+      setTagGenerationTimeoutMs(String(appConfig.tagGenerationTimeoutMs));
+      setTagGenerationAutoApply(appConfig.tagGenerationAutoApply);
+      setTagGenerationMaxTags(String(appConfig.tagGenerationMaxTags));
+      setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
     }
   }, [appConfig]);
+
+  const raftHeightValue = Number(defaultRaftHeightMm);
+  const timeoutValue = Number(tagGenerationTimeoutMs);
+  const maxTagsValue = Number(tagGenerationMaxTags);
+  const minConfidenceValue = Number(tagGenerationMinConfidence);
+
+  const appConfigValid =
+    defaultRaftHeightMm.trim().length > 0 &&
+    Number.isFinite(raftHeightValue) &&
+    raftHeightValue >= 0 &&
+    tagGenerationEndpoint.trim().length > 0 &&
+    tagGenerationModel.trim().length > 0 &&
+    Number.isInteger(timeoutValue) &&
+    timeoutValue >= 1000 &&
+    timeoutValue <= 300000 &&
+    Number.isInteger(maxTagsValue) &&
+    maxTagsValue >= 1 &&
+    maxTagsValue <= 64 &&
+    Number.isFinite(minConfidenceValue) &&
+    minConfidenceValue >= 0 &&
+    minConfidenceValue <= 1;
 
   if (isPending || appConfigPending) return <LoadingView />;
 
@@ -198,22 +242,130 @@ export default function SettingsPage() {
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
-              disabled={
-                updateAppConfigMutation.isPending ||
-                !defaultRaftHeightMm.trim() ||
-                Number(defaultRaftHeightMm) < 0 ||
-                !Number.isFinite(Number(defaultRaftHeightMm))
-              }
+              disabled={updateAppConfigMutation.isPending || !appConfigValid}
               onClick={() =>
                 updateAppConfigMutation.mutate({
-                  defaultRaftHeightMm: Number(defaultRaftHeightMm),
+                  defaultRaftHeightMm: raftHeightValue,
                   theme,
+                  tagGenerationEnabled,
+                  tagGenerationProvider,
+                  tagGenerationEndpoint: tagGenerationEndpoint.trim(),
+                  tagGenerationModel: tagGenerationModel.trim(),
+                  tagGenerationTimeoutMs: timeoutValue,
+                  tagGenerationAutoApply,
+                  tagGenerationMaxTags: maxTagsValue,
+                  tagGenerationMinConfidence: minConfidenceValue,
                 })
               }
             >
               Save
             </Button>
           </Stack>
+        </Stack>
+      </Box>
+
+      <Box className={styles.globalSettingsSection}>
+        <Typography variant="h5">Tag Generation</Typography>
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={2}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={tagGenerationEnabled}
+                  onChange={(e) => setTagGenerationEnabled(e.target.checked)}
+                />
+              }
+              label="Enable tag generation"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={tagGenerationAutoApply}
+                  onChange={(e) => setTagGenerationAutoApply(e.target.checked)}
+                />
+              }
+              label="Auto-apply generated tags"
+            />
+          </Stack>
+
+          <TextField
+            select
+            size="small"
+            label="Provider"
+            value={tagGenerationProvider}
+            onChange={(e) =>
+              setTagGenerationProvider(e.target.value === 'ollama' ? 'ollama' : 'internal')
+            }
+          >
+            <MenuItem value="internal">Internal</MenuItem>
+            <MenuItem value="ollama">Ollama</MenuItem>
+          </TextField>
+
+          <TextField
+            size="small"
+            label="Endpoint"
+            value={tagGenerationEndpoint}
+            onChange={(e) => setTagGenerationEndpoint(e.target.value)}
+            error={!tagGenerationEndpoint.trim()}
+            helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : ' '}
+          />
+
+          <TextField
+            size="small"
+            label="Model"
+            value={tagGenerationModel}
+            onChange={(e) => setTagGenerationModel(e.target.value)}
+            error={!tagGenerationModel.trim()}
+            helperText={!tagGenerationModel.trim() ? 'Model is required.' : ' '}
+          />
+
+          <TextField
+            size="small"
+            type="number"
+            label="Timeout (ms)"
+            value={tagGenerationTimeoutMs}
+            onChange={(e) => setTagGenerationTimeoutMs(e.target.value)}
+            error={!Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000}
+            helperText={
+              !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
+                ? 'Must be an integer between 1000 and 300000.'
+                : ' '
+            }
+          />
+
+          <TextField
+            size="small"
+            type="number"
+            label="Max tags"
+            value={tagGenerationMaxTags}
+            onChange={(e) => setTagGenerationMaxTags(e.target.value)}
+            error={!Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64}
+            helperText={
+              !Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64
+                ? 'Must be an integer between 1 and 64.'
+                : ' '
+            }
+          />
+
+          <TextField
+            size="small"
+            type="number"
+            label="Min confidence"
+            value={tagGenerationMinConfidence}
+            onChange={(e) => setTagGenerationMinConfidence(e.target.value)}
+            error={
+              !Number.isFinite(minConfidenceValue) ||
+              minConfidenceValue < 0 ||
+              minConfidenceValue > 1
+            }
+            helperText={
+              !Number.isFinite(minConfidenceValue) ||
+              minConfidenceValue < 0 ||
+              minConfidenceValue > 1
+                ? 'Must be a number between 0 and 1.'
+                : ' '
+            }
+          />
         </Stack>
       </Box>
 

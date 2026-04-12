@@ -112,6 +112,14 @@ public class MetadataDictionaryService(IDbContextFactory<ModelCacheContext> dbFa
             .Where(v => !string.IsNullOrWhiteSpace(v))
             .SelectMany(v => TagListHelper.FromJson(v));
 
+        var generatedModelTags = (await db.Models
+                .AsNoTracking()
+                .Where(m => m.GeneratedTagsJson != null)
+                .Select(m => m.GeneratedTagsJson)
+                .ToListAsync())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .SelectMany(v => TagListHelper.FromJson(v));
+
         var rawDirectoryTags = (await db.DirectoryConfigs
                 .AsNoTracking()
                 .Where(d => d.RawTagsJson != null)
@@ -129,6 +137,7 @@ public class MetadataDictionaryService(IDbContextFactory<ModelCacheContext> dbFa
             .SelectMany(v => TagListHelper.FromJson(v));
 
         var observedTags = modelTags
+            .Union(generatedModelTags, StringComparer.OrdinalIgnoreCase)
             .Union(rawDirectoryTags, StringComparer.OrdinalIgnoreCase)
             .Union(resolvedDirectoryTags, StringComparer.OrdinalIgnoreCase)
             .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)

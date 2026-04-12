@@ -14,7 +14,8 @@ public class ModelService(
     ModelPreviewService previewService,
     HullCalculationService hullCalculationService,
     MetadataConfigService metadataConfigService,
-    AppConfigService appConfigService)
+    AppConfigService appConfigService,
+    TagGenerationService tagGenerationService)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Models);
     private static readonly string[] ModelExtensions = [".stl", ".obj", ".lys", ".lyt", ".ctb"];
@@ -211,14 +212,48 @@ public class ModelService(
 
         // Phase 2: Sync DirectoryConfig records (root-first, hash-detected changes)
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
-        var defaultRaftHeightMm = await appConfigService.GetDefaultRaftHeightMmAsync();
+        var appConfig = await appConfigService.GetAsync();
+        var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
+        var generateTagsOnScan = appConfig.TagGenerationEnabled;
 
         // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
+        var configuredTagSchema = generateTagsOnScan
+            ? TagListHelper.Normalize(await db.MetadataDictionaryValues
+                .AsNoTracking()
+                .Where(v => v.Field == "tags")
+                .OrderBy(v => v.Value)
+                .Select(v => v.Value)
+                .ToListAsync())
+            : [];
+        logger.LogDebug(
+            "Scan tag-generation settings: enabled={Enabled}, provider={Provider}, schemaCount={SchemaCount}",
+            generateTagsOnScan,
+            appConfig.TagGenerationProvider,
+            configuredTagSchema.Count);
+
         var existingModels = (await db.Models
-            .Select(m => new { m.Directory, m.FileName, m.Id, m.Checksum, m.ScanConfigChecksum, m.PreviewGenerationVersion })
+            .Select(m => new ExistingModelScanState(
+                m.Id,
+                m.Directory,
+                m.FileName,
+                m.Checksum,
+                m.ScanConfigChecksum,
+                m.PreviewGenerationVersion,
+                m.GeneratedTagsChecksum,
+                m.GeneratedTagsStatus,
+                m.GeneratedTagsJson,
+                m.PreviewImagePath,
+                m.CalculatedModelName,
+                m.CalculatedPartName,
+                m.CalculatedCategory,
+                m.CalculatedType,
+                m.CalculatedMaterial,
+                m.CalculatedCreator,
+                m.CalculatedCollection,
+                m.CalculatedSubcollection))
             .ToListAsync())
-            .ToDictionary(m => (m.Directory, m.FileName), m => (m.Id, m.Checksum, m.ScanConfigChecksum, m.PreviewGenerationVersion));
+            .ToDictionary(m => (m.Directory, m.FileName), m => m);
 
         var fileScanThreads = ResolveFileScanThreads(config);
         logger.LogInformation(
@@ -237,7 +272,10 @@ public class ModelService(
                     modelsPath,
                     existingModels,
                     directoryConfigs,
-                    defaultRaftHeightMm);
+                    defaultRaftHeightMm,
+                    appConfig,
+                    configuredTagSchema,
+                    generateTagsOnScan);
                 if (prepared is not null)
                     preparedResults.Add(prepared);
             });
@@ -268,7 +306,11 @@ public class ModelService(
                     entity.FileSize = result.FileInfo.Length;
                 }
 
-                await db.SaveChangesAsync();
+                if (result.ContentUpdate is not null || result.GeometryRefresh is not null)
+                    await db.SaveChangesAsync();
+
+                if (result.ForceTagGeneration)
+                    await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan);
                 updatedCount++;
                 continue;
             }
@@ -292,6 +334,8 @@ public class ModelService(
             ApplyFileData(newEntity, newData, result.FileInfo);
             db.Models.Add(newEntity);
             await db.SaveChangesAsync();
+            if (generateTagsOnScan)
+                await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan);
             newCount++;
         }
 
@@ -349,26 +393,57 @@ public class ModelService(
         var info = new FileInfo(fullPath);
 
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, [directory]);
-        var defaultRaftHeightMm = await appConfigService.GetDefaultRaftHeightMmAsync();
+        var appConfig = await appConfigService.GetAsync();
+        var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
+        var generateTagsOnScan = appConfig.TagGenerationEnabled;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var configuredTagSchema = generateTagsOnScan
+            ? TagListHelper.Normalize(await db.MetadataDictionaryValues
+                .AsNoTracking()
+                .Where(v => v.Field == "tags")
+                .OrderBy(v => v.Value)
+                .Select(v => v.Value)
+                .ToListAsync())
+            : [];
         var expectedRaftHeightMm = ResolveRaftHeightMmForModel(
             fullPath,
             directory,
             directoryConfigs,
             defaultRaftHeightMm);
 
-        await using var db = await dbFactory.CreateDbContextAsync();
         var existing = await db.Models
             .FirstOrDefaultAsync(m => m.Directory == directory && m.FileName == fileName);
 
         var checksum = await ComputeChecksumAsync(fullPath);
+        var checksumChanged = existing is null || existing.Checksum != checksum;
         var previewStale = existing is not null
             && !IsNonGeometryType(fileType)
             && NeedsPreviewRegeneration(existing.PreviewGenerationVersion);
+        var hullStale = existing is not null
+            && !IsNonGeometryType(fileType)
+            && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm);
+        var tagsStale = existing is not null
+            && generateTagsOnScan
+            && TagGenerationService.NeedsRegeneration(existing, appConfig, configuredTagSchema);
+        var expectedTagChecksum = existing is not null && generateTagsOnScan && configuredTagSchema.Count > 0
+            ? TagGenerationService.ComputeGenerationChecksum(existing, appConfig, configuredTagSchema)
+            : null;
+        var storedTagChecksum = existing?.GeneratedTagsChecksum;
         if (existing is not null
             && existing.Checksum == checksum
-            && (IsNonGeometryType(fileType) || !NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
-            && (IsNonGeometryType(fileType) || !previewStale))
+            && (IsNonGeometryType(fileType) || !hullStale)
+            && (IsNonGeometryType(fileType) || !previewStale)
+            && !tagsStale)
+        {
+            logger.LogDebug(
+                "Single-model scan skipped changes for {FilePath}; checksum/hulls/preview/tags are up-to-date. tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}",
+                fullPath,
+                existing.GeneratedTagsStatus,
+                !string.IsNullOrWhiteSpace(existing.GeneratedTagsJson),
+                storedTagChecksum,
+                expectedTagChecksum);
             return false;
+        }
 
         if (existing is not null && existing.Checksum != checksum)
             logger.LogInformation("Model content changed, updating single file: {FilePath}", fullPath);
@@ -444,6 +519,24 @@ public class ModelService(
         }
 
         await db.SaveChangesAsync();
+        var shouldGenerateTags = generateTagsOnScan
+            && (checksumChanged || tagsStale);
+        logger.LogDebug(
+            "Single-model scan tag-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}",
+            fullPath,
+            shouldGenerateTags,
+            generateTagsOnScan,
+            configuredTagSchema.Count,
+            checksumChanged,
+            hullStale,
+            previewStale,
+            tagsStale,
+            existing?.GeneratedTagsStatus,
+            !string.IsNullOrWhiteSpace(existing?.GeneratedTagsJson),
+            storedTagChecksum,
+            expectedTagChecksum);
+        if (shouldGenerateTags)
+            await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan);
         return true;
     }
 
@@ -530,14 +623,38 @@ public class ModelService(
         string FileType,
         FileInfo FileInfo,
         ModelFileData? ContentUpdate,
-        GeometryRefreshData? GeometryRefresh);
+        GeometryRefreshData? GeometryRefresh,
+        bool ForceTagGeneration);
+
+    private sealed record ExistingModelScanState(
+        Guid Id,
+        string Directory,
+        string FileName,
+        string Checksum,
+        string? ScanConfigChecksum,
+        int? PreviewGenerationVersion,
+        string? GeneratedTagsChecksum,
+        string? GeneratedTagsStatus,
+        string? GeneratedTagsJson,
+        string? PreviewImagePath,
+        string? CalculatedModelName,
+        string? CalculatedPartName,
+        string? CalculatedCategory,
+        string? CalculatedType,
+        string? CalculatedMaterial,
+        string? CalculatedCreator,
+        string? CalculatedCollection,
+        string? CalculatedSubcollection);
 
     private async Task<PreparedScanResult?> PrepareScanResultAsync(
         string file,
         string modelsPath,
-        IReadOnlyDictionary<(string Directory, string FileName), (Guid Id, string Checksum, string? ScanConfigChecksum, int? PreviewGenerationVersion)> existingModels,
+        IReadOnlyDictionary<(string Directory, string FileName), ExistingModelScanState> existingModels,
         Dictionary<string, DirectoryConfig> directoryConfigs,
-        float defaultRaftHeightMm)
+        float defaultRaftHeightMm,
+        AppConfigDto appConfig,
+        List<string> configuredTagSchema,
+        bool generateTagsOnScan)
     {
         var relativePath = Path.GetRelativePath(modelsPath, file);
         var fileName = Path.GetFileName(file);
@@ -557,13 +674,38 @@ public class ModelService(
                 && NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
             var previewStale = !IsNonGeometryType(fileType)
                 && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
-            if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale)
+            var tagsStale = false;
+            if (generateTagsOnScan)
+            {
+                var projected = new CachedModel
+                {
+                    Id = existingEntry.Id,
+                    FileName = existingEntry.FileName,
+                    Directory = existingEntry.Directory,
+                    PreviewImagePath = existingEntry.PreviewImagePath,
+                    PreviewGenerationVersion = existingEntry.PreviewGenerationVersion,
+                    CalculatedModelName = existingEntry.CalculatedModelName,
+                    CalculatedPartName = existingEntry.CalculatedPartName,
+                    CalculatedCategory = existingEntry.CalculatedCategory,
+                    CalculatedType = existingEntry.CalculatedType,
+                    CalculatedMaterial = existingEntry.CalculatedMaterial,
+                    CalculatedCreator = existingEntry.CalculatedCreator,
+                    CalculatedCollection = existingEntry.CalculatedCollection,
+                    CalculatedSubcollection = existingEntry.CalculatedSubcollection,
+                    GeneratedTagsChecksum = existingEntry.GeneratedTagsChecksum,
+                    GeneratedTagsJson = existingEntry.GeneratedTagsJson,
+                    GeneratedTagsStatus = existingEntry.GeneratedTagsStatus,
+                };
+                tagsStale = TagGenerationService.NeedsRegeneration(projected, appConfig, configuredTagSchema);
+            }
+
+            if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale && !tagsStale)
                 return null;
 
             if (currentChecksum != existingEntry.Checksum)
             {
                 var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum, defaultRaftHeightMm);
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, data, null);
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, data, null, generateTagsOnScan);
             }
 
             if (hullMetadataMismatch)
@@ -581,8 +723,11 @@ public class ModelService(
                     expectedRaftHeightMm,
                     includePreview: previewStale,
                     includeHulls: true);
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh);
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false);
             }
+
+            if (tagsStale)
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, true);
 
             logger.LogInformation(
                 "Preview version mismatch, regenerating preview for: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
@@ -597,11 +742,11 @@ public class ModelService(
                 expectedRaftHeightMm,
                 includePreview: true,
                 includeHulls: false);
-            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh);
+            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false);
         }
 
         var newData = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, null, defaultRaftHeightMm);
-        return new PreparedScanResult(null, file, relativePath, directory, fileName, fileType, info, newData, null);
+        return new PreparedScanResult(null, file, relativePath, directory, fileName, fileType, info, newData, null, generateTagsOnScan);
     }
 
     private async Task<ModelFileData> ComputeFileDataAsync(
@@ -834,6 +979,26 @@ public class ModelService(
         var matched = data.Keys.FirstOrDefault(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
         if (matched != null)
             data.Remove(matched);
+    }
+
+    private async Task TryGenerateTagsOnScanAsync(Guid modelId, bool generateTagsOnScan)
+    {
+        if (!generateTagsOnScan)
+        {
+            logger.LogDebug("Skipping tag generation for model {ModelId}: TagGenerationEnabled=false", modelId);
+            return;
+        }
+
+        try
+        {
+            logger.LogDebug("Triggering tag generation during scan for model {ModelId}", modelId);
+            await tagGenerationService.GenerateForModelAsync(modelId, CancellationToken.None);
+            logger.LogDebug("Tag generation finished during scan for model {ModelId}", modelId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tag generation failed during scan for model {ModelId}; scan will continue.", modelId);
+        }
     }
 
 }

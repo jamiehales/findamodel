@@ -1,5 +1,6 @@
 using findamodel.Data.Entities;
 using findamodel.Models;
+using System.Text.Json;
 
 namespace findamodel.Services;
 
@@ -23,6 +24,12 @@ internal static class ModelMappingExtensions
             Collection = model.CalculatedCollection,
             Subcollection = model.CalculatedSubcollection,
             Tags = TagListHelper.FromJson(model.CalculatedTagsJson),
+            GeneratedTags = TagListHelper.FromJson(model.GeneratedTagsJson),
+            GeneratedTagConfidence = ParseConfidenceJson(model.GeneratedTagsConfidenceJson),
+            GeneratedTagsStatus = model.GeneratedTagsStatus ?? "none",
+            GeneratedTagsAt = model.GeneratedTagsAt,
+            GeneratedTagsError = model.GeneratedTagsError,
+            GeneratedTagsModel = model.GeneratedTagsModel,
             Category = model.CalculatedCategory,
             Type = model.CalculatedType,
             Material = model.CalculatedMaterial,
@@ -57,4 +64,20 @@ internal static class ModelMappingExtensions
 
     private static string ComputeRelativePath(string directory, string fileName) =>
         string.IsNullOrEmpty(directory) ? fileName : $"{directory}/{fileName}";
+
+    private static Dictionary<string, float> ParseConfidenceJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, float>>(json)
+                ?? new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
 }

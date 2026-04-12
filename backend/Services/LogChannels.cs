@@ -40,4 +40,7 @@ public static class LogChannels
 
     /// <summary>Application config persistence.</summary>
     public const string AppConfig = $"{Root}.AppConfig";
+
+    /// <summary>Local LLM provider and inference orchestration.</summary>
+    public const string Llm = $"{Root}.Llm";
 }

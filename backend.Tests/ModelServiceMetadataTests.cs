@@ -58,6 +58,7 @@ public class ModelServiceMetadataTests
         ModelLoaderService loaderService = null!;
         ModelPreviewService previewService = null!;
         HullCalculationService hullCalculationService = null!;
+        TagGenerationService tagGenerationService = null!;
 
         return new ModelService(
             configuration,
@@ -67,7 +68,8 @@ public class ModelServiceMetadataTests
             previewService,
             hullCalculationService,
             metadataConfigService,
-            appConfigService);
+            appConfigService,
+            tagGenerationService);
     }
 
     [Fact]

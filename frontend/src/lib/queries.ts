@@ -36,6 +36,7 @@ import {
   deleteMetadataDictionaryValue,
   fetchAppConfig,
   updateAppConfig,
+  type UpdateAppConfigRequest,
   type UpdateModelMetadataRequest,
 } from './api';
 
@@ -158,8 +159,7 @@ export function useAppConfig() {
 export function useUpdateAppConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (request: { defaultRaftHeightMm: number; theme: string }) =>
-      updateAppConfig(request),
+    mutationFn: (request: UpdateAppConfigRequest) => updateAppConfig(request),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.appConfig, updated);
     },

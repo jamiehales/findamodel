@@ -81,11 +81,27 @@ export interface MetadataDictionaryOverview {
 export interface AppConfig {
   defaultRaftHeightMm: number;
   theme: string;
+  tagGenerationEnabled: boolean;
+  tagGenerationProvider: string;
+  tagGenerationEndpoint: string;
+  tagGenerationModel: string;
+  tagGenerationTimeoutMs: number;
+  tagGenerationAutoApply: boolean;
+  tagGenerationMaxTags: number;
+  tagGenerationMinConfidence: number;
 }
 
 export interface UpdateAppConfigRequest {
   defaultRaftHeightMm: number;
   theme: string;
+  tagGenerationEnabled: boolean;
+  tagGenerationProvider: string;
+  tagGenerationEndpoint: string;
+  tagGenerationModel: string;
+  tagGenerationTimeoutMs: number;
+  tagGenerationAutoApply: boolean;
+  tagGenerationMaxTags: number;
+  tagGenerationMinConfidence: number;
 }
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {

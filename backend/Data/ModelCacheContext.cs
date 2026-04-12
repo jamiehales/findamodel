@@ -43,6 +43,38 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .Property(c => c.DefaultRaftHeightMm)
             .HasDefaultValue(2f);
 
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationProvider)
+            .HasDefaultValue("internal");
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationEnabled)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationAutoApply)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationEndpoint)
+            .HasDefaultValue("http://localhost:11434");
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationModel)
+            .HasDefaultValue("qwen2.5vl:7b");
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationTimeoutMs)
+            .HasDefaultValue(60000);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationMaxTags)
+            .HasDefaultValue(12);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.TagGenerationMinConfidence)
+            .HasDefaultValue(0.45f);
+
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();

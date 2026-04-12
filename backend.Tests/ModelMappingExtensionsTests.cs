@@ -139,6 +139,27 @@ public class ModelMappingExtensionsTests
     }
 
     [Fact]
+    public void ToModelDto_MapsGeneratedTagsFields()
+    {
+        var model = FullModel();
+        model.GeneratedTagsJson = "[\"terrain\",\"ruins\"]";
+        model.GeneratedTagsConfidenceJson = "{\"terrain\":0.9,\"ruins\":0.8}";
+        model.GeneratedTagsStatus = "success";
+        model.GeneratedTagsError = null;
+        model.GeneratedTagsModel = "qwen2.5vl:7b";
+        model.GeneratedTagsAt = DateTime.UtcNow;
+
+        var dto = model.ToModelDto();
+
+        Assert.Equal(2, dto.GeneratedTags.Count);
+        Assert.Contains("terrain", dto.GeneratedTags);
+        Assert.Contains("ruins", dto.GeneratedTags);
+        Assert.Equal("success", dto.GeneratedTagsStatus);
+        Assert.Equal(0.9f, dto.GeneratedTagConfidence["terrain"]);
+        Assert.Equal("qwen2.5vl:7b", dto.GeneratedTagsModel);
+    }
+
+    [Fact]
     public void ToModelDto_MapsHullCoordinates()
     {
         var dto = FullModel().ToModelDto();

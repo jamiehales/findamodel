@@ -23,6 +23,9 @@
     <PackageReference Include="YamlDotNet" Version="15.*" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.*" />
     <PackageReference Include="Silk.NET.Windowing.Sdl" Version="2.*" />
+    <PackageReference Include="LLamaSharp" Version="0.26.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.26.0" />
+    <PackageReference Include="LLamaSharp.Backend.Vulkan" Version="0.26.0" />
   </ItemGroup>
 
 </Project>

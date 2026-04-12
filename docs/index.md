@@ -26,6 +26,7 @@ nav_order: 1
 |---------|-------------|
 | [Getting started](getting-started) | Install and run FindAModel |
 | [Configuration](configuration/) | The `findamodel.yaml` configuration file |
+| [LLM configuration](configuration/llm) | Internal and Ollama local model settings |
 | [Rules system](rules/) | Automatically extract metadata from paths |
 | [Metadata fields](metadata/) | All supported metadata fields and valid values |
 | [Features](features/) | Application features — explorer, models, plates, settings |

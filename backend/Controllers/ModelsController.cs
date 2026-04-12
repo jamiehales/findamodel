@@ -10,6 +10,7 @@ namespace findamodel.Controllers;
 [Route("api/[controller]")]
 public class ModelsController(
     ModelService modelService,
+    TagGenerationService tagGenerationService,
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
     SupportSeparationService supportSeparation,
@@ -95,6 +96,30 @@ public class ModelsController(
         var metadata = await modelService.GetModelMetadataAsync(id);
         if (metadata == null) return NotFound();
         return Ok(metadata);
+    }
+
+    [HttpGet("{id:guid}/tags/generated")]
+    public async Task<ActionResult<GeneratedTagsResultDto>> GetGeneratedTags(Guid id, CancellationToken ct)
+    {
+        var result = await tagGenerationService.GetGeneratedTagsAsync(id, ct);
+        if (result == null) return NotFound();
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/tags/generate")]
+    public async Task<ActionResult<GeneratedTagsResultDto>> GenerateTags(Guid id, CancellationToken ct)
+    {
+        var result = await tagGenerationService.GenerateForModelAsync(id, ct);
+        if (result == null) return NotFound();
+        return Ok(result);
+    }
+
+    [HttpDelete("{id:guid}/tags/generated")]
+    public async Task<IActionResult> ClearGeneratedTags(Guid id, CancellationToken ct)
+    {
+        var cleared = await tagGenerationService.ClearGeneratedTagsAsync(id, ct);
+        if (!cleared) return NotFound();
+        return NoContent();
     }
 
     /// <summary>

@@ -18,6 +18,12 @@ public class ModelDto
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
     public List<string> Tags { get; set; } = [];
+    public List<string> GeneratedTags { get; set; } = [];
+    public Dictionary<string, float> GeneratedTagConfidence { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public string GeneratedTagsStatus { get; set; } = "none";
+    public DateTime? GeneratedTagsAt { get; set; }
+    public string? GeneratedTagsError { get; set; }
+    public string? GeneratedTagsModel { get; set; }
     public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? Type { get; set; }        // "Whole" | "Part" | null
     public string? Material { get; set; }    // "FDM" | "Resin" | "Any" | null

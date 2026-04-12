@@ -50,6 +50,13 @@ builder.Services.AddSingleton<findamodel.Services.HullCalculationService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataConfigService>();
 builder.Services.AddSingleton<findamodel.Services.MetadataDictionaryService>();
 builder.Services.AddSingleton<findamodel.Services.AppConfigService>();
+builder.Services.AddHttpClient(nameof(findamodel.Services.OllamaLocalLlmProvider));
+builder.Services.AddHttpClient(nameof(findamodel.Services.InternalLlmModelStore));
+builder.Services.AddSingleton<findamodel.Services.InternalLlmModelStore>();
+builder.Services.AddSingleton<findamodel.Services.ILocalLlmProvider, findamodel.Services.InternalLocalLlmProvider>();
+builder.Services.AddSingleton<findamodel.Services.ILocalLlmProvider, findamodel.Services.OllamaLocalLlmProvider>();
+builder.Services.AddSingleton<findamodel.Services.LocalLlmProviderResolver>();
+builder.Services.AddSingleton<findamodel.Services.TagGenerationService>();
 builder.Services.AddSingleton<findamodel.Services.ModelService>();
 builder.Services.AddSingleton<findamodel.Services.IndexerService>();
 builder.Services.AddSingleton<findamodel.Services.ExplorerService>();
@@ -57,6 +64,7 @@ builder.Services.AddSingleton<findamodel.Services.PrintingListService>();
 builder.Services.AddSingleton<findamodel.Services.PrintingListArchiveService>();
 builder.Services.AddSingleton<findamodel.Services.QueryService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();
+builder.Services.AddHostedService<findamodel.Services.InternalLlmWarmupService>();
 
 if (builder.Environment.IsDevelopment())
 {

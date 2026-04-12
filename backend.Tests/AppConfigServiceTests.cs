@@ -57,6 +57,10 @@ public class AppConfigServiceTests
         var sut = new AppConfigService(CreateFactory(nameof(GetAsync_CreatesDefaultRecord_WhenDbIsEmpty)));
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
+        Assert.True(dto.TagGenerationEnabled);
+        Assert.True(dto.TagGenerationAutoApply);
+        Assert.Equal("internal", dto.TagGenerationProvider);
+        Assert.Equal("qwen2.5vl:7b", dto.TagGenerationModel);
     }
 
     [Fact]
@@ -118,5 +122,47 @@ public class AppConfigServiceTests
     {
         var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNegativeInfinity)));
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateDefaultRaftHeightAsync(float.NegativeInfinity));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsTagGenerationSettings()
+    {
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_PersistsTagGenerationSettings)));
+
+        var updated = await sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            TagGenerationEnabled: true,
+            TagGenerationProvider: "ollama",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationAutoApply: false,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f));
+
+        Assert.True(updated.TagGenerationEnabled);
+        Assert.Equal("ollama", updated.TagGenerationProvider);
+        Assert.Equal(45000, updated.TagGenerationTimeoutMs);
+        Assert.Equal(10, updated.TagGenerationMaxTags);
+        Assert.Equal(0.5f, updated.TagGenerationMinConfidence);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ThrowsForUnknownTagGenerationProvider()
+    {
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsForUnknownTagGenerationProvider)));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            TagGenerationEnabled: true,
+            TagGenerationProvider: "not-real",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationAutoApply: false,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f)));
     }
 }

@@ -30,6 +30,15 @@ public class CachedModel
     public string? CalculatedModelName { get; set; }
     public string? CalculatedPartName { get; set; }
 
+    // Phase 2 generated tag metadata from local LLM providers.
+    public string? GeneratedTagsJson { get; set; }
+    public string? GeneratedTagsModel { get; set; }
+    public DateTime? GeneratedTagsAt { get; set; }
+    public string? GeneratedTagsConfidenceJson { get; set; }
+    public string? GeneratedTagsChecksum { get; set; }
+    public string? GeneratedTagsStatus { get; set; } // none | pending | success | failed
+    public string? GeneratedTagsError { get; set; }
+
     // Hull coordinates as JSON arrays: [[x1,y1],[x2,y2],...]
     // Projected onto X-Z plane with Y-up coordinate system (bird's eye view)
     public string? ConvexHullCoordinates { get; set; }           // Outer boundary hull (JSON)

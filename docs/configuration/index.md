@@ -55,3 +55,4 @@ models/
 
 - [findamodel.yaml format](findamodel-yaml) — all supported keys and syntax
 - [Inheritance](inheritance) — detailed rules for how values cascade down the tree
+- [LLM configuration](llm) — internal LLamaSharp and Ollama runtime settings

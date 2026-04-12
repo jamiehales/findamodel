@@ -6,7 +6,8 @@
 	],
 	"settings": {
 		"chat.tools.terminal.autoApprove": {
-			"dotnet test": true
+			"dotnet test": true,
+			"dotnet ef": true
 		}
 	}
 }
