@@ -47,6 +47,8 @@ See the [Getting started](docs/getting-started.md) guide for full setup instruct
 
 Desktop packaging is implemented under `desktop-tauri`.
 
+For full desktop requirements, VS Code debug flow, and platform notes, see [Desktop getting started](docs/desktop/getting-started.md).
+
 1. Install desktop shell dependencies:
 
 ```bash
