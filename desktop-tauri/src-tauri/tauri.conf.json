@@ -23,8 +23,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/icon.ico"
+    ],
     "resources": [
-      "bin/**"
+      "bin/**/*"
     ]
   }
 }

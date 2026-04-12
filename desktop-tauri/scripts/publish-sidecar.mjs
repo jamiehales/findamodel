@@ -34,7 +34,7 @@ if (!arch || !ridMap[platform]?.[arch]) {
 const rid = process.env.FINDAMODEL_RID ?? ridMap[platform][arch];
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const backendProject = path.join(repoRoot, 'backend', 'findamodel.csproj');
-const publishDir = path.join(repoRoot, 'backend', 'artifacts', 'desktop', rid);
+const publishDir = path.join(repoRoot, 'desktop-tauri', 'artifacts', 'sidecar', rid);
 const tauriBinDir = path.join(repoRoot, 'desktop-tauri', 'src-tauri', 'bin');
 
 mkdirSync(tauriBinDir, { recursive: true });
@@ -57,7 +57,6 @@ const publishArgs = [
 
 const publish = spawnSync('dotnet', publishArgs, {
   stdio: 'inherit',
-  shell: process.platform === 'win32',
 });
 
 if (publish.status !== 0) {

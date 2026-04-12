@@ -1,5 +1,6 @@
 use rand::RngCore;
 use serde::Serialize;
+use std::io::Error as IoError;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -74,7 +75,6 @@ fn wait_for_health(api_base_url: &str, session_token: &str) -> Result<(), String
     while Instant::now() < deadline {
         match ureq::get(&health_url)
             .set("X-Findamodel-Desktop-Token", session_token)
-            .timeout_connect(Duration::from_secs(2))
             .timeout(Duration::from_secs(2))
             .call()
         {
@@ -115,26 +115,26 @@ fn main() {
                 if let (Some(url), Some(token)) = (external_url, external_token) {
                     // External backend — wait for it to be healthy then attach.
                     if let Err(error) = wait_for_health(&url, &token) {
-                        return Err(tauri::Error::Runtime(format!(
+                        return Err(IoError::other(format!(
                             "External backend not healthy: {error}"
-                        )));
+                        ))
+                        .into());
                     }
                     (url, token, Arc::new(Mutex::new(None)))
                 } else {
                     // Managed sidecar — pick port, generate token, spawn backend.
-                    let port = pick_port().map_err(tauri::Error::Runtime)?;
+                    let port = pick_port().map_err(IoError::other)?;
                     let token = generate_session_token();
                     let url = format!("http://127.0.0.1:{port}");
 
                     let app_data_dir = app
                         .path()
                         .app_data_dir()
-                        .map_err(|e| tauri::Error::Runtime(e.to_string()))?;
-                    std::fs::create_dir_all(&app_data_dir)
-                        .map_err(|e| tauri::Error::Runtime(e.to_string()))?;
+                        .map_err(IoError::other)?;
+                    std::fs::create_dir_all(&app_data_dir).map_err(IoError::other)?;
 
                     let backend_executable =
-                        find_backend_executable(&app.handle()).map_err(tauri::Error::Runtime)?;
+                        find_backend_executable(&app.handle()).map_err(IoError::other)?;
 
                     let mut child = Command::new(&backend_executable)
                         .env("FINDAMODEL_MODE", "desktop")
@@ -143,14 +143,15 @@ fn main() {
                         .env("FINDAMODEL_DISABLE_CORS", "true")
                         .env("FINDAMODEL_DESKTOP_SESSION_TOKEN", &token)
                         .spawn()
-                        .map_err(|e| tauri::Error::Runtime(e.to_string()))?;
+                        .map_err(IoError::other)?;
 
                     if let Err(error) = wait_for_health(&url, &token) {
                         let _ = child.kill();
                         let _ = child.wait();
-                        return Err(tauri::Error::Runtime(format!(
+                        return Err(IoError::other(format!(
                             "Backend failed to become healthy: {error}"
-                        )));
+                        ))
+                        .into());
                     }
 
                     (url, token, Arc::new(Mutex::new(Some(child))))

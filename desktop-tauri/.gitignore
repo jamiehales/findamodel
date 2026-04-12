@@ -2,10 +2,14 @@
 src-tauri/target/
 
 # Sidecar binaries (built by publish-sidecar.mjs)
-src-tauri/bin/
+src-tauri/bin/*
+!src-tauri/bin/placeholder.txt
 
 # node_modules
 node_modules/
+
+# Local sidecar publish output
+artifacts/
 
 # Tauri generated schemas
 src-tauri/gen/

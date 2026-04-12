@@ -1,0 +1,2 @@
+This file keeps the bin/** Tauri resource glob valid on clean checkouts.
+Generated sidecar binaries are copied into this directory at build time.
