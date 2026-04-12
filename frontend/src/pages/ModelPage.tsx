@@ -103,10 +103,9 @@ function ModelPage() {
 
   return (
     <>
-      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
-        {backButton}
-
+      <PageLayout variant="full" sx={{ p: 0 }}>
         <Box className={styles.content}>
+          {backButton}
           <Box className={styles.titleGroup}>
             <Typography component="h1" variant="page-title">
               {model.name}
@@ -207,7 +206,9 @@ function ModelPage() {
               ))}
             </Box>
           )}
+        </Box>
 
+        <Box className={styles.viewerSection}>
           <Box className={styles.viewerBox}>
             <ModelViewer
               modelId={model.id}
@@ -217,16 +218,18 @@ function ModelPage() {
               supported={model.supported}
             />
           </Box>
+        </Box>
 
-          {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
+        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
+          <Box className={styles.hullSection}>
             <HullPreview
               convexHull={model.convexHull}
               concaveHull={model.concaveHull}
               convexSansRaftHull={model.convexSansRaftHull}
               label="Hull Projections"
             />
-          )}
-        </Box>
+          </Box>
+        )}
 
         {(otherParts?.length ?? 0) > 0 && (
           <Box className={styles.otherPartsSection}>
