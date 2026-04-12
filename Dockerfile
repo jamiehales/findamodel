@@ -36,8 +36,8 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
 ENV ASPNETCORE_URLS=http://+:80
-ENV PUID=0
-ENV PGID=0
+ENV PUID=1000
+ENV PGID=1000
 ENV UMASK=022
 
 ENTRYPOINT ["/entrypoint.sh"]
