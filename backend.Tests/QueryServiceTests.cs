@@ -143,7 +143,7 @@ public class QueryServiceTests
             }
 
             var sut = new QueryService(factory);
-            var options = await sut.GetFilterOptionsAsync();
+            var options = await sut.GetFilterOptionsAsync(new ModelQueryRequest());
 
             Assert.Contains("large", options.Tags);
             Assert.Contains("printed", options.Tags);
@@ -205,6 +205,188 @@ public class QueryServiceTests
 
             Assert.Single(result.Models);
             Assert.Equal("orc-captain", result.Models[0].Name);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetFilterOptionsAsync_ScopesCreatorByOtherFilters()
+    {
+        var (factory, connection) = CreateFactory();
+        try
+        {
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.Models.AddRange(
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "red-dragon.stl",
+                        Directory = "a",
+                        FileType = "stl",
+                        Checksum = "rd",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCreator = "joe",
+                        CalculatedCategory = "red",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "blue-tank.stl",
+                        Directory = "b",
+                        FileType = "stl",
+                        Checksum = "bt",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCreator = "alice",
+                        CalculatedCategory = "blue",
+                    });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = new QueryService(factory);
+            var options = await sut.GetFilterOptionsAsync(new ModelQueryRequest
+            {
+                Category = ["red"],
+            });
+
+            Assert.Equal(["joe"], options.Creators);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetFilterOptionsAsync_ExcludesOwnConstraintAndPreservesSelectedValues()
+    {
+        var (factory, connection) = CreateFactory();
+        try
+        {
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.Models.AddRange(
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "red-dragon.stl",
+                        Directory = "a",
+                        FileType = "stl",
+                        Checksum = "rd",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCreator = "joe",
+                        CalculatedCategory = "red",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "blue-tank.stl",
+                        Directory = "b",
+                        FileType = "stl",
+                        Checksum = "bt",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCreator = "alice",
+                        CalculatedCategory = "blue",
+                    });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = new QueryService(factory);
+            var options = await sut.GetFilterOptionsAsync(new ModelQueryRequest
+            {
+                Creator = ["alice"],
+                Category = ["red"],
+            });
+
+            Assert.Contains("alice", options.Creators);
+            Assert.Contains("joe", options.Creators);
+            Assert.Equal(2, options.Creators.Count);
+
+            Assert.Contains("blue", options.Categories);
+            Assert.Contains("red", options.Categories);
+            Assert.Equal(2, options.Categories.Count);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetFilterOptionsAsync_TagsAreDistinctCaseInsensitiveAndPreserveSelection()
+    {
+        var (factory, connection) = CreateFactory();
+        try
+        {
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.Models.AddRange(
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "red-dragon.stl",
+                        Directory = "a",
+                        FileType = "stl",
+                        Checksum = "rd",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCategory = "red",
+                        CalculatedTagsJson = "[\"Monster\",\"Small\"]",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "red-knight.stl",
+                        Directory = "a",
+                        FileType = "stl",
+                        Checksum = "rk",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCategory = "red",
+                        GeneratedTagsJson = "[\"monster\",\"printed\"]",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "blue-tank.stl",
+                        Directory = "b",
+                        FileType = "stl",
+                        Checksum = "bt",
+                        FileSize = 1,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedCategory = "blue",
+                        CalculatedTagsJson = "[\"vehicle\"]",
+                    });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = new QueryService(factory);
+            var options = await sut.GetFilterOptionsAsync(new ModelQueryRequest
+            {
+                Category = ["red"],
+                Tags = ["ghost"],
+            });
+
+            Assert.Contains("ghost", options.Tags);
+            Assert.Equal(1, options.Tags.Count(v => string.Equals(v, "monster", StringComparison.OrdinalIgnoreCase)));
+            Assert.DoesNotContain(options.Tags, v => string.Equals(v, "vehicle", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

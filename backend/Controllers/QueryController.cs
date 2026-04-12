@@ -16,9 +16,9 @@ public class QueryController(QueryService queryService) : ControllerBase
     }
 
     [HttpGet("options")]
-    public async Task<IActionResult> Options()
+    public async Task<IActionResult> Options([FromQuery] ModelQueryRequest request)
     {
-        var options = await queryService.GetFilterOptionsAsync();
+        var options = await queryService.GetFilterOptionsAsync(request);
         return Ok(options);
     }
 }

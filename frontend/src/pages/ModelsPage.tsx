@@ -42,11 +42,10 @@ function toSearchParams(filter: ModelFilter): URLSearchParams {
 }
 
 function ModelsPage() {
-  const { data: filterOptions } = useFilterOptions();
-  const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const [searchParams, setSearchParams] = useSearchParams();
-
   const filter = useMemo(() => toFilter(searchParams), [searchParams]);
+  const { data: filterOptions } = useFilterOptions(filter);
+  const { data: metadataDictionary } = useMetadataDictionaryOverview();
 
   const mergedOptions = useMemo(() => {
     if (!filterOptions) return filterOptions;
