@@ -58,6 +58,12 @@ function validateRuleYaml(text: string): string | null {
     const key = trimmed.slice(0, colonIdx).trim();
     if (!key) return 'Invalid YAML: empty key';
     if (key === 'rule') hasRule = true;
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (value && !value.startsWith("'") && !value.startsWith('"')) {
+      if (value.startsWith('[') || value.startsWith('{')) {
+        return `Value "${value}" must be quoted because it starts with a YAML special character — wrap it in single quotes, e.g. '${value}'`;
+      }
+    }
   }
   if (!hasRule) return 'Must include a "rule:" key (e.g. rule: filename)';
   return null;
@@ -177,7 +183,8 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       {para(
         <>
           {inline('expression: <pattern>')} — a regex or sed-style substitution (
-          {inline('s|pattern|replacement|flags')})
+          {inline('s|pattern|replacement|flags')}). Quote patterns that start with {inline('[')} or{' '}
+          {inline('{')} (e.g. {inline("expression: '[^n]supported'")})
         </>,
       )}
       {para(
