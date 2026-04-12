@@ -38,6 +38,10 @@ public class CachedModel
     public string? GeneratedTagsChecksum { get; set; }
     public string? GeneratedTagsStatus { get; set; } // none | pending | success | failed
     public string? GeneratedTagsError { get; set; }
+    public string? GeneratedDescription { get; set; }
+    public string? GeneratedDescriptionModel { get; set; }
+    public DateTime? GeneratedDescriptionAt { get; set; }
+    public string? GeneratedDescriptionChecksum { get; set; }
 
     // Hull coordinates as JSON arrays: [[x1,y1],[x2,y2],...]
     // Projected onto X-Z plane with Y-up coordinate system (bird's eye view)

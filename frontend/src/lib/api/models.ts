@@ -15,6 +15,7 @@ export interface Model {
   collection: string | null;
   subcollection: string | null;
   tags: string[];
+  generatedDescription: string | null;
   category: string | null;
   type: string | null;
   material: string | null;

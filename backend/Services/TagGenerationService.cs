@@ -17,6 +17,7 @@ public class TagGenerationService(
     private readonly ILogger _logger = loggerFactory.CreateLogger(LogChannels.Llm);
     private readonly string _rendersPath = config["Cache:RendersPath"] ?? Path.Combine("data", "cache", "renders");
     internal const int CurrentTagGenerationPromptVersion = 2;
+    internal const int CurrentDescriptionPromptVersion = 1;
     internal const int CurrentLlmRuntimeVersion = 1;
 
     public async Task<GeneratedTagsResultDto?> GenerateForModelAsync(Guid modelId, CancellationToken ct)
@@ -65,10 +66,12 @@ public class TagGenerationService(
             appConfig.TagGenerationEndpoint,
             appConfig.TagGenerationModel,
             appConfig.TagGenerationTimeoutMs);
+        var previewPath = ResolvePreviewPath(model);
+        var expectedDescriptionChecksum = ComputeDescriptionChecksum(model, appConfig);
 
         try
         {
-            var request = BuildTagRequest(model, allowedTags, appConfig.TagGenerationMaxTags, ResolvePreviewPath(model));
+            var request = BuildTagRequest(model, allowedTags, appConfig.TagGenerationMaxTags, previewPath);
             var response = await provider.GenerateAsync(providerSettings, request, ct);
 
             var filtered = FilterTags(response, allowedTags, appConfig.TagGenerationMinConfidence, appConfig.TagGenerationMaxTags);
@@ -83,11 +86,13 @@ public class TagGenerationService(
             model.GeneratedTagsStatus = "success";
             model.GeneratedTagsError = null;
 
-            if (appConfig.TagGenerationAutoApply && filtered.Tags.Count > 0)
-            {
-                var merged = TagListHelper.Merge(TagListHelper.FromJson(model.CalculatedTagsJson), filtered.Tags);
-                model.CalculatedTagsJson = TagListHelper.ToJsonOrNull(merged);
-            }
+            var descriptionRequest = BuildDescriptionRequest(model, previewPath);
+            var descriptionResponse = await provider.GenerateAsync(providerSettings, descriptionRequest, ct);
+            var normalizedDescription = NormalizeDescription(descriptionResponse.Description);
+            model.GeneratedDescription = normalizedDescription;
+            model.GeneratedDescriptionModel = descriptionResponse.Model;
+            model.GeneratedDescriptionAt = DateTime.UtcNow;
+            model.GeneratedDescriptionChecksum = expectedDescriptionChecksum;
 
             await db.SaveChangesAsync(ct);
 
@@ -272,6 +277,18 @@ public class TagGenerationService(
         return !string.Equals(expected, model.GeneratedTagsChecksum, StringComparison.OrdinalIgnoreCase);
     }
 
+    internal static bool NeedsDescriptionRegeneration(CachedModel model, AppConfigDto appConfig)
+    {
+        if (!appConfig.TagGenerationEnabled)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(model.GeneratedDescription))
+            return true;
+
+        var expected = ComputeDescriptionChecksum(model, appConfig);
+        return !string.Equals(expected, model.GeneratedDescriptionChecksum, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static string ComputeGenerationChecksum(CachedModel model, AppConfigDto appConfig, IReadOnlyList<string> schemaTags)
     {
         var normalizedSchema = schemaTags
@@ -293,6 +310,77 @@ public class TagGenerationService(
 
         var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    internal static string ComputeDescriptionChecksum(CachedModel model, AppConfigDto appConfig)
+    {
+        var modelName = ResolveModelName(model);
+        var prompt = BuildDescriptionUserPrompt(modelName);
+        var payload = string.Join("|", [
+            $"promptVersion:{CurrentDescriptionPromptVersion}",
+            $"llmVersion:{CurrentLlmRuntimeVersion}",
+            $"model:{appConfig.TagGenerationModel}",
+            $"modelName:{modelName}",
+            $"prompt:{prompt}",
+            $"checksum:{model.Checksum}",
+        ]);
+
+        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static LocalLlmRequest BuildDescriptionRequest(CachedModel model, string? previewImagePath)
+    {
+        var modelName = ResolveModelName(model);
+        var context = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["modelName"] = modelName,
+            ["partName"] = model.CalculatedPartName,
+            ["fileName"] = model.FileName,
+            ["directory"] = model.Directory,
+            ["category"] = model.CalculatedCategory,
+            ["type"] = model.CalculatedType,
+            ["material"] = model.CalculatedMaterial,
+            ["creator"] = model.CalculatedCreator,
+            ["collection"] = model.CalculatedCollection,
+            ["subcollection"] = model.CalculatedSubcollection,
+        };
+
+        var systemPrompt =
+            "You are a visual model description assistant. " +
+            "Return exactly one valid JSON object and nothing else. " +
+            "Do not include markdown fences, the word json, prose, or explanation. " +
+            "Your response must start with '{' and end with '}'.";
+
+        return new LocalLlmRequest
+        {
+            TaskKind = LocalLlmTaskKind.Description,
+            SystemPrompt = systemPrompt,
+            UserPrompt = BuildDescriptionUserPrompt(modelName),
+            Context = context,
+            ImagePath = previewImagePath,
+            MaxOutputTokens = 256,
+        };
+    }
+
+    private static string BuildDescriptionUserPrompt(string modelName) =>
+        $"Write exactly two concise, searchable sentences describing this 3D model named '{modelName}'. " +
+        "Sentence 1: a general visual overview based on the image and provided metadata context. " +
+        "Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). " +
+        "Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. " +
+        "Do not mention confidence, JSON, or model limitations. " +
+        "Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
+
+    private static string ResolveModelName(CachedModel model) =>
+        model.CalculatedModelName ?? Path.GetFileNameWithoutExtension(model.FileName);
+
+    private static string? NormalizeDescription(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim();
+        return normalized.Length <= 1024 ? normalized : normalized[..1024];
     }
 
     private static async Task<GeneratedTagsResultDto> PersistFailure(

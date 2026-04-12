@@ -30,6 +30,9 @@ Pull and run the pre-built image from GitHub Container Registry:
 ```bash
 docker run -d \
   --name findamodel \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e UMASK=022 \
   -p 5000:8080 \
   -v /path/to/your/models:/models:ro \
   -v /path/to/data:/data \
@@ -44,6 +47,10 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 |----------|---------|-------------|
 | `MODELS_PATH` | `/models` | Path to your models directory (can be read-only) |
 | `DATA_PATH` | `/data` | Path for the database and cache files |
+| `PUID` | `1000` | Run the app process as this user id (LinuxServer style) |
+| `PGID` | `1000` | Run the app process as this group id (LinuxServer style) |
+| `UMASK` | `022` | Umask applied before starting the app process |
+| `UMASK_SET` | _(deprecated)_ | Legacy alias for `UMASK` for LinuxServer compatibility |
 | `ASPNETCORE_URLS` | `http://+:8080` | Bind address |
 
 ### docker-compose example
@@ -52,6 +59,10 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 services:
   findamodel:
     image: ghcr.io/<owner>/findamodel:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
     ports:
       - "5000:8080"
     volumes:

@@ -8,6 +8,9 @@ internal static class ModelMappingExtensions
 {
     public static ModelDto ToModelDto(this CachedModel model)
     {
+        var calculatedTags = TagListHelper.FromJson(model.CalculatedTagsJson);
+        var generatedTags = TagListHelper.FromJson(model.GeneratedTagsJson);
+
         return new ModelDto
         {
             Id = model.Id,
@@ -23,13 +26,14 @@ internal static class ModelMappingExtensions
             Creator = model.CalculatedCreator,
             Collection = model.CalculatedCollection,
             Subcollection = model.CalculatedSubcollection,
-            Tags = TagListHelper.FromJson(model.CalculatedTagsJson),
-            GeneratedTags = TagListHelper.FromJson(model.GeneratedTagsJson),
+            Tags = TagListHelper.Merge(calculatedTags, generatedTags),
+            GeneratedTags = generatedTags,
             GeneratedTagConfidence = ParseConfidenceJson(model.GeneratedTagsConfidenceJson),
             GeneratedTagsStatus = model.GeneratedTagsStatus ?? "none",
             GeneratedTagsAt = model.GeneratedTagsAt,
             GeneratedTagsError = model.GeneratedTagsError,
             GeneratedTagsModel = model.GeneratedTagsModel,
+            GeneratedDescription = model.GeneratedDescription,
             Category = model.CalculatedCategory,
             Type = model.CalculatedType,
             Material = model.CalculatedMaterial,

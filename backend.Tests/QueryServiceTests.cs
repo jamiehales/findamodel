@@ -123,6 +123,7 @@ public class QueryServiceTests
                         FileModifiedAt = DateTime.UtcNow,
                         CachedAt = DateTime.UtcNow,
                         CalculatedTagsJson = "[\"small\",\"monster\"]",
+                        GeneratedTagsJson = "[\"printed\"]",
                     },
                     new CachedModel
                     {
@@ -135,6 +136,7 @@ public class QueryServiceTests
                         FileModifiedAt = DateTime.UtcNow,
                         CachedAt = DateTime.UtcNow,
                         CalculatedTagsJson = "[\"large\",\"monster\"]",
+                        GeneratedTagsJson = "[\"boss\"]",
                     });
 
                 await db.SaveChangesAsync();
@@ -144,9 +146,65 @@ public class QueryServiceTests
             var options = await sut.GetFilterOptionsAsync();
 
             Assert.Contains("large", options.Tags);
+            Assert.Contains("printed", options.Tags);
+            Assert.Contains("boss", options.Tags);
             Assert.Contains("monster", options.Tags);
             Assert.Contains("small", options.Tags);
-            Assert.Equal(3, options.Tags.Count);
+            Assert.Equal(5, options.Tags.Count);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task QueryModelsAsync_SearchMatchesGeneratedDescription()
+    {
+        var (factory, connection) = CreateFactory();
+        try
+        {
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.Models.AddRange(
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "orc-captain.stl",
+                        Directory = "warband",
+                        FileType = "stl",
+                        Checksum = "d",
+                        FileSize = 10,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        GeneratedDescription = "Heavily armored commander carrying a banner and axe.",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "village-house.stl",
+                        Directory = "terrain",
+                        FileType = "stl",
+                        Checksum = "e",
+                        FileSize = 12,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        GeneratedDescription = "Small rustic house with timber roof.",
+                    });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = new QueryService(factory);
+            var result = await sut.QueryModelsAsync(new ModelQueryRequest
+            {
+                Search = "banner",
+                Limit = 25,
+                Offset = 0,
+            });
+
+            Assert.Single(result.Models);
+            Assert.Equal("orc-captain", result.Models[0].Name);
         }
         finally
         {

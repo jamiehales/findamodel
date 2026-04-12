@@ -8,7 +8,6 @@ public record AppConfigDto(
     string TagGenerationEndpoint,
     string TagGenerationModel,
     int TagGenerationTimeoutMs,
-    bool TagGenerationAutoApply,
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence);
 
@@ -20,6 +19,5 @@ public record UpdateAppConfigRequest(
     string TagGenerationEndpoint,
     string TagGenerationModel,
     int TagGenerationTimeoutMs,
-    bool TagGenerationAutoApply,
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence);

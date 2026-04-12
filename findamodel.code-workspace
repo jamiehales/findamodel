@@ -7,7 +7,9 @@
 	"settings": {
 		"chat.tools.terminal.autoApprove": {
 			"dotnet test": true,
-			"dotnet ef": true
+			"dotnet ef": true,
+			"yarn --cwd frontend prettier": true,
+			"yarn --cwd frontend build": true
 		}
 	}
 }

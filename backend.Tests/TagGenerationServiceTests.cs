@@ -49,6 +49,35 @@ public class TagGenerationServiceTests
         Assert.True(shouldRegenerate);
     }
 
+    [Fact]
+    public void ComputeDescriptionChecksum_ChangesWhenModelNameChanges()
+    {
+        var config = CreateConfig();
+        var modelA = CreateModel();
+        var modelB = CreateModel();
+        modelA.CalculatedModelName = "Goblin Scout";
+        modelB.CalculatedModelName = "Goblin Chief";
+
+        var checksumA = TagGenerationService.ComputeDescriptionChecksum(modelA, config);
+        var checksumB = TagGenerationService.ComputeDescriptionChecksum(modelB, config);
+
+        Assert.NotEqual(checksumA, checksumB);
+    }
+
+    [Fact]
+    public void NeedsDescriptionRegeneration_ReturnsTrue_WhenChecksumDiffers()
+    {
+        var model = CreateModel();
+        var config = CreateConfig();
+
+        model.GeneratedDescription = "A sneaky goblin scout with a spear.";
+        model.GeneratedDescriptionChecksum = "outdated";
+
+        var shouldRegenerate = TagGenerationService.NeedsDescriptionRegeneration(model, config);
+
+        Assert.True(shouldRegenerate);
+    }
+
     private static CachedModel CreateModel()
     {
         return new CachedModel
@@ -74,7 +103,6 @@ public class TagGenerationServiceTests
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 60000,
-            TagGenerationAutoApply: true,
             TagGenerationMaxTags: 12,
             TagGenerationMinConfidence: 0.45f);
     }

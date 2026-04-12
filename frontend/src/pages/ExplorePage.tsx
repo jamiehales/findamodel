@@ -45,6 +45,7 @@ function toProcessedModel(model: ExplorerModel): Model | null {
     collection: model.resolvedMetadata?.collection ?? null,
     subcollection: model.resolvedMetadata?.subcollection ?? null,
     tags: model.resolvedMetadata?.tags ?? [],
+    generatedDescription: null,
     category: model.resolvedMetadata?.category ?? null,
     type: model.resolvedMetadata?.type ?? null,
     material: model.resolvedMetadata?.material ?? null,

@@ -82,10 +82,15 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
   const [savedIndicator, setSavedIndicator] = useState(false);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [initialForm, setInitialForm] = useState<FormState>(EMPTY_FORM);
 
   useEffect(() => {
     if (detail) {
-      setForm({ ...detail.localValues });
+      const hydrated: FormState = {
+        ...detail.localValues,
+      };
+      setForm(hydrated);
+      setInitialForm(hydrated);
     }
   }, [detail]);
 
@@ -122,7 +127,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     }
   }
 
-  const isDirty = detail ? hasFormChanges(form, detail.localValues) : false;
+  const isDirty = detail ? hasFormChanges(form, initialForm) : false;
 
   function getSelectOptions(field: SharedFieldDef, localValue: string | null): string[] {
     if (field.optionsField == null) return [];

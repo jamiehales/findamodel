@@ -58,7 +58,6 @@ public class AppConfigServiceTests
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
         Assert.True(dto.TagGenerationEnabled);
-        Assert.True(dto.TagGenerationAutoApply);
         Assert.Equal("internal", dto.TagGenerationProvider);
         Assert.Equal("qwen2.5vl:7b", dto.TagGenerationModel);
     }
@@ -137,7 +136,6 @@ public class AppConfigServiceTests
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 45000,
-            TagGenerationAutoApply: false,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f));
 
@@ -161,7 +159,6 @@ public class AppConfigServiceTests
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 45000,
-            TagGenerationAutoApply: false,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f)));
     }

@@ -243,6 +243,8 @@ public class ModelService(
                 m.GeneratedTagsChecksum,
                 m.GeneratedTagsStatus,
                 m.GeneratedTagsJson,
+                m.GeneratedDescription,
+                m.GeneratedDescriptionChecksum,
                 m.PreviewImagePath,
                 m.CalculatedModelName,
                 m.CalculatedPartName,
@@ -425,23 +427,34 @@ public class ModelService(
         var tagsStale = existing is not null
             && generateTagsOnScan
             && TagGenerationService.NeedsRegeneration(existing, appConfig, configuredTagSchema);
+        var descriptionStale = existing is not null
+            && generateTagsOnScan
+            && TagGenerationService.NeedsDescriptionRegeneration(existing, appConfig);
         var expectedTagChecksum = existing is not null && generateTagsOnScan && configuredTagSchema.Count > 0
             ? TagGenerationService.ComputeGenerationChecksum(existing, appConfig, configuredTagSchema)
             : null;
+        var expectedDescriptionChecksum = existing is not null && generateTagsOnScan
+            ? TagGenerationService.ComputeDescriptionChecksum(existing, appConfig)
+            : null;
         var storedTagChecksum = existing?.GeneratedTagsChecksum;
+        var storedDescriptionChecksum = existing?.GeneratedDescriptionChecksum;
         if (existing is not null
             && existing.Checksum == checksum
             && (IsNonGeometryType(fileType) || !hullStale)
             && (IsNonGeometryType(fileType) || !previewStale)
-            && !tagsStale)
+            && !tagsStale
+            && !descriptionStale)
         {
             logger.LogDebug(
-                "Single-model scan skipped changes for {FilePath}; checksum/hulls/preview/tags are up-to-date. tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}",
+                "Single-model scan skipped changes for {FilePath}; checksum/hulls/preview/tags/description are up-to-date. tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
                 fullPath,
                 existing.GeneratedTagsStatus,
                 !string.IsNullOrWhiteSpace(existing.GeneratedTagsJson),
                 storedTagChecksum,
-                expectedTagChecksum);
+                expectedTagChecksum,
+                !string.IsNullOrWhiteSpace(existing.GeneratedDescription),
+                storedDescriptionChecksum,
+                expectedDescriptionChecksum);
             return false;
         }
 
@@ -520,9 +533,9 @@ public class ModelService(
 
         await db.SaveChangesAsync();
         var shouldGenerateTags = generateTagsOnScan
-            && (checksumChanged || tagsStale);
+            && (checksumChanged || tagsStale || descriptionStale);
         logger.LogDebug(
-            "Single-model scan tag-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}",
+            "Single-model scan tag-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, descriptionStale={DescriptionStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
             fullPath,
             shouldGenerateTags,
             generateTagsOnScan,
@@ -531,11 +544,15 @@ public class ModelService(
             hullStale,
             previewStale,
             tagsStale,
+            descriptionStale,
             existing?.GeneratedTagsStatus,
             !string.IsNullOrWhiteSpace(existing?.GeneratedTagsJson),
             storedTagChecksum,
-            expectedTagChecksum);
-        if (shouldGenerateTags)
+            expectedTagChecksum,
+            !string.IsNullOrWhiteSpace(existing?.GeneratedDescription),
+            storedDescriptionChecksum,
+            expectedDescriptionChecksum);
+        if (shouldGenerateTags && existing is not null)
             await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan);
         return true;
     }
@@ -636,6 +653,8 @@ public class ModelService(
         string? GeneratedTagsChecksum,
         string? GeneratedTagsStatus,
         string? GeneratedTagsJson,
+        string? GeneratedDescription,
+        string? GeneratedDescriptionChecksum,
         string? PreviewImagePath,
         string? CalculatedModelName,
         string? CalculatedPartName,
@@ -675,6 +694,7 @@ public class ModelService(
             var previewStale = !IsNonGeometryType(fileType)
                 && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
             var tagsStale = false;
+            var descriptionStale = false;
             if (generateTagsOnScan)
             {
                 var projected = new CachedModel
@@ -695,11 +715,14 @@ public class ModelService(
                     GeneratedTagsChecksum = existingEntry.GeneratedTagsChecksum,
                     GeneratedTagsJson = existingEntry.GeneratedTagsJson,
                     GeneratedTagsStatus = existingEntry.GeneratedTagsStatus,
+                    GeneratedDescription = existingEntry.GeneratedDescription,
+                    GeneratedDescriptionChecksum = existingEntry.GeneratedDescriptionChecksum,
                 };
                 tagsStale = TagGenerationService.NeedsRegeneration(projected, appConfig, configuredTagSchema);
+                descriptionStale = TagGenerationService.NeedsDescriptionRegeneration(projected, appConfig);
             }
 
-            if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale && !tagsStale)
+            if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale && !tagsStale && !descriptionStale)
                 return null;
 
             if (currentChecksum != existingEntry.Checksum)
@@ -726,7 +749,7 @@ public class ModelService(
                 return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false);
             }
 
-            if (tagsStale)
+            if (tagsStale || descriptionStale)
                 return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, true);
 
             logger.LogInformation(

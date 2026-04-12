@@ -158,7 +158,6 @@ export default function SettingsPage() {
   const [tagGenerationEndpoint, setTagGenerationEndpoint] = useState('http://localhost:11434');
   const [tagGenerationModel, setTagGenerationModel] = useState('qwen2.5vl:7b');
   const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
-  const [tagGenerationAutoApply, setTagGenerationAutoApply] = useState(true);
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
   const { data, isPending, isError } = useMetadataDictionaryOverview();
@@ -174,7 +173,6 @@ export default function SettingsPage() {
       setTagGenerationEndpoint(appConfig.tagGenerationEndpoint);
       setTagGenerationModel(appConfig.tagGenerationModel);
       setTagGenerationTimeoutMs(String(appConfig.tagGenerationTimeoutMs));
-      setTagGenerationAutoApply(appConfig.tagGenerationAutoApply);
       setTagGenerationMaxTags(String(appConfig.tagGenerationMaxTags));
       setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
     }
@@ -252,7 +250,6 @@ export default function SettingsPage() {
                   tagGenerationEndpoint: tagGenerationEndpoint.trim(),
                   tagGenerationModel: tagGenerationModel.trim(),
                   tagGenerationTimeoutMs: timeoutValue,
-                  tagGenerationAutoApply,
                   tagGenerationMaxTags: maxTagsValue,
                   tagGenerationMinConfidence: minConfidenceValue,
                 })
@@ -267,7 +264,7 @@ export default function SettingsPage() {
       <Box className={styles.globalSettingsSection}>
         <Typography variant="h5">Tag Generation</Typography>
         <Stack spacing={2}>
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" spacing={1}>
             <FormControlLabel
               control={
                 <Switch
@@ -276,15 +273,6 @@ export default function SettingsPage() {
                 />
               }
               label="Enable tag generation"
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={tagGenerationAutoApply}
-                  onChange={(e) => setTagGenerationAutoApply(e.target.checked)}
-                />
-              }
-              label="Auto-apply generated tags"
             />
           </Stack>
 
@@ -301,14 +289,16 @@ export default function SettingsPage() {
             <MenuItem value="ollama">Ollama</MenuItem>
           </TextField>
 
-          <TextField
-            size="small"
-            label="Endpoint"
-            value={tagGenerationEndpoint}
-            onChange={(e) => setTagGenerationEndpoint(e.target.value)}
-            error={!tagGenerationEndpoint.trim()}
-            helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : ' '}
-          />
+          {tagGenerationProvider === 'ollama' && (
+            <TextField
+              size="small"
+              label="Endpoint"
+              value={tagGenerationEndpoint}
+              onChange={(e) => setTagGenerationEndpoint(e.target.value)}
+              error={!tagGenerationEndpoint.trim()}
+              helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : undefined}
+            />
+          )}
 
           <TextField
             size="small"
@@ -316,7 +306,7 @@ export default function SettingsPage() {
             value={tagGenerationModel}
             onChange={(e) => setTagGenerationModel(e.target.value)}
             error={!tagGenerationModel.trim()}
-            helperText={!tagGenerationModel.trim() ? 'Model is required.' : ' '}
+            helperText={!tagGenerationModel.trim() ? 'Model is required.' : undefined}
           />
 
           <TextField
@@ -329,7 +319,7 @@ export default function SettingsPage() {
             helperText={
               !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
                 ? 'Must be an integer between 1000 and 300000.'
-                : ' '
+                : undefined
             }
           />
 
@@ -343,7 +333,7 @@ export default function SettingsPage() {
             helperText={
               !Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64
                 ? 'Must be an integer between 1 and 64.'
-                : ' '
+                : undefined
             }
           />
 
@@ -363,7 +353,7 @@ export default function SettingsPage() {
               minConfidenceValue < 0 ||
               minConfidenceValue > 1
                 ? 'Must be a number between 0 and 1.'
-                : ' '
+                : undefined
             }
           />
         </Stack>

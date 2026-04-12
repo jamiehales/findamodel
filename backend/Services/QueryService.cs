@@ -17,7 +17,10 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var term = request.Search.Trim().ToLower();
-            query = query.Where(m => m.FileName.ToLower().Contains(term));
+            query = query.Where(m =>
+                m.FileName.ToLower().Contains(term)
+                || (m.CalculatedModelName != null && m.CalculatedModelName.ToLower().Contains(term))
+                || (m.GeneratedDescription != null && m.GeneratedDescription.ToLower().Contains(term)));
         }
 
         // Multi-value filters on per-model calculated metadata fields (rules applied)
@@ -51,7 +54,8 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             {
                 var pattern = BuildJsonTagLikePattern(tag);
                 tagged = tagged.Union(baseQuery.Where(m =>
-                    m.CalculatedTagsJson != null && EF.Functions.Like(m.CalculatedTagsJson, pattern)));
+                    (m.CalculatedTagsJson != null && EF.Functions.Like(m.CalculatedTagsJson, pattern))
+                    || (m.GeneratedTagsJson != null && EF.Functions.Like(m.GeneratedTagsJson, pattern))));
             }
 
             query = tagged;
@@ -103,9 +107,10 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             .ToListAsync();
 
         var tags = (await db.Models
-                .Where(m => m.CalculatedTagsJson != null)
-                .Select(m => m.CalculatedTagsJson)
+                .Where(m => m.CalculatedTagsJson != null || m.GeneratedTagsJson != null)
+                .Select(m => new { m.CalculatedTagsJson, m.GeneratedTagsJson })
                 .ToListAsync())
+            .SelectMany(v => new[] { v.CalculatedTagsJson, v.GeneratedTagsJson })
             .Where(v => !string.IsNullOrWhiteSpace(v))
             .SelectMany(v => TagListHelper.FromJson(v))
             .Distinct(StringComparer.OrdinalIgnoreCase)

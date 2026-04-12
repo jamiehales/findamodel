@@ -1,3 +1,12 @@
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .section {
   padding: 16px;
   display: flex;
@@ -16,7 +25,6 @@
 }
 
 .globalSettingsSection {
-  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;

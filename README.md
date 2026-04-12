@@ -11,6 +11,9 @@ Full documentation is available at **[jamiehales.github.io/findamodel](https://j
 ```bash
 docker run -d \
   --name findamodel \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e UMASK=022 \
   -p 5000:8080 \
   -v /path/to/your/models:/models:ro \
   -v /path/to/data:/data \

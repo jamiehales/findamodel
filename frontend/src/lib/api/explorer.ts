@@ -86,7 +86,6 @@ export interface AppConfig {
   tagGenerationEndpoint: string;
   tagGenerationModel: string;
   tagGenerationTimeoutMs: number;
-  tagGenerationAutoApply: boolean;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;
 }
@@ -99,7 +98,6 @@ export interface UpdateAppConfigRequest {
   tagGenerationEndpoint: string;
   tagGenerationModel: string;
   tagGenerationTimeoutMs: number;
-  tagGenerationAutoApply: boolean;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;
 }

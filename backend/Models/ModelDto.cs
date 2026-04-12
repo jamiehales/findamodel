@@ -24,6 +24,7 @@ public class ModelDto
     public DateTime? GeneratedTagsAt { get; set; }
     public string? GeneratedTagsError { get; set; }
     public string? GeneratedTagsModel { get; set; }
+    public string? GeneratedDescription { get; set; }
     public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? Type { get; set; }        // "Whole" | "Part" | null
     public string? Material { get; set; }    // "FDM" | "Resin" | "Any" | null

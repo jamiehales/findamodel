@@ -11,7 +11,6 @@ public class AppConfig
     public string TagGenerationEndpoint { get; set; } = "http://localhost:11434";
     public string TagGenerationModel { get; set; } = "qwen2.5vl:7b";
     public int TagGenerationTimeoutMs { get; set; } = 60000;
-    public bool TagGenerationAutoApply { get; set; } = true;
     public int TagGenerationMaxTags { get; set; } = 12;
     public float TagGenerationMinConfidence { get; set; } = 0.45f;
 

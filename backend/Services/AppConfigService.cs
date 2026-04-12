@@ -65,7 +65,6 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
         config.TagGenerationEndpoint = request.TagGenerationEndpoint.Trim();
         config.TagGenerationModel = request.TagGenerationModel.Trim();
         config.TagGenerationTimeoutMs = request.TagGenerationTimeoutMs;
-        config.TagGenerationAutoApply = request.TagGenerationAutoApply;
         config.TagGenerationMaxTags = request.TagGenerationMaxTags;
         config.TagGenerationMinConfidence = request.TagGenerationMinConfidence;
         config.UpdatedAt = DateTime.UtcNow;
@@ -96,7 +95,6 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
             config.TagGenerationEndpoint,
             config.TagGenerationModel,
             config.TagGenerationTimeoutMs,
-            config.TagGenerationAutoApply,
             config.TagGenerationMaxTags,
             config.TagGenerationMinConfidence);
     }

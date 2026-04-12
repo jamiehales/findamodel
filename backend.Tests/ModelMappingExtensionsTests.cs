@@ -160,6 +160,32 @@ public class ModelMappingExtensionsTests
     }
 
     [Fact]
+    public void ToModelDto_MergesCalculatedAndGeneratedTags()
+    {
+        var model = FullModel();
+        model.CalculatedTagsJson = "[\"hero\",\"melee\"]";
+        model.GeneratedTagsJson = "[\"boss\",\"hero\"]";
+
+        var dto = model.ToModelDto();
+
+        Assert.Equal(3, dto.Tags.Count);
+        Assert.Contains("hero", dto.Tags);
+        Assert.Contains("melee", dto.Tags);
+        Assert.Contains("boss", dto.Tags);
+    }
+
+    [Fact]
+    public void ToModelDto_MapsGeneratedDescription()
+    {
+        var model = FullModel();
+        model.GeneratedDescription = "Armored dragon with open wings and jagged tail.";
+
+        var dto = model.ToModelDto();
+
+        Assert.Equal("Armored dragon with open wings and jagged tail.", dto.GeneratedDescription);
+    }
+
+    [Fact]
     public void ToModelDto_MapsHullCoordinates()
     {
         var dto = FullModel().ToModelDto();

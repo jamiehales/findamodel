@@ -52,10 +52,6 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue(true);
 
         modelBuilder.Entity<AppConfig>()
-            .Property(c => c.TagGenerationAutoApply)
-            .HasDefaultValue(true);
-
-        modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationEndpoint)
             .HasDefaultValue("http://localhost:11434");
 
