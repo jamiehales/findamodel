@@ -17,6 +17,19 @@ public record IndexRequestDto(
     DateTime RequestedAt,
     string Status);  // "queued" | "running"
 
+/// <summary>A completed indexing request retained in recent in-memory history.</summary>
+public record CompletedIndexRequestDto(
+    Guid Id,
+    string? DirectoryFilter,
+    string? RelativeModelPath,
+    IndexFlags Flags,
+    DateTime RequestedAt,
+    DateTime StartedAt,
+    DateTime CompletedAt,
+    double DurationMs,
+    string Outcome,
+    string? Error);
+
 /// <summary>Request body for POST /api/indexer.</summary>
 public record EnqueueIndexRequest(string? DirectoryFilter, string? RelativeModelPath, IndexFlags Flags);
 
@@ -24,4 +37,5 @@ public record EnqueueIndexRequest(string? DirectoryFilter, string? RelativeModel
 public record IndexerStatusDto(
     bool IsRunning,
     IndexRequestDto? CurrentRequest,
-    IReadOnlyList<IndexRequestDto> Queue);
+    IReadOnlyList<IndexRequestDto> Queue,
+    IReadOnlyList<CompletedIndexRequestDto> Recent);

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { IconButton, Popover, Stack, Typography, Chip, Badge, Tooltip } from '@mui/material';
 import { useIndexerStatus } from '../lib/queries';
-import type { IndexRequest } from '../lib/api';
+import type { CompletedIndexRequest, IndexRequest } from '../lib/api';
 import { IndexFlags } from '../lib/api';
 import styles from './IndexerStatus.module.css';
 
@@ -22,6 +22,18 @@ function useElapsed(since: string): string {
   return formatElapsed(since);
 }
 
+function formatDurationMs(durationMs: number): string {
+  const s = Math.max(0, Math.floor(durationMs / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function targetLabel(directoryFilter: string | null, relativeModelPath: string | null): string {
+  return relativeModelPath ?? directoryFilter ?? 'All directories';
+}
+
 function flagsLabel(flags: number): string {
   const parts: string[] = [];
   if (flags & IndexFlags.Directories) parts.push('dirs');
@@ -40,7 +52,7 @@ function RequestRow({ request, status }: { request: IndexRequest; status: 'runni
           variant={status === 'running' ? 'status-running' : 'status-queued'}
         />
         <Typography variant="caption">
-          {request.relativeModelPath ?? request.directoryFilter ?? 'All directories'}
+          {targetLabel(request.directoryFilter, request.relativeModelPath)}
         </Typography>
         <Typography variant="caption" color="text.disabled">
           {flagsLabel(request.flags)}
@@ -54,13 +66,42 @@ function RequestRow({ request, status }: { request: IndexRequest; status: 'runni
   );
 }
 
+function RecentRow({ request }: { request: CompletedIndexRequest }) {
+  const isFailed = request.outcome === 'failed';
+  return (
+    <Stack direction="row" alignItems="center" spacing={2} justifyContent="space-between">
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Chip
+          label={isFailed ? 'Failed' : 'Done'}
+          size="small"
+          color={isFailed ? 'error' : 'success'}
+          variant="outlined"
+        />
+        <Typography variant="caption">
+          {targetLabel(request.directoryFilter, request.relativeModelPath)}
+        </Typography>
+        <Typography variant="caption" color="text.disabled">
+          {flagsLabel(request.flags)}
+        </Typography>
+      </Stack>
+      <div />
+      <Typography variant="caption" color="text.disabled" className={styles.elapsed}>
+        {formatDurationMs(request.durationMs)}
+      </Typography>
+    </Stack>
+  );
+}
+
 export default function IndexerStatus() {
   const { data: status } = useIndexerStatus();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
 
   const isRunning = !!status?.isRunning;
-  const isActive = !!(status?.isRunning || (status?.queue && status.queue.length > 0));
+  const hasQueue = !!status?.queue.length;
+  const hasRecent = !!status?.recent.length;
+  const isActive = !!(status?.isRunning || hasQueue);
+  const isEmpty = !status?.isRunning && !hasQueue && !hasRecent;
   const totalCount = (status?.isRunning ? 1 : 0) + (status?.queue.length ?? 0);
 
   return (
@@ -103,19 +144,42 @@ export default function IndexerStatus() {
             Indexer
           </Typography>
 
-          {!isActive && (
+          {status?.currentRequest && (
+            <>
+              <Typography variant="overline" color="text.disabled">
+                Running
+              </Typography>
+              <RequestRow request={status.currentRequest} status="running" />
+            </>
+          )}
+
+          {hasQueue && (
+            <>
+              <Typography variant="overline" color="text.disabled">
+                Queue
+              </Typography>
+              {status?.queue.map((req) => (
+                <RequestRow key={req.id} request={req} status="queued" />
+              ))}
+            </>
+          )}
+
+          {hasRecent && (
+            <>
+              <Typography variant="overline" color="text.disabled">
+                Recent
+              </Typography>
+              {status?.recent.map((req) => (
+                <RecentRow key={req.id} request={req} />
+              ))}
+            </>
+          )}
+
+          {isEmpty && (
             <Typography variant="caption" color="text.disabled">
               No active indexing
             </Typography>
           )}
-
-          {status?.currentRequest && (
-            <RequestRow request={status.currentRequest} status="running" />
-          )}
-
-          {status?.queue.map((req) => (
-            <RequestRow key={req.id} request={req} status="queued" />
-          ))}
         </Stack>
       </Popover>
     </>

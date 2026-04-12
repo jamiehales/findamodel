@@ -15,6 +15,8 @@ public class IndexerService(
     private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Indexing);
     private readonly object _lock = new();
     private readonly LinkedList<IndexEntry> _queue = new();
+    private readonly LinkedList<CompletedIndexEntry> _recent = new();
+    private const int RecentLimit = 15;
     private IndexEntry? _current;
     private Task? _processingTask;
 
@@ -61,7 +63,8 @@ public class IndexerService(
         {
             var currentDto = _current?.ToDto("running");
             var queueDtos = _queue.Select(e => e.ToDto("queued")).ToList();
-            return new IndexerStatusDto(_current != null, currentDto, queueDtos);
+            var recentDtos = _recent.Select(e => e.ToDto()).ToList();
+            return new IndexerStatusDto(_current != null, currentDto, queueDtos, recentDtos);
         }
     }
 
@@ -95,20 +98,28 @@ public class IndexerService(
                 _current = entry;
             }
 
-            await ProcessRequestAsync(entry);
+            var completed = await ProcessRequestAsync(entry);
 
             lock (_lock)
             {
                 _current = null;
+                _recent.AddFirst(completed);
+                while (_recent.Count > RecentLimit)
+                    _recent.RemoveLast();
             }
         }
     }
 
-    private async Task ProcessRequestAsync(IndexEntry entry)
+    private async Task<CompletedIndexEntry> ProcessRequestAsync(IndexEntry entry)
     {
         var label = entry.RelativeModelPath is not null
             ? $"model:{entry.RelativeModelPath}"
             : entry.DirectoryFilter ?? "(all)";
+        var startedAt = DateTime.UtcNow;
+        var completedAt = startedAt;
+        var outcome = "success";
+        string? error = null;
+
         logger.LogInformation("IndexerService: starting {Flags} for {Target}", entry.Flags, label);
 
         try
@@ -128,8 +139,33 @@ public class IndexerService(
         }
         catch (Exception ex)
         {
+            outcome = "failed";
+            error = SummarizeError(ex);
             logger.LogError(ex, "IndexerService: failed processing {Flags} for {Target}", entry.Flags, label);
         }
+
+        completedAt = DateTime.UtcNow;
+
+        var durationMs = Math.Max(0, (completedAt - startedAt).TotalMilliseconds);
+        return new CompletedIndexEntry(
+            entry.Id,
+            entry.DirectoryFilter,
+            entry.RelativeModelPath,
+            entry.Flags,
+            entry.RequestedAt,
+            startedAt,
+            completedAt,
+            durationMs,
+            outcome,
+            error);
+    }
+
+    private static string SummarizeError(Exception ex)
+    {
+        var summary = ex.Message;
+        if (string.IsNullOrWhiteSpace(summary))
+            summary = ex.GetType().Name;
+        return summary.Length <= 180 ? summary : summary[..180];
     }
 
     // -------------------------------------------------------------------------
@@ -149,5 +185,42 @@ public class IndexerService(
 
         public IndexRequestDto ToDto(string status) =>
             new(Id, DirectoryFilter, RelativeModelPath, Flags, RequestedAt, status);
+    }
+
+    private sealed class CompletedIndexEntry(
+        Guid id,
+        string? directoryFilter,
+        string? relativeModelPath,
+        IndexFlags flags,
+        DateTime requestedAt,
+        DateTime startedAt,
+        DateTime completedAt,
+        double durationMs,
+        string outcome,
+        string? error)
+    {
+        public Guid Id { get; } = id;
+        public string? DirectoryFilter { get; } = directoryFilter;
+        public string? RelativeModelPath { get; } = relativeModelPath;
+        public IndexFlags Flags { get; } = flags;
+        public DateTime RequestedAt { get; } = requestedAt;
+        public DateTime StartedAt { get; } = startedAt;
+        public DateTime CompletedAt { get; } = completedAt;
+        public double DurationMs { get; } = durationMs;
+        public string Outcome { get; } = outcome;
+        public string? Error { get; } = error;
+
+        public CompletedIndexRequestDto ToDto() =>
+            new(
+                Id,
+                DirectoryFilter,
+                RelativeModelPath,
+                Flags,
+                RequestedAt,
+                StartedAt,
+                CompletedAt,
+                DurationMs,
+                Outcome,
+                Error);
     }
 }

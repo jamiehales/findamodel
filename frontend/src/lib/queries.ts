@@ -239,7 +239,7 @@ export function useIndexerStatus() {
   return useQuery({
     queryKey: queryKeys.indexerStatus,
     queryFn: fetchIndexerStatus,
-    refetchInterval: 30000,
+    refetchInterval: 5000,
     refetchIntervalInBackground: false,
   });
 }

@@ -9,10 +9,24 @@ export interface IndexRequest {
   status: 'queued' | 'running';
 }
 
+export interface CompletedIndexRequest {
+  id: string;
+  directoryFilter: string | null;
+  relativeModelPath: string | null;
+  flags: number;
+  requestedAt: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  outcome: 'success' | 'failed';
+  error: string | null;
+}
+
 export interface IndexerStatus {
   isRunning: boolean;
   currentRequest: IndexRequest | null;
   queue: IndexRequest[];
+  recent: CompletedIndexRequest[];
 }
 
 export async function fetchIndexerStatus(): Promise<IndexerStatus> {
