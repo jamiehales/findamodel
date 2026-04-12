@@ -41,6 +41,13 @@ docker run -d \
 
 Then open [http://localhost:5000](http://localhost:5000) in your browser.
 
+If you want NVIDIA GPU acceleration for local LLM inference, add:
+
+```bash
+--gpus all \
+-e NVIDIA_VISIBLE_DEVICES=all
+```
+
 ### Environment variables
 
 | Variable | Default | Description |
@@ -51,6 +58,8 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 | `PGID` | `1000` | Run the app process as this group id (LinuxServer style) |
 | `UMASK` | `022` | Umask applied before starting the app process |
 | `UMASK_SET` | _(deprecated)_ | Legacy alias for `UMASK` for LinuxServer compatibility |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | NVIDIA device visibility for GPU inference (`none` to force CPU-only) |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility` | Required NVIDIA driver capabilities for inference |
 | `ASPNETCORE_URLS` | `http://+:8080` | Bind address |
 
 ### docker-compose example
@@ -69,6 +78,14 @@ services:
       - ./models:/models:ro
       - ./data:/data
     restart: unless-stopped
+```
+
+For NVIDIA GPU acceleration in Compose, add:
+
+```yaml
+    gpus: all
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
 ```
 
 ---

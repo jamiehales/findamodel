@@ -20,6 +20,13 @@ docker run -d \
   ghcr.io/jamiehales/findamodel:latest
 ```
 
+For NVIDIA GPU acceleration, add:
+
+```bash
+--gpus all \
+-e NVIDIA_VISIBLE_DEVICES=all
+```
+
 Or pull the image directly:
 
 ```bash
