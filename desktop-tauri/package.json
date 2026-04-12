@@ -1,0 +1,16 @@
+{
+  "name": "findamodel-desktop-tauri",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:frontend": "yarn --cwd ../frontend build",
+    "build:sidecar": "node ./scripts/publish-sidecar.mjs",
+    "tauri": "tauri",
+    "dev": "yarn build:sidecar && yarn tauri dev",
+    "build": "yarn build:frontend && yarn build:sidecar && yarn tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

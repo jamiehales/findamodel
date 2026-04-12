@@ -1,4 +1,5 @@
 import type { CommonMetadataFields } from './metadata';
+import { apiFetch, apiUrl } from '../http';
 
 export interface MetadataFields extends CommonMetadataFields {
   /** When provided, fully replaces the rule set for this directory. Maps YAML field name
@@ -44,8 +45,21 @@ export interface ExplorerResponse {
   files: ExplorerFile[];
 }
 
+function mapExplorerModelUrls(model: ExplorerModel): ExplorerModel {
+  return {
+    ...model,
+    previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+  };
+}
+
 export function explorerFileUrl(relativePath: string): string {
-  return `/api/explorer/file?path=${encodeURIComponent(relativePath)}`;
+  return apiUrl(`/api/explorer/file?path=${encodeURIComponent(relativePath)}`);
+}
+
+export async function fetchExplorerFileText(relativePath: string): Promise<string> {
+  const r = await apiFetch(`/api/explorer/file?path=${encodeURIComponent(relativePath)}`);
+  if (!r.ok) throw new Error('Failed to load text preview');
+  return r.text();
 }
 
 export interface DirectoryConfigDetail {
@@ -104,13 +118,17 @@ export interface UpdateAppConfigRequest {
 
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
   const url = `/api/explorer?path=${encodeURIComponent(path)}`;
-  const r = await fetch(url);
+  const r = await apiFetch(url);
   if (!r.ok) throw new Error(`Failed to fetch explorer at path: ${path}`);
-  return r.json();
+  const response = (await r.json()) as ExplorerResponse;
+  return {
+    ...response,
+    models: response.models.map(mapExplorerModelUrls),
+  };
 }
 
 export async function fetchDirectoryConfig(path: string): Promise<DirectoryConfigDetail> {
-  const r = await fetch(`/api/explorer/config?path=${encodeURIComponent(path)}`);
+  const r = await apiFetch(`/api/explorer/config?path=${encodeURIComponent(path)}`);
   if (!r.ok) throw new Error(`Failed to fetch config for: ${path}`);
   return r.json();
 }
@@ -125,7 +143,7 @@ export async function updateDirectoryConfig(
   path: string,
   fields: MetadataFields,
 ): Promise<DirectoryConfigDetail> {
-  const r = await fetch(`/api/explorer/config?path=${encodeURIComponent(path)}`, {
+  const r = await apiFetch(`/api/explorer/config?path=${encodeURIComponent(path)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(fields),
@@ -139,19 +157,19 @@ export async function updateDirectoryConfig(
 }
 
 export async function fetchMetadataDictionaryOverview(): Promise<MetadataDictionaryOverview> {
-  const r = await fetch('/api/settings/metadata-dictionary');
+  const r = await apiFetch('/api/settings/metadata-dictionary');
   if (!r.ok) throw new Error('Failed to fetch metadata dictionary settings');
   return r.json();
 }
 
 export async function fetchAppConfig(): Promise<AppConfig> {
-  const r = await fetch('/api/settings/config');
+  const r = await apiFetch('/api/settings/config');
   if (!r.ok) throw new Error('Failed to fetch app settings');
   return r.json();
 }
 
 export async function updateAppConfig(request: UpdateAppConfigRequest): Promise<AppConfig> {
-  const r = await fetch('/api/settings/config', {
+  const r = await apiFetch('/api/settings/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -164,7 +182,7 @@ export async function createMetadataDictionaryValue(
   field: 'category' | 'type' | 'material' | 'tags',
   value: string,
 ): Promise<MetadataDictionaryValue> {
-  const r = await fetch('/api/settings/metadata-dictionary', {
+  const r = await apiFetch('/api/settings/metadata-dictionary', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ field, value }),
@@ -177,7 +195,7 @@ export async function updateMetadataDictionaryValue(
   id: string,
   value: string,
 ): Promise<MetadataDictionaryValue> {
-  const r = await fetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
+  const r = await apiFetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ value }),
@@ -187,7 +205,7 @@ export async function updateMetadataDictionaryValue(
 }
 
 export async function deleteMetadataDictionaryValue(id: string): Promise<void> {
-  const r = await fetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
+  const r = await apiFetch(`/api/settings/metadata-dictionary/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
   if (!r.ok) throw new Error('Failed to delete metadata dictionary value');

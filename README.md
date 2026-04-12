@@ -43,6 +43,30 @@ See the [Getting started](docs/getting-started.md) guide for full setup instruct
 - **WebGL model previews** — 3D previews rendered in-browser
 - **Metadata filtering** — filter by creator, collection, category, material and support status
 
+## Desktop Packaging
+
+Desktop packaging is implemented under `desktop-tauri`.
+
+1. Install desktop shell dependencies:
+
+```bash
+yarn --cwd desktop-tauri install
+```
+
+2. Build and run desktop in dev mode:
+
+```bash
+yarn --cwd desktop-tauri dev
+```
+
+3. Build desktop bundles/installers:
+
+```bash
+yarn --cwd desktop-tauri build
+```
+
+The desktop shell launches the backend as a localhost sidecar with a per-session token and passes runtime API configuration to the frontend at startup.
+
 ## License
 
 This code has used AI code generation for development, as such I don't feel it's correct to claim any ownership over the application in any way shape or form, not that I want to anyway. As such it's released under an 'unlicense' license. Essentially, do whatever you want with it! See [LICENSE](LICENSE).

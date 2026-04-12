@@ -1,4 +1,20 @@
 import type { CommonMetadataFields } from './metadata';
+import { apiFetch, apiUrl } from '../http';
+
+function mapModelUrls(model: Model): Model {
+  return {
+    ...model,
+    fileUrl: apiUrl(model.fileUrl),
+    previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+  };
+}
+
+function mapRelatedModelUrls(model: RelatedModel): RelatedModel {
+  return {
+    ...model,
+    previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+  };
+}
 
 export interface Model {
   id: string;
@@ -35,9 +51,10 @@ export interface Model {
 
 export async function fetchModels(limit?: number): Promise<Model[]> {
   const url = limit !== undefined ? `/api/models?limit=${limit}` : '/api/models';
-  const r = await fetch(url);
+  const r = await apiFetch(url);
   if (!r.ok) throw new Error('Failed to fetch models');
-  return r.json();
+  const models = (await r.json()) as Model[];
+  return models.map(mapModelUrls);
 }
 
 export interface ModelFilter {
@@ -101,21 +118,26 @@ export async function fetchQueryModels(
   for (const v of filter.material) params.append('material', v);
   for (const v of filter.fileType) params.append('fileType', v);
   if (filter.supported !== null) params.set('supported', String(filter.supported));
-  const r = await fetch(`/api/query?${params}`);
+  const r = await apiFetch(`/api/query?${params}`);
   if (!r.ok) throw new Error('Failed to query models');
-  return r.json();
+  const result = (await r.json()) as ModelQueryResult;
+  return {
+    ...result,
+    models: result.models.map(mapModelUrls),
+  };
 }
 
 export async function fetchFilterOptions(): Promise<FilterOptions> {
-  const r = await fetch('/api/query/options');
+  const r = await apiFetch('/api/query/options');
   if (!r.ok) throw new Error('Failed to fetch filter options');
   return r.json();
 }
 
 export async function fetchModel(id: string): Promise<Model> {
-  const r = await fetch(`/api/models/${id}`);
+  const r = await apiFetch(`/api/models/${id}`);
   if (!r.ok) throw new Error(`Failed to fetch model ${id}`);
-  return r.json();
+  const model = (await r.json()) as Model;
+  return mapModelUrls(model);
 }
 
 export interface GeometryResponse {
@@ -139,7 +161,7 @@ export interface RelatedModel {
 }
 
 export async function fetchGeometry(id: string): Promise<GeometryResponse> {
-  const r = await fetch(`/api/models/${id}/geometry`, {
+  const r = await apiFetch(`/api/models/${id}/geometry`, {
     headers: {
       Accept: 'application/vnd.findamodel.mesh',
     },
@@ -274,7 +296,7 @@ export interface SplitGeometryResponse {
 }
 
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {
-  const r = await fetch(`/api/models/${id}/geometry/split`, {
+  const r = await apiFetch(`/api/models/${id}/geometry/split`, {
     headers: { Accept: 'application/vnd.findamodel.mesh-split' },
   });
   if (r.status === 204) return null;
@@ -298,9 +320,10 @@ export async function fetchSplitGeometry(id: string): Promise<SplitGeometryRespo
 }
 
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
-  const r = await fetch(`/api/models/${id}/other-parts`);
+  const r = await apiFetch(`/api/models/${id}/other-parts`);
   if (!r.ok) throw new Error('Failed to fetch other parts');
-  return r.json();
+  const parts = (await r.json()) as RelatedModel[];
+  return parts.map(mapRelatedModelUrls);
 }
 
 export interface UpdateModelMetadataRequest {
@@ -337,7 +360,7 @@ export interface ModelMetadataDetail {
 }
 
 export async function fetchModelMetadata(id: string): Promise<ModelMetadataDetail> {
-  const r = await fetch(`/api/models/${id}/metadata`);
+  const r = await apiFetch(`/api/models/${id}/metadata`);
   if (!r.ok) throw new Error('Failed to fetch model metadata');
   return r.json();
 }
@@ -346,13 +369,14 @@ export async function updateModelMetadata(
   id: string,
   request: UpdateModelMetadataRequest,
 ): Promise<Model> {
-  const r = await fetch(`/api/models/${id}/metadata`, {
+  const r = await apiFetch(`/api/models/${id}/metadata`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
   if (!r.ok) throw new Error('Failed to update model metadata');
-  return r.json();
+  const model = (await r.json()) as Model;
+  return mapModelUrls(model);
 }
 
 export interface PlatePlacement {
@@ -373,7 +397,7 @@ export async function generatePlate(
   placements: PlatePlacement[],
   format: '3mf' | 'stl' | 'glb' = '3mf',
 ): Promise<PlateGenerationResult> {
-  const r = await fetch('/api/plate/generate', {
+  const r = await apiFetch('/api/plate/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ placements, format }),

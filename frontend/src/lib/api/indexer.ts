@@ -1,3 +1,5 @@
+import { apiFetch } from '../http';
+
 export const IndexFlags = { Directories: 1, Models: 2, Hulls: 4, All: 7 } as const;
 
 export interface IndexRequest {
@@ -30,7 +32,7 @@ export interface IndexerStatus {
 }
 
 export async function fetchIndexerStatus(): Promise<IndexerStatus> {
-  const r = await fetch('/api/indexer');
+  const r = await apiFetch('/api/indexer');
   if (!r.ok) throw new Error('Failed to fetch indexer status');
   return r.json();
 }
@@ -40,7 +42,7 @@ export async function enqueueIndex(
   flags: number,
   relativeModelPath: string | null = null,
 ): Promise<IndexRequest> {
-  const r = await fetch('/api/indexer', {
+  const r = await apiFetch('/api/indexer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ directoryFilter, relativeModelPath, flags }),

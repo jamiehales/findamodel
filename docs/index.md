@@ -30,3 +30,4 @@ nav_order: 1
 | [Rules system](rules/) | Automatically extract metadata from paths |
 | [Metadata fields](metadata/) | All supported metadata fields and valid values |
 | [Features](features/) | Application features — explorer, models, plates, settings |
+| [Desktop](desktop/) | Desktop requirements, development, and packaging |

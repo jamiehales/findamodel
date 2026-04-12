@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import Box from '@mui/material/Box';
@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography';
 import type { ExplorerFile } from '../lib/api';
 import { explorerFileUrl } from '../lib/api';
 import { formatBytes } from '../lib/utils';
+import { useExplorerFileText } from '../lib/queries';
 import AppCard from './AppCard';
 import styles from './ExplorerFileCard.module.css';
 import { appColors } from '../theme';
@@ -24,9 +25,6 @@ interface Props {
 
 export default function ExplorerFileCard({ file }: Props) {
   const [open, setOpen] = useState(false);
-  const [textLoading, setTextLoading] = useState(false);
-  const [textContent, setTextContent] = useState<string | null>(null);
-  const [textError, setTextError] = useState<string | null>(null);
 
   const fileType = file.fileType.toLowerCase();
   const isImage = IMAGE_TYPES.has(fileType);
@@ -37,30 +35,22 @@ export default function ExplorerFileCard({ file }: Props) {
     ({ bg: 'rgba(148,163,184,0.2)', color: '#cbd5e1' } as { bg: string; color: string });
 
   const tooLargeForTextPreview = isText && file.fileSize > MAX_TEXT_PREVIEW_BYTES;
-  const textPreviewMessage = useMemo(() => {
-    if (!tooLargeForTextPreview) return null;
-    return `File too large to preview (${formatBytes(file.fileSize)}).`;
-  }, [file.fileSize, tooLargeForTextPreview]);
 
-  async function handleOpen() {
+  const {
+    data: textContent,
+    isLoading: textLoading,
+    error: textQueryError,
+  } = useExplorerFileText(file.relativePath, open && isText && !tooLargeForTextPreview);
+
+  const textError =
+    textQueryError instanceof Error
+      ? textQueryError.message
+      : textQueryError
+        ? 'Failed to load text preview'
+        : null;
+
+  function handleOpen() {
     setOpen(true);
-
-    if (!isText || textContent !== null || textLoading || tooLargeForTextPreview) {
-      return;
-    }
-
-    setTextError(null);
-    setTextLoading(true);
-    try {
-      const response = await fetch(explorerFileUrl(file.relativePath));
-      if (!response.ok) throw new Error('Failed to load text preview');
-      const text = await response.text();
-      setTextContent(text);
-    } catch (error) {
-      setTextError(error instanceof Error ? error.message : 'Failed to load text preview');
-    } finally {
-      setTextLoading(false);
-    }
   }
 
   return (
@@ -115,7 +105,9 @@ export default function ExplorerFileCard({ file }: Props) {
             )}
 
             {isText && tooLargeForTextPreview && (
-              <Typography className={styles.textInfo}>{textPreviewMessage}</Typography>
+              <Typography className={styles.textInfo}>
+                {`File too large to preview (${formatBytes(file.fileSize)}).`}
+              </Typography>
             )}
 
             {isText && !tooLargeForTextPreview && textLoading && <CircularProgress size={20} />}
@@ -128,7 +120,7 @@ export default function ExplorerFileCard({ file }: Props) {
               !tooLargeForTextPreview &&
               !textLoading &&
               !textError &&
-              textContent !== null && <pre className={styles.textContent}>{textContent}</pre>}
+              textContent !== undefined && <pre className={styles.textContent}>{textContent}</pre>}
           </Box>
         </DialogContent>
       </Dialog>

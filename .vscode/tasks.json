@@ -105,6 +105,76 @@
       }
     },
     {
+      "label": "desktop-tauri: install",
+      "type": "shell",
+      "command": "yarn install",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop-tauri"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "desktop-tauri: publish",
+      "type": "shell",
+      "command": "yarn build",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop-tauri"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "desktop-tauri: build sidecar",
+      "type": "shell",
+      "command": "node scripts/publish-sidecar.mjs",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop-tauri"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "desktop-tauri: tauri dev (external backend)",
+      "type": "shell",
+      "command": "yarn tauri dev",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop-tauri",
+        "env": {
+          "FINDAMODEL_EXTERNAL_BACKEND_URL": "http://127.0.0.1:5001",
+          "FINDAMODEL_EXTERNAL_BACKEND_TOKEN": "dev-desktop-token"
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Finished|Running.*tauri"
+        }
+      }
+    },
+    {
       "label": "frontend: dev",
       "type": "shell",
       "command": "yarn dev",

@@ -9,6 +9,7 @@ import {
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
+  fetchExplorerFileText,
   updateDirectoryConfig,
   fetchIndexerStatus,
   enqueueIndex,
@@ -50,6 +51,7 @@ export const queryKeys = {
   splitGeometry: (id: string) => ['split-geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
+  explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
   indexerStatus: ['indexer', 'status'] as const,
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
@@ -214,6 +216,15 @@ export function useDirectoryConfig(path: string) {
   return useQuery({
     queryKey: queryKeys.explorerConfig(path),
     queryFn: () => fetchDirectoryConfig(path),
+  });
+}
+
+export function useExplorerFileText(relativePath: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.explorerFileText(relativePath),
+    queryFn: () => fetchExplorerFileText(relativePath),
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

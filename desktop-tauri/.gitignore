@@ -1,0 +1,11 @@
+# Rust build artifacts
+src-tauri/target/
+
+# Sidecar binaries (built by publish-sidecar.mjs)
+src-tauri/bin/
+
+# node_modules
+node_modules/
+
+# Tauri generated schemas
+src-tauri/gen/

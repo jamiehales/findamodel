@@ -21,6 +21,8 @@ nav_order: 2
 - **Docker** (recommended) — the easiest way to run FindAModel.
 - Or: .NET 8 SDK and Node.js 20+ for local development.
 
+For desktop-specific prerequisites and build flow, see [Desktop > Getting started (desktop)](desktop/getting-started).
+
 ---
 
 ## Running with Docker
@@ -116,6 +118,8 @@ The repository includes a complete VS Code configuration. Open `findamodel.code-
 | `frontend: install` | Runs `yarn install` in the frontend directory |
 | `data: clear database` | Deletes the local SQLite database |
 | `data: clear cache` | Deletes the local model cache |
+| `desktop-tauri: install` | Runs `yarn install` in the desktop shell directory |
+| `desktop-tauri: publish` | Builds desktop bundles/installers for the current platform |
 
 To get started:
 

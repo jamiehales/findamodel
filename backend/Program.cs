@@ -8,6 +8,33 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var desktopMode = string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_MODE"), "desktop", StringComparison.OrdinalIgnoreCase);
+var desktopUrl = Environment.GetEnvironmentVariable("FINDAMODEL_URL");
+var desktopToken = Environment.GetEnvironmentVariable("FINDAMODEL_DESKTOP_SESSION_TOKEN");
+var disableCors = bool.TryParse(Environment.GetEnvironmentVariable("FINDAMODEL_DISABLE_CORS"), out var disableCorsValue)
+    && disableCorsValue;
+
+if (desktopMode)
+{
+    if (string.IsNullOrWhiteSpace(desktopUrl))
+        throw new InvalidOperationException("FINDAMODEL_URL is required in desktop mode.");
+
+    if (!Uri.TryCreate(desktopUrl, UriKind.Absolute, out var desktopUri))
+        throw new InvalidOperationException("FINDAMODEL_URL must be a valid absolute URL in desktop mode.");
+
+    var localhostHost = string.Equals(desktopUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(desktopUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(desktopUri.Host, "::1", StringComparison.OrdinalIgnoreCase);
+
+    if (!localhostHost)
+        throw new InvalidOperationException("FINDAMODEL_URL must bind to localhost in desktop mode.");
+
+    if (string.IsNullOrWhiteSpace(desktopToken))
+        throw new InvalidOperationException("FINDAMODEL_DESKTOP_SESSION_TOKEN is required in desktop mode.");
+
+    builder.WebHost.UseUrls(desktopUrl);
+}
+
 builder.Host.UseSerilog((ctx, cfg) =>
 {
     cfg.ReadFrom.Configuration(ctx.Configuration)
@@ -23,7 +50,9 @@ builder.Host.UseSerilog((ctx, cfg) =>
 
 builder.Services.AddControllers();
 
-var dataPath = builder.Configuration["Configuration:DataPath"] ?? "data";
+var dataPath = Environment.GetEnvironmentVariable("FINDAMODEL_DATA_PATH")
+    ?? builder.Configuration["Configuration:DataPath"]
+    ?? "data";
 var resolvedDataPath = Path.GetFullPath(dataPath);
 Directory.CreateDirectory(resolvedDataPath);
 
@@ -66,7 +95,7 @@ builder.Services.AddSingleton<findamodel.Services.QueryService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();
 builder.Services.AddHostedService<findamodel.Services.InternalLlmWarmupService>();
 
-if (builder.Environment.IsDevelopment())
+if (!desktopMode && !disableCors && builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors(options =>
     {
@@ -101,6 +130,28 @@ var app = builder.Build();
 
 app.UseResponseCompression();
 
+if (desktopMode)
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            var requestToken = context.Request.Headers["X-Findamodel-Desktop-Token"].ToString();
+            if (string.IsNullOrWhiteSpace(requestToken))
+                requestToken = context.Request.Query["desktopToken"].ToString();
+
+            if (!string.Equals(requestToken, desktopToken, StringComparison.Ordinal))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsync("Missing or invalid desktop session token.");
+                return;
+            }
+        }
+
+        await next();
+    });
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var previewService = scope.ServiceProvider.GetRequiredService<findamodel.Services.ModelPreviewService>();
@@ -108,8 +159,19 @@ using (var scope = app.Services.CreateScope())
 
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ModelCacheContext>>();
     using var db = dbFactory.CreateDbContext();
-    db.Database.Migrate();
-    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+    db.Database.SetCommandTimeout(TimeSpan.FromSeconds(60));
+
+    try
+    {
+        db.Database.Migrate();
+        db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+        db.Database.ExecuteSqlRaw("PRAGMA busy_timeout=10000;");
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex, "Database startup migration failed for path {DbPath}", dbPath);
+        throw;
+    }
 
     var userService = scope.ServiceProvider.GetRequiredService<findamodel.Services.UserService>();
     await userService.SeedAdminUserAsync();
@@ -120,7 +182,7 @@ using (var scope = app.Services.CreateScope())
         await printingListService.EnsureDefaultListAsync(adminUser.Id);
 }
 
-if (app.Environment.IsDevelopment())
+if (!desktopMode && !disableCors && app.Environment.IsDevelopment())
 {
     app.UseCors();
 }
@@ -131,6 +193,7 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 
 app.MapFallbackToFile("index.html");

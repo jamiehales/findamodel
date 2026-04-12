@@ -1,3 +1,5 @@
+import { apiFetch, apiUrl } from '../http';
+
 export type SpawnType = 'grouped' | 'random' | 'largestFirstFillGaps';
 export type HullMode = 'convex' | 'sansRaft';
 
@@ -43,26 +45,26 @@ export interface PrintingListArchiveJob {
 }
 
 export async function fetchPrintingLists(): Promise<PrintingListSummary[]> {
-  const r = await fetch('/api/printing-lists');
+  const r = await apiFetch('/api/printing-lists');
   if (!r.ok) throw new Error('Failed to fetch printing lists');
   return r.json();
 }
 
 export async function fetchActivePrintingList(): Promise<PrintingListDetail | null> {
-  const r = await fetch('/api/printing-lists/active');
+  const r = await apiFetch('/api/printing-lists/active');
   if (r.status === 204) return null;
   if (!r.ok) throw new Error('Failed to fetch active printing list');
   return r.json();
 }
 
 export async function fetchPrintingList(id: string): Promise<PrintingListDetail> {
-  const r = await fetch(`/api/printing-lists/${id}`);
+  const r = await apiFetch(`/api/printing-lists/${id}`);
   if (!r.ok) throw new Error(`Failed to fetch printing list ${id}`);
   return r.json();
 }
 
 export async function createPrintingList(name: string): Promise<PrintingListSummary> {
-  const r = await fetch('/api/printing-lists', {
+  const r = await apiFetch('/api/printing-lists', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -72,7 +74,7 @@ export async function createPrintingList(name: string): Promise<PrintingListSumm
 }
 
 export async function renamePrintingList(id: string, name: string): Promise<PrintingListSummary> {
-  const r = await fetch(`/api/printing-lists/${id}`, {
+  const r = await apiFetch(`/api/printing-lists/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -82,12 +84,12 @@ export async function renamePrintingList(id: string, name: string): Promise<Prin
 }
 
 export async function deletePrintingList(id: string): Promise<void> {
-  const r = await fetch(`/api/printing-lists/${id}`, { method: 'DELETE' });
+  const r = await apiFetch(`/api/printing-lists/${id}`, { method: 'DELETE' });
   if (!r.ok) throw new Error('Failed to delete printing list');
 }
 
 export async function activatePrintingList(id: string): Promise<void> {
-  const r = await fetch(`/api/printing-lists/${id}/activate`, { method: 'POST' });
+  const r = await apiFetch(`/api/printing-lists/${id}/activate`, { method: 'POST' });
   if (!r.ok) throw new Error('Failed to activate printing list');
 }
 
@@ -95,7 +97,7 @@ export async function updatePrintingListSettings(
   id: string,
   settings: { spawnType: SpawnType; hullMode: HullMode },
 ): Promise<PrintingListDetail> {
-  const r = await fetch(`/api/printing-lists/${id}/settings`, {
+  const r = await apiFetch(`/api/printing-lists/${id}/settings`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
@@ -109,7 +111,7 @@ export async function upsertPrintingListItem(
   modelId: string,
   quantity: number,
 ): Promise<PrintingListDetail> {
-  const r = await fetch(`/api/printing-lists/${listId}/items/${modelId}`, {
+  const r = await apiFetch(`/api/printing-lists/${listId}/items/${modelId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quantity }),
@@ -119,7 +121,7 @@ export async function upsertPrintingListItem(
 }
 
 export async function clearPrintingListItems(listId: string): Promise<PrintingListDetail> {
-  const r = await fetch(`/api/printing-lists/${listId}/items`, { method: 'DELETE' });
+  const r = await apiFetch(`/api/printing-lists/${listId}/items`, { method: 'DELETE' });
   if (!r.ok) throw new Error('Failed to clear printing list items');
   return r.json();
 }
@@ -130,17 +132,19 @@ export async function createPrintingListArchiveJob(
 ): Promise<PrintingListArchiveJob> {
   const flatten = options?.flatten ?? true;
   const query = new URLSearchParams({ flatten: String(flatten) }).toString();
-  const r = await fetch(`/api/printing-lists/${listId}/download-jobs?${query}`, { method: 'POST' });
+  const r = await apiFetch(`/api/printing-lists/${listId}/download-jobs?${query}`, {
+    method: 'POST',
+  });
   if (!r.ok) throw new Error('Failed to start printing list archive');
   return r.json();
 }
 
 export async function fetchPrintingListArchiveJob(jobId: string): Promise<PrintingListArchiveJob> {
-  const r = await fetch(`/api/printing-lists/download-jobs/${jobId}`);
+  const r = await apiFetch(`/api/printing-lists/download-jobs/${jobId}`);
   if (!r.ok) throw new Error('Failed to fetch printing list archive status');
   return r.json();
 }
 
 export function getPrintingListArchiveDownloadUrl(jobId: string): string {
-  return `/api/printing-lists/download-jobs/${jobId}/file`;
+  return apiUrl(`/api/printing-lists/download-jobs/${jobId}/file`);
 }
