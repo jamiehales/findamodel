@@ -5,6 +5,7 @@ public record UpdateDirectoryConfigRequest(
     string? Creator,
     string? Collection,
     string? Subcollection,
+    List<string>? Tags,
     string? Category,
     string? Type,
     string? Material,
@@ -25,6 +26,7 @@ public record ConfigFieldsDto
     public string? Creator { get; init; }
     public string? Collection { get; init; }
     public string? Subcollection { get; init; }
+    public List<string>? Tags { get; init; }
     public string? Category { get; init; }
     public string? Type { get; init; }
     public string? Material { get; init; }

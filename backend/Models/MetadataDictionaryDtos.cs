@@ -9,7 +9,8 @@ public record MetadataDictionaryFieldDto(
 public record MetadataDictionaryOverviewDto(
     MetadataDictionaryFieldDto Category,
     MetadataDictionaryFieldDto Type,
-    MetadataDictionaryFieldDto Material);
+    MetadataDictionaryFieldDto Material,
+    MetadataDictionaryFieldDto Tags);
 
 public record CreateMetadataDictionaryValueRequest(string Field, string Value);
 

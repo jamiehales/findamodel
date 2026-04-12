@@ -25,12 +25,13 @@ import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './SettingsPage.module.css';
 
-type FieldKey = 'category' | 'type' | 'material';
+type FieldKey = 'category' | 'type' | 'material' | 'tags';
 
 const FIELD_LABELS: Record<FieldKey, string> = {
   category: 'Category',
   type: 'Type',
   material: 'Material',
+  tags: 'Tags',
 };
 
 function toModelsHref(field: FieldKey, value: string): string {
@@ -225,6 +226,7 @@ export default function SettingsPage() {
         <FieldSection field="category" data={data.category} />
         <FieldSection field="type" data={data.type} />
         <FieldSection field="material" data={data.material} />
+        <FieldSection field="tags" data={data.tags} />
       </Stack>
     </PageLayout>
   );

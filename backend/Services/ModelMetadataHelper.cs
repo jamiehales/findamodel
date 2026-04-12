@@ -16,6 +16,7 @@ internal static class ModelMetadataHelper
         public string? Creator { get; init; }
         public string? Collection { get; init; }
         public string? Subcollection { get; init; }
+        public List<string> Tags { get; init; } = [];
         public string? Category { get; init; }
         public string? Type { get; init; }
         public string? Material { get; init; }
@@ -45,6 +46,7 @@ internal static class ModelMetadataHelper
             ["creator"] = plain.Creator,
             ["collection"] = plain.Collection,
             ["subcollection"] = plain.Subcollection,
+            ["tags"] = plain.Tags,
             ["category"] = plain.Category,
             ["type"] = plain.Type,
             ["material"] = plain.Material,
@@ -98,6 +100,7 @@ internal static class ModelMetadataHelper
             Creator = values["creator"] as string,
             Collection = values["collection"] as string,
             Subcollection = values["subcollection"] as string,
+            Tags = TagListHelper.Normalize((values["tags"] as List<string>) ?? []),
             Category = values["category"] as string,
             Type = values["type"] as string,
             Material = values["material"] as string,
@@ -124,6 +127,7 @@ internal static class ModelMetadataHelper
             Creator = dirConfig.Creator,
             Collection = dirConfig.Collection,
             Subcollection = dirConfig.Subcollection,
+            Tags = TagListHelper.FromJson(dirConfig.TagsJson),
             Category = dirConfig.Category,
             Type = dirConfig.Type,
             Material = dirConfig.Material,
@@ -153,6 +157,7 @@ internal static class ModelMetadataHelper
         if (configEntry.Creator != null) computed = computed with { Creator = configEntry.Creator };
         if (configEntry.Collection != null) computed = computed with { Collection = configEntry.Collection };
         if (configEntry.Subcollection != null) computed = computed with { Subcollection = configEntry.Subcollection };
+        if (configEntry.Tags != null) computed = computed with { Tags = TagListHelper.Merge(computed.Tags, configEntry.Tags) };
         if (configEntry.Category != null) computed = computed with { Category = configEntry.Category };
         if (configEntry.Type != null) computed = computed with { Type = configEntry.Type };
         if (configEntry.Material != null) computed = computed with { Material = configEntry.Material };

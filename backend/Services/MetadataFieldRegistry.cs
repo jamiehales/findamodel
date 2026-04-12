@@ -32,6 +32,7 @@ internal static class MetadataFieldRegistry
         new("creator",       "creator"),
         new("collection",    "collection"),
         new("subcollection", "subcollection"),
+        new("tags",          "tags"),
         new("category",      "category",      IsEnum: true),
         new("type",          "type",          IsEnum: true),
         new("material",      "material",      IsEnum: true),
@@ -151,12 +152,19 @@ internal static class MetadataFieldRegistry
                 _ => null
             };
         }
+        List<string>? GetStringList(string yaml)
+        {
+            if (!d.TryGetValue(yaml, out var v)) return null;
+            if (v is not List<object> list) return null;
+            return TagListHelper.Normalize(list.Select(x => x?.ToString() ?? string.Empty));
+        }
 
         var name = GetString("name");
         var partName = GetString("part_name");
         var creator = GetString("creator");
         var collection = GetString("collection");
         var subcollection = GetString("subcollection");
+        var tags = GetStringList("tags");
         var category = GetString("category");
         var type = GetString("type");
         var material = GetString("material");
@@ -164,12 +172,12 @@ internal static class MetadataFieldRegistry
         var raftHeightMm = GetFloat("raft_height_mm");
 
         if (name == null && partName == null && creator == null && collection == null &&
-            subcollection == null && category == null && type == null && material == null &&
+            subcollection == null && tags == null && category == null && type == null && material == null &&
             supported == null && raftHeightMm == null)
             return null;
 
         return new ModelMetadataEntry(
-            name, partName, creator, collection, subcollection, category, type, material,
+            name, partName, creator, collection, subcollection, tags, category, type, material,
             supported, raftHeightMm);
     }
 
@@ -185,6 +193,7 @@ internal static class MetadataFieldRegistry
         if (entry.Creator != null) d["creator"] = entry.Creator;
         if (entry.Collection != null) d["collection"] = entry.Collection;
         if (entry.Subcollection != null) d["subcollection"] = entry.Subcollection;
+        if (entry.Tags != null) d["tags"] = TagListHelper.Normalize(entry.Tags);
         if (entry.Category != null) d["category"] = entry.Category;
         if (entry.Type != null) d["type"] = entry.Type;
         if (entry.Material != null) d["material"] = entry.Material;
@@ -196,7 +205,7 @@ internal static class MetadataFieldRegistry
     /// <summary>Returns true when all fields are null / unset.</summary>
     internal static bool IsEmptyModelMetadataEntry(ModelMetadataEntry entry) =>
         entry.Name == null && entry.PartName == null && entry.Creator == null &&
-        entry.Collection == null && entry.Subcollection == null && entry.Category == null &&
+        entry.Collection == null && entry.Subcollection == null && entry.Tags == null && entry.Category == null &&
         entry.Type == null && entry.Material == null && entry.Supported == null &&
         entry.RaftHeightMm == null;
 }

@@ -250,6 +250,14 @@ function areRuleMapsEqual(a: Record<string, string>, b: Record<string, string>) 
   return true;
 }
 
+function parseTags(text: string): string[] | null {
+  const tags = text
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+  return tags.length > 0 ? tags : null;
+}
+
 export default function MetadataEditor({ path, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
@@ -259,6 +267,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
     creator: null,
     collection: null,
     subcollection: null,
+    tags: null,
     category: null,
     type: null,
     material: null,
@@ -272,11 +281,13 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const [ruleErrors, setRuleErrors] = useState<Record<string, string | null>>({});
   const [savedIndicator, setSavedIndicator] = useState(false);
   const [rulesHelpOpen, setRulesHelpOpen] = useState(false);
+  const [tagsText, setTagsText] = useState('');
 
   useEffect(() => {
     if (detail) {
       const loaded = { ...detail.localValues } as MetadataFields;
       setFields(loaded);
+      setTagsText((detail.localValues.tags ?? []).join(', '));
 
       const modes: Record<string, FieldMode> = {};
       const ruleTexts: Record<string, string> = {};
@@ -341,7 +352,16 @@ export default function MetadataEditor({ path, onClose }: Props) {
     }
 
     const originalRuleMap = normalizeRuleMap(detail.localRuleContents, detail.localRuleFields);
-    return !areRuleMapsEqual(currentRuleMap, originalRuleMap);
+    if (!areRuleMapsEqual(currentRuleMap, originalRuleMap)) return true;
+
+    const currentTags = parseTags(tagsText) ?? [];
+    const originalTags = detail.localValues.tags ?? [];
+    if (currentTags.length !== originalTags.length) return true;
+    for (let i = 0; i < currentTags.length; i += 1) {
+      if (currentTags[i] !== originalTags[i]) return true;
+    }
+
+    return false;
   }
 
   async function doSave(f: MetadataFields) {
@@ -381,8 +401,10 @@ export default function MetadataEditor({ path, onClose }: Props) {
       }
     }
 
+    const parsedTags = parseTags(tagsText);
+
     try {
-      await mutation.mutateAsync({ ...cleanFields, fieldRules: fieldRulesMap });
+      await mutation.mutateAsync({ ...cleanFields, tags: parsedTags, fieldRules: fieldRulesMap });
       setSavedIndicator(true);
       setTimeout(() => setSavedIndicator(false), 2000);
       onClose?.();
@@ -421,6 +443,32 @@ export default function MetadataEditor({ path, onClose }: Props) {
   return (
     <Box className={styles.form}>
       <RulesHelpDialog open={rulesHelpOpen} onClose={() => setRulesHelpOpen(false)} />
+
+      <Box>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          className={styles.fieldHeader}
+        >
+          <Typography variant="caption" color="text.secondary">
+            Tags
+          </Typography>
+        </Stack>
+        <TextField
+          fullWidth
+          size="small"
+          value={tagsText}
+          placeholder="32mm, small, monster"
+          onChange={(e) => setTagsText(e.target.value)}
+          slotProps={{ input: { className: styles.fieldInput } }}
+        />
+        {p?.tags && p.tags.length > 0 && (
+          <Typography variant="caption" className={styles.hint}>
+            Inherited: {p.tags.join(', ')}
+          </Typography>
+        )}
+      </Box>
 
       {FIELDS.map((field) => {
         const supportsRules = field.supportsRules !== false;

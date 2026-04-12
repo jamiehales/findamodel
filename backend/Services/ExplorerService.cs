@@ -102,6 +102,7 @@ public class ExplorerService(
                     Creator = dc.Creator,
                     Collection = dc.Collection,
                     Subcollection = dc.Subcollection,
+                    Tags = TagListHelper.FromJson(dc.TagsJson),
                     Category = dc.Category,
                     Type = dc.Type,
                     Material = dc.Material,
@@ -115,6 +116,7 @@ public class ExplorerService(
                     Creator = currentDirConfig?.Creator,
                     Collection = currentDirConfig?.Collection,
                     Subcollection = currentDirConfig?.Subcollection,
+                    Tags = TagListHelper.FromJson(currentDirConfig?.TagsJson),
                     Category = currentDirConfig?.Category,
                     Type = currentDirConfig?.Type,
                     Material = currentDirConfig?.Material,
@@ -130,6 +132,7 @@ public class ExplorerService(
                     Creator = dc.RawCreator,
                     Collection = dc.RawCollection,
                     Subcollection = dc.RawSubcollection,
+                    Tags = TagListHelper.FromJson(dc.RawTagsJson),
                     Category = dc.RawCategory,
                     Type = dc.RawType,
                     Material = dc.RawMaterial,
@@ -212,6 +215,7 @@ public class ExplorerService(
             Creator = dc?.Creator,
             Collection = dc?.Collection,
             Subcollection = dc?.Subcollection,
+            Tags = TagListHelper.FromJson(dc?.TagsJson),
             Category = dc?.Category,
             Type = dc?.Type,
             Material = dc?.Material,
@@ -229,6 +233,7 @@ public class ExplorerService(
             Creator = resolved.Creator,
             Collection = resolved.Collection,
             Subcollection = resolved.Subcollection,
+            Tags = resolved.Tags,
             Category = resolved.Category,
             Type = resolved.Type,
             Material = resolved.Material,
@@ -240,6 +245,7 @@ public class ExplorerService(
 
         // Return null metadata if all fields are null
         if (dto.Creator == null && dto.Collection == null && dto.Subcollection == null &&
+            (dto.Tags == null || dto.Tags.Count == 0) &&
             dto.Category == null && dto.Type == null && dto.Material == null &&
             dto.Supported == null && dto.RaftHeightMm == null && dto.ModelName == null &&
             dto.PartName == null)
@@ -277,6 +283,7 @@ public class ExplorerService(
             Creator = plain.Creator,
             Collection = plain.Collection,
             Subcollection = plain.Subcollection,
+            Tags = plain.Tags ?? [],
             Category = plain.Category,
             Type = plain.Type,
             Material = plain.Material,
@@ -293,6 +300,7 @@ public class ExplorerService(
             Creator = resolved.Creator,
             Collection = resolved.Collection,
             Subcollection = resolved.Subcollection,
+            Tags = resolved.Tags,
             Category = resolved.Category,
             Type = resolved.Type,
             Material = resolved.Material,

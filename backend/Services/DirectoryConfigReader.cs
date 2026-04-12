@@ -9,6 +9,7 @@ internal sealed record RawConfigFields(
     string? Creator,
     string? Collection,
     string? Subcollection,
+    List<string>? Tags,
     string? Category,
     string? Type,
     string? Material,
@@ -52,6 +53,7 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                 Creator: TryGetString(parsed, "creator"),
                 Collection: TryGetString(parsed, "collection"),
                 Subcollection: TryGetString(parsed, "subcollection"),
+                Tags: TryGetStringList(parsed, "tags"),
                 Category: MetadataFieldRegistry.ValidateEnumValue("category", TryGetString(parsed, "category")),
                 Type: MetadataFieldRegistry.ValidateEnumValue("type", TryGetString(parsed, "type")),
                 Material: MetadataFieldRegistry.ValidateEnumValue("material", TryGetString(parsed, "material")),
@@ -81,6 +83,7 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
         if (req.Creator != null) data["creator"] = req.Creator;
         if (req.Collection != null) data["collection"] = req.Collection;
         if (req.Subcollection != null) data["subcollection"] = req.Subcollection;
+        if (req.Tags != null) data["tags"] = TagListHelper.Normalize(req.Tags);
         if (req.Category != null) data["category"] = req.Category;
         if (req.Type != null) data["type"] = req.Type;
         if (req.Material != null) data["material"] = req.Material;
@@ -272,6 +275,20 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                 && float.IsFinite(parsed))
                 return parsed;
         }
+        return null;
+    }
+
+    private static List<string>? TryGetStringList(Dictionary<string, object> data, string propertyName)
+    {
+        foreach (var kvp in data)
+        {
+            if (!string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)) continue;
+            if (kvp.Value is not List<object> list) return null;
+
+            var normalized = TagListHelper.Normalize(list.Select(v => v?.ToString() ?? string.Empty));
+            return normalized;
+        }
+
         return null;
     }
 }

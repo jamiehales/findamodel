@@ -1,6 +1,7 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
@@ -85,6 +86,16 @@ function ModelPage() {
     model.creator && { label: 'Creator', value: model.creator },
     model.collection && { label: 'Collection', value: model.collection },
     model.subcollection && { label: 'Subcollection', value: model.subcollection },
+    (model.tags?.length ?? 0) > 0 && {
+      label: 'Tags',
+      value: (
+        <Box display="flex" flexWrap="wrap" gap={0.5}>
+          {model.tags.map((tag) => (
+            <Chip key={tag} size="small" label={tag} />
+          ))}
+        </Box>
+      ),
+    },
     model.category && { label: 'Category', value: model.category },
     model.type && { label: 'Type', value: model.type },
     model.material && { label: 'Material', value: model.material },

@@ -17,6 +17,7 @@ function toFilter(searchParams: URLSearchParams): ModelFilter {
     creator: searchParams.getAll('creator'),
     collection: searchParams.getAll('collection'),
     subcollection: searchParams.getAll('subcollection'),
+    tags: searchParams.getAll('tags'),
     category: searchParams.getAll('category'),
     type: searchParams.getAll('type'),
     material: searchParams.getAll('material'),
@@ -31,6 +32,7 @@ function toSearchParams(filter: ModelFilter): URLSearchParams {
   for (const value of filter.creator) params.append('creator', value);
   for (const value of filter.collection) params.append('collection', value);
   for (const value of filter.subcollection) params.append('subcollection', value);
+  for (const value of filter.tags) params.append('tags', value);
   for (const value of filter.category) params.append('category', value);
   for (const value of filter.type) params.append('type', value);
   for (const value of filter.material) params.append('material', value);

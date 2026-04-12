@@ -6,6 +6,7 @@ public class ModelQueryRequest
     public string[]? Creator { get; set; }
     public string[]? Collection { get; set; }
     public string[]? Subcollection { get; set; }
+    public string[]? Tags { get; set; }
     public string[]? Category { get; set; }
     public string[]? Type { get; set; }
     public string[]? Material { get; set; }

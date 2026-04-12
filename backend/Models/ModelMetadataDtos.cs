@@ -10,6 +10,7 @@ public record UpdateModelMetadataRequest(
     string? Creator,
     string? Collection,
     string? Subcollection,
+    List<string>? Tags,
     string? Category,
     string? Type,
     string? Material,

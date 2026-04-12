@@ -22,6 +22,7 @@ public class CachedModel
     public string? CalculatedCreator { get; set; }
     public string? CalculatedCollection { get; set; }
     public string? CalculatedSubcollection { get; set; }
+    public string? CalculatedTagsJson { get; set; }
     public string? CalculatedCategory { get; set; }
     public string? CalculatedType { get; set; }
     public string? CalculatedMaterial { get; set; }

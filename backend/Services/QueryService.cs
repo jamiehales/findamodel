@@ -11,6 +11,7 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         await using var db = await dbFactory.CreateDbContextAsync();
 
         var query = db.Models.AsQueryable();
+        var normalizedRequestedTags = TagListHelper.Normalize(request.Tags ?? []);
 
         // Text search: case-insensitive match on file name (without extension)
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -41,12 +42,26 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
         if (request.FileType is { Length: > 0 })
             query = query.Where(m => request.FileType.Contains(m.FileType));
 
+        if (normalizedRequestedTags.Count > 0)
+        {
+            var baseQuery = query;
+            var tagged = baseQuery.Where(_ => false);
+
+            foreach (var tag in normalizedRequestedTags)
+            {
+                var pattern = BuildJsonTagLikePattern(tag);
+                tagged = tagged.Union(baseQuery.Where(m =>
+                    m.CalculatedTagsJson != null && EF.Functions.Like(m.CalculatedTagsJson, pattern)));
+            }
+
+            query = tagged;
+        }
+
         // Three-state boolean filter
         if (request.Supported.HasValue)
             query = query.Where(m => m.CalculatedSupported == request.Supported.Value);
 
         var totalCount = await query.CountAsync();
-
         var models = await query
             .OrderBy(m => m.Directory)
             .ThenBy(m => m.FileName)
@@ -87,6 +102,16 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             .OrderBy(v => v)
             .ToListAsync();
 
+        var tags = (await db.Models
+                .Where(m => m.CalculatedTagsJson != null)
+                .Select(m => m.CalculatedTagsJson)
+                .ToListAsync())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .SelectMany(v => TagListHelper.FromJson(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var categories = await db.Models
             .Where(m => m.CalculatedCategory != null)
             .Select(m => m.CalculatedCategory!)
@@ -119,10 +144,18 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
             Creators = creators,
             Collections = collections,
             Subcollections = subcollections,
+            Tags = tags,
             Categories = categories,
             Types = types,
             Materials = materials,
             FileTypes = fileTypes,
         };
+    }
+
+    private static string BuildJsonTagLikePattern(string tag)
+    {
+        // Tags are stored as JSON string arrays; match a complete quoted token.
+        var escaped = tag.Replace("\"", "\\\"");
+        return $"%\"{escaped}\"%";
     }
 }

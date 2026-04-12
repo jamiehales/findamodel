@@ -6,6 +6,7 @@ export interface CommonMetadataFields {
   creator: string | null;
   collection: string | null;
   subcollection: string | null;
+  tags: string[] | null;
   category: string | null;
   type: string | null;
   material: string | null;

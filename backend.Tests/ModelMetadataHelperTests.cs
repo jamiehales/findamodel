@@ -204,6 +204,24 @@ public class ModelMetadataHelperTests
     }
 
     [Fact]
+    public void Compute_AdditiveTags_MergesResolvedFolderAndModelTags()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            TagsJson = "[\"32mm\",\"small\",\"monster\"]",
+            RawModelMetadataJson = """{"dragon.stl":{"Tags":["metal"]}}"""
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
+
+        Assert.Contains("32mm", result.Tags);
+        Assert.Contains("small", result.Tags);
+        Assert.Contains("monster", result.Tags);
+        Assert.Contains("metal", result.Tags);
+        Assert.Equal(4, result.Tags.Count);
+    }
+
+    [Fact]
     public void Compute_NullModelMetadataJson_PartNameIsNull()
     {
         var dirConfig = new DirectoryConfig

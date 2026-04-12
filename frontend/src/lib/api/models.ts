@@ -14,6 +14,7 @@ export interface Model {
   creator: string | null;
   collection: string | null;
   subcollection: string | null;
+  tags: string[];
   category: string | null;
   type: string | null;
   material: string | null;
@@ -43,6 +44,7 @@ export interface ModelFilter {
   creator: string[];
   collection: string[];
   subcollection: string[];
+  tags: string[];
   category: string[];
   type: string[];
   material: string[];
@@ -55,6 +57,7 @@ export const emptyFilter: ModelFilter = {
   creator: [],
   collection: [],
   subcollection: [],
+  tags: [],
   category: [],
   type: [],
   material: [],
@@ -72,6 +75,7 @@ export interface FilterOptions {
   creators: string[];
   collections: string[];
   subcollections: string[];
+  tags: string[];
   categories: string[];
   types: string[];
   materials: string[];
@@ -90,6 +94,7 @@ export async function fetchQueryModels(
   for (const v of filter.creator) params.append('creator', v);
   for (const v of filter.collection) params.append('collection', v);
   for (const v of filter.subcollection) params.append('subcollection', v);
+  for (const v of filter.tags) params.append('tags', v);
   for (const v of filter.category) params.append('category', v);
   for (const v of filter.type) params.append('type', v);
   for (const v of filter.material) params.append('material', v);
@@ -303,6 +308,7 @@ export interface UpdateModelMetadataRequest {
   creator: CommonMetadataFields['creator'];
   collection: CommonMetadataFields['collection'];
   subcollection: CommonMetadataFields['subcollection'];
+  tags: CommonMetadataFields['tags'];
   category: CommonMetadataFields['category'];
   type: CommonMetadataFields['type'];
   material: CommonMetadataFields['material'];
@@ -316,6 +322,7 @@ export interface ModelMetadata {
   creator: CommonMetadataFields['creator'];
   collection: CommonMetadataFields['collection'];
   subcollection: CommonMetadataFields['subcollection'];
+  tags: CommonMetadataFields['tags'];
   category: CommonMetadataFields['category'];
   type: CommonMetadataFields['type'];
   material: CommonMetadataFields['material'];

@@ -17,6 +17,7 @@ public class ModelDto
     public string? Creator { get; set; }
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }
+    public List<string> Tags { get; set; } = [];
     public string? Category { get; set; }   // "Bust" | "Miniature" | "Uncategorized" | null
     public string? Type { get; set; }        // "Whole" | "Part" | null
     public string? Material { get; set; }    // "FDM" | "Resin" | "Any" | null

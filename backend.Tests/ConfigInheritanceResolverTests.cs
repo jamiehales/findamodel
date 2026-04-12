@@ -186,6 +186,7 @@ public class ConfigInheritanceResolverTests
             Creator: "Alice",
             Collection: "Fantasy",
             Subcollection: "Elves",
+            Tags: ["32mm", "small"],
             Category: "miniature",
             Type: "tabletop",
             Material: "resin",
@@ -197,6 +198,7 @@ public class ConfigInheritanceResolverTests
         Assert.Equal("Alice", record.RawCreator);
         Assert.Equal("Fantasy", record.RawCollection);
         Assert.Equal("Elves", record.RawSubcollection);
+        Assert.Equal("[\"32mm\",\"small\"]", record.RawTagsJson);
         Assert.Equal("miniature", record.RawCategory);
         Assert.Equal("tabletop", record.RawType);
         Assert.Equal("resin", record.RawMaterial);
@@ -204,6 +206,27 @@ public class ConfigInheritanceResolverTests
         Assert.Equal(1.5f, record.RawRaftHeightMm);
         Assert.Equal("Elf Warrior", record.RawModelName);
         Assert.Equal("creator:\n  rule: filename", record.RawRulesYaml);
+    }
+
+    [Fact]
+    public void ResolveFields_AdditiveTags_MergesAllAncestorTagLists()
+    {
+        var root = new DirectoryConfig { DirectoryPath = "", RawTagsJson = "[\"32mm\",\"small\"]" };
+        var mid = new DirectoryConfig { DirectoryPath = "Fantasy", RawTagsJson = "[\"monster\"]" };
+        var leaf = new DirectoryConfig { DirectoryPath = "Fantasy/Elites", RawTagsJson = "[\"metal\"]" };
+
+        var dict = new Dictionary<string, DirectoryConfig>
+        {
+            [""] = root,
+            ["Fantasy"] = mid,
+            ["Fantasy/Elites"] = leaf,
+        };
+
+        ConfigInheritanceResolver.ResolveFields(root, dict);
+        ConfigInheritanceResolver.ResolveFields(mid, dict);
+        ConfigInheritanceResolver.ResolveFields(leaf, dict);
+
+        Assert.Equal("[\"32mm\",\"metal\",\"monster\",\"small\"]", leaf.TagsJson);
     }
 
     // ── ResolveFields ─────────────────────────────────────────────────────────

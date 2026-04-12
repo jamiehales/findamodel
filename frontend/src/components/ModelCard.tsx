@@ -59,6 +59,10 @@ function ModelCard({ model, href }: ModelCardProps) {
               <Chip variant="badge-enabled" className={styles.chip} label={model.material} />
             )}
 
+            {(model.tags ?? []).slice(0, 2).map((tag) => (
+              <Chip key={tag} variant="outlined" className={styles.chip} label={tag} />
+            ))}
+
             {model.supported !== null && (
               <Chip
                 variant={model.supported ? 'badge-enabled' : 'badge-disabled'}

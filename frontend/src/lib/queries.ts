@@ -169,8 +169,13 @@ export function useUpdateAppConfig() {
 export function useCreateMetadataDictionaryValue() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ field, value }: { field: 'category' | 'type' | 'material'; value: string }) =>
-      createMetadataDictionaryValue(field, value),
+    mutationFn: ({
+      field,
+      value,
+    }: {
+      field: 'category' | 'type' | 'material' | 'tags';
+      value: string;
+    }) => createMetadataDictionaryValue(field, value),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.metadataDictionaryOverview });
     },

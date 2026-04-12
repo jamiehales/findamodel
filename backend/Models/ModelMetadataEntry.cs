@@ -7,6 +7,7 @@ public record ModelMetadataEntry(
     string? Creator = null,
     string? Collection = null,
     string? Subcollection = null,
+    List<string>? Tags = null,
     string? Category = null,
     string? Type = null,
     string? Material = null,

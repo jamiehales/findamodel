@@ -22,6 +22,7 @@ internal static class ModelMappingExtensions
             Creator = model.CalculatedCreator,
             Collection = model.CalculatedCollection,
             Subcollection = model.CalculatedSubcollection,
+            Tags = TagListHelper.FromJson(model.CalculatedTagsJson),
             Category = model.CalculatedCategory,
             Type = model.CalculatedType,
             Material = model.CalculatedMaterial,
@@ -45,6 +46,7 @@ internal static class ModelMappingExtensions
         entity.CalculatedCreator = metadata.Creator;
         entity.CalculatedCollection = metadata.Collection;
         entity.CalculatedSubcollection = metadata.Subcollection;
+        entity.CalculatedTagsJson = TagListHelper.ToJsonOrNull(metadata.Tags);
         entity.CalculatedCategory = metadata.Category;
         entity.CalculatedType = metadata.Type;
         entity.CalculatedMaterial = metadata.Material;

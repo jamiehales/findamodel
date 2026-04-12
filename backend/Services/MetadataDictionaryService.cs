@@ -8,7 +8,7 @@ namespace findamodel.Services;
 public class MetadataDictionaryService(IDbContextFactory<ModelCacheContext> dbFactory)
 {
     private static readonly HashSet<string> AllowedFields =
-        new(["category", "type", "material"], StringComparer.OrdinalIgnoreCase);
+        new(["category", "type", "material", "tags"], StringComparer.OrdinalIgnoreCase);
 
     public static bool IsSupportedField(string field) => AllowedFields.Contains(field);
 
@@ -18,7 +18,7 @@ public class MetadataDictionaryService(IDbContextFactory<ModelCacheContext> dbFa
 
         var configured = await db.MetadataDictionaryValues
             .AsNoTracking()
-            .Where(v => v.Field == "category" || v.Field == "type" || v.Field == "material")
+            .Where(v => v.Field == "category" || v.Field == "type" || v.Field == "material" || v.Field == "tags")
             .OrderBy(v => v.Field)
             .ThenBy(v => v.Value)
             .ToListAsync();
@@ -104,10 +104,41 @@ public class MetadataDictionaryService(IDbContextFactory<ModelCacheContext> dbFa
             .OrderBy(v => v)
             .ToList();
 
+        var modelTags = (await db.Models
+                .AsNoTracking()
+                .Where(m => m.CalculatedTagsJson != null)
+                .Select(m => m.CalculatedTagsJson)
+                .ToListAsync())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .SelectMany(v => TagListHelper.FromJson(v));
+
+        var rawDirectoryTags = (await db.DirectoryConfigs
+                .AsNoTracking()
+                .Where(d => d.RawTagsJson != null)
+                .Select(d => d.RawTagsJson)
+                .ToListAsync())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .SelectMany(v => TagListHelper.FromJson(v));
+
+        var resolvedDirectoryTags = (await db.DirectoryConfigs
+                .AsNoTracking()
+                .Where(d => d.TagsJson != null)
+                .Select(d => d.TagsJson)
+                .ToListAsync())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .SelectMany(v => TagListHelper.FromJson(v));
+
+        var observedTags = modelTags
+            .Union(rawDirectoryTags, StringComparer.OrdinalIgnoreCase)
+            .Union(resolvedDirectoryTags, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         return new MetadataDictionaryOverviewDto(
             BuildField("category", configured, observedCategories),
             BuildField("type", configured, observedTypes),
-            BuildField("material", configured, observedMaterials));
+            BuildField("material", configured, observedMaterials),
+            BuildField("tags", configured, observedTags));
     }
 
     public async Task<MetadataDictionaryValueDto> CreateAsync(string field, string value)

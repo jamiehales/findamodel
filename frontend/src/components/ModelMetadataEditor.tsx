@@ -36,6 +36,7 @@ const EMPTY_FORM: FormState = {
   creator: null,
   collection: null,
   subcollection: null,
+  tags: null,
   category: null,
   type: null,
   material: null,
@@ -53,12 +54,17 @@ function getModelValue(data: FormState, key: SharedModelKey): string | boolean |
 }
 
 function hasFormChanges(current: FormState, original: FormState): boolean {
+  const currentTags = current.tags ?? [];
+  const originalTags = original.tags ?? [];
+
   return (
     current.name !== original.name ||
     current.partName !== original.partName ||
     current.creator !== original.creator ||
     current.collection !== original.collection ||
     current.subcollection !== original.subcollection ||
+    currentTags.length !== originalTags.length ||
+    currentTags.some((v, i) => v !== originalTags[i]) ||
     current.category !== original.category ||
     current.type !== original.type ||
     current.material !== original.material ||
@@ -73,12 +79,14 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const [error, setError] = useState<string | null>(null);
   const [savedIndicator, setSavedIndicator] = useState(false);
+  const [tagsText, setTagsText] = useState('');
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   useEffect(() => {
     if (detail) {
       setForm({ ...detail.localValues });
+      setTagsText((detail.localValues.tags ?? []).join(', '));
     }
   }, [detail]);
 
@@ -92,12 +100,18 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     setError(null);
 
     try {
+      const parsedTags = tagsText
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+
       await mutation.mutateAsync({
         name: form.name,
         partName: form.partName,
         creator: form.creator,
         collection: form.collection,
         subcollection: form.subcollection,
+        tags: parsedTags.length > 0 ? parsedTags : null,
         category: form.category,
         type: form.type,
         material: form.material,
@@ -112,7 +126,16 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     }
   }
 
-  const isDirty = detail ? hasFormChanges(form, detail.localValues) : false;
+  const tagsDirty = detail
+    ? (detail.localValues.tags ?? []).join(', ') !==
+      tagsText
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0)
+        .join(', ')
+    : false;
+
+  const isDirty = detail ? hasFormChanges(form, detail.localValues) || tagsDirty : false;
 
   function getSelectOptions(field: SharedFieldDef, localValue: string | null): string[] {
     if (field.optionsField == null) return [];
@@ -239,6 +262,33 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
           </Stack>
         );
       })}
+
+      <Stack>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          className={styles.fieldHeader}
+        >
+          <Typography variant="caption" color="text.secondary">
+            Tags
+          </Typography>
+        </Stack>
+        <TextField
+          size="small"
+          fullWidth
+          value={tagsText}
+          placeholder="32mm, small, monster, metal"
+          onChange={(e) => setTagsText(e.target.value)}
+          InputProps={{ className: styles.fieldInput }}
+        />
+        <InheritedHint
+          value={(detail?.inheritedValues?.tags ?? []).join(', ') || null}
+          className={styles.hintContainer}
+          hintClassName={styles.hint}
+          copyBtnClassName={styles.copyBtn}
+        />
+      </Stack>
 
       <Stack direction="row" className={styles.actions}>
         {error && (

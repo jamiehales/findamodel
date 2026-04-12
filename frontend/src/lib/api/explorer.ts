@@ -75,6 +75,7 @@ export interface MetadataDictionaryOverview {
   category: MetadataDictionaryField;
   type: MetadataDictionaryField;
   material: MetadataDictionaryField;
+  tags: MetadataDictionaryField;
 }
 
 export interface AppConfig {
@@ -146,7 +147,7 @@ export async function updateAppConfig(request: UpdateAppConfigRequest): Promise<
 }
 
 export async function createMetadataDictionaryValue(
-  field: 'category' | 'type' | 'material',
+  field: 'category' | 'type' | 'material' | 'tags',
   value: string,
 ): Promise<MetadataDictionaryValue> {
   const r = await fetch('/api/settings/metadata-dictionary', {

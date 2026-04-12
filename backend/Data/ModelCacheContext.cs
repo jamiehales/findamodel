@@ -25,6 +25,9 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<CachedModel>()
             .HasIndex(m => new { m.CalculatedCreator, m.CalculatedCollection, m.CalculatedSubcollection, m.CalculatedModelName });
 
+        modelBuilder.Entity<CachedModel>()
+            .HasIndex(m => m.CalculatedTagsJson);
+
         // CachedModel → DirectoryConfig (SetNull so removing a config record doesn't cascade-delete models)
         modelBuilder.Entity<CachedModel>()
             .HasOne(m => m.DirectoryConfig)

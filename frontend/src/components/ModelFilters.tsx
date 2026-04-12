@@ -23,7 +23,14 @@ function MultiSelect({
   label: string;
   field: keyof Pick<
     ModelFilter,
-    'creator' | 'collection' | 'subcollection' | 'category' | 'type' | 'material' | 'fileType'
+    | 'creator'
+    | 'collection'
+    | 'subcollection'
+    | 'tags'
+    | 'category'
+    | 'type'
+    | 'material'
+    | 'fileType'
   >;
   choices: string[];
   value: string[];
@@ -112,6 +119,13 @@ export default function ModelFilters({ value, onChange, options }: Props) {
         field="subcollection"
         choices={options.subcollections}
         value={value.subcollection}
+        onChange={handleMultiChange}
+      />
+      <MultiSelect
+        label="Tags"
+        field="tags"
+        choices={options.tags}
+        value={value.tags}
         onChange={handleMultiChange}
       />
       <MultiSelect

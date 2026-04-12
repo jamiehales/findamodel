@@ -189,6 +189,7 @@ public class ModelServiceMetadataTests
                 Creator: "Alice",
                 Collection: "Fantasy",
                 Subcollection: "Creatures",
+                Tags: ["32mm", "metal"],
                 Category: "miniature",
                 Type: "whole",
                 Material: "resin",
@@ -208,6 +209,9 @@ public class ModelServiceMetadataTests
             Assert.Contains("creator: Alice", yamlText);
             Assert.Contains("collection: Fantasy", yamlText);
             Assert.Contains("subcollection: Creatures", yamlText);
+            Assert.Contains("tags:", yamlText);
+            Assert.Contains("- 32mm", yamlText);
+            Assert.Contains("- metal", yamlText);
             Assert.Contains("category: miniature", yamlText);
             Assert.Contains("type: whole", yamlText);
             Assert.Contains("material: resin", yamlText);

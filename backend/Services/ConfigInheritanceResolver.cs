@@ -79,6 +79,7 @@ internal static class ConfigInheritanceResolver
         record.RawCreator = fields?.Creator;
         record.RawCollection = fields?.Collection;
         record.RawSubcollection = fields?.Subcollection;
+        record.RawTagsJson = TagListHelper.ToJsonOrNull(fields?.Tags);
         record.RawCategory = fields?.Category;
         record.RawType = fields?.Type;
         record.RawMaterial = fields?.Material;
@@ -174,6 +175,20 @@ internal static class ConfigInheritanceResolver
 
         foreach (var field in MetadataFieldRegistry.Definitions)
             field.SetResolvedValue(record, resolvedValues.GetValueOrDefault(field.Key));
+
+        var ancestorChain = new List<DirectoryConfig>();
+        var walker = record;
+        while (walker != null)
+        {
+            ancestorChain.Add(walker);
+            walker = GetParentRecord(walker.DirectoryPath, allRecords);
+        }
+        ancestorChain.Reverse();
+
+        var mergedTags = new List<string>();
+        foreach (var node in ancestorChain)
+            mergedTags.AddRange(TagListHelper.FromJson(node.RawTagsJson));
+        record.TagsJson = TagListHelper.ToJsonOrNull(mergedTags);
 
         if (record.RawRaftHeightMm.HasValue)
         {
