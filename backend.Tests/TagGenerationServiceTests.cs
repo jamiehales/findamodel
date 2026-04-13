@@ -125,6 +125,21 @@ public class TagGenerationServiceTests
     }
 
     [Fact]
+    public void ComputeDescriptionChecksum_ChangesWhenFullPathChanges()
+    {
+        var config = CreateConfig();
+        var modelA = CreateModel();
+        var modelB = CreateModel();
+        modelA.Directory = "minis/goblins";
+        modelB.Directory = "minis/orcs";
+
+        var checksumA = TagGenerationService.ComputeDescriptionChecksum(modelA, config);
+        var checksumB = TagGenerationService.ComputeDescriptionChecksum(modelB, config);
+
+        Assert.NotEqual(checksumA, checksumB);
+    }
+
+    [Fact]
     public void NeedsDescriptionRegeneration_ReturnsTrue_WhenChecksumDiffers()
     {
         var model = CreateModel();
@@ -184,6 +199,12 @@ public class TagGenerationServiceTests
             TagGenerationTimeoutMs: 60000,
             TagGenerationMaxTags: 12,
             TagGenerationMinConfidence: 0.45f,
+            TagGenerationPromptTemplate: "Return at most {{maxTags}} tags from {{allowedTags}}.",
+            DescriptionGenerationPromptTemplate: "Describe '{{modelName}}' at '{{fullPath}}' in two sentences.",
+            TagGenerationPromptTemplateDefault: "Return at most {{maxTags}} tags from {{allowedTags}}.",
+            DescriptionGenerationPromptTemplateDefault: "Describe '{{modelName}}' at '{{fullPath}}' in two sentences.",
+            TagGenerationPromptTemplateOverride: "Return at most {{maxTags}} tags from {{allowedTags}}.",
+            DescriptionGenerationPromptTemplateOverride: "Describe '{{modelName}}' at '{{fullPath}}' in two sentences.",
             SetupCompleted: true,
             ModelsDirectoryPath: "C:/models");
     }

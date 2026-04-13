@@ -18,7 +18,7 @@ public class TagGenerationService(
     private readonly ILogger _logger = loggerFactory.CreateLogger(LogChannels.Llm);
     private readonly string _rendersPath = config["Cache:RendersPath"] ?? Path.Combine("data", "cache", "renders");
     internal const int CurrentTagGenerationPromptVersion = 2;
-    internal const int CurrentDescriptionPromptVersion = 1;
+    internal const int CurrentDescriptionPromptVersion = 2;
     internal const int CurrentLlmRuntimeVersion = 1;
 
     public async Task<GeneratedTagsResultDto?> GenerateForModelAsync(Guid modelId, CancellationToken ct)
@@ -101,7 +101,7 @@ public class TagGenerationService(
 
             if (generateTags)
             {
-                var request = BuildTagRequest(model, allowedTags, appConfig.TagGenerationMaxTags, previewPath);
+                var request = BuildTagRequest(model, appConfig, allowedTags, appConfig.TagGenerationMaxTags, previewPath);
                 tagResponse = await provider.GenerateAsync(providerSettings, request, ct);
 
                 var filtered = FilterTags(tagResponse, allowedTags, appConfig.TagGenerationMinConfidence, appConfig.TagGenerationMaxTags);
@@ -121,7 +121,7 @@ public class TagGenerationService(
 
             if (generateDescription)
             {
-                var descriptionRequest = BuildDescriptionRequest(model, previewPath);
+                var descriptionRequest = BuildDescriptionRequest(model, appConfig, previewPath);
                 var descriptionResponse = await provider.GenerateAsync(providerSettings, descriptionRequest, ct);
                 var normalizedDescription = NormalizeDescription(descriptionResponse.Description);
                 model.GeneratedDescription = normalizedDescription;
@@ -184,7 +184,7 @@ public class TagGenerationService(
         return true;
     }
 
-    private static LocalLlmRequest BuildTagRequest(CachedModel model, List<string> schemaTags, int maxTags, string? previewImagePath)
+    private static LocalLlmRequest BuildTagRequest(CachedModel model, AppConfigDto appConfig, List<string> schemaTags, int maxTags, string? previewImagePath)
     {
         var context = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -205,12 +205,7 @@ public class TagGenerationService(
             "Return exactly one valid JSON object and nothing else. " +
             "Do not include markdown fences, the word json, prose, or explanation. " +
             "Your response must start with '{' and end with '}'.";
-        var userPrompt =
-            "Given the provided image and metadata context, return tags only from the allowed schema. " +
-            "Focus on monochrome mesh renders (no color cues). " +
-            $"Return at most {maxTags} tags as JSON: {{\"tags\":[...],\"confidence\":{{\"tag\":0.0}},\"notes\":\"optional\"}}. " +
-            "Output the JSON object only with no leading or trailing text. " +
-            $"Allowed tags: {string.Join(", ", schemaTags)}.";
+        var userPrompt = ApplyTagPromptTemplate(appConfig.TagGenerationPromptTemplate, schemaTags, maxTags);
 
         return new LocalLlmRequest
         {
@@ -344,6 +339,7 @@ public class TagGenerationService(
             $"promptVersion:{CurrentTagGenerationPromptVersion}",
             $"llmVersion:{CurrentLlmRuntimeVersion}",
             $"model:{appConfig.TagGenerationModel}",
+            $"prompt:{ApplyTagPromptTemplate(appConfig.TagGenerationPromptTemplate, schemaTags, appConfig.TagGenerationMaxTags)}",
             $"previewVersion:{ResolvePreviewVersionToken(model)}",
             $"fileName:{model.FileName}",
             $"directory:{model.Directory}",
@@ -357,12 +353,14 @@ public class TagGenerationService(
     internal static string ComputeDescriptionChecksum(CachedModel model, AppConfigDto appConfig)
     {
         var modelName = ResolveModelName(model);
-        var prompt = BuildDescriptionUserPrompt(modelName);
+        var fullPath = ResolveModelFullPath(model);
+        var prompt = BuildDescriptionUserPrompt(appConfig.DescriptionGenerationPromptTemplate, modelName, fullPath);
         var payload = string.Join("|", [
             $"promptVersion:{CurrentDescriptionPromptVersion}",
             $"llmVersion:{CurrentLlmRuntimeVersion}",
             $"model:{appConfig.TagGenerationModel}",
             $"modelName:{modelName}",
+            $"fullPath:{fullPath}",
             $"prompt:{prompt}",
             $"previewVersion:{ResolvePreviewVersionToken(model)}",
         ]);
@@ -371,12 +369,14 @@ public class TagGenerationService(
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static LocalLlmRequest BuildDescriptionRequest(CachedModel model, string? previewImagePath)
+    private static LocalLlmRequest BuildDescriptionRequest(CachedModel model, AppConfigDto appConfig, string? previewImagePath)
     {
         var modelName = ResolveModelName(model);
+        var fullPath = ResolveModelFullPath(model);
         var context = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["modelName"] = modelName,
+            ["fullPath"] = fullPath,
             ["partName"] = model.CalculatedPartName,
             ["fileName"] = model.FileName,
             ["directory"] = model.Directory,
@@ -398,23 +398,48 @@ public class TagGenerationService(
         {
             TaskKind = LocalLlmTaskKind.Description,
             SystemPrompt = systemPrompt,
-            UserPrompt = BuildDescriptionUserPrompt(modelName),
+            UserPrompt = BuildDescriptionUserPrompt(appConfig.DescriptionGenerationPromptTemplate, modelName, fullPath),
             Context = context,
             ImagePath = previewImagePath,
             MaxOutputTokens = 256,
         };
     }
 
-    private static string BuildDescriptionUserPrompt(string modelName) =>
-        $"Write exactly two concise, searchable sentences describing this 3D model named '{modelName}'. " +
-        "Sentence 1: a general visual overview based on the image and provided metadata context. " +
-        "Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). " +
-        "Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. " +
-        "Do not mention confidence, JSON, or model limitations. " +
-        "Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
+    private static string ApplyTagPromptTemplate(string template, IReadOnlyList<string> schemaTags, int maxTags)
+    {
+        var safeTemplate = string.IsNullOrWhiteSpace(template)
+            ? "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}."
+            : template;
+
+        var normalizedTags = schemaTags
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(tag => tag.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase);
+
+        return safeTemplate
+            .Replace("{{maxTags}}", maxTags.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{allowedTags}}", string.Join(", ", normalizedTags), StringComparison.Ordinal);
+    }
 
     private static string ResolveModelName(CachedModel model) =>
         model.CalculatedModelName ?? Path.GetFileNameWithoutExtension(model.FileName);
+
+    private static string ResolveModelFullPath(CachedModel model) =>
+        string.IsNullOrWhiteSpace(model.Directory)
+            ? model.FileName
+            : $"{model.Directory.TrimEnd('/')}/{model.FileName}";
+
+    private static string BuildDescriptionUserPrompt(string template, string modelName, string fullPath)
+    {
+        var safeTemplate = string.IsNullOrWhiteSpace(template)
+            ? "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}', the full path is '{{fullPath}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use."
+            : template;
+
+        return safeTemplate
+            .Replace("{{modelName}}", modelName, StringComparison.Ordinal)
+            .Replace("{{fullPath}}", fullPath, StringComparison.Ordinal);
+    }
 
     private static bool HasUsablePreview(CachedModel model) =>
         !string.IsNullOrWhiteSpace(model.PreviewImagePath) && model.PreviewGeneratedAt.HasValue;

@@ -103,6 +103,12 @@ export interface AppConfig {
   tagGenerationTimeoutMs: number;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;
+  tagGenerationPromptTemplate: string;
+  descriptionGenerationPromptTemplate: string;
+  tagGenerationPromptTemplateDefault: string;
+  descriptionGenerationPromptTemplateDefault: string;
+  tagGenerationPromptTemplateOverride: string;
+  descriptionGenerationPromptTemplateOverride: string;
   setupCompleted: boolean;
   modelsDirectoryPath: string | null;
 }
@@ -137,6 +143,8 @@ export interface UpdateAppConfigRequest {
   tagGenerationTimeoutMs: number;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;
+  tagGenerationPromptTemplate: string;
+  descriptionGenerationPromptTemplate: string;
 }
 
 export interface InitialSetupRequest {

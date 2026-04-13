@@ -4,15 +4,18 @@
     {
       "label": "backend: build",
       "command": "dotnet",
-      "type": "process",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
       "args": [
         "build",
-        "${workspaceFolder}/backend/findamodel.csproj",
+        "findamodel.csproj",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary"
       ],
       "presentation": {
-        "panel": "dedicated",
+        "panel": "new",
         "clear": true,
         "showReuseMessage": false,
         "close": true
@@ -36,6 +39,25 @@
         "showReuseMessage": false
       },
       "isBackground": true
+    },
+    {
+      "label": "backend: stop orphan",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'dotnet.exe' -and $_.CommandLine -match 'backend\\bin\\Debug\\net9.0\\findamodel.dll' }; if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force } }"
+      ],
+      "presentation": {
+        "panel": "new",
+        "clear": true,
+        "showReuseMessage": false,
+        "close": true
+      },
+      "problemMatcher": []
     },
     {
       "label": "frontend: install",
@@ -87,7 +109,7 @@
     {
       "label": "infra: seq",
       "type": "shell",
-      "command": "docker run --rm --name findamodel-seq -e ACCEPT_EULA=Y -p 5341:80 datalust/seq:latest",
+      "command": "if (docker ps --format '{{.Names}}' | Select-String -Quiet '^findamodel-seq$') { docker logs -f findamodel-seq } elseif (docker ps -a --format '{{.Names}}' | Select-String -Quiet '^findamodel-seq$') { docker start findamodel-seq; docker logs -f findamodel-seq } else { docker run --rm --name findamodel-seq -e ACCEPT_EULA=Y -p 5341:80 datalust/seq:latest }",
       "isBackground": true,
       "presentation": {
         "panel": "dedicated",

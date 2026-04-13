@@ -19,6 +19,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     private const int DefaultTagGenerationTimeoutMs = 60000;
     private const int DefaultTagGenerationMaxTags = 12;
     private const float DefaultTagGenerationMinConfidence = 0.45f;
+    private const string DefaultTagGenerationPromptTemplate =
+        "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
+    private const string LegacyDescriptionGenerationPromptTemplate =
+        "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. Do not mention confidence, JSON, or model limitations. Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
+    private const string DefaultDescriptionGenerationPromptTemplate =
+        "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}', the full path is '{{fullPath}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use.";
     private static readonly HashSet<string> AllowedThemes = new(StringComparer.OrdinalIgnoreCase)
     {
         "default",
@@ -82,6 +88,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.TagGenerationTimeoutMs = request.TagGenerationTimeoutMs;
         config.TagGenerationMaxTags = request.TagGenerationMaxTags;
         config.TagGenerationMinConfidence = request.TagGenerationMinConfidence;
+        config.TagGenerationPromptTemplate = NormalizePromptOverride(
+            request.TagGenerationPromptTemplate,
+            ResolveConfiguredTagGenerationPromptTemplate());
+        config.DescriptionGenerationPromptTemplate = NormalizePromptOverride(
+            request.DescriptionGenerationPromptTemplate,
+            ResolveConfiguredDescriptionGenerationPromptTemplate());
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return ToDto(config);
@@ -193,7 +205,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             TagGenerationMinConfidence: config.TagGenerationMinConfidence);
     }
 
-    private static AppConfigDto ToDto(AppConfig config)
+    private AppConfigDto ToDto(AppConfig config)
     {
         return new AppConfigDto(
             config.DefaultRaftHeightMm,
@@ -206,6 +218,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.TagGenerationTimeoutMs,
             config.TagGenerationMaxTags,
             config.TagGenerationMinConfidence,
+            ResolveEffectiveTagGenerationPromptTemplate(config),
+            ResolveEffectiveDescriptionGenerationPromptTemplate(config),
+            ResolveConfiguredTagGenerationPromptTemplate(),
+            ResolveConfiguredDescriptionGenerationPromptTemplate(),
+            config.TagGenerationPromptTemplate.Trim(),
+            config.DescriptionGenerationPromptTemplate.Trim(),
             config.SetupCompleted,
             config.ModelsDirectoryPath);
     }
@@ -234,6 +252,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             TagGenerationTimeoutMs = configuration.GetValue<int?>("AppConfig:TagGenerationTimeoutMs") ?? DefaultTagGenerationTimeoutMs,
             TagGenerationMaxTags = configuration.GetValue<int?>("AppConfig:TagGenerationMaxTags") ?? DefaultTagGenerationMaxTags,
             TagGenerationMinConfidence = configuration.GetValue<float?>("AppConfig:TagGenerationMinConfidence") ?? DefaultTagGenerationMinConfidence,
+            TagGenerationPromptTemplate = string.Empty,
+            DescriptionGenerationPromptTemplate = string.Empty,
             SetupCompleted = !string.IsNullOrWhiteSpace(normalizedConfiguredModelsPath),
             ModelsDirectoryPath = normalizedConfiguredModelsPath,
             UpdatedAt = DateTime.UtcNow,
@@ -242,5 +262,51 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         db.AppConfigs.Add(config);
         await db.SaveChangesAsync();
         return config;
+    }
+
+    private static string NormalizePromptOverride(string prompt, string configuredDefault)
+    {
+        var trimmed = prompt.Trim();
+        return string.Equals(trimmed, configuredDefault, StringComparison.Ordinal)
+            ? string.Empty
+            : trimmed;
+    }
+
+    private string ResolveConfiguredTagGenerationPromptTemplate()
+    {
+        var configured = configuration["AppConfig:TagGenerationPromptTemplate"];
+        return string.IsNullOrWhiteSpace(configured)
+            ? DefaultTagGenerationPromptTemplate
+            : configured.Trim();
+    }
+
+    private string ResolveConfiguredDescriptionGenerationPromptTemplate()
+    {
+        var configured = configuration["AppConfig:DescriptionGenerationPromptTemplate"];
+        return string.IsNullOrWhiteSpace(configured)
+            ? DefaultDescriptionGenerationPromptTemplate
+            : configured.Trim();
+    }
+
+    private string ResolveEffectiveTagGenerationPromptTemplate(AppConfig config)
+    {
+        var configuredDefault = ResolveConfiguredTagGenerationPromptTemplate();
+        var stored = config.TagGenerationPromptTemplate?.Trim();
+        return !string.IsNullOrWhiteSpace(stored)
+            && !string.Equals(stored, configuredDefault, StringComparison.Ordinal)
+            ? stored
+            : configuredDefault;
+    }
+
+    private string ResolveEffectiveDescriptionGenerationPromptTemplate(AppConfig config)
+    {
+        var configuredDefault = ResolveConfiguredDescriptionGenerationPromptTemplate();
+        var stored = config.DescriptionGenerationPromptTemplate?.Trim();
+        return !string.IsNullOrWhiteSpace(stored)
+            && !string.Equals(stored, configuredDefault, StringComparison.Ordinal)
+            && !string.Equals(stored, LegacyDescriptionGenerationPromptTemplate, StringComparison.Ordinal)
+            && !string.Equals(stored, DefaultDescriptionGenerationPromptTemplate, StringComparison.Ordinal)
+            ? stored
+            : configuredDefault;
     }
 }

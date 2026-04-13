@@ -286,6 +286,9 @@ export default function SettingsPage() {
   const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
+  const [tagGenerationPromptOverride, setTagGenerationPromptOverride] = useState('');
+  const [descriptionGenerationPromptOverride, setDescriptionGenerationPromptOverride] =
+    useState('');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -323,6 +326,8 @@ export default function SettingsPage() {
       setTagGenerationTimeoutMs(String(appConfig.tagGenerationTimeoutMs));
       setTagGenerationMaxTags(String(appConfig.tagGenerationMaxTags));
       setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
+      setTagGenerationPromptOverride(appConfig.tagGenerationPromptTemplateOverride);
+      setDescriptionGenerationPromptOverride(appConfig.descriptionGenerationPromptTemplateOverride);
     }
   }, [appConfig]);
 
@@ -396,6 +401,8 @@ export default function SettingsPage() {
       tagGenerationTimeoutMs: timeoutValue,
       tagGenerationMaxTags: maxTagsValue,
       tagGenerationMinConfidence: minConfidenceValue,
+      tagGenerationPromptTemplate: tagGenerationPromptOverride.trim(),
+      descriptionGenerationPromptTemplate: descriptionGenerationPromptOverride.trim(),
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -837,6 +844,53 @@ export default function SettingsPage() {
                       : undefined
                   }
                 />
+
+                <Stack spacing={1}>
+                  <TextField
+                    size="small"
+                    label="Tag generation prompt template"
+                    InputLabelProps={{ shrink: true }}
+                    value={tagGenerationPromptOverride}
+                    placeholder={appConfig.tagGenerationPromptTemplateDefault}
+                    onChange={(e) => setTagGenerationPromptOverride(e.target.value)}
+                    helperText={
+                      !tagGenerationPromptOverride.trim()
+                        ? 'Using the built-in prompt. Supports {{maxTags}} and {{allowedTags}} placeholders.'
+                        : 'Supports {{maxTags}} and {{allowedTags}} placeholders.'
+                    }
+                    multiline
+                    minRows={4}
+                    fullWidth
+                  />
+                  <Button variant="outlined" onClick={() => setTagGenerationPromptOverride('')}>
+                    Reset to default
+                  </Button>
+                </Stack>
+
+                <Stack spacing={1}>
+                  <TextField
+                    size="small"
+                    label="Description generation prompt template"
+                    InputLabelProps={{ shrink: true }}
+                    value={descriptionGenerationPromptOverride}
+                    placeholder={appConfig.descriptionGenerationPromptTemplateDefault}
+                    onChange={(e) => setDescriptionGenerationPromptOverride(e.target.value)}
+                    helperText={
+                      !descriptionGenerationPromptOverride.trim()
+                        ? 'Using the built-in prompt. Supports {{modelName}} and {{fullPath}} placeholders.'
+                        : 'Supports {{modelName}} and {{fullPath}} placeholders.'
+                    }
+                    multiline
+                    minRows={4}
+                    fullWidth
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={() => setDescriptionGenerationPromptOverride('')}
+                  >
+                    Reset to default
+                  </Button>
+                </Stack>
 
                 <Stack direction="row" spacing={1}>
                   <Button

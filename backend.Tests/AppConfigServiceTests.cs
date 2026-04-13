@@ -83,6 +83,106 @@ public class AppConfigServiceTests
         Assert.Equal(1, await db.AppConfigs.CountAsync());
     }
 
+    [Fact]
+    public async Task GetAsync_UsesConfiguredDescriptionDefault_WhenStoredPromptIsLegacyDefault()
+    {
+        var factory = CreateFactory(nameof(GetAsync_UsesConfiguredDescriptionDefault_WhenStoredPromptIsLegacyDefault));
+        const string legacyPrompt = "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. Do not mention confidence, JSON, or model limitations. Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
+        const string configuredPrompt = "Configured description prompt with {{modelName}} and {{fullPath}}.";
+
+        await using (var seed = factory.CreateDbContext())
+        {
+            seed.AppConfigs.Add(new AppConfig
+            {
+                Id = 1,
+                DescriptionGenerationPromptTemplate = legacyPrompt,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var sut = new AppConfigService(factory, CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["AppConfig:DescriptionGenerationPromptTemplate"] = configuredPrompt,
+        }));
+
+        var dto = await sut.GetAsync();
+
+        Assert.Equal(configuredPrompt, dto.DescriptionGenerationPromptTemplate);
+
+        await using var db = factory.CreateDbContext();
+        var stored = await db.AppConfigs.SingleAsync();
+        Assert.Equal(legacyPrompt, stored.DescriptionGenerationPromptTemplate);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DoesNotPersistPromptOverrides_WhenSavingConfiguredDefaults()
+    {
+        const string configuredTagPrompt = "Configured tag prompt {{maxTags}} {{allowedTags}}";
+        const string configuredDescriptionPrompt = "Configured description prompt {{modelName}} {{fullPath}}";
+        var factory = CreateFactory(nameof(UpdateAsync_DoesNotPersistPromptOverrides_WhenSavingConfiguredDefaults));
+        var sut = new AppConfigService(factory, CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["AppConfig:TagGenerationPromptTemplate"] = configuredTagPrompt,
+            ["AppConfig:DescriptionGenerationPromptTemplate"] = configuredDescriptionPrompt,
+        }));
+
+        var updated = await sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: configuredTagPrompt,
+            DescriptionGenerationPromptTemplate: configuredDescriptionPrompt));
+
+        Assert.Equal(configuredTagPrompt, updated.TagGenerationPromptTemplate);
+        Assert.Equal(configuredDescriptionPrompt, updated.DescriptionGenerationPromptTemplate);
+        Assert.Equal(string.Empty, updated.TagGenerationPromptTemplateOverride);
+        Assert.Equal(string.Empty, updated.DescriptionGenerationPromptTemplateOverride);
+
+        await using var db = factory.CreateDbContext();
+        var stored = await db.AppConfigs.SingleAsync();
+        Assert.Equal(string.Empty, stored.TagGenerationPromptTemplate);
+        Assert.Equal(string.Empty, stored.DescriptionGenerationPromptTemplate);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AllowsEmptyPromptOverrides_AndReturnsEffectiveDefaults()
+    {
+        const string configuredTagPrompt = "Configured tag prompt {{maxTags}} {{allowedTags}}";
+        const string configuredDescriptionPrompt = "Configured description prompt {{modelName}} {{fullPath}}";
+        var factory = CreateFactory(nameof(UpdateAsync_AllowsEmptyPromptOverrides_AndReturnsEffectiveDefaults));
+        var sut = new AppConfigService(factory, CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["AppConfig:TagGenerationPromptTemplate"] = configuredTagPrompt,
+            ["AppConfig:DescriptionGenerationPromptTemplate"] = configuredDescriptionPrompt,
+        }));
+
+        var updated = await sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: string.Empty,
+            DescriptionGenerationPromptTemplate: string.Empty));
+
+        Assert.Equal(configuredTagPrompt, updated.TagGenerationPromptTemplate);
+        Assert.Equal(configuredDescriptionPrompt, updated.DescriptionGenerationPromptTemplate);
+        Assert.Equal(string.Empty, updated.TagGenerationPromptTemplateOverride);
+        Assert.Equal(string.Empty, updated.DescriptionGenerationPromptTemplateOverride);
+    }
+
     // ── UpdateDefaultRaftHeightAsync ──────────────────────────────────────────
 
     [Fact]
@@ -147,7 +247,9 @@ public class AppConfigServiceTests
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
-            TagGenerationMinConfidence: 0.5f));
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}"));
 
         Assert.True(updated.TagGenerationEnabled);
         Assert.True(updated.AiDescriptionEnabled);
@@ -172,7 +274,9 @@ public class AppConfigServiceTests
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
-            TagGenerationMinConfidence: 0.5f)));
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}")));
     }
 
     [Fact]

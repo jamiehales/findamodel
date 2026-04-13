@@ -14,6 +14,8 @@ public class AppConfig
     public int TagGenerationTimeoutMs { get; set; } = 60000;
     public int TagGenerationMaxTags { get; set; } = 12;
     public float TagGenerationMinConfidence { get; set; } = 0.45f;
+    public string TagGenerationPromptTemplate { get; set; } = "";
+    public string DescriptionGenerationPromptTemplate { get; set; } = "";
 
     // Initial setup tracking
     public bool SetupCompleted { get; set; } = false;

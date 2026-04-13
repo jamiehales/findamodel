@@ -11,6 +11,12 @@ public record AppConfigDto(
     int TagGenerationTimeoutMs,
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence,
+    string TagGenerationPromptTemplate,
+    string DescriptionGenerationPromptTemplate,
+    string TagGenerationPromptTemplateDefault,
+    string DescriptionGenerationPromptTemplateDefault,
+    string TagGenerationPromptTemplateOverride,
+    string DescriptionGenerationPromptTemplateOverride,
     bool SetupCompleted,
     string? ModelsDirectoryPath);
 
@@ -24,7 +30,9 @@ public record UpdateAppConfigRequest(
     string TagGenerationModel,
     int TagGenerationTimeoutMs,
     int TagGenerationMaxTags,
-    float TagGenerationMinConfidence);
+    float TagGenerationMinConfidence,
+    string TagGenerationPromptTemplate,
+    string DescriptionGenerationPromptTemplate);
 
 public record InitialSetupRequest(
     string ModelsDirectoryPath,
