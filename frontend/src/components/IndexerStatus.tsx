@@ -1,4 +1,4 @@
-import { IconButton, Badge, Tooltip } from '@mui/material';
+import { IconButton, Badge } from '@mui/material';
 import { Link, useMatch } from 'react-router-dom';
 import { useIndexerStatus } from '../lib/queries';
 import styles from './IndexerStatus.module.css';
