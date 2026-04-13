@@ -21,7 +21,7 @@ import HullPreview from '../components/HullPreview';
 import LoadingView from '../components/LoadingView';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
-import gridStyles from '../components/ModelGrid.module.css';
+import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import PageLayout from '../components/layouts/PageLayout';
 import AppDialog from '../components/AppDialog';
 import ModelMetadataEditor from '../components/ModelMetadataEditor';
@@ -233,9 +233,9 @@ function ModelPage() {
 
         {(otherParts?.length ?? 0) > 0 && (
           <Box className={styles.otherPartsSection}>
-            <Box className={gridStyles.container}>
+            <Box>
               <Typography variant="h6">Other parts</Typography>
-              <Box className={gridStyles.grid}>
+              <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
                 {otherParts!.map((part) => (
                   <ModelCard
                     key={part.id}
@@ -254,7 +254,7 @@ function ModelPage() {
                     }}
                   />
                 ))}
-              </Box>
+              </CardGrid>
             </Box>
           </Box>
         )}
