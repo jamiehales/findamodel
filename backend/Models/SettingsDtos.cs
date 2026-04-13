@@ -21,3 +21,15 @@ public record UpdateAppConfigRequest(
     int TagGenerationTimeoutMs,
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence);
+
+public record ApplicationLogEntryDto(
+    DateTimeOffset Timestamp,
+    string Severity,
+    string Channel,
+    string Message,
+    string? Exception);
+
+public record ApplicationLogsResponseDto(
+    IReadOnlyList<ApplicationLogEntryDto> Entries,
+    IReadOnlyList<string> AvailableChannels,
+    IReadOnlyList<string> AvailableSeverities);

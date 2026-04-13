@@ -1,12 +1,14 @@
 using System.IO.Compression;
 using findamodel.Auth;
 using findamodel.Data;
+using findamodel.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+var applicationLogBuffer = new ApplicationLogBuffer();
 
 var desktopMode = string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_MODE"), "desktop", StringComparison.OrdinalIgnoreCase);
 var desktopUrl = Environment.GetEnvironmentVariable("FINDAMODEL_URL");
@@ -38,7 +40,8 @@ if (desktopMode)
 builder.Host.UseSerilog((ctx, cfg) =>
 {
     cfg.ReadFrom.Configuration(ctx.Configuration)
-       .Enrich.FromLogContext();
+    .Enrich.FromLogContext()
+    .WriteTo.Sink(new ApplicationLogSink(applicationLogBuffer));
 
     // Seq integration: set Seq:ServerUrl in appsettings.Development.json (or user secrets)
     // to stream structured logs to Seq for dynamic channel filtering.
@@ -49,6 +52,7 @@ builder.Host.UseSerilog((ctx, cfg) =>
 });
 
 builder.Services.AddControllers();
+builder.Services.AddSingleton(applicationLogBuffer);
 
 var dataPath = Environment.GetEnvironmentVariable("FINDAMODEL_DATA_PATH")
     ?? builder.Configuration["Configuration:DataPath"]

@@ -12,6 +12,9 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
     public DbSet<PrintingList> PrintingLists { get; set; }
     public DbSet<PrintingListItem> PrintingListItems { get; set; }
     public DbSet<MetadataDictionaryValue> MetadataDictionaryValues { get; set; }
+    public DbSet<IndexRun> IndexRuns { get; set; }
+    public DbSet<IndexRunFile> IndexRunFiles { get; set; }
+    public DbSet<IndexRunEvent> IndexRunEvents { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -100,6 +103,31 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasOne(i => i.PrintingList)
             .WithMany(l => l.Items)
             .HasForeignKey(i => i.PrintingListId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IndexRun>()
+            .HasIndex(r => r.RequestedAt);
+
+        modelBuilder.Entity<IndexRun>()
+            .HasIndex(r => r.Status);
+
+        modelBuilder.Entity<IndexRunFile>()
+            .HasIndex(f => new { f.IndexRunId, f.RelativePath })
+            .IsUnique();
+
+        modelBuilder.Entity<IndexRunFile>()
+            .HasOne(f => f.IndexRun)
+            .WithMany(r => r.Files)
+            .HasForeignKey(f => f.IndexRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IndexRunEvent>()
+            .HasIndex(e => new { e.IndexRunId, e.CreatedAt });
+
+        modelBuilder.Entity<IndexRunEvent>()
+            .HasOne(e => e.IndexRun)
+            .WithMany(r => r.Events)
+            .HasForeignKey(e => e.IndexRunId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Self-referential: DirectoryConfig → Parent (Restrict to prevent cascade-deleting ancestor records)

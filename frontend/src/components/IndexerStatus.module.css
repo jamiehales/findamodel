@@ -20,19 +20,6 @@
   padding: 0 3px !important;
 }
 
-.popoverPaper {
-  border: 1px solid rgba(99, 102, 241, 0.25) !important;
-  border-radius: 8px !important;
-  min-width: 260px;
-  max-width: 360px;
-  padding: 12px !important;
-  margin-top: 4px;
-}
-
-.elapsed {
-  margin-left: auto !important;
-}
-
 .iconSpin {
   animation: indexer-spin 1.4s linear infinite;
 }

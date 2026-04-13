@@ -1,0 +1,134 @@
+.pageHeader {
+  margin-bottom: 1.25rem;
+}
+
+.contentWrap {
+  align-items: flex-start;
+}
+
+.sidebarPanel {
+  width: 100%;
+  max-width: 420px;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.mainPanel {
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+}
+
+.panel {
+  border-color: rgba(148, 163, 184, 0.25) !important;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.panelBody {
+  padding: 0.875rem;
+}
+
+.runList {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.runCard {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: rgba(30, 41, 59, 0.35);
+  border-radius: 10px;
+  color: inherit;
+  padding: 0.65rem;
+  cursor: pointer;
+}
+
+.runCard:hover {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(51, 65, 85, 0.45);
+}
+
+.runCardActive {
+  border-color: rgba(99, 102, 241, 0.75);
+  background: rgba(67, 56, 202, 0.2);
+}
+
+.cardTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.progressBar {
+  height: 6px;
+  border-radius: 999px;
+}
+
+.progressBarLarge {
+  height: 8px;
+  border-radius: 999px;
+}
+
+.filesList {
+  max-height: 45vh;
+  overflow: auto;
+}
+
+.fileRow {
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.filePath {
+  font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 78%;
+}
+
+.statusChip {
+  text-transform: lowercase;
+}
+
+.artifactRow {
+  flex-wrap: wrap;
+}
+
+.pagerRow {
+  flex-wrap: wrap;
+}
+
+.pageJumpInput {
+  width: 68px;
+}
+
+.aiReasonChip {
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  color: #7dd3fc !important;
+  background: rgba(12, 74, 110, 0.4) !important;
+}
+
+.logList {
+  max-height: 38vh;
+  overflow: auto;
+}
+
+.logRow {
+  border-left: 2px solid rgba(99, 102, 241, 0.45);
+  padding-left: 0.6rem;
+}
+
+.logMeta {
+  color: #94a3b8;
+  font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+}
+
+.errorText {
+  color: #fda4af;
+}

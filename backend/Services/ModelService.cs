@@ -35,6 +35,24 @@ public class ModelService(
         return models.Select(m => m.ToModelDto()).ToList();
     }
 
+    public async Task<List<ModelDto>> GetModelsByIdsAsync(IReadOnlyCollection<Guid> ids)
+    {
+        if (ids.Count == 0)
+            return [];
+
+        var idSet = ids.ToHashSet();
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var models = await db.Models
+            .AsNoTracking()
+            .Where(m => idSet.Contains(m.Id))
+            .OrderBy(m => m.Directory)
+            .ThenBy(m => m.FileName)
+            .ToListAsync();
+
+        return models.Select(m => m.ToModelDto()).ToList();
+    }
+
     public async Task<CachedModel?> GetModelAsync(Guid id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -175,7 +193,10 @@ public class ModelService(
         return new ModelMetadataDetail(localValues, inheritedValues);
     }
 
-    public async Task<int> ScanAndCacheAsync(int? limit = null, string? directoryFilter = null)
+    public async Task<int> ScanAndCacheAsync(
+        int? limit = null,
+        string? directoryFilter = null,
+        IIndexingProgressReporter? progressReporter = null)
     {
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrEmpty(modelsPath))
@@ -204,6 +225,16 @@ public class ModelService(
         var files = Directory.EnumerateFiles(searchRoot, "*.*", SearchOption.AllDirectories)
             .Where(f => ModelExtensions.Contains(Path.GetExtension(f).ToLower()))
             .ToList();
+
+        if (progressReporter is not null)
+        {
+            await progressReporter.OnScanStartedAsync(files.Count);
+            await progressReporter.OnFilesDiscoveredAsync(files
+                .Select(f => new IndexingFilePlan(
+                    Path.GetRelativePath(modelsPath, f).Replace('\\', '/'),
+                    Path.GetExtension(f).TrimStart('.').ToLowerInvariant()))
+                .ToList());
+        }
 
         var relativeDirectories = files
             .Select(f => (Path.GetDirectoryName(Path.GetRelativePath(modelsPath, f)) ?? "").Replace('\\', '/'))
@@ -286,19 +317,37 @@ public class ModelService(
             .OrderBy(r => r.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var processedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         var newCount = 0;
         var updatedCount = 0;
         foreach (var result in orderedResults)
         {
+            var perFileTimer = System.Diagnostics.Stopwatch.StartNew();
+            processedRelativePaths.Add(result.RelativePath);
+
             if (result.ExistingId.HasValue)
             {
                 var entity = await db.Models.FindAsync(result.ExistingId.Value);
                 if (entity == null) continue;
 
+                var generatedPreview = false;
+                var generatedHull = false;
+                var generatedAiTags = false;
+                var generatedAiDescription = false;
+                var aiGenerationReason = result.AiGenerationReason;
+                var status = "processed";
+                var message = "Updated indexed model";
+
                 if (result.ContentUpdate is not null)
                 {
                     logger.LogInformation("Model content changed, updating: {FilePath}", result.FilePath);
                     ApplyFileData(entity, result.ContentUpdate, result.FileInfo);
+                    generatedPreview = result.ContentUpdate.PreviewImagePath is not null;
+                    generatedHull = result.ContentUpdate.ConvexHull is not null
+                        || result.ContentUpdate.ConcaveHull is not null
+                        || result.ContentUpdate.ConvexSansRaftHull is not null;
+                    message = "Content changed; rebuilt cached metadata and geometry";
                 }
                 else if (result.GeometryRefresh is not null)
                 {
@@ -306,24 +355,103 @@ public class ModelService(
                     entity.CachedAt = DateTime.UtcNow;
                     entity.FileModifiedAt = result.FileInfo.LastWriteTimeUtc;
                     entity.FileSize = result.FileInfo.Length;
+                    generatedPreview = result.GeometryRefresh.IncludePreview && result.GeometryRefresh.PreviewImagePath is not null;
+                    generatedHull = result.GeometryRefresh.IncludeHulls && result.GeometryRefresh.GeometryLoaded;
+                    message = result.GeometryRefresh.IncludeHulls
+                        ? "Regenerated hulls/preview from config or version changes"
+                        : "Regenerated preview from version changes";
                 }
 
                 if (result.ContentUpdate is not null || result.GeometryRefresh is not null)
                     await db.SaveChangesAsync();
 
                 if (result.ForceTagGeneration)
-                    await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan);
+                {
+                    var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan);
+                    generatedAiTags = tagResult.GeneratedTags;
+                    generatedAiDescription = tagResult.GeneratedDescription;
+                    if (!tagResult.Success)
+                    {
+                        status = "failed";
+                        message = tagResult.Error ?? "AI generation failed";
+                    }
+                    else
+                    {
+                        message = "Regenerated AI tags/description";
+                    }
+                }
+
+                if (result.ContentUpdate is null && result.GeometryRefresh is null && !result.ForceTagGeneration)
+                {
+                    status = "skipped";
+                    message = "No cache changes required";
+                }
+
+                if (progressReporter is not null)
+                {
+                    await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                        result.RelativePath,
+                        result.FileType,
+                        status,
+                        IsNew: false,
+                        WasUpdated: result.ContentUpdate is not null || result.GeometryRefresh is not null,
+                        GeneratedPreview: generatedPreview,
+                        GeneratedHull: generatedHull,
+                        GeneratedAiTags: generatedAiTags,
+                        GeneratedAiDescription: generatedAiDescription,
+                        AiGenerationReason: generatedAiTags || generatedAiDescription ? aiGenerationReason : null,
+                        Message: message,
+                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                }
                 updatedCount++;
                 continue;
             }
 
             // New file
-            if (limit.HasValue && newCount >= limit.Value) continue;
+            if (limit.HasValue && newCount >= limit.Value)
+            {
+                if (progressReporter is not null)
+                {
+                    await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                        result.RelativePath,
+                        result.FileType,
+                        "skipped",
+                        IsNew: true,
+                        WasUpdated: false,
+                        GeneratedPreview: false,
+                        GeneratedHull: false,
+                        GeneratedAiTags: false,
+                        GeneratedAiDescription: false,
+                        AiGenerationReason: null,
+                        Message: "Skipped due to scan limit",
+                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                }
+                continue;
+            }
 
             logger.LogInformation("Discovered {FileType} model: {FilePath}", result.FileType.ToUpperInvariant(), result.FilePath);
 
             var newData = result.ContentUpdate;
-            if (newData is null) continue;
+            if (newData is null)
+            {
+                if (progressReporter is not null)
+                {
+                    await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                        result.RelativePath,
+                        result.FileType,
+                        "failed",
+                        IsNew: true,
+                        WasUpdated: false,
+                        GeneratedPreview: false,
+                        GeneratedHull: false,
+                        GeneratedAiTags: false,
+                        GeneratedAiDescription: false,
+                        AiGenerationReason: null,
+                        Message: "Unable to compute file data",
+                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                }
+                continue;
+            }
 
             var newEntity = new CachedModel
             {
@@ -336,16 +464,67 @@ public class ModelService(
             ApplyFileData(newEntity, newData, result.FileInfo);
             db.Models.Add(newEntity);
             await db.SaveChangesAsync();
+            var generatedAiTagsNew = false;
+            var generatedAiDescriptionNew = false;
+            var aiGenerationReasonNew = result.AiGenerationReason;
             if (generateTagsOnScan)
-                await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan);
+            {
+                var tagResult = await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan);
+                generatedAiTagsNew = tagResult.GeneratedTags;
+                generatedAiDescriptionNew = tagResult.GeneratedDescription;
+            }
+
+            if (progressReporter is not null)
+            {
+                await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                    result.RelativePath,
+                    result.FileType,
+                    "processed",
+                    IsNew: true,
+                    WasUpdated: false,
+                    GeneratedPreview: newData.PreviewImagePath is not null,
+                    GeneratedHull: newData.ConvexHull is not null
+                        || newData.ConcaveHull is not null
+                        || newData.ConvexSansRaftHull is not null,
+                    GeneratedAiTags: generatedAiTagsNew,
+                    GeneratedAiDescription: generatedAiDescriptionNew,
+                    AiGenerationReason: generatedAiTagsNew || generatedAiDescriptionNew ? aiGenerationReasonNew : null,
+                    Message: "Indexed new model file",
+                    DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+            }
             newCount++;
+        }
+
+        var unchangedFiles = files
+            .Select(f => Path.GetRelativePath(modelsPath, f).Replace('\\', '/'))
+            .Where(relative => !processedRelativePaths.Contains(relative));
+        if (progressReporter is not null)
+        {
+            foreach (var unchangedRelativePath in unchangedFiles)
+            {
+                await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                    unchangedRelativePath,
+                    Path.GetExtension(unchangedRelativePath).TrimStart('.').ToLowerInvariant(),
+                    "skipped",
+                    IsNew: false,
+                    WasUpdated: false,
+                    GeneratedPreview: false,
+                    GeneratedHull: false,
+                    GeneratedAiTags: false,
+                    GeneratedAiDescription: false,
+                    AiGenerationReason: null,
+                    Message: "Already up-to-date",
+                    DurationMs: 0));
+            }
         }
 
         logger.LogInformation("Scan complete: {New} new, {Updated} updated, {Total} total in cache.", newCount, updatedCount, await db.Models.CountAsync());
         return newCount;
     }
 
-    public async Task<bool> ScanAndCacheSingleAsync(string relativeModelPath)
+    public async Task<bool> ScanAndCacheSingleAsync(
+        string relativeModelPath,
+        IIndexingProgressReporter? progressReporter = null)
     {
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrEmpty(modelsPath))
@@ -393,6 +572,13 @@ public class ModelService(
         var fileName = Path.GetFileName(fullPath);
         var fileType = extension.TrimStart('.');
         var info = new FileInfo(fullPath);
+        var singleFileTimer = System.Diagnostics.Stopwatch.StartNew();
+
+        if (progressReporter is not null)
+        {
+            await progressReporter.OnScanStartedAsync(1);
+            await progressReporter.OnFilesDiscoveredAsync([new IndexingFilePlan(normalized, fileType)]);
+        }
 
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, [directory]);
         var appConfig = await appConfigService.GetAsync();
@@ -415,6 +601,7 @@ public class ModelService(
 
         var existing = await db.Models
             .FirstOrDefaultAsync(m => m.Directory == directory && m.FileName == fileName);
+        var isNewModel = existing is null;
 
         var checksum = await ComputeChecksumAsync(fullPath);
         var checksumChanged = existing is null || existing.Checksum != checksum;
@@ -455,6 +642,22 @@ public class ModelService(
                 !string.IsNullOrWhiteSpace(existing.GeneratedDescription),
                 storedDescriptionChecksum,
                 expectedDescriptionChecksum);
+            if (progressReporter is not null)
+            {
+                await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                    normalized,
+                    fileType,
+                    "skipped",
+                    IsNew: false,
+                    WasUpdated: false,
+                    GeneratedPreview: false,
+                    GeneratedHull: false,
+                    GeneratedAiTags: false,
+                    GeneratedAiDescription: false,
+                    AiGenerationReason: null,
+                    Message: "Already up-to-date",
+                    DurationMs: singleFileTimer.Elapsed.TotalMilliseconds));
+            }
             return false;
         }
 
@@ -488,6 +691,10 @@ public class ModelService(
             };
             ApplyFileData(existing, data, info);
             db.Models.Add(existing);
+            if (progressReporter is not null)
+            {
+                await progressReporter.OnLogAsync("info", "Discovered new model", normalized);
+            }
         }
         else
         {
@@ -552,8 +759,43 @@ public class ModelService(
             !string.IsNullOrWhiteSpace(existing?.GeneratedDescription),
             storedDescriptionChecksum,
             expectedDescriptionChecksum);
+        var generatedAiTags = false;
+        var generatedAiDescription = false;
+        string? aiGenerationReason = null;
         if (shouldGenerateTags && existing is not null)
-            await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan);
+        {
+            aiGenerationReason = isNewModel
+                ? "new model"
+                : checksumChanged
+                    ? "model changed"
+                    : tagsStale && descriptionStale
+                        ? "tags+description stale"
+                        : tagsStale
+                            ? "tags checksum stale"
+                            : descriptionStale
+                                ? "description checksum stale"
+                                : null;
+            var tagResult = await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan);
+            generatedAiTags = tagResult.GeneratedTags;
+            generatedAiDescription = tagResult.GeneratedDescription;
+        }
+
+        if (progressReporter is not null)
+        {
+            await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                normalized,
+                fileType,
+                "processed",
+                IsNew: isNewModel,
+                WasUpdated: true,
+                GeneratedPreview: !IsNonGeometryType(fileType) && (checksumChanged || previewStale),
+                GeneratedHull: !IsNonGeometryType(fileType) && (checksumChanged || hullStale),
+                GeneratedAiTags: generatedAiTags,
+                GeneratedAiDescription: generatedAiDescription,
+                AiGenerationReason: generatedAiTags || generatedAiDescription ? aiGenerationReason : null,
+                Message: "Indexed single model",
+                DurationMs: singleFileTimer.Elapsed.TotalMilliseconds));
+        }
         return true;
     }
 
@@ -641,7 +883,8 @@ public class ModelService(
         FileInfo FileInfo,
         ModelFileData? ContentUpdate,
         GeometryRefreshData? GeometryRefresh,
-        bool ForceTagGeneration);
+        bool ForceTagGeneration,
+        string? AiGenerationReason);
 
     private sealed record ExistingModelScanState(
         Guid Id,
@@ -675,7 +918,7 @@ public class ModelService(
         List<string> configuredTagSchema,
         bool generateTagsOnScan)
     {
-        var relativePath = Path.GetRelativePath(modelsPath, file);
+        var relativePath = Path.GetRelativePath(modelsPath, file).Replace('\\', '/');
         var fileName = Path.GetFileName(file);
         var directory = (Path.GetDirectoryName(relativePath) ?? "").Replace('\\', '/');
         var info = new FileInfo(file);
@@ -700,6 +943,7 @@ public class ModelService(
                 var projected = new CachedModel
                 {
                     Id = existingEntry.Id,
+                    Checksum = existingEntry.Checksum,
                     FileName = existingEntry.FileName,
                     Directory = existingEntry.Directory,
                     PreviewImagePath = existingEntry.PreviewImagePath,
@@ -728,7 +972,18 @@ public class ModelService(
             if (currentChecksum != existingEntry.Checksum)
             {
                 var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum, defaultRaftHeightMm);
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, data, null, generateTagsOnScan);
+                return new PreparedScanResult(
+                    existingEntry.Id,
+                    file,
+                    relativePath,
+                    directory,
+                    fileName,
+                    fileType,
+                    info,
+                    data,
+                    null,
+                    generateTagsOnScan,
+                    generateTagsOnScan ? "model changed" : null);
             }
 
             if (hullMetadataMismatch)
@@ -746,11 +1001,18 @@ public class ModelService(
                     expectedRaftHeightMm,
                     includePreview: previewStale,
                     includeHulls: true);
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false);
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false, null);
             }
 
             if (tagsStale || descriptionStale)
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, true);
+            {
+                var aiReason = tagsStale && descriptionStale
+                    ? "tags+description stale"
+                    : tagsStale
+                        ? "tags checksum stale"
+                        : "description checksum stale";
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, true, aiReason);
+            }
 
             logger.LogInformation(
                 "Preview version mismatch, regenerating preview for: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
@@ -765,11 +1027,22 @@ public class ModelService(
                 expectedRaftHeightMm,
                 includePreview: true,
                 includeHulls: false);
-            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false);
+            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false, null);
         }
 
         var newData = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, null, defaultRaftHeightMm);
-        return new PreparedScanResult(null, file, relativePath, directory, fileName, fileType, info, newData, null, generateTagsOnScan);
+        return new PreparedScanResult(
+            null,
+            file,
+            relativePath,
+            directory,
+            fileName,
+            fileType,
+            info,
+            newData,
+            null,
+            generateTagsOnScan,
+            generateTagsOnScan ? "new model" : null);
     }
 
     private async Task<ModelFileData> ComputeFileDataAsync(
@@ -1004,24 +1277,33 @@ public class ModelService(
             data.Remove(matched);
     }
 
-    private async Task TryGenerateTagsOnScanAsync(Guid modelId, bool generateTagsOnScan)
+    private async Task<TagGenerationProgress> TryGenerateTagsOnScanAsync(Guid modelId, bool generateTagsOnScan)
     {
         if (!generateTagsOnScan)
         {
             logger.LogDebug("Skipping tag generation for model {ModelId}: TagGenerationEnabled=false", modelId);
-            return;
+            return new TagGenerationProgress(false, false, false, "Tag generation disabled");
         }
 
         try
         {
             logger.LogDebug("Triggering tag generation during scan for model {ModelId}", modelId);
-            await tagGenerationService.GenerateForModelAsync(modelId, CancellationToken.None);
+            var result = await tagGenerationService.GenerateForModelAsync(modelId, CancellationToken.None);
             logger.LogDebug("Tag generation finished during scan for model {ModelId}", modelId);
+            var success = string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase);
+            return new TagGenerationProgress(success, success, success, success ? null : result?.Error);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Tag generation failed during scan for model {ModelId}; scan will continue.", modelId);
+            return new TagGenerationProgress(false, false, false, ex.Message);
         }
     }
+
+    private sealed record TagGenerationProgress(
+        bool Success,
+        bool GeneratedTags,
+        bool GeneratedDescription,
+        string? Error);
 
 }

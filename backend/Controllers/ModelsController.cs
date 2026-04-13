@@ -23,6 +23,16 @@ public class ModelsController(
         return Ok(models);
     }
 
+    [HttpPost("by-ids")]
+    public async Task<IActionResult> GetModelsByIds([FromBody] ModelsByIdsRequest? request)
+    {
+        if (request?.Ids == null)
+            return BadRequest("ids is required.");
+
+        var models = await modelService.GetModelsByIdsAsync(request.Ids);
+        return Ok(models);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetModel(Guid id)
     {

@@ -18,6 +18,27 @@ public class IndexerController(IndexerService indexerService) : ControllerBase
         return Ok(indexerService.GetStatus());
     }
 
+    [HttpGet("runs")]
+    public async Task<ActionResult<IReadOnlyList<IndexRunSummaryDto>>> GetRuns([FromQuery] int days = 7)
+    {
+        return Ok(await indexerService.GetHistoryAsync(days));
+    }
+
+    [HttpGet("runs/{id:guid}")]
+    public async Task<ActionResult<IndexRunDetailDto>> GetRun(
+        Guid id,
+        [FromQuery] int filesPage = 1,
+        [FromQuery] int filesPageSize = 200,
+        [FromQuery] int eventsPage = 1,
+        [FromQuery] int eventsPageSize = 200)
+    {
+        var run = await indexerService.GetRunDetailAsync(id, filesPage, filesPageSize, eventsPage, eventsPageSize);
+        if (run == null)
+            return NotFound();
+
+        return Ok(run);
+    }
+
     /// <summary>
     /// POST /api/indexer
     /// Enqueues an indexing request. If a request for the same directory already

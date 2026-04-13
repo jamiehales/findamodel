@@ -57,6 +57,19 @@ export async function fetchModels(limit?: number): Promise<Model[]> {
   return models.map(mapModelUrls);
 }
 
+export async function fetchModelsByIds(ids: string[]): Promise<Model[]> {
+  if (ids.length === 0) return [];
+
+  const r = await apiFetch('/api/models/by-ids', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!r.ok) throw new Error('Failed to fetch models by ids');
+  const models = (await r.json()) as Model[];
+  return models.map(mapModelUrls);
+}
+
 export interface ModelFilter {
   search: string;
   creator: string[];

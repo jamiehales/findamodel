@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using findamodel.Data;
 
@@ -10,9 +11,11 @@ using findamodel.Data;
 namespace findamodel.Migrations
 {
     [DbContext(typeof(ModelCacheContext))]
-    partial class ModelCacheContextModelSnapshot : ModelSnapshot
+    [Migration("20260413000230_AddIndexRunFileDuration")]
+    partial class AddIndexRunFileDuration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.14");
@@ -435,9 +438,6 @@ namespace findamodel.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AiGenerationReason")
                         .HasColumnType("TEXT");
 
                     b.Property<double?>("DurationMs")

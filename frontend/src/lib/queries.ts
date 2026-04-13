@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchModels,
+  fetchModelsByIds,
   fetchModel,
   fetchModelMetadata,
   updateModelMetadata,
@@ -12,6 +13,8 @@ import {
   fetchExplorerFileText,
   updateDirectoryConfig,
   fetchIndexerStatus,
+  fetchIndexerRuns,
+  fetchIndexerRun,
   enqueueIndex,
   IndexFlags,
   fetchPrintingLists,
@@ -37,6 +40,8 @@ import {
   deleteMetadataDictionaryValue,
   fetchAppConfig,
   updateAppConfig,
+  fetchApplicationLogs,
+  type ApplicationLogsResponse,
   type UpdateAppConfigRequest,
   type UpdateModelMetadataRequest,
 } from './api';
@@ -44,6 +49,7 @@ import {
 export const queryKeys = {
   models: (limit?: number) =>
     limit !== undefined ? (['models', limit] as const) : (['models'] as const),
+  modelsByIds: (ids: string[]) => ['models', 'by-ids', [...ids].sort()] as const,
   model: (id: string) => ['model', id] as const,
   modelMetadata: (id: string) => ['model', id, 'metadata'] as const,
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
@@ -53,6 +59,14 @@ export const queryKeys = {
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
   indexerStatus: ['indexer', 'status'] as const,
+  indexerRuns: (days: number) => ['indexer', 'runs', days] as const,
+  indexerRun: (
+    runId: string,
+    filesPage: number,
+    filesPageSize: number,
+    eventsPage: number,
+    eventsPageSize: number,
+  ) => ['indexer', 'run', runId, filesPage, filesPageSize, eventsPage, eventsPageSize] as const,
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
@@ -60,12 +74,22 @@ export const queryKeys = {
   filterOptions: (filter: ModelFilter) => ['query', 'options', filter] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
   appConfig: ['settings', 'config'] as const,
+  applicationLogs: (channel: string, severity: string, limit: number) =>
+    ['settings', 'logs', channel, severity, limit] as const,
 };
 
 export function useModels(limit?: number) {
   return useQuery({
     queryKey: queryKeys.models(limit),
     queryFn: () => fetchModels(limit),
+  });
+}
+
+export function useModelsByIds(ids: string[]) {
+  return useQuery({
+    queryKey: queryKeys.modelsByIds(ids),
+    queryFn: () => fetchModelsByIds(ids),
+    enabled: ids.length > 0,
   });
 }
 
@@ -159,6 +183,20 @@ export function useAppConfig() {
   });
 }
 
+export function useApplicationLogs(channel: string, severity: string, limit: number) {
+  return useQuery<ApplicationLogsResponse>({
+    queryKey: queryKeys.applicationLogs(channel, severity, limit),
+    queryFn: () =>
+      fetchApplicationLogs({
+        channel: channel || undefined,
+        severity: severity || undefined,
+        limit,
+      }),
+    refetchInterval: 5000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
 export function useUpdateAppConfig() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -247,12 +285,63 @@ export function useUpdateDirectoryConfig(path: string) {
 
 // ---- Indexer ----
 
-export function useIndexerStatus() {
+type IndexerPollingOptions = {
+  adaptivePolling?: boolean;
+};
+
+function adaptiveIndexerInterval(options?: IndexerPollingOptions): number {
+  if (!options?.adaptivePolling) return 5000;
+  if (typeof document === 'undefined') return 3000;
+  return document.visibilityState === 'visible' ? 3000 : 30000;
+}
+
+export function useIndexerStatus(options?: IndexerPollingOptions) {
   return useQuery({
     queryKey: queryKeys.indexerStatus,
     queryFn: fetchIndexerStatus,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
+    refetchInterval: () => adaptiveIndexerInterval(options),
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useIndexerRuns(days: number = 7, options?: IndexerPollingOptions) {
+  return useQuery({
+    queryKey: queryKeys.indexerRuns(days),
+    queryFn: () => fetchIndexerRuns(days),
+    refetchInterval: () => adaptiveIndexerInterval(options),
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useIndexerRun(
+  runId: string | null | undefined,
+  paging: {
+    filesPage: number;
+    filesPageSize: number;
+    eventsPage: number;
+    eventsPageSize: number;
+  },
+  options?: IndexerPollingOptions,
+) {
+  return useQuery({
+    queryKey: queryKeys.indexerRun(
+      runId ?? 'none',
+      paging.filesPage,
+      paging.filesPageSize,
+      paging.eventsPage,
+      paging.eventsPageSize,
+    ),
+    queryFn: () =>
+      fetchIndexerRun(
+        runId ?? '',
+        paging.filesPage,
+        paging.filesPageSize,
+        paging.eventsPage,
+        paging.eventsPageSize,
+      ),
+    enabled: !!runId,
+    refetchInterval: () => adaptiveIndexerInterval(options),
+    refetchIntervalInBackground: true,
   });
 }
 

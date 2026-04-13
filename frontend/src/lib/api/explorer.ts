@@ -116,6 +116,20 @@ export interface UpdateAppConfigRequest {
   tagGenerationMinConfidence: number;
 }
 
+export interface ApplicationLogEntry {
+  timestamp: string;
+  severity: string;
+  channel: string;
+  message: string;
+  exception: string | null;
+}
+
+export interface ApplicationLogsResponse {
+  entries: ApplicationLogEntry[];
+  availableChannels: string[];
+  availableSeverities: string[];
+}
+
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
   const url = `/api/explorer?path=${encodeURIComponent(path)}`;
   const r = await apiFetch(url);
@@ -209,4 +223,23 @@ export async function deleteMetadataDictionaryValue(id: string): Promise<void> {
     method: 'DELETE',
   });
   if (!r.ok) throw new Error('Failed to delete metadata dictionary value');
+}
+
+export async function fetchApplicationLogs({
+  channel,
+  severity,
+  limit = 500,
+}: {
+  channel?: string;
+  severity?: string;
+  limit?: number;
+}): Promise<ApplicationLogsResponse> {
+  const params = new URLSearchParams();
+  if (channel) params.set('channel', channel);
+  if (severity) params.set('severity', severity);
+  params.set('limit', String(limit));
+
+  const r = await apiFetch(`/api/settings/logs?${params.toString()}`);
+  if (!r.ok) throw new Error('Failed to fetch application logs');
+  return r.json();
 }

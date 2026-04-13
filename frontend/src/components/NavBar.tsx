@@ -18,7 +18,7 @@ export default function NavBar() {
   const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0;
   const printingListMatch = useMatch('/printing-list/*');
   const printingListsMatch = useMatch('/printing-lists');
-  const settingsMatch = useMatch('/settings');
+  const settingsMatch = useMatch('/settings/*');
   const printingActive = !!(printingListMatch || printingListsMatch);
   const [printingAnchorEl, setPrintingAnchorEl] = useState<HTMLElement | null>(null);
   const printingGroupRef = useRef<HTMLDivElement | null>(null);

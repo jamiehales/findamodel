@@ -23,7 +23,7 @@ import {
   type HullMode,
 } from '../lib/api';
 import {
-  useModels,
+  useModelsByIds,
   usePrintingListDetail,
   useClearPrintingListItems,
   useActivatePrintingList,
@@ -41,7 +41,11 @@ function PrintingListPage() {
   const { listId = 'active' } = useParams<{ listId: string }>();
 
   const { data: list, isPending: listPending } = usePrintingListDetail(listId);
-  const { data: allModels, isPending: modelsPending } = useModels();
+  const modelIds = useMemo(
+    () => Array.from(new Set(list?.items.map((i) => i.modelId) ?? [])),
+    [list],
+  );
+  const { data: listedModels = [], isPending: modelsPending } = useModelsByIds(modelIds);
   const { mutate: clearItems } = useClearPrintingListItems();
   const { mutate: activateList } = useActivatePrintingList();
   const { mutate: updateSettings } = useUpdatePrintingListSettings();
@@ -57,10 +61,6 @@ function PrintingListPage() {
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
     [list],
-  );
-  const listedModels = useMemo(
-    () => allModels?.filter((m) => items[m.id] != null) ?? [],
-    [allModels, items],
   );
 
   const listName = list?.name ?? 'Printing list';

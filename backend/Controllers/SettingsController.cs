@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using findamodel.Models;
 using findamodel.Services;
+using Serilog.Events;
 
 namespace findamodel.Controllers;
 
@@ -8,7 +9,8 @@ namespace findamodel.Controllers;
 [Route("api/settings")]
 public class SettingsController(
     MetadataDictionaryService metadataDictionaryService,
-    AppConfigService appConfigService) : ControllerBase
+    AppConfigService appConfigService,
+    ApplicationLogBuffer applicationLogBuffer) : ControllerBase
 {
     [HttpGet("config")]
     public async Task<ActionResult<AppConfigDto>> GetConfig()
@@ -80,5 +82,38 @@ public class SettingsController(
         var deleted = await metadataDictionaryService.DeleteAsync(id);
         if (!deleted) return NotFound();
         return NoContent();
+    }
+
+    [HttpGet("logs")]
+    public ActionResult<ApplicationLogsResponseDto> GetLogs(
+        [FromQuery] string? channel,
+        [FromQuery] string? severity,
+        [FromQuery] int limit = 500)
+    {
+        LogEventLevel? minimumSeverity = null;
+        if (!string.IsNullOrWhiteSpace(severity))
+        {
+            if (!Enum.TryParse<LogEventLevel>(severity, ignoreCase: true, out var parsedSeverity))
+            {
+                return BadRequest("Invalid severity filter.");
+            }
+
+            minimumSeverity = parsedSeverity;
+        }
+
+        var entries = applicationLogBuffer
+            .Get(channel, minimumSeverity, limit)
+            .Select(e => new ApplicationLogEntryDto(
+                e.Timestamp,
+                e.Severity,
+                e.Channel,
+                e.Message,
+                e.Exception))
+            .ToList();
+
+        var availableChannels = applicationLogBuffer.GetAvailableChannels();
+        var availableSeverities = Enum.GetNames<LogEventLevel>();
+
+        return Ok(new ApplicationLogsResponseDto(entries, availableChannels, availableSeverities));
     }
 }

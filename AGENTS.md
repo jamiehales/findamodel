@@ -6,6 +6,9 @@ General:
 * If there are decisions to be made related to how the user will interact with the application, you must ask before making a decision
 * If you're unsure what's happening when debugging an issue because of lack of context, you must ask the user
 * If you need data to validate a result or fix a bug, add logging and execute a test where feasible, if not, you must ask the user
+* Scale assumptions: production catalog size is approximately 100,000 models
+* Scale assumptions: a printing list usually contains approximately 20-30 models
+* Given those assumptions, prefer server-side filtering/pagination/batched endpoints; avoid full-catalog fetches in UI flows and avoid N+1 per-model request patterns
 
 Frontend:
 * Prefer usage of MUI layout (Stack, Grid) instead of Box and divs

@@ -211,6 +211,12 @@ export default function SettingsPage() {
         Settings
       </Typography>
 
+      <Stack direction="row" spacing={1}>
+        <Button component={Link} to="/settings/logs" variant="outlined">
+          View Application Logs
+        </Button>
+      </Stack>
+
       <Box className={styles.globalSettingsSection}>
         <Typography variant="h5">Default Values</Typography>
         <Stack spacing={2}>

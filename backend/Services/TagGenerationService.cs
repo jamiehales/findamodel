@@ -270,9 +270,6 @@ public class TagGenerationService(
         if (!string.Equals(model.GeneratedTagsStatus, "success", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        if (string.IsNullOrWhiteSpace(model.GeneratedTagsJson))
-            return true;
-
         var expected = ComputeGenerationChecksum(model, appConfig, schemaTags);
         return !string.Equals(expected, model.GeneratedTagsChecksum, StringComparison.OrdinalIgnoreCase);
     }
@@ -281,9 +278,6 @@ public class TagGenerationService(
     {
         if (!appConfig.TagGenerationEnabled)
             return false;
-
-        if (string.IsNullOrWhiteSpace(model.GeneratedDescription))
-            return true;
 
         var expected = ComputeDescriptionChecksum(model, appConfig);
         return !string.Equals(expected, model.GeneratedDescriptionChecksum, StringComparison.OrdinalIgnoreCase);
