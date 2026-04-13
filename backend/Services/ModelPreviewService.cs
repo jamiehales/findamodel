@@ -52,12 +52,29 @@ public class ModelPreviewService(
     /// Renders a preview from pre-loaded geometry and saves to disk if cache path is set.
     /// Returns the relative filename if saved, null otherwise.
     /// </summary>
-    public async Task<string?> GeneratePreviewAsync(LoadedGeometry geometry, string modelFileHash, string fileType = "")
+    public sealed record PreviewGenerationResult(string? RelativePath, bool Generated);
+
+    /// <summary>
+    /// Renders a preview when needed and reports whether it was generated in this call.
+    /// If a hash-matched cached image already exists on disk, it is reused.
+    /// </summary>
+    public async Task<PreviewGenerationResult> GeneratePreviewWithStatusAsync(LoadedGeometry geometry, string modelFileHash, string fileType = "")
     {
         if (geometry.Triangles.Count == 0)
         {
             logger.LogWarning("GeneratePreviewAsync called with empty geometry");
-            return null;
+            return new PreviewGenerationResult(null, false);
+        }
+
+        if (_cacheRendersPath == null)
+            return new PreviewGenerationResult(null, false);
+
+        var filename = $"{modelFileHash}.png";
+        var fullPath = Path.Combine(_cacheRendersPath, filename);
+        if (File.Exists(fullPath))
+        {
+            logger.LogDebug("Reusing cached preview at {Path}", fullPath);
+            return new PreviewGenerationResult(filename, false);
         }
 
         // Separate body from supports so they can be rendered in distinct colours.
@@ -84,18 +101,20 @@ public class ModelPreviewService(
 
         // CPU fallback
         if (png == null)
-        {
             png = await Task.Run(() => MeshRenderer.Render(bodyTris, RenderWidth, RenderHeight, BodyVec3, supportTris, SupportVec3));
-        }
 
-        if (png == null || _cacheRendersPath == null) return null;
+        if (png == null)
+            return new PreviewGenerationResult(null, false);
 
-        // Save to disk with hash-based filename
-        var filename = $"{modelFileHash}.png";
-        var fullPath = Path.Combine(_cacheRendersPath, filename);
         File.WriteAllBytes(fullPath, png);
         logger.LogInformation("Saved preview to {Path}", fullPath);
-        return filename;
+        return new PreviewGenerationResult(filename, true);
+    }
+
+    public async Task<string?> GeneratePreviewAsync(LoadedGeometry geometry, string modelFileHash, string fileType = "")
+    {
+        var result = await GeneratePreviewWithStatusAsync(geometry, modelFileHash, fileType);
+        return result.RelativePath;
     }
 
     /// <summary>

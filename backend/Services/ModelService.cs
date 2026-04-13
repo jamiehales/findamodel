@@ -276,6 +276,7 @@ public class ModelService(
                 m.Directory,
                 m.FileName,
                 m.Checksum,
+                m.FileModifiedAt,
                 m.ScanConfigChecksum,
                 m.PreviewGenerationVersion,
                 m.GeneratedTagsChecksum,
@@ -321,6 +322,7 @@ public class ModelService(
                     },
                     async (file, ct) =>
                     {
+                        var prepareTimer = System.Diagnostics.Stopwatch.StartNew();
                         var prepared = await PrepareScanResultAsync(
                             file,
                             modelsPath,
@@ -332,7 +334,10 @@ public class ModelService(
                             generateTagsOnScan,
                             generateDescriptionsOnScan);
                         if (prepared is not null)
-                            preparedResults.Writer.TryWrite(prepared);
+                            preparedResults.Writer.TryWrite(prepared with
+                            {
+                                PreparationDurationMs = prepareTimer.Elapsed.TotalMilliseconds,
+                            });
                     });
 
                 preparedResults.Writer.TryComplete();
@@ -365,78 +370,87 @@ public class ModelService(
                     var entity = await db.Models.FindAsync(result.ExistingId.Value);
                     if (entity == null) continue;
 
-                var generatedPreview = false;
-                var generatedHull = false;
-                var generatedAiTags = false;
-                var generatedAiDescription = false;
-                var aiGenerationReason = result.AiGenerationReason;
-                var status = "processed";
-                var message = "Updated indexed model";
+                    var generatedPreview = false;
+                    var generatedHull = false;
+                    var generatedAiTags = false;
+                    var generatedAiDescription = false;
+                    var aiGenerationReason = result.AiGenerationReason;
+                    var status = "processed";
+                    var message = "Updated indexed model";
+                    var wasUpdated = false;
 
-                if (result.ContentUpdate is not null)
-                {
-                    logger.LogInformation("Model content changed, updating: {FilePath}", result.FilePath);
-                    ApplyFileData(entity, result.ContentUpdate, result.FileInfo);
-                    generatedPreview = result.ContentUpdate.PreviewImagePath is not null;
-                    generatedHull = result.ContentUpdate.ConvexHull is not null
-                        || result.ContentUpdate.ConcaveHull is not null
-                        || result.ContentUpdate.ConvexSansRaftHull is not null;
-                    message = "Content changed; rebuilt cached metadata and geometry";
-                }
-                else if (result.GeometryRefresh is not null)
-                {
-                    ApplyGeometryRefreshData(entity, result.GeometryRefresh);
-                    entity.CachedAt = DateTime.UtcNow;
-                    entity.FileModifiedAt = result.FileInfo.LastWriteTimeUtc;
-                    entity.FileSize = result.FileInfo.Length;
-                    generatedPreview = result.GeometryRefresh.IncludePreview && result.GeometryRefresh.PreviewImagePath is not null;
-                    generatedHull = result.GeometryRefresh.IncludeHulls && result.GeometryRefresh.GeometryLoaded;
-                    message = result.GeometryRefresh.IncludeHulls
-                        ? "Regenerated hulls/preview from config or version changes"
-                        : "Regenerated preview from version changes";
-                }
-
-                if (result.ContentUpdate is not null || result.GeometryRefresh is not null)
-                    await db.SaveChangesAsync();
-
-                if (result.ForceTagGeneration)
-                {
-                    var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan, generateDescriptionsOnScan);
-                    generatedAiTags = tagResult.GeneratedTags;
-                    generatedAiDescription = tagResult.GeneratedDescription;
-                    if (!tagResult.Success)
+                    if (result.ContentUpdate is not null)
                     {
-                        status = "failed";
-                        message = tagResult.Error ?? "AI generation failed";
+                        logger.LogInformation("Model content changed, updating: {FilePath}", result.FilePath);
+                        ApplyFileData(entity, result.ContentUpdate, result.FileInfo);
+                        generatedPreview = result.ContentUpdate.PreviewGenerated;
+                        generatedHull = result.ContentUpdate.HullGenerated;
+                        wasUpdated = true;
+                        message = "Content changed; rebuilt cached metadata and geometry";
                     }
-                    else
+                    else if (result.GeometryRefresh is not null)
                     {
-                        message = "Regenerated AI metadata";
+                        ApplyGeometryRefreshData(entity, result.GeometryRefresh);
+                        entity.CachedAt = DateTime.UtcNow;
+                        entity.FileModifiedAt = result.FileInfo.LastWriteTimeUtc;
+                        entity.FileSize = result.FileInfo.Length;
+                        generatedPreview = result.GeometryRefresh.PreviewGenerated;
+                        generatedHull = result.GeometryRefresh.HullGenerated;
+                        wasUpdated = true;
+                        message = result.GeometryRefresh.IncludeHulls
+                            ? "Regenerated hulls/preview from config or version changes"
+                            : "Regenerated preview from version changes";
                     }
-                }
+                    else if (result.FileMetadataOnlyRefresh)
+                    {
+                        entity.CachedAt = DateTime.UtcNow;
+                        entity.FileModifiedAt = result.FileInfo.LastWriteTimeUtc;
+                        entity.FileSize = result.FileInfo.Length;
+                        wasUpdated = true;
+                        message = "Updated file timestamp after checksum verification";
+                    }
 
-                if (result.ContentUpdate is null && result.GeometryRefresh is null && !result.ForceTagGeneration)
-                {
-                    status = "skipped";
-                    message = "No cache changes required";
-                }
+                    if (wasUpdated)
+                        await db.SaveChangesAsync();
 
-                if (progressReporter is not null)
-                {
-                    await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
-                        result.RelativePath,
-                        result.FileType,
-                        status,
-                        IsNew: false,
-                        WasUpdated: result.ContentUpdate is not null || result.GeometryRefresh is not null,
-                        GeneratedPreview: generatedPreview,
-                        GeneratedHull: generatedHull,
-                        GeneratedAiTags: generatedAiTags,
-                        GeneratedAiDescription: generatedAiDescription,
-                        AiGenerationReason: generatedAiTags || generatedAiDescription ? aiGenerationReason : null,
-                        Message: message,
-                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
-                }
+                    if (result.ForceTagGeneration)
+                    {
+                        var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan, generateDescriptionsOnScan);
+                        generatedAiTags = tagResult.GeneratedTags;
+                        generatedAiDescription = tagResult.GeneratedDescription;
+                        if (!tagResult.Success)
+                        {
+                            status = "failed";
+                            message = tagResult.Error ?? "AI generation failed";
+                        }
+                        else
+                        {
+                            message = "Regenerated AI metadata";
+                        }
+                    }
+
+                    if (result.ContentUpdate is null && result.GeometryRefresh is null && !result.ForceTagGeneration)
+                    {
+                        status = "skipped";
+                        message = "No cache changes required";
+                    }
+
+                    if (progressReporter is not null)
+                    {
+                        await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                            result.RelativePath,
+                            result.FileType,
+                            status,
+                            IsNew: false,
+                            WasUpdated: wasUpdated,
+                            GeneratedPreview: generatedPreview,
+                            GeneratedHull: generatedHull,
+                            GeneratedAiTags: generatedAiTags,
+                            GeneratedAiDescription: generatedAiDescription,
+                            AiGenerationReason: generatedAiTags || generatedAiDescription ? aiGenerationReason : null,
+                            Message: message,
+                            DurationMs: result.PreparationDurationMs + perFileTimer.Elapsed.TotalMilliseconds));
+                    }
                     updatedCount++;
                     continue;
                 }
@@ -524,7 +538,7 @@ public class ModelService(
                         GeneratedAiDescription: generatedAiDescriptionNew,
                         AiGenerationReason: generatedAiTagsNew || generatedAiDescriptionNew ? aiGenerationReasonNew : null,
                         Message: "Indexed new model file",
-                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                        DurationMs: result.PreparationDurationMs + perFileTimer.Elapsed.TotalMilliseconds));
                 }
                 newCount++;
             }
@@ -655,7 +669,12 @@ public class ModelService(
             .FirstOrDefaultAsync(m => m.Directory == directory && m.FileName == fileName);
         var isNewModel = existing is null;
 
-        var checksum = await ComputeChecksumAsync(fullPath);
+        var checksumEvaluation = await ResolveChecksumAsync(
+            fullPath,
+            info.LastWriteTimeUtc,
+            existing?.Checksum,
+            existing?.FileModifiedAt);
+        var checksum = checksumEvaluation.Checksum;
         cancellationToken.ThrowIfCancellationRequested();
         var checksumChanged = existing is null || existing.Checksum != checksum;
         var previewStale = existing is not null
@@ -685,6 +704,14 @@ public class ModelService(
             && !tagsStale
             && !descriptionStale)
         {
+            if (checksumEvaluation.Recomputed)
+            {
+                existing.FileModifiedAt = info.LastWriteTimeUtc;
+                existing.FileSize = info.Length;
+                existing.CachedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
             logger.LogDebug(
                 "Single-model scan skipped changes for {FilePath}; checksum/hulls/preview/tags/description are up-to-date. tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
                 fullPath,
@@ -731,6 +758,9 @@ public class ModelService(
         else
             logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
 
+        var generatedPreview = false;
+        var generatedHull = false;
+
         if (existing is null)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -744,6 +774,8 @@ public class ModelService(
                 DirectoryConfigId = data.DirConfig?.Id,
             };
             ApplyFileData(existing, data, info);
+            generatedPreview = data.PreviewGenerated;
+            generatedHull = data.HullGenerated;
             db.Models.Add(existing);
             if (progressReporter is not null)
             {
@@ -759,6 +791,8 @@ public class ModelService(
                 existing.FileType = fileType;
                 existing.DirectoryConfigId = data.DirConfig?.Id;
                 ApplyFileData(existing, data, info);
+                generatedPreview = data.PreviewGenerated;
+                generatedHull = data.HullGenerated;
             }
             else if (!IsNonGeometryType(fileType) && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             {
@@ -774,6 +808,8 @@ public class ModelService(
                     includePreview: previewStale,
                     includeHulls: true);
                 ApplyGeometryRefreshData(existing, refresh);
+                generatedPreview = refresh.PreviewGenerated;
+                generatedHull = refresh.HullGenerated;
                 existing.CachedAt = DateTime.UtcNow;
                 existing.FileModifiedAt = info.LastWriteTimeUtc;
                 existing.FileSize = info.Length;
@@ -789,6 +825,7 @@ public class ModelService(
                     includePreview: true,
                     includeHulls: false);
                 ApplyGeometryRefreshData(existing, refresh);
+                generatedPreview = refresh.PreviewGenerated;
                 existing.CachedAt = DateTime.UtcNow;
                 existing.FileModifiedAt = info.LastWriteTimeUtc;
                 existing.FileSize = info.Length;
@@ -847,8 +884,8 @@ public class ModelService(
                 "processed",
                 IsNew: isNewModel,
                 WasUpdated: true,
-                GeneratedPreview: !IsNonGeometryType(fileType) && (checksumChanged || previewStale),
-                GeneratedHull: !IsNonGeometryType(fileType) && (checksumChanged || hullStale),
+                GeneratedPreview: generatedPreview,
+                GeneratedHull: generatedHull,
                 GeneratedAiTags: generatedAiTags,
                 GeneratedAiDescription: generatedAiDescription,
                 AiGenerationReason: generatedAiTags || generatedAiDescription ? aiGenerationReason : null,
@@ -907,9 +944,11 @@ public class ModelService(
     private sealed record ModelFileData(
         string Checksum,
         string? PreviewImagePath,
+        bool PreviewGenerated,
         string? ConvexHull,
         string? ConcaveHull,
         string? ConvexSansRaftHull,
+        bool HullGenerated,
         float RaftHeightMm,
         ModelMetadataHelper.ComputedMetadata Metadata,
         DirectoryConfig? DirConfig,
@@ -927,9 +966,11 @@ public class ModelService(
         bool IncludeHulls,
         bool GeometryLoaded,
         string? PreviewImagePath,
+        bool PreviewGenerated,
         string? ConvexHull,
         string? ConcaveHull,
         string? ConvexSansRaftHull,
+        bool HullGenerated,
         float RaftHeightMm);
 
     private sealed record PreparedScanResult(
@@ -942,14 +983,17 @@ public class ModelService(
         FileInfo FileInfo,
         ModelFileData? ContentUpdate,
         GeometryRefreshData? GeometryRefresh,
+        bool FileMetadataOnlyRefresh,
         bool ForceTagGeneration,
-        string? AiGenerationReason);
+        string? AiGenerationReason,
+        double PreparationDurationMs = 0);
 
     private sealed record ExistingModelScanState(
         Guid Id,
         string Directory,
         string FileName,
         string Checksum,
+        DateTime FileModifiedAt,
         string? ScanConfigChecksum,
         int? PreviewGenerationVersion,
         string? GeneratedTagsChecksum,
@@ -986,7 +1030,12 @@ public class ModelService(
 
         if (existingModels.TryGetValue((directory, fileName), out var existingEntry))
         {
-            var currentChecksum = await ComputeChecksumAsync(file);
+            var checksumEvaluation = await ResolveChecksumAsync(
+                file,
+                info.LastWriteTimeUtc,
+                existingEntry.Checksum,
+                existingEntry.FileModifiedAt);
+            var currentChecksum = checksumEvaluation.Checksum;
             var expectedRaftHeightMm = ResolveRaftHeightMmForModel(
                 file,
                 directory,
@@ -1029,7 +1078,26 @@ public class ModelService(
             }
 
             if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale && !tagsStale && !descriptionStale)
+            {
+                if (checksumEvaluation.Recomputed)
+                {
+                    return new PreparedScanResult(
+                        existingEntry.Id,
+                        file,
+                        relativePath,
+                        directory,
+                        fileName,
+                        fileType,
+                        info,
+                        null,
+                        null,
+                        true,
+                        false,
+                        null);
+                }
+
                 return null;
+            }
 
             if (currentChecksum != existingEntry.Checksum)
             {
@@ -1044,6 +1112,7 @@ public class ModelService(
                     info,
                     data,
                     null,
+                    false,
                     generateTagsOnScan || generateDescriptionsOnScan,
                     (generateTagsOnScan || generateDescriptionsOnScan) ? "model changed" : null);
             }
@@ -1063,7 +1132,7 @@ public class ModelService(
                     expectedRaftHeightMm,
                     includePreview: previewStale,
                     includeHulls: true);
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false, null);
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false, false, null);
             }
 
             if (tagsStale || descriptionStale)
@@ -1073,7 +1142,7 @@ public class ModelService(
                     : tagsStale
                         ? "tags checksum stale"
                         : "description checksum stale";
-                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, true, aiReason);
+                return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, null, false, true, aiReason);
             }
 
             logger.LogInformation(
@@ -1089,7 +1158,7 @@ public class ModelService(
                 expectedRaftHeightMm,
                 includePreview: true,
                 includeHulls: false);
-            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false, null);
+            return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false, false, null);
         }
 
         var newData = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, null, defaultRaftHeightMm);
@@ -1103,6 +1172,7 @@ public class ModelService(
             info,
             newData,
             null,
+            false,
             generateTagsOnScan || generateDescriptionsOnScan,
             (generateTagsOnScan || generateDescriptionsOnScan) ? "new model" : null);
     }
@@ -1125,21 +1195,27 @@ public class ModelService(
         // Skip expensive geometry pipeline for file types that do not contain mesh geometry.
         LoadedGeometry? geometry = null;
         string? previewImagePath = null;
+        var previewGenerated = false;
         string? convexHull = null, concaveHull = null, convexSansRaftHull = null;
+        var hullGenerated = false;
         float? dimensionXMm = null, dimensionYMm = null, dimensionZMm = null;
         float? sphereCentreX = null, sphereCentreY = null, sphereCentreZ = null, sphereRadius = null;
 
         if (!IsNonGeometryType(fileType))
         {
             geometry = await loaderService.LoadModelAsync(file, fileType);
-            previewImagePath = geometry is not null
-                ? await previewService.GeneratePreviewAsync(geometry, checksum)
-                : null;
+            if (geometry is not null)
+            {
+                var previewResult = await previewService.GeneratePreviewWithStatusAsync(geometry, checksum);
+                previewImagePath = previewResult.RelativePath;
+                previewGenerated = previewResult.Generated;
+            }
 
             if (geometry is not null)
             {
                 (convexHull, concaveHull, convexSansRaftHull) =
                     await hullCalculationService.CalculateHullsAsync(geometry, raftHeightMm: raftHeightMm);
+                hullGenerated = true;
                 dimensionXMm = ToFiniteOrNull(geometry.DimensionXMm);
                 dimensionYMm = ToFiniteOrNull(geometry.DimensionYMm);
                 dimensionZMm = ToFiniteOrNull(geometry.DimensionZMm);
@@ -1153,9 +1229,11 @@ public class ModelService(
         return new ModelFileData(
             checksum,
             previewImagePath,
+            previewGenerated,
             convexHull,
             concaveHull,
             convexSansRaftHull,
+            hullGenerated,
             raftHeightMm,
             metadata,
             dirConfig,
@@ -1218,27 +1296,38 @@ public class ModelService(
     {
         var geometry = await loaderService.LoadModelAsync(filePath, fileType);
         if (geometry is null)
-            return new GeometryRefreshData(includePreview, includeHulls, false, null, null, null, null, raftHeightMm);
+            return new GeometryRefreshData(includePreview, includeHulls, false, null, false, null, null, null, false, raftHeightMm);
 
         string? previewImagePath = null;
+        var previewGenerated = false;
         if (includePreview)
-            previewImagePath = await previewService.GeneratePreviewAsync(geometry, checksum);
+        {
+            var previewResult = await previewService.GeneratePreviewWithStatusAsync(geometry, checksum);
+            previewImagePath = previewResult.RelativePath;
+            previewGenerated = previewResult.Generated;
+        }
 
         string? convexHull = null;
         string? concaveHull = null;
         string? convexSansRaftHull = null;
+        var hullGenerated = false;
         if (includeHulls)
+        {
             (convexHull, concaveHull, convexSansRaftHull) =
                 await hullCalculationService.CalculateHullsAsync(geometry, raftHeightMm: raftHeightMm);
+            hullGenerated = true;
+        }
 
         return new GeometryRefreshData(
             includePreview,
             includeHulls,
             true,
             previewImagePath,
+                previewGenerated,
             convexHull,
             concaveHull,
             convexSansRaftHull,
+                hullGenerated,
             raftHeightMm);
     }
 
@@ -1308,6 +1397,23 @@ public class ModelService(
         using var stream = File.OpenRead(filePath);
         var hash = await System.Security.Cryptography.SHA256.HashDataAsync(stream);
         return Convert.ToHexString(hash).ToLower();
+    }
+
+    private static async Task<(string Checksum, bool Recomputed)> ResolveChecksumAsync(
+        string filePath,
+        DateTime observedFileModifiedAt,
+        string? existingChecksum,
+        DateTime? existingFileModifiedAt)
+    {
+        if (!string.IsNullOrWhiteSpace(existingChecksum)
+            && existingFileModifiedAt.HasValue
+            && existingFileModifiedAt.Value == observedFileModifiedAt)
+        {
+            return (existingChecksum, false);
+        }
+
+        var checksum = await ComputeChecksumAsync(filePath);
+        return (checksum, true);
     }
 
     private static async Task<Dictionary<string, object>> ReadConfigDataAsync(string configPath)
