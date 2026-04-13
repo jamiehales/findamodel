@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.Globalization;
 using findamodel.Data;
 using findamodel.Data.Entities;
 using findamodel.Models;
@@ -80,6 +81,16 @@ public class TagGenerationService(
             appConfig.TagGenerationModel,
             appConfig.TagGenerationTimeoutMs);
         var previewPath = ResolvePreviewPath(model);
+        if (string.IsNullOrWhiteSpace(previewPath))
+        {
+            _logger.LogDebug("AI generation skipped for model {ModelId}: no valid preview image path", model.Id);
+            return ToResult(model) with
+            {
+                Status = "skipped",
+                Error = "Model has no valid preview image.",
+            };
+        }
+
         var expectedDescriptionChecksum = ComputeDescriptionChecksum(model, appConfig);
 
         try
@@ -292,6 +303,12 @@ public class TagGenerationService(
         if (schemaTags.Count == 0)
             return false;
 
+        if (!HasUsablePreview(model))
+            return false;
+
+        if (IsPreviewNewerThan(model.PreviewGeneratedAt, model.GeneratedTagsAt))
+            return true;
+
         if (!string.Equals(model.GeneratedTagsStatus, "success", StringComparison.OrdinalIgnoreCase))
             return true;
 
@@ -303,6 +320,12 @@ public class TagGenerationService(
     {
         if (!appConfig.AiDescriptionEnabled)
             return false;
+
+        if (!HasUsablePreview(model))
+            return false;
+
+        if (IsPreviewNewerThan(model.PreviewGeneratedAt, model.GeneratedDescriptionAt))
+            return true;
 
         var expected = ComputeDescriptionChecksum(model, appConfig);
         return !string.Equals(expected, model.GeneratedDescriptionChecksum, StringComparison.OrdinalIgnoreCase);
@@ -321,7 +344,7 @@ public class TagGenerationService(
             $"promptVersion:{CurrentTagGenerationPromptVersion}",
             $"llmVersion:{CurrentLlmRuntimeVersion}",
             $"model:{appConfig.TagGenerationModel}",
-            $"checksum:{model.Checksum}",
+            $"previewVersion:{ResolvePreviewVersionToken(model)}",
             $"fileName:{model.FileName}",
             $"directory:{model.Directory}",
             $"schema:{schemaChecksumInput}",
@@ -341,7 +364,7 @@ public class TagGenerationService(
             $"model:{appConfig.TagGenerationModel}",
             $"modelName:{modelName}",
             $"prompt:{prompt}",
-            $"checksum:{model.Checksum}",
+            $"previewVersion:{ResolvePreviewVersionToken(model)}",
         ]);
 
         var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
@@ -392,6 +415,17 @@ public class TagGenerationService(
 
     private static string ResolveModelName(CachedModel model) =>
         model.CalculatedModelName ?? Path.GetFileNameWithoutExtension(model.FileName);
+
+    private static bool HasUsablePreview(CachedModel model) =>
+        !string.IsNullOrWhiteSpace(model.PreviewImagePath) && model.PreviewGeneratedAt.HasValue;
+
+    private static bool IsPreviewNewerThan(DateTime? previewGeneratedAt, DateTime? generationTimestamp) =>
+        previewGeneratedAt.HasValue && (!generationTimestamp.HasValue || previewGeneratedAt.Value > generationTimestamp.Value);
+
+    private static string ResolvePreviewVersionToken(CachedModel model) =>
+        model.PreviewGeneratedAt.HasValue
+            ? model.PreviewGeneratedAt.Value.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture)
+            : "none";
 
     private static string? NormalizeDescription(string? value)
     {

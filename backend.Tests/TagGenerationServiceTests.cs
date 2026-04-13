@@ -32,6 +32,36 @@ public class TagGenerationServiceTests
     }
 
     [Fact]
+    public void ComputeGenerationChecksum_DoesNotChangeWhenModelChecksumChanges()
+    {
+        var config = CreateConfig();
+        var modelA = CreateModel();
+        var modelB = CreateModel();
+        modelA.Checksum = "checksum-a";
+        modelB.Checksum = "checksum-b";
+
+        var checksumA = TagGenerationService.ComputeGenerationChecksum(modelA, config, ["orc", "terrain"]);
+        var checksumB = TagGenerationService.ComputeGenerationChecksum(modelB, config, ["orc", "terrain"]);
+
+        Assert.Equal(checksumA, checksumB);
+    }
+
+    [Fact]
+    public void ComputeGenerationChecksum_ChangesWhenPreviewTimestampChanges()
+    {
+        var config = CreateConfig();
+        var modelA = CreateModel();
+        var modelB = CreateModel();
+        modelA.PreviewGeneratedAt = new DateTime(2026, 4, 12, 10, 0, 0, DateTimeKind.Utc);
+        modelB.PreviewGeneratedAt = new DateTime(2026, 4, 12, 10, 5, 0, DateTimeKind.Utc);
+
+        var checksumA = TagGenerationService.ComputeGenerationChecksum(modelA, config, ["orc", "terrain"]);
+        var checksumB = TagGenerationService.ComputeGenerationChecksum(modelB, config, ["orc", "terrain"]);
+
+        Assert.NotEqual(checksumA, checksumB);
+    }
+
+    [Fact]
     public void NeedsRegeneration_ReturnsTrue_WhenSchemaChanges()
     {
         var model = CreateModel();
@@ -45,6 +75,36 @@ public class TagGenerationServiceTests
         var changedSchema = new List<string> { "orc", "terrain", "dragon" };
 
         var shouldRegenerate = TagGenerationService.NeedsRegeneration(model, config, changedSchema);
+
+        Assert.True(shouldRegenerate);
+    }
+
+    [Fact]
+    public void NeedsRegeneration_ReturnsFalse_WhenPreviewMissing()
+    {
+        var model = CreateModel();
+        var config = CreateConfig();
+        model.PreviewImagePath = null;
+        model.PreviewGeneratedAt = null;
+        model.GeneratedTagsStatus = "success";
+        model.GeneratedTagsChecksum = TagGenerationService.ComputeGenerationChecksum(model, config, ["orc", "terrain"]);
+
+        var shouldRegenerate = TagGenerationService.NeedsRegeneration(model, config, ["orc", "terrain"]);
+
+        Assert.False(shouldRegenerate);
+    }
+
+    [Fact]
+    public void NeedsRegeneration_ReturnsTrue_WhenPreviewNewerThanGeneratedTags()
+    {
+        var model = CreateModel();
+        var config = CreateConfig();
+        model.GeneratedTagsStatus = "success";
+        model.GeneratedTagsAt = new DateTime(2026, 4, 12, 10, 0, 0, DateTimeKind.Utc);
+        model.PreviewGeneratedAt = new DateTime(2026, 4, 12, 10, 5, 0, DateTimeKind.Utc);
+        model.GeneratedTagsChecksum = TagGenerationService.ComputeGenerationChecksum(model, config, ["orc", "terrain"]);
+
+        var shouldRegenerate = TagGenerationService.NeedsRegeneration(model, config, ["orc", "terrain"]);
 
         Assert.True(shouldRegenerate);
     }
@@ -78,8 +138,24 @@ public class TagGenerationServiceTests
         Assert.True(shouldRegenerate);
     }
 
+    [Fact]
+    public void NeedsDescriptionRegeneration_ReturnsTrue_WhenPreviewNewerThanDescription()
+    {
+        var model = CreateModel();
+        var config = CreateConfig();
+        model.GeneratedDescription = "A sneaky goblin scout with a spear.";
+        model.GeneratedDescriptionAt = new DateTime(2026, 4, 12, 10, 0, 0, DateTimeKind.Utc);
+        model.PreviewGeneratedAt = new DateTime(2026, 4, 12, 10, 5, 0, DateTimeKind.Utc);
+        model.GeneratedDescriptionChecksum = TagGenerationService.ComputeDescriptionChecksum(model, config);
+
+        var shouldRegenerate = TagGenerationService.NeedsDescriptionRegeneration(model, config);
+
+        Assert.True(shouldRegenerate);
+    }
+
     private static CachedModel CreateModel()
     {
+        var now = new DateTime(2026, 4, 12, 10, 0, 0, DateTimeKind.Utc);
         return new CachedModel
         {
             Id = Guid.NewGuid(),
@@ -88,8 +164,10 @@ public class TagGenerationServiceTests
             Checksum = "abc123",
             FileType = "stl",
             FileSize = 1,
-            FileModifiedAt = DateTime.UtcNow,
-            CachedAt = DateTime.UtcNow,
+            FileModifiedAt = now,
+            CachedAt = now,
+            PreviewImagePath = "abc123.png",
+            PreviewGeneratedAt = now,
         };
     }
 

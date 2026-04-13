@@ -279,11 +279,14 @@ public class ModelService(
                 m.FileModifiedAt,
                 m.ScanConfigChecksum,
                 m.PreviewGenerationVersion,
+                m.PreviewGeneratedAt,
                 m.GeneratedTagsChecksum,
                 m.GeneratedTagsStatus,
                 m.GeneratedTagsJson,
+                m.GeneratedTagsAt,
                 m.GeneratedDescription,
                 m.GeneratedDescriptionChecksum,
+                m.GeneratedDescriptionAt,
                 m.PreviewImagePath,
                 m.CalculatedModelName,
                 m.CalculatedPartName,
@@ -413,8 +416,27 @@ public class ModelService(
                     if (wasUpdated)
                         await db.SaveChangesAsync();
 
-                    if (result.ForceTagGeneration)
+                    var tagsNeedGeneration = false;
+                    var descriptionNeedGeneration = false;
+                    if (generateTagsOnScan || generateDescriptionsOnScan)
                     {
+                        tagsNeedGeneration = generateTagsOnScan
+                            && TagGenerationService.NeedsRegeneration(entity, appConfig, configuredTagSchema);
+                        descriptionNeedGeneration = generateDescriptionsOnScan
+                            && TagGenerationService.NeedsDescriptionRegeneration(entity, appConfig);
+                    }
+
+                    var shouldGenerateAi = tagsNeedGeneration || descriptionNeedGeneration;
+                    if (shouldGenerateAi)
+                    {
+                        aiGenerationReason = result.ContentUpdate is not null || result.GeometryRefresh?.PreviewGenerated == true
+                            ? (result.ExistingId.HasValue ? "preview updated" : "new model preview")
+                            : tagsNeedGeneration && descriptionNeedGeneration
+                                ? "tags+description stale"
+                                : tagsNeedGeneration
+                                    ? "tags checksum stale"
+                                    : "description checksum stale";
+
                         var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan, generateDescriptionsOnScan);
                         generatedAiTags = tagResult.GeneratedTags;
                         generatedAiDescription = tagResult.GeneratedDescription;
@@ -423,13 +445,13 @@ public class ModelService(
                             status = "failed";
                             message = tagResult.Error ?? "AI generation failed";
                         }
-                        else
+                        else if (generatedAiTags || generatedAiDescription)
                         {
                             message = "Regenerated AI metadata";
                         }
                     }
 
-                    if (result.ContentUpdate is null && result.GeometryRefresh is null && !result.ForceTagGeneration)
+                    if (result.ContentUpdate is null && result.GeometryRefresh is null && !shouldGenerateAi)
                     {
                         status = "skipped";
                         message = "No cache changes required";
@@ -514,12 +536,23 @@ public class ModelService(
                 await db.SaveChangesAsync();
                 var generatedAiTagsNew = false;
                 var generatedAiDescriptionNew = false;
-                var aiGenerationReasonNew = result.AiGenerationReason;
+                string? aiGenerationReasonNew = null;
+                var tagsNeedGenerationNew = false;
+                var descriptionNeedGenerationNew = false;
                 if (generateTagsOnScan || generateDescriptionsOnScan)
                 {
-                    var tagResult = await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan, generateDescriptionsOnScan);
-                    generatedAiTagsNew = tagResult.GeneratedTags;
-                    generatedAiDescriptionNew = tagResult.GeneratedDescription;
+                    tagsNeedGenerationNew = generateTagsOnScan
+                        && TagGenerationService.NeedsRegeneration(newEntity, appConfig, configuredTagSchema);
+                    descriptionNeedGenerationNew = generateDescriptionsOnScan
+                        && TagGenerationService.NeedsDescriptionRegeneration(newEntity, appConfig);
+
+                    if (tagsNeedGenerationNew || descriptionNeedGenerationNew)
+                    {
+                        aiGenerationReasonNew = "new model preview";
+                        var tagResult = await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan, generateDescriptionsOnScan);
+                        generatedAiTagsNew = tagResult.GeneratedTags;
+                        generatedAiDescriptionNew = tagResult.GeneratedDescription;
+                    }
                 }
 
                 if (progressReporter is not null)
@@ -833,8 +866,24 @@ public class ModelService(
         }
 
         await db.SaveChangesAsync();
-        var shouldGenerateTags = (generateTagsOnScan || generateDescriptionsOnScan)
-            && (checksumChanged || tagsStale || descriptionStale);
+        var shouldGenerateTags = false;
+
+        if ((generateTagsOnScan || generateDescriptionsOnScan) && existing is not null)
+        {
+            tagsStale = generateTagsOnScan
+                && TagGenerationService.NeedsRegeneration(existing, appConfig, configuredTagSchema);
+            descriptionStale = generateDescriptionsOnScan
+                && TagGenerationService.NeedsDescriptionRegeneration(existing, appConfig);
+            expectedTagChecksum = generateTagsOnScan && configuredTagSchema.Count > 0
+                ? TagGenerationService.ComputeGenerationChecksum(existing, appConfig, configuredTagSchema)
+                : null;
+            expectedDescriptionChecksum = generateDescriptionsOnScan
+                ? TagGenerationService.ComputeDescriptionChecksum(existing, appConfig)
+                : null;
+        }
+
+        shouldGenerateTags = (generateTagsOnScan || generateDescriptionsOnScan)
+            && (tagsStale || descriptionStale);
         logger.LogDebug(
             "Single-model scan AI-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, descriptionGenerationEnabled={DescriptionGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, descriptionStale={DescriptionStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
             fullPath,
@@ -861,9 +910,9 @@ public class ModelService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             aiGenerationReason = isNewModel
-                ? "new model"
-                : checksumChanged
-                    ? "model changed"
+                ? "new model preview"
+                : generatedPreview
+                    ? "preview updated"
                     : tagsStale && descriptionStale
                         ? "tags+description stale"
                         : tagsStale
@@ -996,11 +1045,14 @@ public class ModelService(
         DateTime FileModifiedAt,
         string? ScanConfigChecksum,
         int? PreviewGenerationVersion,
+        DateTime? PreviewGeneratedAt,
         string? GeneratedTagsChecksum,
         string? GeneratedTagsStatus,
         string? GeneratedTagsJson,
+        DateTime? GeneratedTagsAt,
         string? GeneratedDescription,
         string? GeneratedDescriptionChecksum,
+        DateTime? GeneratedDescriptionAt,
         string? PreviewImagePath,
         string? CalculatedModelName,
         string? CalculatedPartName,
@@ -1056,6 +1108,7 @@ public class ModelService(
                     FileName = existingEntry.FileName,
                     Directory = existingEntry.Directory,
                     PreviewImagePath = existingEntry.PreviewImagePath,
+                    PreviewGeneratedAt = existingEntry.PreviewGeneratedAt,
                     PreviewGenerationVersion = existingEntry.PreviewGenerationVersion,
                     CalculatedModelName = existingEntry.CalculatedModelName,
                     CalculatedPartName = existingEntry.CalculatedPartName,
@@ -1068,8 +1121,10 @@ public class ModelService(
                     GeneratedTagsChecksum = existingEntry.GeneratedTagsChecksum,
                     GeneratedTagsJson = existingEntry.GeneratedTagsJson,
                     GeneratedTagsStatus = existingEntry.GeneratedTagsStatus,
+                    GeneratedTagsAt = existingEntry.GeneratedTagsAt,
                     GeneratedDescription = existingEntry.GeneratedDescription,
                     GeneratedDescriptionChecksum = existingEntry.GeneratedDescriptionChecksum,
+                    GeneratedDescriptionAt = existingEntry.GeneratedDescriptionAt,
                 };
                 tagsStale = generateTagsOnScan
                     && TagGenerationService.NeedsRegeneration(projected, appConfig, configuredTagSchema);
@@ -1113,8 +1168,8 @@ public class ModelService(
                     data,
                     null,
                     false,
-                    generateTagsOnScan || generateDescriptionsOnScan,
-                    (generateTagsOnScan || generateDescriptionsOnScan) ? "model changed" : null);
+                    false,
+                    null);
             }
 
             if (hullMetadataMismatch)
@@ -1173,8 +1228,8 @@ public class ModelService(
             newData,
             null,
             false,
-            generateTagsOnScan || generateDescriptionsOnScan,
-            (generateTagsOnScan || generateDescriptionsOnScan) ? "new model" : null);
+            false,
+            null);
     }
 
     private async Task<ModelFileData> ComputeFileDataAsync(
@@ -1461,11 +1516,12 @@ public class ModelService(
             logger.LogDebug("Triggering tag generation during scan for model {ModelId}", modelId);
             var result = await tagGenerationService.GenerateForModelAsync(modelId, CancellationToken.None);
             logger.LogDebug("Tag generation finished during scan for model {ModelId}", modelId);
-            var success = string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase);
+            var success = string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(result?.Status, "skipped", StringComparison.OrdinalIgnoreCase);
             return new TagGenerationProgress(
                 success,
-                success && generateTagsOnScan,
-                success && generateDescriptionsOnScan,
+                string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase) && generateTagsOnScan,
+                string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase) && generateDescriptionsOnScan,
                 success ? null : result?.Error);
         }
         catch (Exception ex)
