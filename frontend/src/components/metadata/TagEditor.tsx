@@ -77,11 +77,6 @@ export default function TagEditor({
           />
         )}
       />
-      {(inherited.length > 0 || ai.length > 0) && (
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.25 }}>
-          Grey tags: inherited (lighter), AI (darker)
-        </Typography>
-      )}
     </Stack>
   );
 }

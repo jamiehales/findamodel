@@ -8,7 +8,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import type { Model, ModelMetadata } from '../lib/api';
 import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
-import InheritedHint from './metadata/InheritedHint';
 import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
@@ -192,9 +191,6 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
                 inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
                 onChange={(v) => setFieldBySharedKey(fieldKey, v)}
                 inputClassName={styles.fieldInput}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -205,9 +201,6 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
                 options={selectOptions}
                 onChange={(v) => setFieldBySharedKey(fieldKey, v)}
                 selectClassName={styles.selectSmall}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -217,9 +210,6 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
                 inheritedValue={typeof inheritedValue === 'boolean' ? inheritedValue : null}
                 onChange={(v) => setFieldBySharedKey(fieldKey, v)}
                 selectClassName={styles.selectSmall}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -242,12 +232,6 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
                     setFieldBySharedKey(fieldKey, valid ? parsed : null);
                   }}
                   InputProps={{ className: styles.fieldInput }}
-                />
-                <InheritedHint
-                  value={typeof inheritedValue === 'number' ? inheritedValue : null}
-                  className={styles.hintContainer}
-                  hintClassName={styles.hint}
-                  copyBtnClassName={styles.copyBtn}
                 />
               </>
             )}

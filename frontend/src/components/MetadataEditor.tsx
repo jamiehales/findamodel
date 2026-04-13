@@ -18,7 +18,6 @@ import { ConfigValidationError } from '../lib/api';
 import type { MetadataFields } from '../lib/api';
 import AppDialog from './AppDialog';
 import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
-import InheritedHint from './metadata/InheritedHint';
 import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
@@ -556,7 +555,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 onChange={(e) => handleRuleChange(field.yamlName, e.target.value)}
                 error={!!ruleError}
                 helperText={ruleError ?? undefined}
-                placeholder={'rule: filename\nindex: -2'}
+                placeholder={inheritedRule ?? undefined}
                 slotProps={{ input: { className: styles.ruleInput } }}
               />
             )}
@@ -568,9 +567,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 inheritedValue={(parentValue as string | null) ?? null}
                 onChange={(v) => setFieldValue(field.key, v as never)}
                 inputClassName={styles.fieldInput}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -582,9 +578,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 options={selectOptions}
                 onChange={(v) => setFieldValue(field.key, v as never)}
                 selectClassName={styles.selectSmall}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -595,9 +588,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 inheritedValue={(parentValue as boolean | null) ?? null}
                 onChange={(v) => setFieldValue(field.key, v as never)}
                 selectClassName={styles.selectSmall}
-                hintContainerClassName={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
               />
             )}
 
@@ -623,24 +613,6 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 }}
                 InputProps={{ className: styles.fieldInput }}
               />
-            )}
-
-            {isRuleMode ? (
-              <InheritedHint
-                inheritedRule={inheritedRule}
-                className={styles.hintContainer}
-                hintClassName={styles.hint}
-                copyBtnClassName={styles.copyBtn}
-              />
-            ) : (
-              field.fieldType === 'number' && (
-                <InheritedHint
-                  value={parentValue}
-                  className={styles.hintContainer}
-                  hintClassName={styles.hint}
-                  copyBtnClassName={styles.copyBtn}
-                />
-              )
             )}
           </Box>
         );

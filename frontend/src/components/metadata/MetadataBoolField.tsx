@@ -1,28 +1,19 @@
 import FormControl from '@mui/material/FormControl';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
-import InheritedHint from './InheritedHint';
 
 interface Props {
   value: boolean | null;
   inheritedValue?: boolean | null;
-  inheritedRule?: string | null;
   onChange: (value: boolean | null) => void;
   selectClassName?: string;
-  hintContainerClassName?: string;
-  hintClassName?: string;
-  copyBtnClassName?: string;
 }
 
 export default function MetadataBoolField({
   value,
   inheritedValue,
-  inheritedRule,
   onChange,
   selectClassName,
-  hintContainerClassName,
-  hintClassName,
-  copyBtnClassName,
 }: Props) {
   return (
     <>
@@ -56,13 +47,6 @@ export default function MetadataBoolField({
           <MenuItem value="false">False</MenuItem>
         </Select>
       </FormControl>
-      <InheritedHint
-        value={inheritedValue}
-        inheritedRule={inheritedRule}
-        className={hintContainerClassName}
-        hintClassName={hintClassName}
-        copyBtnClassName={copyBtnClassName}
-      />
     </>
   );
 }
