@@ -103,9 +103,44 @@ export interface AppConfig {
   tagGenerationTimeoutMs: number;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;
+  setupCompleted: boolean;
+  modelsDirectoryPath: string | null;
+}
+
+export interface SetupStatus {
+  setupCompleted: boolean;
+  requiresWizard: boolean;
+}
+
+export interface InitialSetupDefaults {
+  modelsDirectoryPath: string | null;
+  defaultRaftHeightMm: number;
+  theme: string;
+  tagGenerationEnabled: boolean;
+  aiDescriptionEnabled: boolean;
+  tagGenerationProvider: string;
+  tagGenerationEndpoint: string;
+  tagGenerationModel: string;
+  tagGenerationTimeoutMs: number;
+  tagGenerationMaxTags: number;
+  tagGenerationMinConfidence: number;
 }
 
 export interface UpdateAppConfigRequest {
+  defaultRaftHeightMm: number;
+  theme: string;
+  tagGenerationEnabled: boolean;
+  aiDescriptionEnabled: boolean;
+  tagGenerationProvider: string;
+  tagGenerationEndpoint: string;
+  tagGenerationModel: string;
+  tagGenerationTimeoutMs: number;
+  tagGenerationMaxTags: number;
+  tagGenerationMinConfidence: number;
+}
+
+export interface InitialSetupRequest {
+  modelsDirectoryPath: string;
   defaultRaftHeightMm: number;
   theme: string;
   tagGenerationEnabled: boolean;
@@ -211,6 +246,33 @@ export async function updateAppConfig(request: UpdateAppConfigRequest): Promise<
     body: JSON.stringify(request),
   });
   if (!r.ok) throw new Error('Failed to update app settings');
+  return r.json();
+}
+
+export async function fetchSetupStatus(): Promise<SetupStatus> {
+  const r = await apiFetch('/api/settings/setup-status');
+  if (!r.ok) throw new Error('Failed to fetch setup status');
+  return r.json();
+}
+
+export async function fetchInitialSetupDefaults(): Promise<InitialSetupDefaults> {
+  const r = await apiFetch('/api/settings/setup-defaults');
+  if (!r.ok) throw new Error('Failed to fetch setup defaults');
+  return r.json();
+}
+
+export async function completeInitialSetup(request: InitialSetupRequest): Promise<AppConfig> {
+  const r = await apiFetch('/api/settings/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!r.ok) {
+    const message = await r.text();
+    throw new Error(message || 'Failed to complete setup');
+  }
+
   return r.json();
 }
 

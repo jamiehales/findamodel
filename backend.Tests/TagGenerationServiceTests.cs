@@ -183,6 +183,8 @@ public class TagGenerationServiceTests
             TagGenerationModel: "qwen2.5vl:7b",
             TagGenerationTimeoutMs: 60000,
             TagGenerationMaxTags: 12,
-            TagGenerationMinConfidence: 0.45f);
+            TagGenerationMinConfidence: 0.45f,
+            SetupCompleted: true,
+            ModelsDirectoryPath: "C:/models");
     }
 }

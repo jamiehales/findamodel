@@ -57,7 +57,7 @@ public class ModelServiceMetadataTests
         var loggerFactory = NullLoggerFactory.Instance;
         var configReader = new DirectoryConfigReader(loggerFactory);
         var metadataConfigService = new MetadataConfigService(configuration, loggerFactory, dbFactory, configReader);
-        var appConfigService = new AppConfigService(dbFactory);
+        var appConfigService = new AppConfigService(dbFactory, configuration);
 
         // These are not used in the tested code paths.
         ModelLoaderService loaderService = null!;

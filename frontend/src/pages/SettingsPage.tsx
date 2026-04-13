@@ -739,7 +739,7 @@ export default function SettingsPage() {
                         onChange={(e) => setTagGenerationEnabled(e.target.checked)}
                       />
                     }
-                    label="Enable tag generation"
+                    label="Enable AI tag generation"
                   />
                 </Stack>
 

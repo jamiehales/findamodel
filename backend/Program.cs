@@ -173,6 +173,10 @@ using (var scope = app.Services.CreateScope())
         db.Database.Migrate();
         db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
         db.Database.ExecuteSqlRaw("PRAGMA busy_timeout=10000;");
+
+        var setupConfig = db.AppConfigs.AsNoTracking().FirstOrDefault(c => c.Id == 1);
+        if (setupConfig?.SetupCompleted == true && !string.IsNullOrWhiteSpace(setupConfig.ModelsDirectoryPath))
+            app.Configuration["Models:DirectoryPath"] = setupConfig.ModelsDirectoryPath;
     }
     catch (Exception ex)
     {

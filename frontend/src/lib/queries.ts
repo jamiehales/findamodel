@@ -48,9 +48,15 @@ import {
   deleteMetadataDictionaryValue,
   fetchAppConfig,
   updateAppConfig,
+  fetchSetupStatus,
+  fetchInitialSetupDefaults,
+  completeInitialSetup,
   fetchApplicationLogs,
   fetchInstanceStats,
   type ApplicationLogsResponse,
+  type SetupStatus,
+  type InitialSetupDefaults,
+  type InitialSetupRequest,
   type InstanceStats,
   type UpdateAppConfigRequest,
   type UpdateModelMetadataRequest,
@@ -96,6 +102,8 @@ export const queryKeys = {
   filterOptions: (filter: ModelFilter) => ['query', 'options', filter] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
   appConfig: ['settings', 'config'] as const,
+  setupStatus: ['settings', 'setup-status'] as const,
+  setupDefaults: ['settings', 'setup-defaults'] as const,
   instanceStats: ['settings', 'stats'] as const,
   applicationLogs: (channel: string, severity: string, limit: number) =>
     ['settings', 'logs', channel, severity, limit] as const,
@@ -208,6 +216,22 @@ export function useAppConfig() {
   });
 }
 
+export function useSetupStatus() {
+  return useQuery<SetupStatus>({
+    queryKey: queryKeys.setupStatus,
+    queryFn: fetchSetupStatus,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useInitialSetupDefaults(enabled: boolean) {
+  return useQuery<InitialSetupDefaults>({
+    queryKey: queryKeys.setupDefaults,
+    queryFn: fetchInitialSetupDefaults,
+    enabled,
+  });
+}
+
 export function useApplicationLogs(channel: string, severity: string, limit: number) {
   return useQuery<ApplicationLogsResponse>({
     queryKey: queryKeys.applicationLogs(channel, severity, limit),
@@ -236,6 +260,17 @@ export function useUpdateAppConfig() {
     mutationFn: (request: UpdateAppConfigRequest) => updateAppConfig(request),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.appConfig, updated);
+    },
+  });
+}
+
+export function useCompleteInitialSetup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: InitialSetupRequest) => completeInitialSetup(request),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.appConfig, updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus });
     },
   });
 }

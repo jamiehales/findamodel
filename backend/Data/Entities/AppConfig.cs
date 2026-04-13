@@ -15,5 +15,9 @@ public class AppConfig
     public int TagGenerationMaxTags { get; set; } = 12;
     public float TagGenerationMinConfidence { get; set; } = 0.45f;
 
+    // Initial setup tracking
+    public bool SetupCompleted { get; set; } = false;
+    public string? ModelsDirectoryPath { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

@@ -2,6 +2,7 @@ using findamodel.Data;
 using findamodel.Data.Entities;
 using findamodel.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace findamodel.Tests;
@@ -26,12 +27,19 @@ public class AppConfigServiceTests
             => Task.FromResult(CreateDbContext());
     }
 
+    private static IConfiguration CreateConfiguration(Dictionary<string, string?>? values = null)
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+    }
+
     // ── GetDefaultRaftHeightMmAsync ───────────────────────────────────────────
 
     [Fact]
     public async Task GetDefaultRaftHeightMmAsync_ReturnsDefault_WhenDbEmpty()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(GetDefaultRaftHeightMmAsync_ReturnsDefault_WhenDbEmpty)));
+        var sut = new AppConfigService(CreateFactory(nameof(GetDefaultRaftHeightMmAsync_ReturnsDefault_WhenDbEmpty)), CreateConfiguration());
         var result = await sut.GetDefaultRaftHeightMmAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, result);
     }
@@ -45,7 +53,7 @@ public class AppConfigServiceTests
             seed.AppConfigs.Add(new AppConfig { Id = 1, DefaultRaftHeightMm = 3.5f });
             await seed.SaveChangesAsync();
         }
-        var sut = new AppConfigService(factory);
+        var sut = new AppConfigService(factory, CreateConfiguration());
         Assert.Equal(3.5f, await sut.GetDefaultRaftHeightMmAsync());
     }
 
@@ -54,7 +62,7 @@ public class AppConfigServiceTests
     [Fact]
     public async Task GetAsync_CreatesDefaultRecord_WhenDbIsEmpty()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(GetAsync_CreatesDefaultRecord_WhenDbIsEmpty)));
+        var sut = new AppConfigService(CreateFactory(nameof(GetAsync_CreatesDefaultRecord_WhenDbIsEmpty)), CreateConfiguration());
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
         Assert.False(dto.TagGenerationEnabled);
@@ -67,7 +75,7 @@ public class AppConfigServiceTests
     public async Task GetAsync_IsIdempotent_DoesNotCreateDuplicates()
     {
         var factory = CreateFactory(nameof(GetAsync_IsIdempotent_DoesNotCreateDuplicates));
-        var sut = new AppConfigService(factory);
+        var sut = new AppConfigService(factory, CreateConfiguration());
         await sut.GetAsync();
         await sut.GetAsync();
 
@@ -80,7 +88,7 @@ public class AppConfigServiceTests
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_PersistsNewValue()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_PersistsNewValue)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_PersistsNewValue)), CreateConfiguration());
         var dto = await sut.UpdateDefaultRaftHeightAsync(4f);
         Assert.Equal(4f, dto.DefaultRaftHeightMm);
 
@@ -91,7 +99,7 @@ public class AppConfigServiceTests
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_AcceptsZero()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_AcceptsZero)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_AcceptsZero)), CreateConfiguration());
         var dto = await sut.UpdateDefaultRaftHeightAsync(0f);
         Assert.Equal(0f, dto.DefaultRaftHeightMm);
     }
@@ -99,35 +107,35 @@ public class AppConfigServiceTests
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_ThrowsForNegativeValue()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNegativeValue)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNegativeValue)), CreateConfiguration());
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateDefaultRaftHeightAsync(-1f));
     }
 
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_ThrowsForNaN()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNaN)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNaN)), CreateConfiguration());
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateDefaultRaftHeightAsync(float.NaN));
     }
 
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_ThrowsForPositiveInfinity()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForPositiveInfinity)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForPositiveInfinity)), CreateConfiguration());
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateDefaultRaftHeightAsync(float.PositiveInfinity));
     }
 
     [Fact]
     public async Task UpdateDefaultRaftHeightAsync_ThrowsForNegativeInfinity()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNegativeInfinity)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateDefaultRaftHeightAsync_ThrowsForNegativeInfinity)), CreateConfiguration());
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateDefaultRaftHeightAsync(float.NegativeInfinity));
     }
 
     [Fact]
     public async Task UpdateAsync_PersistsTagGenerationSettings()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_PersistsTagGenerationSettings)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_PersistsTagGenerationSettings)), CreateConfiguration());
 
         var updated = await sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
@@ -152,7 +160,7 @@ public class AppConfigServiceTests
     [Fact]
     public async Task UpdateAsync_ThrowsForUnknownTagGenerationProvider()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsForUnknownTagGenerationProvider)));
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsForUnknownTagGenerationProvider)), CreateConfiguration());
 
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
@@ -165,5 +173,51 @@ public class AppConfigServiceTests
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f)));
+    }
+
+    [Fact]
+    public async Task GetSetupStatusAsync_RequiresWizard_WhenNoModelsPathConfigured()
+    {
+        var sut = new AppConfigService(
+            CreateFactory(nameof(GetSetupStatusAsync_RequiresWizard_WhenNoModelsPathConfigured)),
+            CreateConfiguration());
+
+        var status = await sut.GetSetupStatusAsync();
+
+        Assert.False(status.SetupCompleted);
+        Assert.True(status.RequiresWizard);
+    }
+
+    [Fact]
+    public async Task CompleteInitialSetupAsync_PersistsModelsPath_AndMarksSetupComplete()
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-setup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+        try
+        {
+            var sut = new AppConfigService(
+                CreateFactory(nameof(CompleteInitialSetupAsync_PersistsModelsPath_AndMarksSetupComplete)),
+                CreateConfiguration());
+
+            var updated = await sut.CompleteInitialSetupAsync(new(
+                ModelsDirectoryPath: modelsRoot,
+                DefaultRaftHeightMm: 2f,
+                Theme: "nord",
+                TagGenerationEnabled: true,
+                AiDescriptionEnabled: true,
+                TagGenerationProvider: "internal",
+                TagGenerationEndpoint: "http://localhost:11434",
+                TagGenerationModel: "qwen2.5vl:7b",
+                TagGenerationTimeoutMs: 60000,
+                TagGenerationMaxTags: 12,
+                TagGenerationMinConfidence: 0.45f));
+
+            Assert.True(updated.SetupCompleted);
+            Assert.Equal(Path.GetFullPath(modelsRoot), updated.ModelsDirectoryPath);
+        }
+        finally
+        {
+            Directory.Delete(modelsRoot, true);
+        }
     }
 }

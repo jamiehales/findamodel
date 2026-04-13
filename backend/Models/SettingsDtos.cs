@@ -10,9 +10,41 @@ public record AppConfigDto(
     string TagGenerationModel,
     int TagGenerationTimeoutMs,
     int TagGenerationMaxTags,
-    float TagGenerationMinConfidence);
+    float TagGenerationMinConfidence,
+    bool SetupCompleted,
+    string? ModelsDirectoryPath);
 
 public record UpdateAppConfigRequest(
+    float DefaultRaftHeightMm,
+    string Theme,
+    bool TagGenerationEnabled,
+    bool AiDescriptionEnabled,
+    string TagGenerationProvider,
+    string TagGenerationEndpoint,
+    string TagGenerationModel,
+    int TagGenerationTimeoutMs,
+    int TagGenerationMaxTags,
+    float TagGenerationMinConfidence);
+
+public record InitialSetupRequest(
+    string ModelsDirectoryPath,
+    float DefaultRaftHeightMm,
+    string Theme,
+    bool TagGenerationEnabled,
+    bool AiDescriptionEnabled,
+    string TagGenerationProvider,
+    string TagGenerationEndpoint,
+    string TagGenerationModel,
+    int TagGenerationTimeoutMs,
+    int TagGenerationMaxTags,
+    float TagGenerationMinConfidence);
+
+public record SetupStatusDto(
+    bool SetupCompleted,
+    bool RequiresWizard);
+
+public record InitialSetupDefaultsDto(
+    string? ModelsDirectoryPath,
     float DefaultRaftHeightMm,
     string Theme,
     bool TagGenerationEnabled,

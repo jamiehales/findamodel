@@ -20,6 +20,34 @@ public class SettingsController(
         return Ok(result);
     }
 
+    [HttpGet("setup-status")]
+    public async Task<ActionResult<SetupStatusDto>> GetSetupStatus()
+    {
+        var status = await appConfigService.GetSetupStatusAsync();
+        return Ok(status);
+    }
+
+    [HttpGet("setup-defaults")]
+    public async Task<ActionResult<InitialSetupDefaultsDto>> GetSetupDefaults()
+    {
+        var result = await appConfigService.GetInitialSetupDefaultsAsync();
+        return Ok(result);
+    }
+
+    [HttpPost("setup")]
+    public async Task<ActionResult<AppConfigDto>> CompleteSetup([FromBody] InitialSetupRequest request)
+    {
+        try
+        {
+            var result = await appConfigService.CompleteInitialSetupAsync(request);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpPut("config")]
     public async Task<ActionResult<AppConfigDto>> UpdateConfig([FromBody] UpdateAppConfigRequest request)
     {

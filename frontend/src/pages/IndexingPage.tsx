@@ -373,6 +373,7 @@ export default function IndexingPage() {
   const selectedRun = runsWithLive.find((run) => run.id === selectedRunId);
   const effectiveRunId =
     selectedRun && selectedRun.status !== 'queued' ? selectedRunId : defaultSelectedRunId;
+  const hasRunnableSelection = !!effectiveRunId;
   const [filesPage, setFilesPage] = useState(1);
   const [eventsPage, setEventsPage] = useState(1);
 
@@ -476,11 +477,11 @@ export default function IndexingPage() {
         </Paper>
 
         <Stack className={styles.mainPanel}>
-          {isRunPending && <LoadingView />}
-          {!isRunPending && isRunError && (
+          {hasRunnableSelection && isRunPending && <LoadingView />}
+          {hasRunnableSelection && !isRunPending && isRunError && (
             <ErrorView message="Failed to load the selected index run detail." />
           )}
-          {!isRunPending && !isRunError && runDetail && (
+          {hasRunnableSelection && !isRunPending && !isRunError && runDetail && (
             <RunDetailWithPaging
               detail={runDetail}
               onGoToFiles={(page) => setFilesPage(page)}
