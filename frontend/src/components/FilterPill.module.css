@@ -1,0 +1,50 @@
+.pill {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.26rem 0.58rem;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 192, 208, 0.35);
+  background: rgba(76, 86, 106, 0.5);
+  white-space: nowrap;
+  color: #eceff4;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.pill:hover {
+  border-color: rgba(136, 192, 208, 0.55);
+  background: rgba(76, 86, 106, 0.68);
+}
+
+.standard {
+  color: #eceff4;
+}
+
+.supported {
+  color: #8fdb9b;
+  border-color: rgba(76, 175, 80, 0.45);
+}
+
+.unsupported {
+  color: #ffb0b0;
+  border-color: rgba(229, 115, 115, 0.45);
+}
+
+.ai {
+  color: #c9d1d9;
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(71, 85, 105, 0.42);
+}
+
+.user {
+  color: #e5e9f0;
+  border-color: rgba(136, 192, 208, 0.35);
+}

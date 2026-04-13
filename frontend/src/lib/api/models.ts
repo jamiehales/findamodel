@@ -31,6 +31,12 @@ export interface Model {
   collection: string | null;
   subcollection: string | null;
   tags: string[];
+  generatedTags: string[];
+  generatedTagConfidence: Record<string, number>;
+  generatedTagsStatus: string;
+  generatedTagsAt: string | null;
+  generatedTagsError: string | null;
+  generatedTagsModel: string | null;
   generatedDescription: string | null;
   category: string | null;
   type: string | null;

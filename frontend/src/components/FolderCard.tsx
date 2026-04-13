@@ -5,14 +5,17 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import type { ExplorerFolder } from '../lib/api';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AppDialog from './AppDialog';
 import MetadataEditor from './MetadataEditor';
 import AppCard from './AppCard';
 import CodeTooltip from './CodeTooltip';
+import FilterPill from './FilterPill';
 import styles from './FolderCard.module.css';
 import { Stack } from '@mui/material';
 import { useIndexFolder, useIsFolderIndexing } from '../lib/queries';
 import { SHARED_FIELDS } from './metadata/fieldDefs';
+import { appendFilterValue } from '../lib/modelFilterNavigation';
 
 interface Props {
   folder: ExplorerFolder;
@@ -64,11 +67,22 @@ function MetaBadge({
 
 function FolderCard({ folder, href }: Props) {
   const [editorOpen, setEditorOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
   const rv = folder.resolvedValues;
   const lv = folder.localValues;
   const localRuleFields = new Set((folder.localRuleFields ?? []).map((f) => f.toLowerCase()));
   const indexFolder = useIndexFolder(folder.path);
   const indexingState = useIsFolderIndexing(folder.path);
+  const resolvedTags = rv.tags ?? [];
+
+  function onTagClick(e: React.MouseEvent, tag: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceSearch = location.pathname === '/' ? location.search : '';
+    const nextSearch = appendFilterValue(sourceSearch, 'tags', tag);
+    navigate({ pathname: '/', search: nextSearch ? `?${nextSearch}` : '' });
+  }
 
   function getSource(localValue: unknown, resolvedValue: unknown, ruleKey: string): MetaSource {
     const hasLocalRule = localRuleFields.has(ruleKey.toLowerCase());
@@ -183,6 +197,17 @@ function FolderCard({ folder, href }: Props) {
             `${folder.modelCount} model${folder.modelCount !== 1 ? 's' : ''}`}
           {folder.subdirectoryCount === 0 && folder.modelCount === 0 && 'Empty'}
         </Typography>
+
+        {resolvedTags.length > 0 && (
+          <Stack direction="row" spacing={0.5} flexWrap="wrap" className={styles.tagRow}>
+            {resolvedTags.slice(0, 8).map((tag) => (
+              <FilterPill key={tag} label={tag} tone="user" onClick={(e) => onTagClick(e, tag)} />
+            ))}
+            {resolvedTags.length > 8 && (
+              <span className={styles.tagOverflow}>+{resolvedTags.length - 8}</span>
+            )}
+          </Stack>
+        )}
 
         {/* Resolved metadata badges */}
         <Stack direction="column" spacing={1} textAlign="center" width="100%">

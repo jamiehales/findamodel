@@ -262,6 +262,7 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
         <TagEditor
           localTags={form.tags}
           inheritedTags={detail?.inheritedValues?.tags ?? null}
+          aiTags={model.generatedTags ?? []}
           tagOptions={[
             ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
             ...(metadataDictionary?.tags.observed ?? []),

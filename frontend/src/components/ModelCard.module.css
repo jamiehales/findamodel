@@ -51,9 +51,14 @@
   z-index: 2;
 }
 
-.chipRow {
+.pillRow {
   margin-top: -10px;
   padding-bottom: 0.25rem;
+}
+
+.userTagRow {
+  margin-top: 0.15rem;
+  padding-bottom: 1.85rem;
 }
 
 .name {

@@ -1,3 +1,11 @@
 .inheritedChip {
-  opacity: 0.5;
+  color: rgba(226, 232, 240, 0.9) !important;
+  border-color: rgba(203, 213, 225, 0.45) !important;
+  background: rgba(148, 163, 184, 0.16) !important;
+}
+
+.aiChip {
+  color: rgba(203, 213, 225, 0.92) !important;
+  border-color: rgba(100, 116, 139, 0.55) !important;
+  background: rgba(71, 85, 105, 0.2) !important;
 }
