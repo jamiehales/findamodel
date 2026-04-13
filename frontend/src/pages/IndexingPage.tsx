@@ -6,7 +6,7 @@ import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   IndexFlags,
   type IndexRunDetail,
@@ -20,27 +20,29 @@ import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './IndexingPage.module.css';
 
+function parseApiDate(value: string): Date {
+  const trimmed = value.trim();
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed);
+  const looksIsoWithoutZone = /^\d{4}-\d{2}-\d{2}T/.test(trimmed) && !hasExplicitTimezone;
+  return new Date(looksIsoWithoutZone ? `${trimmed}Z` : trimmed);
+}
+
+function parseApiTimeMs(value: string | null): number | null {
+  if (!value) return null;
+  const ms = parseApiDate(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '-';
-
-  // Keep displayed wall-clock time aligned with server-provided timestamp text,
-  // instead of letting browser timezone conversion shift the value.
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-  if (match) {
-    const [, year, month, day, hourText, minute, second] = match;
-    const hour24 = Number.parseInt(hourText, 10);
-    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-    const amPm = hour24 >= 12 ? 'PM' : 'AM';
-    return `${month}/${day}/${year}, ${hour12}:${minute}:${second} ${amPm}`;
-  }
-
-  return new Date(value).toLocaleString();
+  return parseApiDate(value).toLocaleString();
 }
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  if (!startedAt) return '-';
-  const start = new Date(startedAt).getTime();
-  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const start = parseApiTimeMs(startedAt);
+  if (start == null) return '-';
+  const completed = parseApiTimeMs(completedAt);
+  const end = completed ?? Date.now();
   const seconds = Math.max(0, Math.floor((end - start) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -120,23 +122,13 @@ function resolveFileDurationMs(file: unknown, run: IndexRunSummary): number | nu
   if (rawDuration != null && Number.isFinite(rawDuration)) return rawDuration;
 
   if (typeof record.processedAt === 'string' && run.startedAt) {
-    const processedAtMs = new Date(record.processedAt).getTime();
-    const startedAtMs = new Date(run.startedAt).getTime();
-    if (
-      Number.isFinite(processedAtMs) &&
-      Number.isFinite(startedAtMs) &&
-      processedAtMs >= startedAtMs
-    )
+    const processedAtMs = parseApiTimeMs(record.processedAt);
+    const startedAtMs = parseApiTimeMs(run.startedAt);
+    if (processedAtMs != null && startedAtMs != null && processedAtMs >= startedAtMs)
       return processedAtMs - startedAtMs;
   }
 
   return null;
-}
-
-function formatRunProcessingTime(run: IndexRunSummary): string {
-  if (run.startedAt) return formatDuration(run.startedAt, run.completedAt);
-  if (run.status === 'running' && run.requestedAt) return formatDuration(run.requestedAt, null);
-  return '-';
 }
 
 function flagsLabel(flags: number): string {
@@ -174,24 +166,23 @@ function RunSummaryCard({
   onSelect: () => void;
 }) {
   const [, setTick] = useState(0);
-  const firstSeenAtMsRef = useRef<number>(Date.now());
+
   useEffect(() => {
+    if (run.status !== 'running' || !run.startedAt) return;
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [run.status, run.startedAt]);
 
   const total = run.totalFiles ?? 0;
   const percent = total > 0 ? Math.round((run.processedFiles / total) * 100) : 0;
-  const runtimeLabel = (() => {
-    if (run.status !== 'running') return formatRunProcessingTime(run);
-
-    const serverStart = run.startedAt ?? run.requestedAt;
-    if (!serverStart) return formatElapsedMs(Date.now() - firstSeenAtMsRef.current);
-
-    const serverElapsedMs = Date.now() - new Date(serverStart).getTime();
-    const localElapsedMs = Date.now() - firstSeenAtMsRef.current;
-    return formatElapsedMs(Math.max(0, serverElapsedMs, localElapsedMs));
-  })();
+  const processingTimeLabel =
+    run.status === 'running' && run.startedAt
+      ? formatElapsedMs(Date.now() - (parseApiTimeMs(run.startedAt) ?? Date.now()))
+      : null;
+  const durationLabel =
+    run.status !== 'running' && run.startedAt && run.completedAt
+      ? formatDuration(run.startedAt, run.completedAt)
+      : null;
 
   return (
     <button
@@ -212,9 +203,16 @@ function RunSummaryCard({
         <Typography variant="caption" color="text.secondary">
           Requested {formatDate(run.requestedAt)}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Processing time {runtimeLabel}
-        </Typography>
+        {processingTimeLabel && (
+          <Typography variant="caption" color="text.secondary">
+            Processing time {processingTimeLabel}
+          </Typography>
+        )}
+        {durationLabel && (
+          <Typography variant="caption" color="text.secondary">
+            Duration {durationLabel}
+          </Typography>
+        )}
         {run.totalFiles != null && (
           <>
             <LinearProgress
@@ -637,7 +635,7 @@ function RunDetailWithPaging({
             {pagedEventsItems.map((event, index) => (
               <Stack key={`${event.createdAt}-${index}`} spacing={0.2} className={styles.logRow}>
                 <Typography variant="caption" className={styles.logMeta}>
-                  [{new Date(event.createdAt).toLocaleTimeString()}] {event.level.toUpperCase()}
+                  [{parseApiDate(event.createdAt).toLocaleTimeString()}] {event.level.toUpperCase()}
                   {event.relativePath ? ` • ${event.relativePath}` : ''}
                 </Typography>
                 <Typography variant="body2">{event.message}</Typography>
