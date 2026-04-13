@@ -41,3 +41,24 @@
 .chipsWrap {
   flex-wrap: wrap;
 }
+
+.statsGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.statsCard {
+  padding: 16px;
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 12px;
+}
+
+.statRow {
+  align-items: flex-start;
+}
+
+.statValue {
+  text-align: right;
+  overflow-wrap: anywhere;
+}

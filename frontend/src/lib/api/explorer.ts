@@ -132,6 +132,26 @@ export interface ApplicationLogsResponse {
   availableSeverities: string[];
 }
 
+export interface InstanceStats {
+  applicationVersion: string;
+  environment: string;
+  frameworkVersion: string;
+  operatingSystem: string;
+  previewGenerationVersion: number;
+  hullGenerationVersion: number;
+  previewGpuEnabled: boolean;
+  previewGpuAvailable: boolean;
+  internalLlmGpuEnabled: boolean;
+  internalLlmGpuLayerCount: number;
+  modelCount: number;
+  modelsWithPreviews: number;
+  modelsWithGeneratedTags: number;
+  modelsWithGeneratedDescriptions: number;
+  directoryConfigCount: number;
+  printingListCount: number;
+  metadataDictionaryValueCount: number;
+}
+
 export async function fetchExplorer(path: string): Promise<ExplorerResponse> {
   const url = `/api/explorer?path=${encodeURIComponent(path)}`;
   const r = await apiFetch(url);
@@ -243,5 +263,11 @@ export async function fetchApplicationLogs({
 
   const r = await apiFetch(`/api/settings/logs?${params.toString()}`);
   if (!r.ok) throw new Error('Failed to fetch application logs');
+  return r.json();
+}
+
+export async function fetchInstanceStats(): Promise<InstanceStats> {
+  const r = await apiFetch('/api/settings/stats');
+  if (!r.ok) throw new Error('Failed to fetch instance stats');
   return r.json();
 }

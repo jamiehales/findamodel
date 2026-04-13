@@ -10,6 +10,7 @@ namespace findamodel.Controllers;
 public class SettingsController(
     MetadataDictionaryService metadataDictionaryService,
     AppConfigService appConfigService,
+    InstanceStatsService instanceStatsService,
     ApplicationLogBuffer applicationLogBuffer) : ControllerBase
 {
     [HttpGet("config")]
@@ -37,6 +38,13 @@ public class SettingsController(
     public async Task<ActionResult<MetadataDictionaryOverviewDto>> GetMetadataDictionary()
     {
         var result = await metadataDictionaryService.GetOverviewAsync();
+        return Ok(result);
+    }
+
+    [HttpGet("stats")]
+    public async Task<ActionResult<InstanceStatsDto>> GetStats()
+    {
+        var result = await instanceStatsService.GetAsync();
         return Ok(result);
     }
 

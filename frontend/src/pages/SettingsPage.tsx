@@ -18,11 +18,12 @@ import {
   useAppConfig,
   useCreateMetadataDictionaryValue,
   useDeleteMetadataDictionaryValue,
+  useInstanceStats,
   useMetadataDictionaryOverview,
   useUpdateAppConfig,
   useUpdateMetadataDictionaryValue,
 } from '../lib/queries';
-import type { MetadataDictionaryField } from '../lib/api';
+import type { InstanceStats, MetadataDictionaryField } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
@@ -146,8 +147,111 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
   );
 }
 
+function formatEnabled(value: boolean): string {
+  return value ? 'Enabled' : 'Disabled';
+}
+
+function formatAvailability(value: boolean): string {
+  return value ? 'Available' : 'Unavailable';
+}
+
+function StatsGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; value: string | number }>;
+}) {
+  return (
+    <Stack spacing={1} className={styles.statsCard}>
+      <Typography variant="h6">{title}</Typography>
+      <Stack spacing={1}>
+        {rows.map((row) => (
+          <Stack
+            key={row.label}
+            direction="row"
+            spacing={2}
+            justifyContent="space-between"
+            className={styles.statRow}
+          >
+            <Typography color="text.secondary">{row.label}</Typography>
+            <Typography className={styles.statValue}>{row.value}</Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Stack>
+  );
+}
+
+function InstanceStatsSection({
+  stats,
+  isPending,
+  isError,
+}: {
+  stats: InstanceStats | undefined;
+  isPending: boolean;
+  isError: boolean;
+}) {
+  return (
+    <Stack spacing={2} className={styles.globalSettingsSection}>
+      <Typography variant="h5">Instance Stats</Typography>
+      {isPending && <Typography color="text.secondary">Loading instance stats...</Typography>}
+      {isError && <Typography color="error">Failed to load instance stats.</Typography>}
+      {!isPending && !isError && stats && (
+        <Stack className={styles.statsGrid}>
+          <StatsGroup
+            title="Runtime"
+            rows={[
+              { label: 'App version', value: stats.applicationVersion },
+              { label: 'Environment', value: stats.environment },
+              { label: '.NET runtime', value: stats.frameworkVersion },
+              { label: 'Operating system', value: stats.operatingSystem },
+            ]}
+          />
+          <StatsGroup
+            title="Rendering"
+            rows={[
+              { label: 'Preview GPU', value: formatEnabled(stats.previewGpuEnabled) },
+              { label: 'GPU availability', value: formatAvailability(stats.previewGpuAvailable) },
+              { label: 'Preview version', value: stats.previewGenerationVersion },
+              { label: 'Hull version', value: stats.hullGenerationVersion },
+            ]}
+          />
+          <StatsGroup
+            title="AI"
+            rows={[
+              { label: 'Internal LLM GPU', value: formatEnabled(stats.internalLlmGpuEnabled) },
+              { label: 'GPU layers', value: stats.internalLlmGpuLayerCount },
+              { label: 'Models with AI tags', value: stats.modelsWithGeneratedTags },
+              {
+                label: 'Models with AI descriptions',
+                value: stats.modelsWithGeneratedDescriptions,
+              },
+            ]}
+          />
+          <StatsGroup
+            title="Database"
+            rows={[
+              { label: 'Models in database', value: stats.modelCount },
+              { label: 'Models with previews', value: stats.modelsWithPreviews },
+              { label: 'Directory configs', value: stats.directoryConfigCount },
+              { label: 'Printing lists', value: stats.printingListCount },
+              { label: 'Metadata dictionary values', value: stats.metadataDictionaryValueCount },
+            ]}
+          />
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 export default function SettingsPage() {
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
+  const {
+    data: instanceStats,
+    isPending: instanceStatsPending,
+    isError: instanceStatsError,
+  } = useInstanceStats();
   const updateAppConfigMutation = useUpdateAppConfig();
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
@@ -391,6 +495,12 @@ export default function SettingsPage() {
         <FieldSection field="material" data={data.material} />
         <FieldSection field="tags" data={data.tags} />
       </Stack>
+
+      <InstanceStatsSection
+        stats={instanceStats}
+        isPending={instanceStatsPending}
+        isError={instanceStatsError}
+      />
     </PageLayout>
   );
 }

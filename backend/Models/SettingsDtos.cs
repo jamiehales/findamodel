@@ -35,3 +35,22 @@ public record ApplicationLogsResponseDto(
     IReadOnlyList<ApplicationLogEntryDto> Entries,
     IReadOnlyList<string> AvailableChannels,
     IReadOnlyList<string> AvailableSeverities);
+
+public record InstanceStatsDto(
+    string ApplicationVersion,
+    string Environment,
+    string FrameworkVersion,
+    string OperatingSystem,
+    int PreviewGenerationVersion,
+    int HullGenerationVersion,
+    bool PreviewGpuEnabled,
+    bool PreviewGpuAvailable,
+    bool InternalLlmGpuEnabled,
+    int InternalLlmGpuLayerCount,
+    int ModelCount,
+    int ModelsWithPreviews,
+    int ModelsWithGeneratedTags,
+    int ModelsWithGeneratedDescriptions,
+    int DirectoryConfigCount,
+    int PrintingListCount,
+    int MetadataDictionaryValueCount);

@@ -43,7 +43,9 @@ import {
   fetchAppConfig,
   updateAppConfig,
   fetchApplicationLogs,
+  fetchInstanceStats,
   type ApplicationLogsResponse,
+  type InstanceStats,
   type UpdateAppConfigRequest,
   type UpdateModelMetadataRequest,
 } from './api';
@@ -87,6 +89,7 @@ export const queryKeys = {
   filterOptions: (filter: ModelFilter) => ['query', 'options', filter] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
   appConfig: ['settings', 'config'] as const,
+  instanceStats: ['settings', 'stats'] as const,
   applicationLogs: (channel: string, severity: string, limit: number) =>
     ['settings', 'logs', channel, severity, limit] as const,
 };
@@ -207,6 +210,14 @@ export function useApplicationLogs(channel: string, severity: string, limit: num
       }),
     refetchInterval: 5000,
     placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useInstanceStats() {
+  return useQuery<InstanceStats>({
+    queryKey: queryKeys.instanceStats,
+    queryFn: fetchInstanceStats,
+    staleTime: 60 * 1000,
   });
 }
 
