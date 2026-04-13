@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Pagination from '@mui/material/Pagination';
 import Stack from '@mui/material/Stack';
 import { useModels, useQueryModels } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
@@ -16,11 +16,18 @@ interface Props {
 }
 
 function FilteredGrid({ filter }: { filter: ModelFilter }) {
-  const [limit, setLimit] = useState(PAGE_SIZE);
-  const { data, isPending, isError } = useQueryModels(filter, limit);
+  const [page, setPage] = useState(1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter]);
 
   if (isPending) return <LoadingState />;
   if (isError || !data || data.models.length === 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(data.totalCount / PAGE_SIZE));
 
   return (
     <Box className={styles.container}>
@@ -29,11 +36,14 @@ function FilteredGrid({ filter }: { filter: ModelFilter }) {
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}
       </CardGrid>
-      {data.hasMore && (
+      {totalPages > 1 && (
         <Stack alignItems="center" paddingTop={2}>
-          <Button variant="outlined" onClick={() => setLimit((l) => l + PAGE_SIZE)}>
-            Show more
-          </Button>
+          <Pagination
+            color="primary"
+            count={totalPages}
+            page={page}
+            onChange={(_event, value) => setPage(value)}
+          />
         </Stack>
       )}
     </Box>

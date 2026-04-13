@@ -85,7 +85,8 @@ export const queryKeys = {
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
-  queryModels: (filter: ModelFilter, limit: number) => ['query', 'models', filter, limit] as const,
+  queryModels: (filter: ModelFilter, limit: number, offset: number) =>
+    ['query', 'models', filter, limit, offset] as const,
   filterOptions: (filter: ModelFilter) => ['query', 'options', filter] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
   appConfig: ['settings', 'config'] as const,
@@ -169,10 +170,11 @@ export function useModelOtherParts(id: string) {
   });
 }
 
-export function useQueryModels(filter: ModelFilter, limit: number) {
+export function useQueryModels(filter: ModelFilter, limit: number, offset: number) {
   return useQuery({
-    queryKey: queryKeys.queryModels(filter, limit),
-    queryFn: () => fetchQueryModels(filter, limit),
+    queryKey: queryKeys.queryModels(filter, limit, offset),
+    queryFn: () => fetchQueryModels(filter, limit, offset),
+    placeholderData: (previousData) => previousData,
   });
 }
 
