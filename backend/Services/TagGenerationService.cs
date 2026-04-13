@@ -28,38 +28,51 @@ public class TagGenerationService(
             return null;
 
         var appConfig = await appConfigService.GetAsync();
-        if (!appConfig.TagGenerationEnabled)
+        var generateTags = appConfig.TagGenerationEnabled;
+        var generateDescription = appConfig.AiDescriptionEnabled;
+        if (!generateTags && !generateDescription)
         {
-            _logger.LogDebug("Tag generation skipped for model {ModelId}: TagGenerationEnabled=false", model.Id);
-            return await PersistFailure(model, "Tag generation is disabled in settings.", db, ct);
+            _logger.LogDebug("AI generation skipped for model {ModelId}: both tag and description generation are disabled", model.Id);
+            return await PersistFailure(model, "AI generation is disabled in settings.", db, ct);
         }
 
-        var schemaTags = await db.MetadataDictionaryValues
-            .AsNoTracking()
-            .Where(v => v.Field == "tags")
-            .OrderBy(v => v.Value)
-            .Select(v => v.Value)
-            .ToListAsync(ct);
-
-        var allowedTags = TagListHelper.Normalize(schemaTags);
-        if (allowedTags.Count == 0)
+        List<string> allowedTags = [];
+        if (generateTags)
         {
-            _logger.LogDebug("Tag generation skipped for model {ModelId}: no configured schema tags", model.Id);
-            return await PersistFailure(model, "No configured tag schema values exist in settings.", db, ct);
+            var schemaTags = await db.MetadataDictionaryValues
+                .AsNoTracking()
+                .Where(v => v.Field == "tags")
+                .OrderBy(v => v.Value)
+                .Select(v => v.Value)
+                .ToListAsync(ct);
+
+            allowedTags = TagListHelper.Normalize(schemaTags);
+            if (allowedTags.Count == 0)
+            {
+                _logger.LogDebug("Tag generation skipped for model {ModelId}: no configured schema tags", model.Id);
+                return await PersistFailure(model, "No configured tag schema values exist in settings.", db, ct);
+            }
         }
 
-        var expectedChecksum = ComputeGenerationChecksum(model, appConfig, allowedTags);
+        var expectedChecksum = generateTags
+            ? ComputeGenerationChecksum(model, appConfig, allowedTags)
+            : null;
         _logger.LogDebug(
-            "Tag generation starting for model {ModelId}: provider={Provider}, model={ModelName}, schemaCount={SchemaCount}, checksum={Checksum}",
+            "AI generation starting for model {ModelId}: provider={Provider}, model={ModelName}, generateTags={GenerateTags}, generateDescription={GenerateDescription}, schemaCount={SchemaCount}, checksum={Checksum}",
             model.Id,
             appConfig.TagGenerationProvider,
             appConfig.TagGenerationModel,
+            generateTags,
+            generateDescription,
             allowedTags.Count,
             expectedChecksum);
 
-        model.GeneratedTagsStatus = "pending";
-        model.GeneratedTagsError = null;
-        await db.SaveChangesAsync(ct);
+        if (generateTags)
+        {
+            model.GeneratedTagsStatus = "pending";
+            model.GeneratedTagsError = null;
+            await db.SaveChangesAsync(ct);
+        }
 
         var provider = providerResolver.Resolve(appConfig.TagGenerationProvider);
         var providerSettings = new LocalLlmProviderSettings(
@@ -71,47 +84,59 @@ public class TagGenerationService(
 
         try
         {
-            var request = BuildTagRequest(model, allowedTags, appConfig.TagGenerationMaxTags, previewPath);
-            var response = await provider.GenerateAsync(providerSettings, request, ct);
+            LocalLlmResponse? tagResponse = null;
+            List<string> generatedTags = [];
+            Dictionary<string, float> generatedConfidence = new(StringComparer.OrdinalIgnoreCase);
 
-            var filtered = FilterTags(response, allowedTags, appConfig.TagGenerationMinConfidence, appConfig.TagGenerationMaxTags);
+            if (generateTags)
+            {
+                var request = BuildTagRequest(model, allowedTags, appConfig.TagGenerationMaxTags, previewPath);
+                tagResponse = await provider.GenerateAsync(providerSettings, request, ct);
 
-            model.GeneratedTagsJson = TagListHelper.ToJsonOrNull(filtered.Tags);
-            model.GeneratedTagsConfidenceJson = filtered.Confidence.Count == 0
-                ? null
-                : JsonSerializer.Serialize(filtered.Confidence);
-            model.GeneratedTagsModel = response.Model;
-            model.GeneratedTagsAt = DateTime.UtcNow;
-            model.GeneratedTagsChecksum = expectedChecksum;
-            model.GeneratedTagsStatus = "success";
-            model.GeneratedTagsError = null;
+                var filtered = FilterTags(tagResponse, allowedTags, appConfig.TagGenerationMinConfidence, appConfig.TagGenerationMaxTags);
+                generatedTags = [.. filtered.Tags];
+                generatedConfidence = new Dictionary<string, float>(filtered.Confidence, StringComparer.OrdinalIgnoreCase);
 
-            var descriptionRequest = BuildDescriptionRequest(model, previewPath);
-            var descriptionResponse = await provider.GenerateAsync(providerSettings, descriptionRequest, ct);
-            var normalizedDescription = NormalizeDescription(descriptionResponse.Description);
-            model.GeneratedDescription = normalizedDescription;
-            model.GeneratedDescriptionModel = descriptionResponse.Model;
-            model.GeneratedDescriptionAt = DateTime.UtcNow;
-            model.GeneratedDescriptionChecksum = expectedDescriptionChecksum;
+                model.GeneratedTagsJson = TagListHelper.ToJsonOrNull(filtered.Tags);
+                model.GeneratedTagsConfidenceJson = filtered.Confidence.Count == 0
+                    ? null
+                    : JsonSerializer.Serialize(filtered.Confidence);
+                model.GeneratedTagsModel = tagResponse.Model;
+                model.GeneratedTagsAt = DateTime.UtcNow;
+                model.GeneratedTagsChecksum = expectedChecksum;
+                model.GeneratedTagsStatus = "success";
+                model.GeneratedTagsError = null;
+            }
+
+            if (generateDescription)
+            {
+                var descriptionRequest = BuildDescriptionRequest(model, previewPath);
+                var descriptionResponse = await provider.GenerateAsync(providerSettings, descriptionRequest, ct);
+                var normalizedDescription = NormalizeDescription(descriptionResponse.Description);
+                model.GeneratedDescription = normalizedDescription;
+                model.GeneratedDescriptionModel = descriptionResponse.Model;
+                model.GeneratedDescriptionAt = DateTime.UtcNow;
+                model.GeneratedDescriptionChecksum = expectedDescriptionChecksum;
+            }
 
             await db.SaveChangesAsync(ct);
 
             _logger.LogInformation(
-                "Generated {TagCount} tags for model {ModelId} using provider {Provider} ({Model})",
-                filtered.Tags.Count,
+                "Generated AI artifacts for model {ModelId} using provider {Provider}: tags={TagsEnabled}, description={DescriptionEnabled}",
                 model.Id,
                 provider.Name,
-                response.Model);
+                generateTags,
+                generateDescription);
 
             return new GeneratedTagsResultDto(
                 model.Id,
-                model.GeneratedTagsStatus ?? "success",
-                filtered.Tags,
-                filtered.Confidence,
+                generateTags ? model.GeneratedTagsStatus ?? "success" : "success",
+                generatedTags,
+                generatedConfidence,
                 null,
                 model.GeneratedTagsAt,
                 provider.Name,
-                response.Model);
+                tagResponse?.Model ?? model.GeneratedDescriptionModel);
         }
         catch (Exception ex)
         {
@@ -276,7 +301,7 @@ public class TagGenerationService(
 
     internal static bool NeedsDescriptionRegeneration(CachedModel model, AppConfigDto appConfig)
     {
-        if (!appConfig.TagGenerationEnabled)
+        if (!appConfig.AiDescriptionEnabled)
             return false;
 
         var expected = ComputeDescriptionChecksum(model, appConfig);

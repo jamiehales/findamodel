@@ -25,6 +25,7 @@ public class IndexerService(
     private static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(7);
     private readonly SemaphoreSlim _singleRequestGate = new(1, 1);
     private IndexEntry? _current;
+    private CancellationTokenSource? _currentCancellation;
     private Task? _processingTask;
 
     /// <summary>
@@ -119,6 +120,38 @@ public class IndexerService(
         }
     }
 
+    public async Task<bool> CancelAsync(Guid requestOrRunId)
+    {
+        IndexEntry? queuedMatch = null;
+        CancellationTokenSource? currentCancellation = null;
+
+        lock (_lock)
+        {
+            queuedMatch = _queue.FirstOrDefault(e => MatchesRequest(e, requestOrRunId));
+            if (queuedMatch is not null)
+            {
+                _queue.Remove(queuedMatch.Node!);
+            }
+            else if (_current is not null && MatchesRequest(_current, requestOrRunId))
+            {
+                currentCancellation = _currentCancellation;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        if (queuedMatch is not null)
+        {
+            await UpsertCancelledQueuedRunAsync(queuedMatch);
+            return true;
+        }
+
+        currentCancellation?.Cancel();
+        return true;
+    }
+
     public async Task<IReadOnlyList<IndexRunSummaryDto>> GetHistoryAsync(int days = 7, int limit = 250)
     {
         var retentionCutoff = DateTime.UtcNow.AddDays(-Math.Max(1, days));
@@ -201,29 +234,37 @@ public class IndexerService(
         return null;
     }
 
+    private static bool MatchesRequest(IndexEntry entry, Guid requestOrRunId) =>
+        entry.Id == requestOrRunId || entry.RunId == requestOrRunId;
+
     private async Task ProcessQueueAsync()
     {
         while (true)
         {
             IndexEntry entry;
+            CancellationTokenSource requestCancellation;
             lock (_lock)
             {
                 if (_queue.Count == 0)
                 {
                     _current = null;
+                    _currentCancellation?.Dispose();
+                    _currentCancellation = null;
                     _processingTask = null;
                     return;
                 }
                 entry = _queue.First!.Value;
                 _queue.RemoveFirst();
                 _current = entry;
+                requestCancellation = new CancellationTokenSource();
+                _currentCancellation = requestCancellation;
             }
 
             await _singleRequestGate.WaitAsync();
             CompletedIndexEntry completed;
             try
             {
-                completed = await ProcessRequestAsync(entry);
+                completed = await ProcessRequestAsync(entry, requestCancellation.Token);
             }
             finally
             {
@@ -233,6 +274,8 @@ public class IndexerService(
             lock (_lock)
             {
                 _current = null;
+                _currentCancellation?.Dispose();
+                _currentCancellation = null;
                 _recent.AddFirst(completed);
                 while (_recent.Count > RecentLimit)
                     _recent.RemoveLast();
@@ -240,7 +283,7 @@ public class IndexerService(
         }
     }
 
-    private async Task<CompletedIndexEntry> ProcessRequestAsync(IndexEntry entry)
+    private async Task<CompletedIndexEntry> ProcessRequestAsync(IndexEntry entry, CancellationToken cancellationToken)
     {
         var label = entry.RelativeModelPath is not null
             ? $"model:{entry.RelativeModelPath}"
@@ -249,11 +292,7 @@ public class IndexerService(
         var completedAt = startedAt;
         var outcome = "success";
         string? error = null;
-
-        await CleanupOldRunsAsync();
-        await CreateRunAsync(entry, startedAt);
-
-        logger.LogInformation("IndexerService: starting {Flags} for {Target}", entry.Flags, label);
+        var runRecordCreated = false;
 
         var progressReporter = new RunProgressReporter(
             dbFactory,
@@ -267,40 +306,67 @@ public class IndexerService(
                 }
             });
 
-        await progressReporter.OnLogAsync("info", $"Starting run for {label}");
-
         try
         {
+            await CreateRunAsync(entry, startedAt, cancellationToken);
+            runRecordCreated = true;
+            await CleanupOldRunsAsync(cancellationToken);
+
+            logger.LogInformation("IndexerService: starting {Flags} for {Target}", entry.Flags, label);
+            await progressReporter.OnLogAsync("info", $"Starting run for {label}");
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (entry.Flags.HasFlag(IndexFlags.Directories))
             {
                 await progressReporter.OnLogAsync("info", "Syncing directory configs");
                 await metadataConfigService.SyncDirectoryConfigsAsync();
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             if (entry.Flags.HasFlag(IndexFlags.Models))
             {
                 await progressReporter.OnLogAsync("info", "Scanning model files");
                 if (entry.RelativeModelPath is not null)
-                    await modelService.ScanAndCacheSingleAsync(entry.RelativeModelPath, progressReporter);
+                    await modelService.ScanAndCacheSingleAsync(entry.RelativeModelPath, progressReporter, cancellationToken);
                 else
-                    await modelService.ScanAndCacheAsync(directoryFilter: entry.DirectoryFilter, progressReporter: progressReporter);
+                    await modelService.ScanAndCacheAsync(
+                        directoryFilter: entry.DirectoryFilter,
+                        progressReporter: progressReporter,
+                        cancellationToken: cancellationToken);
             }
 
             logger.LogInformation("IndexerService: completed {Flags} for {Target}", entry.Flags, label);
             await progressReporter.OnLogAsync("info", "Run completed successfully");
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "cancelled";
+            error = "Cancelled by user.";
+            logger.LogInformation("IndexerService: cancelled {Flags} for {Target}", entry.Flags, label);
+            if (runRecordCreated)
+                await progressReporter.OnLogAsync("info", "Run cancelled by user");
         }
         catch (Exception ex)
         {
             outcome = "failed";
             error = SummarizeError(ex);
             logger.LogError(ex, "IndexerService: failed processing {Flags} for {Target}", entry.Flags, label);
-            await progressReporter.OnLogAsync("error", $"Run failed: {error}");
+            if (runRecordCreated)
+                await progressReporter.OnLogAsync("error", $"Run failed: {error}");
         }
 
         completedAt = DateTime.UtcNow;
         var durationMs = Math.Max(0, (completedAt - startedAt).TotalMilliseconds);
 
-        await CompleteRunAsync(entry.RunId, completedAt, durationMs, outcome, error);
+        if (!runRecordCreated && outcome == "cancelled")
+        {
+            await UpsertCancelledQueuedRunAsync(entry);
+        }
+        else
+        {
+            await CompleteRunAsync(entry.RunId, completedAt, durationMs, outcome, error, CancellationToken.None);
+        }
 
         return new CompletedIndexEntry(
             entry.Id,
@@ -316,10 +382,44 @@ public class IndexerService(
             error);
     }
 
-    private async Task CreateRunAsync(IndexEntry entry, DateTime startedAt)
+    private async Task UpsertCancelledQueuedRunAsync(IndexEntry entry)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var existingRun = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == entry.RunId);
+        var now = DateTime.UtcNow;
+        var run = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == entry.RunId);
+        if (run is null)
+        {
+            db.IndexRuns.Add(new IndexRun
+            {
+                Id = entry.RunId,
+                DirectoryFilter = entry.DirectoryFilter,
+                RelativeModelPath = entry.RelativeModelPath,
+                Flags = (int)entry.Flags,
+                RequestedAt = entry.RequestedAt,
+                CompletedAt = now,
+                DurationMs = 0,
+                Status = "cancelled",
+                Outcome = "cancelled",
+                Error = "Cancelled before start.",
+                ProcessedFiles = 0,
+            });
+        }
+        else
+        {
+            run.CompletedAt = now;
+            run.DurationMs = 0;
+            run.Status = "cancelled";
+            run.Outcome = "cancelled";
+            run.Error = "Cancelled before start.";
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private async Task CreateRunAsync(IndexEntry entry, DateTime startedAt, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var existingRun = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == entry.RunId, cancellationToken);
         if (existingRun != null)
         {
             // Re-queued after a server restart — update the existing record in-place.
@@ -345,7 +445,7 @@ public class IndexerService(
                 ProcessedFiles = 0,
             });
         }
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task CompleteRunAsync(
@@ -353,10 +453,11 @@ public class IndexerService(
         DateTime completedAt,
         double durationMs,
         string outcome,
-        string? error)
+        string? error,
+        CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var run = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == runId);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var run = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
         if (run == null)
             return;
 
@@ -365,18 +466,18 @@ public class IndexerService(
         run.Outcome = outcome;
         run.Error = error;
         run.Status = outcome;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task CleanupOldRunsAsync()
+    private async Task CleanupOldRunsAsync(CancellationToken cancellationToken)
     {
         var cutoff = DateTime.UtcNow - HistoryRetention;
-        await using var db = await dbFactory.CreateDbContextAsync();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var staleRunIds = await db.IndexRuns
             .AsNoTracking()
             .Where(r => r.RequestedAt < cutoff)
             .Select(r => r.Id)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (staleRunIds.Count == 0)
             return;
@@ -388,7 +489,7 @@ public class IndexerService(
         db.IndexRunFiles.RemoveRange(staleFiles);
         db.IndexRunEvents.RemoveRange(staleEvents);
         db.IndexRuns.RemoveRange(staleRuns);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static string SummarizeError(Exception ex)

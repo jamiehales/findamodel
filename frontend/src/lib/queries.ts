@@ -15,6 +15,7 @@ import {
   fetchIndexerStatus,
   fetchIndexerRuns,
   fetchIndexerRun,
+  cancelIndexerRun,
   enqueueIndex,
   IndexFlags,
   fetchPrintingLists,
@@ -359,6 +360,18 @@ export function useEnqueueIndex() {
     }) => enqueueIndex(directoryFilter, flags, relativeModelPath ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus });
+    },
+  });
+}
+
+export function useCancelIndexerRun(days: number = 7) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => cancelIndexerRun(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.indexerStatus });
+      queryClient.invalidateQueries({ queryKey: queryKeys.indexerRuns(days) });
+      queryClient.invalidateQueries({ queryKey: ['indexer', 'run'] });
     },
   });
 }

@@ -53,4 +53,14 @@ public class IndexerController(IndexerService indexerService) : ControllerBase
         var result = indexerService.Enqueue(request.DirectoryFilter, request.RelativeModelPath, request.Flags);
         return Ok(result);
     }
+
+    [HttpDelete("runs/{id:guid}")]
+    public async Task<IActionResult> CancelRun(Guid id)
+    {
+        var cancelled = await indexerService.CancelAsync(id);
+        if (!cancelled)
+            return NotFound();
+
+        return NoContent();
+    }
 }

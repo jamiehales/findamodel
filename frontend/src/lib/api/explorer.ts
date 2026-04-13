@@ -96,6 +96,7 @@ export interface AppConfig {
   defaultRaftHeightMm: number;
   theme: string;
   tagGenerationEnabled: boolean;
+  aiDescriptionEnabled: boolean;
   tagGenerationProvider: string;
   tagGenerationEndpoint: string;
   tagGenerationModel: string;
@@ -108,6 +109,7 @@ export interface UpdateAppConfigRequest {
   defaultRaftHeightMm: number;
   theme: string;
   tagGenerationEnabled: boolean;
+  aiDescriptionEnabled: boolean;
   tagGenerationProvider: string;
   tagGenerationEndpoint: string;
   tagGenerationModel: string;

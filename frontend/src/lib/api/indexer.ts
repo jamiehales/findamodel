@@ -24,7 +24,7 @@ export interface CompletedIndexRequest {
   startedAt: string;
   completedAt: string;
   durationMs: number;
-  outcome: 'success' | 'failed';
+  outcome: 'success' | 'failed' | 'cancelled';
   error: string | null;
 }
 
@@ -45,8 +45,8 @@ export interface IndexRunSummary {
   completedAt: string | null;
   totalFiles: number | null;
   processedFiles: number;
-  status: 'queued' | 'running' | 'success' | 'failed';
-  outcome: 'success' | 'failed' | null;
+  status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
+  outcome: 'success' | 'failed' | 'cancelled' | null;
   error: string | null;
 }
 
@@ -128,4 +128,12 @@ export async function fetchIndexerRun(
   const r = await apiFetch(`/api/indexer/runs/${encodeURIComponent(runId)}?${params.toString()}`);
   if (!r.ok) throw new Error('Failed to fetch index run detail');
   return r.json();
+}
+
+export async function cancelIndexerRun(runId: string): Promise<void> {
+  const r = await apiFetch(`/api/indexer/runs/${encodeURIComponent(runId)}`, {
+    method: 'DELETE',
+  });
+
+  if (!r.ok) throw new Error('Failed to cancel index run');
 }

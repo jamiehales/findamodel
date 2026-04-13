@@ -52,7 +52,11 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
 
         modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationEnabled)
-            .HasDefaultValue(true);
+            .HasDefaultValue(false);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AiDescriptionEnabled)
+            .HasDefaultValue(false);
 
         modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationEndpoint)

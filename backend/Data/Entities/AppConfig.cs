@@ -6,7 +6,8 @@ public class AppConfig
     public float DefaultRaftHeightMm { get; set; } = 2f;
     public string Theme { get; set; } = "nord";
 
-    public bool TagGenerationEnabled { get; set; } = true;
+    public bool TagGenerationEnabled { get; set; } = false;
+    public bool AiDescriptionEnabled { get; set; } = false;
     public string TagGenerationProvider { get; set; } = "internal";
     public string TagGenerationEndpoint { get; set; } = "http://localhost:11434";
     public string TagGenerationModel { get; set; } = "qwen2.5vl:7b";

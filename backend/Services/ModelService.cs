@@ -196,8 +196,11 @@ public class ModelService(
     public async Task<int> ScanAndCacheAsync(
         int? limit = null,
         string? directoryFilter = null,
-        IIndexingProgressReporter? progressReporter = null)
+        IIndexingProgressReporter? progressReporter = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrEmpty(modelsPath))
         {
@@ -236,6 +239,8 @@ public class ModelService(
                 .ToList());
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var relativeDirectories = files
             .Select(f => (Path.GetDirectoryName(Path.GetRelativePath(modelsPath, f)) ?? "").Replace('\\', '/'))
             .Distinct(StringComparer.Ordinal)
@@ -246,6 +251,7 @@ public class ModelService(
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
+        var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
 
         // Phase 3: Process new and updated model files
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -258,8 +264,9 @@ public class ModelService(
                 .ToListAsync())
             : [];
         logger.LogDebug(
-            "Scan tag-generation settings: enabled={Enabled}, provider={Provider}, schemaCount={SchemaCount}",
+            "Scan AI-generation settings: tagsEnabled={TagsEnabled}, descriptionEnabled={DescriptionEnabled}, provider={Provider}, schemaCount={SchemaCount}",
             generateTagsOnScan,
+            generateDescriptionsOnScan,
             appConfig.TagGenerationProvider,
             configuredTagSchema.Count);
 
@@ -307,7 +314,11 @@ public class ModelService(
             {
                 await Parallel.ForEachAsync(
                     files,
-                    new ParallelOptions { MaxDegreeOfParallelism = fileScanThreads },
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = fileScanThreads,
+                        CancellationToken = cancellationToken,
+                    },
                     async (file, ct) =>
                     {
                         var prepared = await PrepareScanResultAsync(
@@ -318,11 +329,17 @@ public class ModelService(
                             defaultRaftHeightMm,
                             appConfig,
                             configuredTagSchema,
-                            generateTagsOnScan);
+                            generateTagsOnScan,
+                            generateDescriptionsOnScan);
                         if (prepared is not null)
-                            await preparedResults.Writer.WriteAsync(prepared, ct);
+                            preparedResults.Writer.TryWrite(prepared);
                     });
 
+                preparedResults.Writer.TryComplete();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Cancellation is expected when a run is explicitly cancelled.
                 preparedResults.Writer.TryComplete();
             }
             catch (Exception ex)
@@ -335,15 +352,18 @@ public class ModelService(
 
         var newCount = 0;
         var updatedCount = 0;
-        await foreach (var result in preparedResults.Reader.ReadAllAsync())
+        try
         {
-            var perFileTimer = System.Diagnostics.Stopwatch.StartNew();
-            processedRelativePaths.Add(result.RelativePath);
-
-            if (result.ExistingId.HasValue)
+            await foreach (var result in preparedResults.Reader.ReadAllAsync(cancellationToken))
             {
-                var entity = await db.Models.FindAsync(result.ExistingId.Value);
-                if (entity == null) continue;
+                cancellationToken.ThrowIfCancellationRequested();
+                var perFileTimer = System.Diagnostics.Stopwatch.StartNew();
+                processedRelativePaths.Add(result.RelativePath);
+
+                if (result.ExistingId.HasValue)
+                {
+                    var entity = await db.Models.FindAsync(result.ExistingId.Value);
+                    if (entity == null) continue;
 
                 var generatedPreview = false;
                 var generatedHull = false;
@@ -381,7 +401,7 @@ public class ModelService(
 
                 if (result.ForceTagGeneration)
                 {
-                    var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan);
+                    var tagResult = await TryGenerateTagsOnScanAsync(entity.Id, generateTagsOnScan, generateDescriptionsOnScan);
                     generatedAiTags = tagResult.GeneratedTags;
                     generatedAiDescription = tagResult.GeneratedDescription;
                     if (!tagResult.Success)
@@ -391,7 +411,7 @@ public class ModelService(
                     }
                     else
                     {
-                        message = "Regenerated AI tags/description";
+                        message = "Regenerated AI metadata";
                     }
                 }
 
@@ -417,99 +437,109 @@ public class ModelService(
                         Message: message,
                         DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
                 }
-                updatedCount++;
-                continue;
-            }
+                    updatedCount++;
+                    continue;
+                }
 
-            // New file
-            if (limit.HasValue && newCount >= limit.Value)
-            {
+                // New file
+                if (limit.HasValue && newCount >= limit.Value)
+                {
+                    if (progressReporter is not null)
+                    {
+                        await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                            result.RelativePath,
+                            result.FileType,
+                            "skipped",
+                            IsNew: true,
+                            WasUpdated: false,
+                            GeneratedPreview: false,
+                            GeneratedHull: false,
+                            GeneratedAiTags: false,
+                            GeneratedAiDescription: false,
+                            AiGenerationReason: null,
+                            Message: "Skipped due to scan limit",
+                            DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                    }
+                    continue;
+                }
+
+                logger.LogInformation("Discovered {FileType} model: {FilePath}", result.FileType.ToUpperInvariant(), result.FilePath);
+
+                var newData = result.ContentUpdate;
+                if (newData is null)
+                {
+                    if (progressReporter is not null)
+                    {
+                        await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
+                            result.RelativePath,
+                            result.FileType,
+                            "failed",
+                            IsNew: true,
+                            WasUpdated: false,
+                            GeneratedPreview: false,
+                            GeneratedHull: false,
+                            GeneratedAiTags: false,
+                            GeneratedAiDescription: false,
+                            AiGenerationReason: null,
+                            Message: "Unable to compute file data",
+                            DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
+                    }
+                    continue;
+                }
+
+                var newEntity = new CachedModel
+                {
+                    Id = Guid.NewGuid(),
+                    FileName = result.FileName,
+                    Directory = result.Directory,
+                    FileType = result.FileType,
+                    DirectoryConfigId = newData.DirConfig?.Id,
+                };
+                ApplyFileData(newEntity, newData, result.FileInfo);
+                db.Models.Add(newEntity);
+                await db.SaveChangesAsync();
+                var generatedAiTagsNew = false;
+                var generatedAiDescriptionNew = false;
+                var aiGenerationReasonNew = result.AiGenerationReason;
+                if (generateTagsOnScan || generateDescriptionsOnScan)
+                {
+                    var tagResult = await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan, generateDescriptionsOnScan);
+                    generatedAiTagsNew = tagResult.GeneratedTags;
+                    generatedAiDescriptionNew = tagResult.GeneratedDescription;
+                }
+
                 if (progressReporter is not null)
                 {
                     await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
                         result.RelativePath,
                         result.FileType,
-                        "skipped",
+                        "processed",
                         IsNew: true,
                         WasUpdated: false,
-                        GeneratedPreview: false,
-                        GeneratedHull: false,
-                        GeneratedAiTags: false,
-                        GeneratedAiDescription: false,
-                        AiGenerationReason: null,
-                        Message: "Skipped due to scan limit",
+                        GeneratedPreview: newData.PreviewImagePath is not null,
+                        GeneratedHull: newData.ConvexHull is not null
+                            || newData.ConcaveHull is not null
+                            || newData.ConvexSansRaftHull is not null,
+                        GeneratedAiTags: generatedAiTagsNew,
+                        GeneratedAiDescription: generatedAiDescriptionNew,
+                        AiGenerationReason: generatedAiTagsNew || generatedAiDescriptionNew ? aiGenerationReasonNew : null,
+                        Message: "Indexed new model file",
                         DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
                 }
-                continue;
+                newCount++;
             }
-
-            logger.LogInformation("Discovered {FileType} model: {FilePath}", result.FileType.ToUpperInvariant(), result.FilePath);
-
-            var newData = result.ContentUpdate;
-            if (newData is null)
-            {
-                if (progressReporter is not null)
-                {
-                    await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
-                        result.RelativePath,
-                        result.FileType,
-                        "failed",
-                        IsNew: true,
-                        WasUpdated: false,
-                        GeneratedPreview: false,
-                        GeneratedHull: false,
-                        GeneratedAiTags: false,
-                        GeneratedAiDescription: false,
-                        AiGenerationReason: null,
-                        Message: "Unable to compute file data",
-                        DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
-                }
-                continue;
-            }
-
-            var newEntity = new CachedModel
-            {
-                Id = Guid.NewGuid(),
-                FileName = result.FileName,
-                Directory = result.Directory,
-                FileType = result.FileType,
-                DirectoryConfigId = newData.DirConfig?.Id,
-            };
-            ApplyFileData(newEntity, newData, result.FileInfo);
-            db.Models.Add(newEntity);
-            await db.SaveChangesAsync();
-            var generatedAiTagsNew = false;
-            var generatedAiDescriptionNew = false;
-            var aiGenerationReasonNew = result.AiGenerationReason;
-            if (generateTagsOnScan)
-            {
-                var tagResult = await TryGenerateTagsOnScanAsync(newEntity.Id, generateTagsOnScan);
-                generatedAiTagsNew = tagResult.GeneratedTags;
-                generatedAiDescriptionNew = tagResult.GeneratedDescription;
-            }
-
-            if (progressReporter is not null)
-            {
-                await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
-                    result.RelativePath,
-                    result.FileType,
-                    "processed",
-                    IsNew: true,
-                    WasUpdated: false,
-                    GeneratedPreview: newData.PreviewImagePath is not null,
-                    GeneratedHull: newData.ConvexHull is not null
-                        || newData.ConcaveHull is not null
-                        || newData.ConvexSansRaftHull is not null,
-                    GeneratedAiTags: generatedAiTagsNew,
-                    GeneratedAiDescription: generatedAiDescriptionNew,
-                    AiGenerationReason: generatedAiTagsNew || generatedAiDescriptionNew ? aiGenerationReasonNew : null,
-                    Message: "Indexed new model file",
-                    DurationMs: perFileTimer.Elapsed.TotalMilliseconds));
-            }
-            newCount++;
         }
-
-        await producer;
+        finally
+        {
+            try
+            {
+                await producer;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Expected when the scan run is cancelled.
+            }
+        }
 
         var unchangedFiles = files
             .Select(f => Path.GetRelativePath(modelsPath, f).Replace('\\', '/'))
@@ -518,6 +548,7 @@ public class ModelService(
         {
             foreach (var unchangedRelativePath in unchangedFiles)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await progressReporter.OnFileProcessedAsync(new IndexingFileResult(
                     unchangedRelativePath,
                     Path.GetExtension(unchangedRelativePath).TrimStart('.').ToLowerInvariant(),
@@ -540,8 +571,11 @@ public class ModelService(
 
     public async Task<bool> ScanAndCacheSingleAsync(
         string relativeModelPath,
-        IIndexingProgressReporter? progressReporter = null)
+        IIndexingProgressReporter? progressReporter = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrEmpty(modelsPath))
         {
@@ -600,6 +634,8 @@ public class ModelService(
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
+        var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
+        cancellationToken.ThrowIfCancellationRequested();
         await using var db = await dbFactory.CreateDbContextAsync();
         var configuredTagSchema = generateTagsOnScan
             ? TagListHelper.Normalize(await db.MetadataDictionaryValues
@@ -620,6 +656,7 @@ public class ModelService(
         var isNewModel = existing is null;
 
         var checksum = await ComputeChecksumAsync(fullPath);
+        cancellationToken.ThrowIfCancellationRequested();
         var checksumChanged = existing is null || existing.Checksum != checksum;
         var previewStale = existing is not null
             && !IsNonGeometryType(fileType)
@@ -631,12 +668,12 @@ public class ModelService(
             && generateTagsOnScan
             && TagGenerationService.NeedsRegeneration(existing, appConfig, configuredTagSchema);
         var descriptionStale = existing is not null
-            && generateTagsOnScan
+            && generateDescriptionsOnScan
             && TagGenerationService.NeedsDescriptionRegeneration(existing, appConfig);
         var expectedTagChecksum = existing is not null && generateTagsOnScan && configuredTagSchema.Count > 0
             ? TagGenerationService.ComputeGenerationChecksum(existing, appConfig, configuredTagSchema)
             : null;
-        var expectedDescriptionChecksum = existing is not null && generateTagsOnScan
+        var expectedDescriptionChecksum = existing is not null && generateDescriptionsOnScan
             ? TagGenerationService.ComputeDescriptionChecksum(existing, appConfig)
             : null;
         var storedTagChecksum = existing?.GeneratedTagsChecksum;
@@ -696,6 +733,7 @@ public class ModelService(
 
         if (existing is null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum, defaultRaftHeightMm);
             existing = new CachedModel
             {
@@ -716,6 +754,7 @@ public class ModelService(
         {
             if (existing.Checksum != checksum)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum, defaultRaftHeightMm);
                 existing.FileType = fileType;
                 existing.DirectoryConfigId = data.DirConfig?.Id;
@@ -723,6 +762,7 @@ public class ModelService(
             }
             else if (!IsNonGeometryType(fileType) && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 existing.FileType = fileType;
                 if (directoryConfigs.TryGetValue(directory, out var dirConfig))
                     existing.DirectoryConfigId = dirConfig.Id;
@@ -740,6 +780,7 @@ public class ModelService(
             }
             else if (!IsNonGeometryType(fileType) && previewStale)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var refresh = await ComputeGeometryRefreshDataAsync(
                     fullPath,
                     fileType,
@@ -755,13 +796,14 @@ public class ModelService(
         }
 
         await db.SaveChangesAsync();
-        var shouldGenerateTags = generateTagsOnScan
+        var shouldGenerateTags = (generateTagsOnScan || generateDescriptionsOnScan)
             && (checksumChanged || tagsStale || descriptionStale);
         logger.LogDebug(
-            "Single-model scan tag-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, descriptionStale={DescriptionStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
+            "Single-model scan AI-generation decision for {FilePath}: shouldGenerate={ShouldGenerate}, tagGenerationEnabled={TagGenerationEnabled}, descriptionGenerationEnabled={DescriptionGenerationEnabled}, schemaCount={SchemaCount}, checksumChanged={ChecksumChanged}, hullStale={HullStale}, previewStale={PreviewStale}, tagsStale={TagsStale}, descriptionStale={DescriptionStale}, tagStatus={TagStatus}, tagJsonPresent={TagJsonPresent}, storedTagChecksum={StoredTagChecksum}, expectedTagChecksum={ExpectedTagChecksum}, descriptionPresent={DescriptionPresent}, storedDescriptionChecksum={StoredDescriptionChecksum}, expectedDescriptionChecksum={ExpectedDescriptionChecksum}",
             fullPath,
             shouldGenerateTags,
             generateTagsOnScan,
+            generateDescriptionsOnScan,
             configuredTagSchema.Count,
             checksumChanged,
             hullStale,
@@ -780,6 +822,7 @@ public class ModelService(
         string? aiGenerationReason = null;
         if (shouldGenerateTags && existing is not null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             aiGenerationReason = isNewModel
                 ? "new model"
                 : checksumChanged
@@ -791,7 +834,7 @@ public class ModelService(
                             : descriptionStale
                                 ? "description checksum stale"
                                 : null;
-            var tagResult = await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan);
+            var tagResult = await TryGenerateTagsOnScanAsync(existing.Id, generateTagsOnScan, generateDescriptionsOnScan);
             generatedAiTags = tagResult.GeneratedTags;
             generatedAiDescription = tagResult.GeneratedDescription;
         }
@@ -932,7 +975,8 @@ public class ModelService(
         float defaultRaftHeightMm,
         AppConfigDto appConfig,
         List<string> configuredTagSchema,
-        bool generateTagsOnScan)
+        bool generateTagsOnScan,
+        bool generateDescriptionsOnScan)
     {
         var relativePath = Path.GetRelativePath(modelsPath, file).Replace('\\', '/');
         var fileName = Path.GetFileName(file);
@@ -954,7 +998,7 @@ public class ModelService(
                 && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
             var tagsStale = false;
             var descriptionStale = false;
-            if (generateTagsOnScan)
+            if (generateTagsOnScan || generateDescriptionsOnScan)
             {
                 var projected = new CachedModel
                 {
@@ -978,8 +1022,10 @@ public class ModelService(
                     GeneratedDescription = existingEntry.GeneratedDescription,
                     GeneratedDescriptionChecksum = existingEntry.GeneratedDescriptionChecksum,
                 };
-                tagsStale = TagGenerationService.NeedsRegeneration(projected, appConfig, configuredTagSchema);
-                descriptionStale = TagGenerationService.NeedsDescriptionRegeneration(projected, appConfig);
+                tagsStale = generateTagsOnScan
+                    && TagGenerationService.NeedsRegeneration(projected, appConfig, configuredTagSchema);
+                descriptionStale = generateDescriptionsOnScan
+                    && TagGenerationService.NeedsDescriptionRegeneration(projected, appConfig);
             }
 
             if (currentChecksum == existingEntry.Checksum && !hullMetadataMismatch && !previewStale && !tagsStale && !descriptionStale)
@@ -998,8 +1044,8 @@ public class ModelService(
                     info,
                     data,
                     null,
-                    generateTagsOnScan,
-                    generateTagsOnScan ? "model changed" : null);
+                    generateTagsOnScan || generateDescriptionsOnScan,
+                    (generateTagsOnScan || generateDescriptionsOnScan) ? "model changed" : null);
             }
 
             if (hullMetadataMismatch)
@@ -1057,8 +1103,8 @@ public class ModelService(
             info,
             newData,
             null,
-            generateTagsOnScan,
-            generateTagsOnScan ? "new model" : null);
+            generateTagsOnScan || generateDescriptionsOnScan,
+            (generateTagsOnScan || generateDescriptionsOnScan) ? "new model" : null);
     }
 
     private async Task<ModelFileData> ComputeFileDataAsync(
@@ -1293,12 +1339,15 @@ public class ModelService(
             data.Remove(matched);
     }
 
-    private async Task<TagGenerationProgress> TryGenerateTagsOnScanAsync(Guid modelId, bool generateTagsOnScan)
+    private async Task<TagGenerationProgress> TryGenerateTagsOnScanAsync(
+        Guid modelId,
+        bool generateTagsOnScan,
+        bool generateDescriptionsOnScan)
     {
-        if (!generateTagsOnScan)
+        if (!generateTagsOnScan && !generateDescriptionsOnScan)
         {
-            logger.LogDebug("Skipping tag generation for model {ModelId}: TagGenerationEnabled=false", modelId);
-            return new TagGenerationProgress(false, false, false, "Tag generation disabled");
+            logger.LogDebug("Skipping AI generation for model {ModelId}: both toggles disabled", modelId);
+            return new TagGenerationProgress(false, false, false, "AI generation disabled");
         }
 
         try
@@ -1307,7 +1356,11 @@ public class ModelService(
             var result = await tagGenerationService.GenerateForModelAsync(modelId, CancellationToken.None);
             logger.LogDebug("Tag generation finished during scan for model {ModelId}", modelId);
             var success = string.Equals(result?.Status, "success", StringComparison.OrdinalIgnoreCase);
-            return new TagGenerationProgress(success, success, success, success ? null : result?.Error);
+            return new TagGenerationProgress(
+                success,
+                success && generateTagsOnScan,
+                success && generateDescriptionsOnScan,
+                success ? null : result?.Error);
         }
         catch (Exception ex)
         {

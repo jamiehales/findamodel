@@ -61,6 +61,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
         config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
         config.Theme = request.Theme;
         config.TagGenerationEnabled = request.TagGenerationEnabled;
+        config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
         config.TagGenerationEndpoint = request.TagGenerationEndpoint.Trim();
         config.TagGenerationModel = request.TagGenerationModel.Trim();
@@ -91,6 +92,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory)
             config.DefaultRaftHeightMm,
             config.Theme,
             config.TagGenerationEnabled,
+            config.AiDescriptionEnabled,
             config.TagGenerationProvider,
             config.TagGenerationEndpoint,
             config.TagGenerationModel,

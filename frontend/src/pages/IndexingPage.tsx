@@ -5,7 +5,10 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
+import CloseIcon from '@mui/icons-material/Close';
 import { useEffect, useMemo, useState } from 'react';
 import {
   IndexFlags,
@@ -14,7 +17,12 @@ import {
   type IndexRunFile,
   type IndexRunSummary,
 } from '../lib/api';
-import { useIndexerRun, useIndexerRuns, useIndexerStatus } from '../lib/queries';
+import {
+  useCancelIndexerRun,
+  useIndexerRun,
+  useIndexerRuns,
+  useIndexerStatus,
+} from '../lib/queries';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
@@ -145,6 +153,8 @@ function targetLabel(run: Pick<IndexRunSummary, 'directoryFilter' | 'relativeMod
 function statusChip(status: string) {
   if (status === 'running') return <Chip size="small" variant="status-running" label="Running" />;
   if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
+  if (status === 'cancelled')
+    return <Chip size="small" color="warning" variant="outlined" label="Cancelled" />;
   if (status === 'failed')
     return <Chip size="small" color="error" variant="outlined" label="Failed" />;
   return <Chip size="small" color="success" variant="outlined" label="Success" />;
@@ -161,10 +171,16 @@ function RunSummaryCard({
   run,
   selected,
   onSelect,
+  canCancel,
+  onCancel,
+  isCancelling,
 }: {
   run: IndexRunSummary;
   selected: boolean;
   onSelect: () => void;
+  canCancel: boolean;
+  onCancel: () => void;
+  isCancelling: boolean;
 }) {
   const [, setTick] = useState(0);
 
@@ -186,53 +202,80 @@ function RunSummaryCard({
       : null;
 
   return (
-    <button
-      type="button"
+    <Stack
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      spacing={0.5}
       className={`${styles.runCard} ${selected ? styles.runCardActive : ''}`}
     >
-      <Stack spacing={0.5}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="subtitle2" className={styles.cardTitle}>
-            {targetLabel(run)}
-          </Typography>
+      <Stack direction="row" alignItems="center" justifyContent="space-between">
+        <Typography variant="subtitle2" className={styles.cardTitle}>
+          {targetLabel(run)}
+        </Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          {canCancel && (
+            <Tooltip title={isCancelling ? 'Cancelling...' : 'Cancel run'}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCancel();
+                  }}
+                  disabled={isCancelling}
+                  aria-label="Cancel run"
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
           {statusChip(run.status)}
         </Stack>
-        <Typography variant="caption" color="text.secondary">
-          {flagsLabel(run.flags)}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Requested {formatDate(run.requestedAt)}
-        </Typography>
-        {processingTimeLabel && (
-          <Typography variant="caption" color="text.secondary">
-            Processing time {processingTimeLabel}
-          </Typography>
-        )}
-        {durationLabel && (
-          <Typography variant="caption" color="text.secondary">
-            Duration {durationLabel}
-          </Typography>
-        )}
-        {run.totalFiles != null && (
-          <>
-            <LinearProgress
-              variant="determinate"
-              value={Math.min(100, percent)}
-              className={styles.progressBar}
-            />
-            <Typography variant="caption" color="text.secondary">
-              {run.processedFiles}/{run.totalFiles} files
-            </Typography>
-          </>
-        )}
       </Stack>
-    </button>
+      <Typography variant="caption" color="text.secondary">
+        {flagsLabel(run.flags)}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        Requested {formatDate(run.requestedAt)}
+      </Typography>
+      {processingTimeLabel && (
+        <Typography variant="caption" color="text.secondary">
+          Processing time {processingTimeLabel}
+        </Typography>
+      )}
+      {durationLabel && (
+        <Typography variant="caption" color="text.secondary">
+          Duration {durationLabel}
+        </Typography>
+      )}
+      {run.totalFiles != null && (
+        <>
+          <LinearProgress
+            variant="determinate"
+            value={Math.min(100, percent)}
+            className={styles.progressBar}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {run.processedFiles}/{run.totalFiles} files
+          </Typography>
+        </>
+      )}
+    </Stack>
   );
 }
 
 export default function IndexingPage() {
   const { data: status } = useIndexerStatus({ adaptivePolling: true });
+  const cancelRunMutation = useCancelIndexerRun(7);
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const {
     data: runs,
     isPending,
@@ -299,6 +342,19 @@ export default function IndexingPage() {
   const [filesPage, setFilesPage] = useState(1);
   const [eventsPage, setEventsPage] = useState(1);
 
+  function canCancelRun(run: Pick<IndexRunSummary, 'status'>): boolean {
+    return run.status === 'queued' || run.status === 'running';
+  }
+
+  function cancelRun(runId: string): void {
+    setCancellingRunId(runId);
+    cancelRunMutation.mutate(runId, {
+      onSettled: () => {
+        setCancellingRunId((current) => (current === runId ? null : current));
+      },
+    });
+  }
+
   const {
     data: runDetail,
     isPending: isRunPending,
@@ -354,6 +410,9 @@ export default function IndexingPage() {
                     setFilesPage(1);
                     setEventsPage(1);
                   }}
+                  canCancel={canCancelRun(run)}
+                  onCancel={() => cancelRun(run.id)}
+                  isCancelling={cancelRunMutation.isPending && cancellingRunId === run.id}
                 />
               ))}
             </Stack>
@@ -368,6 +427,12 @@ export default function IndexingPage() {
           {!isRunPending && !isRunError && runDetail && (
             <RunDetailWithPaging
               detail={runDetail}
+              canCancel={canCancelRun(runDetail.run)}
+              onCancel={() => {
+                cancelRun(runDetail.run.id);
+              }}
+              isCancelling={cancelRunMutation.isPending && cancellingRunId === runDetail.run.id}
+              cancelError={cancelRunMutation.error?.message ?? null}
               onPrevFiles={() => setFilesPage((p) => Math.max(1, p - 1))}
               onNextFiles={() => setFilesPage((p) => p + 1)}
               onPrevEvents={() => setEventsPage((p) => Math.max(1, p - 1))}
@@ -386,6 +451,10 @@ export default function IndexingPage() {
 
 function RunDetailWithPaging({
   detail,
+  canCancel,
+  onCancel,
+  isCancelling,
+  cancelError,
   onPrevFiles,
   onNextFiles,
   onPrevEvents,
@@ -396,6 +465,10 @@ function RunDetailWithPaging({
   currentEventsPage,
 }: {
   detail: IndexRunDetail;
+  canCancel: boolean;
+  onCancel: () => void;
+  isCancelling: boolean;
+  cancelError: string | null;
   onPrevFiles: () => void;
   onNextFiles: () => void;
   onPrevEvents: () => void;
@@ -477,7 +550,14 @@ function RunDetailWithPaging({
         <Stack spacing={1.25} className={styles.panelBody}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Typography variant="h6">Current Progress</Typography>
-            {statusChip(run.status)}
+            <Stack direction="row" spacing={1} alignItems="center">
+              {canCancel && (
+                <Button size="small" variant="outlined" onClick={onCancel} disabled={isCancelling}>
+                  {isCancelling ? 'Cancelling...' : 'Cancel run'}
+                </Button>
+              )}
+              {statusChip(run.status)}
+            </Stack>
           </Stack>
           <Typography variant="body2" color="text.secondary">
             {targetLabel(run)}
@@ -504,6 +584,11 @@ function RunDetailWithPaging({
           {run.error && (
             <Typography variant="body2" className={styles.errorText}>
               {run.error}
+            </Typography>
+          )}
+          {cancelError && (
+            <Typography variant="body2" className={styles.errorText}>
+              {cancelError}
             </Typography>
           )}
         </Stack>

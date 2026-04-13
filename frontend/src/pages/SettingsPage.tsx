@@ -152,6 +152,7 @@ export default function SettingsPage() {
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
   const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
+  const [aiDescriptionEnabled, setAiDescriptionEnabled] = useState(false);
   const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
     'internal',
   );
@@ -167,6 +168,7 @@ export default function SettingsPage() {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
       setTheme(appConfig.theme);
       setTagGenerationEnabled(appConfig.tagGenerationEnabled);
+      setAiDescriptionEnabled(appConfig.aiDescriptionEnabled);
       setTagGenerationProvider(
         appConfig.tagGenerationProvider === 'ollama' ? 'ollama' : 'internal',
       );
@@ -252,6 +254,7 @@ export default function SettingsPage() {
                   defaultRaftHeightMm: raftHeightValue,
                   theme,
                   tagGenerationEnabled,
+                  aiDescriptionEnabled,
                   tagGenerationProvider,
                   tagGenerationEndpoint: tagGenerationEndpoint.trim(),
                   tagGenerationModel: tagGenerationModel.trim(),
@@ -279,6 +282,18 @@ export default function SettingsPage() {
                 />
               }
               label="Enable tag generation"
+            />
+          </Stack>
+
+          <Stack direction="row" spacing={1}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={aiDescriptionEnabled}
+                  onChange={(e) => setAiDescriptionEnabled(e.target.checked)}
+                />
+              }
+              label="Enable AI description generation"
             />
           </Stack>
 

@@ -57,7 +57,8 @@ public class AppConfigServiceTests
         var sut = new AppConfigService(CreateFactory(nameof(GetAsync_CreatesDefaultRecord_WhenDbIsEmpty)));
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
-        Assert.True(dto.TagGenerationEnabled);
+        Assert.False(dto.TagGenerationEnabled);
+        Assert.False(dto.AiDescriptionEnabled);
         Assert.Equal("internal", dto.TagGenerationProvider);
         Assert.Equal("qwen2.5vl:7b", dto.TagGenerationModel);
     }
@@ -132,6 +133,7 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
             TagGenerationProvider: "ollama",
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",
@@ -140,6 +142,7 @@ public class AppConfigServiceTests
             TagGenerationMinConfidence: 0.5f));
 
         Assert.True(updated.TagGenerationEnabled);
+        Assert.True(updated.AiDescriptionEnabled);
         Assert.Equal("ollama", updated.TagGenerationProvider);
         Assert.Equal(45000, updated.TagGenerationTimeoutMs);
         Assert.Equal(10, updated.TagGenerationMaxTags);
@@ -155,6 +158,7 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
             TagGenerationProvider: "not-real",
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",

@@ -99,6 +99,7 @@ public class TagGenerationServiceTests
             DefaultRaftHeightMm: 2f,
             Theme: "nord",
             TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: "qwen2.5vl:7b",
