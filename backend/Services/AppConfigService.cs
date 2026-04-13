@@ -285,6 +285,9 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
 
     public static string GetDefaultTagGenerationModel() => DefaultTagGenerationModel;
 
+    public static bool IsAnyAiGenerationEnabled(AppConfigDto? config) =>
+        config is not null && (config.TagGenerationEnabled || config.AiDescriptionEnabled);
+
     private string ResolveConfiguredTagGenerationModel(string? provider = null)
     {
         var configured = configuration["AppConfig:TagGenerationModel"];

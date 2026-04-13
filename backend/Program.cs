@@ -214,6 +214,9 @@ app.MapGet("/health", async (findamodel.Services.LocalLlmProviderResolver llmRes
     try
     {
         var config = await appConfigService.GetAsync();
+        if (!findamodel.Services.AppConfigService.IsAnyAiGenerationEnabled(config))
+            return Results.Ok(new { status = "ok" });
+
         var provider = config?.TagGenerationProvider ?? "internal";
         var llmProvider = llmResolver.Resolve(provider);
 

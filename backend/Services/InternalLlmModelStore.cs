@@ -174,6 +174,9 @@ public class InternalLlmWarmupService(
         try
         {
             var config = await appConfigService.GetAsync();
+            if (!AppConfigService.IsAnyAiGenerationEnabled(config))
+                return;
+
             if (!string.Equals(config.TagGenerationProvider, "internal", StringComparison.OrdinalIgnoreCase))
                 return;
 

@@ -12,6 +12,9 @@ public class LlmStartupDiagnosticsService(
         try
         {
             var config = await appConfigService.GetAsync();
+            if (!AppConfigService.IsAnyAiGenerationEnabled(config))
+                return;
+
             var provider = config?.TagGenerationProvider ?? "internal";
             var llmProvider = providerResolver.Resolve(provider);
 
