@@ -21,6 +21,6 @@ Choose between the **default** light/dark theme and the **Nord** colour scheme.
 
 ## Metadata dictionary
 
-The metadata dictionary is an optional list of known values for `creator` and `collection` fields. When defined, these values appear as autocomplete suggestions in metadata editing dialogs. Dictionary values do not restrict what can be stored — they are hints only.
+The metadata dictionary is an optional list of known values for `creator` and `collection` fields. When defined, these values appear as autocomplete suggestions in metadata editing dialogs. Dictionary values do not restrict what can be stored - they are hints only.
 
 Add, edit, or remove dictionary entries from the Settings page.

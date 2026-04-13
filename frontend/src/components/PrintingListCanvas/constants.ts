@@ -17,7 +17,7 @@ export const SHOW_LABELS_LOCALSTORAGE_KEY = 'findamodel.printingListShowLabels';
 export const DEBUG_PHYSICS_WIREFRAME = false;
 export const PHYSICS_BORDER_PADDING_PX = 0;
 
-// Physics body inflation — when two bodies touch they have BODY_GAP_MM visual gap.
+// Physics body inflation - when two bodies touch they have BODY_GAP_MM visual gap.
 export const BODY_GAP_MM = 2;
 export const BODY_MARGIN_PX = (BODY_GAP_MM / 2) * PX_PER_MM;
 

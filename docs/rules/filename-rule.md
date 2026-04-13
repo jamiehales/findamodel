@@ -47,7 +47,7 @@ Underscores and hyphens are treated as word separators for title-casing purposes
 
 ## Examples
 
-### Basic — model name from filename
+### Basic - model name from filename
 
 ```yaml
 model_name:
@@ -74,7 +74,7 @@ model_name:
 | `elf_warrior.stl` | `Elf Warrior.Stl` |
 
 {: .note }
-Including the extension is uncommon — most of the time you want the name without it.
+Including the extension is uncommon - most of the time you want the name without it.
 
 ---
 

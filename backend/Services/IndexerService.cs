@@ -422,7 +422,7 @@ public class IndexerService(
         var existingRun = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == entry.RunId, cancellationToken);
         if (existingRun != null)
         {
-            // Re-queued after a server restart — update the existing record in-place.
+            // Re-queued after a server restart - update the existing record in-place.
             existingRun.StartedAt = startedAt;
             existingRun.Status = "running";
             existingRun.ProcessedFiles = 0;

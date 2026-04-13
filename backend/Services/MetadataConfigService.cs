@@ -23,7 +23,7 @@ public class MetadataConfigService(
     private int DirectoryBatchSize => config.GetValue("Indexing:DirectoryBatchSize", 1000);
 
     // -------------------------------------------------------------------------
-    // Public API — used by ExplorerController
+    // Public API - used by ExplorerController
     // -------------------------------------------------------------------------
 
     /// <summary>
@@ -147,13 +147,13 @@ public class MetadataConfigService(
     }
 
     // -------------------------------------------------------------------------
-    // Scan-time API — called by ModelService
+    // Scan-time API - called by ModelService
     // -------------------------------------------------------------------------
 
     /// <summary>
     /// Syncs DirectoryConfig records by processing directories in streaming order.
     /// Directories must be in depth-first pre-order (parents before children) so that
-    /// inheritance resolves correctly in a single pass — no ResolveDescendants needed.
+    /// inheritance resolves correctly in a single pass - no ResolveDescendants needed.
     /// Returns the count of directories processed.
     /// </summary>
     public async Task<int> SyncDirectoryConfigsStreamingAsync(
@@ -213,7 +213,7 @@ public class MetadataConfigService(
         {
             // alwaysResolve=true: sorted is root-first, so each parent is already re-resolved
             // in `existing` before its children are processed. No need to cascade into sibling
-            // trees via ResolveDescendants — only the paths we're actually scanning matter here.
+            // trees via ResolveDescendants - only the paths we're actually scanning matter here.
             bool changed = await SyncSingleDirectoryConfigAsync(db, modelsRootPath, dirPath, existing, alwaysResolve: true);
             if (changed) changedDirs.Add(dirPath);
         }
@@ -237,7 +237,7 @@ public class MetadataConfigService(
     /// <summary>
     /// Recomputes Calculated* fields on CachedModel records for all models in the given
     /// set of directories, using the in-memory allConfigs dictionary for DirectoryConfig lookup.
-    /// Does NOT call SaveChanges — callers are responsible.
+    /// Does NOT call SaveChanges - callers are responsible.
     /// </summary>
     private static async Task RecomputeModelCachesForDirectoriesAsync(
         ModelCacheContext db,
@@ -271,7 +271,7 @@ public class MetadataConfigService(
     /// When <paramref name="alwaysResolve"/> is true, resolves even when unchanged (needed when
     /// a parent's resolved values may have changed upstream).
     /// Returns true if the record was created or its hash changed.
-    /// Does NOT call SaveChanges or ResolveDescendants — callers are responsible.
+    /// Does NOT call SaveChanges or ResolveDescendants - callers are responsible.
     /// </summary>
     private async Task<bool> SyncSingleDirectoryConfigAsync(
         ModelCacheContext db,

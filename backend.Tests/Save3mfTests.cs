@@ -11,13 +11,13 @@ namespace findamodel.Tests;
 /// 3MF Core Specification v1.3 (https://github.com/3MFConsortium/spec_core).
 ///
 /// Test categories:
-///   Package   — correct ZIP entries and OPC content-types / relationships
-///   Model XML — correct namespace, required elements and attributes
-///   Objects   — positive unique IDs, each object has mesh XOR components
-///   Mesh      — vertex/triangle counts, in-bounds indices, no degenerate triangles
-///   Build     — items reference valid objects, no duplicate objectids
-///   Components— component objectids are valid, transform has 12 float values
-///   Instancing— multiple placements share one base mesh; each gets its own build item
+///   Package   - correct ZIP entries and OPC content-types / relationships
+///   Model XML - correct namespace, required elements and attributes
+///   Objects   - positive unique IDs, each object has mesh XOR components
+///   Mesh      - vertex/triangle counts, in-bounds indices, no degenerate triangles
+///   Build     - items reference valid objects, no duplicate objectids
+///   Components- component objectids are valid, transform has 12 float values
+///   Instancing- multiple placements share one base mesh; each gets its own build item
 /// </summary>
 public class Save3mfTests
 {
@@ -35,7 +35,7 @@ public class Save3mfTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Four triangles forming a small tetrahedron — enough geometry for all tests.</summary>
+    /// <summary>Four triangles forming a small tetrahedron - enough geometry for all tests.</summary>
     private static List<Triangle3D> UnitTetrahedron() =>
     [
         new(new Vec3(0, 0, 0),  new Vec3(10, 0, 0), new Vec3(5, 0, 10),  Vec3.Up),
@@ -209,7 +209,7 @@ public class Save3mfTests
         // Having both or neither is a conformance error.
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object"))
         {
-            var hasMesh       = obj.Element(Ns3mf + "mesh")       != null;
+            var hasMesh = obj.Element(Ns3mf + "mesh") != null;
             var hasComponents = obj.Element(Ns3mf + "components") != null;
 
             Assert.True(hasMesh ^ hasComponents,
@@ -257,11 +257,11 @@ public class Save3mfTests
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
                                                  .Where(o => o.Element(Ns3mf + "mesh") != null))
         {
-            var mesh   = obj.Element(Ns3mf + "mesh")!;
-            var vCount = mesh.Element(Ns3mf + "vertices")! .Elements(Ns3mf + "vertex")  .Count();
+            var mesh = obj.Element(Ns3mf + "mesh")!;
+            var vCount = mesh.Element(Ns3mf + "vertices")!.Elements(Ns3mf + "vertex").Count();
             var tCount = mesh.Element(Ns3mf + "triangles")!.Elements(Ns3mf + "triangle").Count();
 
-            Assert.True(vCount >= 3,          $"Vertex count {vCount} must be ≥ 3");
+            Assert.True(vCount >= 3, $"Vertex count {vCount} must be ≥ 3");
             Assert.True(vCount <= tCount * 3, $"Vertex count {vCount} must be ≤ tCount×3 = {tCount * 3}");
             // The tetrahedron specifically has 4 unique corners.
             Assert.Equal(4, vCount);
@@ -274,7 +274,7 @@ public class Save3mfTests
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
                                                  .Where(o => o.Element(Ns3mf + "mesh") != null))
         {
-            var mesh        = obj.Element(Ns3mf + "mesh")!;
+            var mesh = obj.Element(Ns3mf + "mesh")!;
             var vertexCount = mesh.Element(Ns3mf + "vertices")!
                                   .Elements(Ns3mf + "vertex").Count();
 
@@ -558,8 +558,8 @@ public class Save3mfTests
             (1, "1 0 0 0 1 0 0 0 1 50 0 0"),
             (1, "1 0 0 0 1 0 0 0 1 100 0 0"));
 
-        var model    = LoadViaLib3mf(bytes);
-        var meshId   = AllMeshObjects(model).Single().GetModelResourceID();
+        var model = LoadViaLib3mf(bytes);
+        var meshId = AllMeshObjects(model).Single().GetModelResourceID();
         var compObjs = AllComponentsObjects(model);
 
         Assert.Equal(3, compObjs.Count);
@@ -639,7 +639,7 @@ public class Save3mfTests
                 float th1 = 2 * MathF.PI * (j + 1) / slices;
                 var v00 = S(phi0, th0); var v01 = S(phi0, th1);
                 var v10 = S(phi1, th0); var v11 = S(phi1, th1);
-                if      (i == 0)          tris.Add(new(v00, v11, v10, Vec3.Up)); // top cap
+                if (i == 0) tris.Add(new(v00, v11, v10, Vec3.Up)); // top cap
                 else if (i == stacks - 1) tris.Add(new(v00, v01, v10, Vec3.Up)); // bottom cap
                 else { tris.Add(new(v00, v01, v11, Vec3.Up)); tris.Add(new(v00, v11, v10, Vec3.Up)); }
             }
@@ -673,7 +673,7 @@ public class Save3mfTests
         IReadOnlyList<(int Id, IReadOnlyList<Triangle3D> Triangles)> objects,
         IReadOnlyList<(int ObjectId, float X, float Y, float Z)> placements)
     {
-        var model   = Lib3MF.Wrapper.CreateModel();
+        var model = Lib3MF.Wrapper.CreateModel();
         var meshById = new Dictionary<int, Lib3MF.CMeshObject>();
 
         foreach (var (id, triangles) in objects)
@@ -718,14 +718,14 @@ public class Save3mfTests
         // Object 2 (sphere): 20 positions lerped from ( 10,-10,-10) to (-10, 10, 10)
         const int count = 20;
         var cubePositions = Enumerable.Range(0, count)
-            .Select(i => { float t = (float)i / (count - 1); return (-10f + t * 20f,  10f,        10f); })
+            .Select(i => { float t = (float)i / (count - 1); return (-10f + t * 20f, 10f, 10f); })
             .ToArray();
         var spherePositions = Enumerable.Range(0, count)
             .Select(i => { float t = (float)i / (count - 1); return (10f - t * 20f, -10f + t * 20f, -10f + t * 20f); })
             .ToArray();
 
-        var cubeTriangles   = UnitCube();
-        var sphereTriangles = UnitSphere(); // 80 triangles — distinct from cube's 12
+        var cubeTriangles = UnitCube();
+        var sphereTriangles = UnitSphere(); // 80 triangles - distinct from cube's 12
 
         // ── Our library ───────────────────────────────────────────────────────────
         // 3MF transform: "m00 m01 m02 m10 m11 m12 m20 m21 m22 tx ty tz" (identity rotation)
@@ -750,7 +750,7 @@ public class Save3mfTests
 
         var ourModel = LoadViaLib3mf(ourBytes);
         var refModel = LoadViaLib3mf(refBytes);
-        var diffs    = new List<string>();
+        var diffs = new List<string>();
 
         // ── Binary & formatted-XML equivalence ───────────────────────────────────
         // Production UUIDs are random, so raw bytes can never be identical between two
@@ -760,7 +760,7 @@ public class Save3mfTests
         var binaryIssues = new List<string>();
         bool rawEqual = ourBytes.SequenceEqual(refBytes);
         if (rawEqual)
-            binaryIssues.Add("Raw bytes are identical (unexpected — UUIDs should differ)");
+            binaryIssues.Add("Raw bytes are identical (unexpected - UUIDs should differ)");
 
         static string NormalizeXml(string xml)
         {
@@ -810,8 +810,8 @@ public class Save3mfTests
             if (!inR) { binaryIssues.Add($"Entry missing from ref:  {key}"); allXmlMatch = false; continue; }
 
             bool isText = key.EndsWith(".model", StringComparison.OrdinalIgnoreCase)
-                       || key.EndsWith(".xml",   StringComparison.OrdinalIgnoreCase)
-                       || key.EndsWith(".rels",  StringComparison.OrdinalIgnoreCase);
+                       || key.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                       || key.EndsWith(".rels", StringComparison.OrdinalIgnoreCase);
             if (!isText) continue;
 
             var ourXml = NormalizeXml(FormatXml(ob!));
@@ -819,7 +819,7 @@ public class Save3mfTests
             if (ourXml == refXml) continue;
 
             allXmlMatch = false;
-            var tmp  = Path.GetTempPath();
+            var tmp = Path.GetTempPath();
             var safe = key.Replace('/', '_').Replace('\\', '_');
             var ourPath = Path.Combine(tmp, $"our_{safe}");
             var refPath = Path.Combine(tmp, $"ref_{safe}");
@@ -852,13 +852,13 @@ public class Save3mfTests
         // ── Per-mesh geometry + translations ──────────────────────────────────────
         // Meshes are identified by their triangle count: cube=12, sphere=80.
         void CheckMesh(
-            string          label,
-            Lib3MF.CModel   model,
-            string          name,
-            List<Triangle3D>         expectedGeom,
-            (float, float, float)[]  expectedPos)
+            string label,
+            Lib3MF.CModel model,
+            string name,
+            List<Triangle3D> expectedGeom,
+            (float, float, float)[] expectedPos)
         {
-            int expTri  = expectedGeom.Count;
+            int expTri = expectedGeom.Count;
             int expVert = UniqueVertexCount(expectedGeom);
             const float eps = 1e-3f;
 
@@ -873,7 +873,7 @@ public class Save3mfTests
 
             mesh.GetTriangleIndices(out var tris);
             mesh.GetVertices(out var verts);
-            if (tris.Length != expTri)  diffs.Add($"[{label}] {name} triangle count: got={tris.Length}, expected={expTri}");
+            if (tris.Length != expTri) diffs.Add($"[{label}] {name} triangle count: got={tris.Length}, expected={expTri}");
             if (verts.Length != expVert) diffs.Add($"[{label}] {name} vertex count: got={verts.Length}, expected={expVert}");
 
             // Collect the component objects that reference this mesh.
@@ -907,13 +907,13 @@ public class Save3mfTests
 
         if (ourMeshes.Count == 2)
         {
-            CheckMesh("ours", ourModel, "cube",   cubeTriangles,   cubePositions);
+            CheckMesh("ours", ourModel, "cube", cubeTriangles, cubePositions);
             CheckMesh("ours", ourModel, "sphere", sphereTriangles, spherePositions);
         }
         if (refMeshes.Count == 2)
         {
-            CheckMesh("ref",  refModel, "cube",   cubeTriangles,   cubePositions);
-            CheckMesh("ref",  refModel, "sphere", sphereTriangles, spherePositions);
+            CheckMesh("ref", refModel, "cube", cubeTriangles, cubePositions);
+            CheckMesh("ref", refModel, "sphere", sphereTriangles, spherePositions);
         }
 
         Assert.True(diffs.Count == 0,

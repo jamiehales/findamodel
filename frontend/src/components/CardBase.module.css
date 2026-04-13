@@ -1,4 +1,4 @@
-/* Shared base rules — referenced via CSS Modules `composes` */
+/* Shared base rules - referenced via CSS Modules `composes` */
 
 .card {
   display: block;

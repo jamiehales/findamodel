@@ -18,7 +18,7 @@ nav_order: 2
 
 ## Requirements
 
-- **Docker** (recommended) — the easiest way to run FindAModel.
+- **Docker** (recommended) - the easiest way to run FindAModel.
 - Or: .NET 8 SDK and Node.js 20+ for local development.
 
 For desktop-specific prerequisites and build flow, see [Desktop > Getting started (desktop)](desktop/getting-started).

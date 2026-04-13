@@ -52,14 +52,14 @@ The 2D footprint of each model is computed from its geometry:
 
 | Mode | Description |
 |------|-------------|
-| **Convex** | Fast, simplified outline — good for most models |
-| **Concave** | Detailed boundary that follows the model's silhouette — allows tighter packing for complex shapes |
+| **Convex** | Fast, simplified outline - good for most models |
+| **Concave** | Detailed boundary that follows the model's silhouette - allows tighter packing for complex shapes |
 
 The active hull mode is set per-plate in plate settings.
 
 ### Raft clearance
 
-The `raftHeight` setting clips the bottom of the model before hull computation — models with a raft or brim base can have their hulls computed from just above the raft, giving a more accurate footprint for placement.
+The `raftHeight` setting clips the bottom of the model before hull computation - models with a raft or brim base can have their hulls computed from just above the raft, giving a more accurate footprint for placement.
 
 Set `raftHeight` globally in [Settings](settings) or per-directory in `findamodel.yaml`.
 

@@ -20,8 +20,8 @@ public class PlateController(
     /// Generates a build-plate file from the supplied model placements.
     ///
     /// Supported formats (request.Format field, default "3mf"):
-    ///   3mf — 3MF package with instancing; each unique model stored once as a mesh resource.
-    ///   stl — merged binary STL with all placements baked into a single triangle soup.
+    ///   3mf - 3MF package with instancing; each unique model stored once as a mesh resource.
+    ///   stl - merged binary STL with all placements baked into a single triangle soup.
     ///
     /// Each placement specifies a model ID, its XY position on the plate (in mm), and a
     /// rotation angle (radians, counter-clockwise when viewed from above).
@@ -154,7 +154,7 @@ public class PlateController(
         Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
             => new(v.X * cosA - v.Z * sinA + xMm, v.Y, v.X * sinA + v.Z * cosA + yMm);
 
-        /// <summary>Rotate around Y axis — direction only, no translation (used for STL normals).</summary>
+        /// <summary>Rotate around Y axis - direction only, no translation (used for STL normals).</summary>
         Vec3 RotateY(Vec3 n, float sinA, float cosA)
             => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
@@ -200,7 +200,7 @@ public class PlateController(
             return rotation * translation;
         }
 
-        // GLB: geometry stays in Y-up (glTF's native system — no axis conversion).
+        // GLB: geometry stays in Y-up (glTF's native system - no axis conversion).
         // Each unique mesh is stored once; node-level instancing references it N times.
         var glbObjects = geometryByModelId
             .Select(kvp => (objectIdByModelId[kvp.Key], (IReadOnlyList<Triangle3D>)kvp.Value.Triangles))

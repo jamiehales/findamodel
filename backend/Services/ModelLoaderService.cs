@@ -92,7 +92,7 @@ public class ModelLoaderService(ILoggerFactory loggerFactory)
                 if (!IsFinite(v0) || !IsFinite(v1) || !IsFinite(v2))
                     continue;
 
-                centred.Add(new Triangle3D(v0, v1, v2, tri.Normal)); // normals are directions — translation doesn't affect them
+                centred.Add(new Triangle3D(v0, v1, v2, tri.Normal)); // normals are directions - translation doesn't affect them
             }
 
             if (centred.Count == 0)

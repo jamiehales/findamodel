@@ -9,10 +9,10 @@ namespace findamodel.Services;
 // or when Preview:UseGpu=false in appsettings.json.
 //
 // Features:
-//   • 2× SSAA  — renders at 2× then box-filters down, giving clean edges
-//   • Parallel tile rasterisation — Parallel.For over 64×64 tiles; no locking
+//   • 2× SSAA  - renders at 2× then box-filters down, giving clean edges
+//   • Parallel tile rasterisation - Parallel.For over 64×64 tiles; no locking
 //     needed because tiles are non-overlapping.
-//   • Pre-process pass — projection + shading computed in parallel before tiles.
+//   • Pre-process pass - projection + shading computed in parallel before tiles.
 //   • Camera matches ModelViewer.tsx exactly (direction, bounding-box framing).
 //   • Lighting matches ModelViewer.tsx (ambient 0.4 + 3 directional lights).
 
@@ -35,7 +35,7 @@ internal static class MeshRenderer
     ];
 
     // Pre-processed triangle: projected screen coords, flat-shaded colour, screen-space AABB.
-    // Area == 0 is the sentinel for "invalid / culled" — skipped in rasterisation.
+    // Area == 0 is the sentinel for "invalid / culled" - skipped in rasterisation.
     private readonly record struct PTri(
         float Sx0, float Sy0, float Sz0,
         float Sx1, float Sy1, float Sz1,
@@ -71,7 +71,7 @@ internal static class MeshRenderer
         float tanHalfFov = MathF.Tan(fovY / 2f);
 
         // ── Pre-process triangles in parallel ────────────────────────────────
-        // BuildPTri has no shared mutable state — each i writes to ptris[i] only.
+        // BuildPTri has no shared mutable state - each i writes to ptris[i] only.
         int bodyCount = triangles.Count;
         int suppCount = supportTriangles?.Count ?? 0;
         var ptris = new PTri[bodyCount + suppCount];
@@ -82,7 +82,7 @@ internal static class MeshRenderer
                 ptris[bodyCount + i] = BuildPTri(supportTriangles[i], eye, forward, right, up, tanHalfFov, aspect, ssW, ssH, supportAlbedo));
 
         // ── Parallel tile rasterisation ──────────────────────────────────────
-        // Each tile owns its own pixel/zbuf region — no synchronisation needed.
+        // Each tile owns its own pixel/zbuf region - no synchronisation needed.
         var ssPixels = new Rgba32[ssW * ssH];
         var zbuf = new float[ssW * ssH];
         Array.Fill(ssPixels, new Rgba32(0, 0, 0, 0));  // transparent
@@ -264,7 +264,7 @@ internal static class MeshRenderer
     private static (float r, float g, float b) Shade(Vec3 normal, Vec3 position, Vec3 eye, Vec3 albedo)
     {
         float mr = albedo.X, mg = albedo.Y, mb = albedo.Z;
-        const float ka = 0.40f;  // ambient — matches Three.js ambientLight intensity={0.4}
+        const float ka = 0.40f;  // ambient - matches Three.js ambientLight intensity={0.4}
         const float kd = 0.70f;  // diffuse
         const float ks = 0.15f;  // specular (low: high roughness in frontend material)
         const float shininess = 20f;

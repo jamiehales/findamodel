@@ -19,7 +19,7 @@ nav_order: 2
 
 ## Overview
 
-`findamodel.yaml` files form a hierarchy that mirrors your directory tree. When a field is not set in a directory's own config, FindAModel walks up the tree to the nearest ancestor that has a value for that field — this is the **resolved** value used for all models in that directory.
+`findamodel.yaml` files form a hierarchy that mirrors your directory tree. When a field is not set in a directory's own config, FindAModel walks up the tree to the nearest ancestor that has a value for that field - this is the **resolved** value used for all models in that directory.
 
 This means you only need to set shared values once, high in the tree, rather than repeating them in every subdirectory.
 
@@ -77,7 +77,7 @@ Key observations:
 
 ## Rule inheritance
 
-Rules inherit like plain values — the closest ancestor rule wins. The rule is then evaluated against each file in the child directory using that file's own path.
+Rules inherit like plain values - the closest ancestor rule wins. The rule is then evaluated against each file in the child directory using that file's own path.
 
 ```
 models/

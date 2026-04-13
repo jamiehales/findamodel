@@ -98,7 +98,7 @@ function FolderCard({ folder, href }: Props) {
     <Box className={styles.wrapper}>
       {/* Card face */}
       <AppCard href={href} interactive className={styles.card}>
-        {/* Index button — enqueues model indexing for this folder */}
+        {/* Index button - enqueues model indexing for this folder */}
         <Tooltip
           title={
             indexingState === 'running'
@@ -131,7 +131,7 @@ function FolderCard({ folder, href }: Props) {
           </span>
         </Tooltip>
 
-        {/* Edit button — stops propagation so click doesn't navigate */}
+        {/* Edit button - stops propagation so click doesn't navigate */}
         <Tooltip title="Edit metadata" placement="top">
           <IconButton
             size="medium"

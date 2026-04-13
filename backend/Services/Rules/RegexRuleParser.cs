@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace findamodel.Services.Rules;
 
 /// <summary>
-/// Rule: "regex" — applies a regex expression to a value derived from the file path.
+/// Rule: "regex" - applies a regex expression to a value derived from the file path.
 /// Options:
 ///   source: full_path | folder | filename  (default: full_path)
 ///   expression: a regex pattern, or a sed-style substitution (s|pattern|replacement|flags).

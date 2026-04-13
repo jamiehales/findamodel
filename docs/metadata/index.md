@@ -191,6 +191,6 @@ model_metadata:
 
 ## Metadata dictionary
 
-FindAModel supports a **metadata dictionary** — a configurable list of known/expected values for string fields like `creator` and `collection`. This is used in the UI for autocomplete suggestions but does not restrict the values that can be stored.
+FindAModel supports a **metadata dictionary** - a configurable list of known/expected values for string fields like `creator` and `collection`. This is used in the UI for autocomplete suggestions but does not restrict the values that can be stored.
 
 Configure the dictionary on the **Settings** page in the application.

@@ -179,7 +179,7 @@ export default function PrintingListCanvas({
     const world = new World(Vec2(0, 20));
     worldRef.current = world;
 
-    // ── Walls (static, CAT_WALL — only collide with CAT_BORDER fixtures) ──
+    // ── Walls (static, CAT_WALL - only collide with CAT_BORDER fixtures) ──
     const wallFixOpt = {
       filterCategoryBits: CAT_WALL,
       filterMaskBits: CAT_BORDER,
@@ -352,7 +352,7 @@ export default function PrintingListCanvas({
 
     // ── Simulation state ───────────────────────────────────────────────────
     // Start paused if positions were restored from storage; user clicks to resume.
-    // Only autosave on settle when there was no prior layout — with an existing
+    // Only autosave on settle when there was no prior layout - with an existing
     // layout the user must explicitly save after adjusting positions.
     const shouldAutosave = savedLayout === null;
     pausedRef.current = savedLayout !== null;
@@ -516,7 +516,7 @@ export default function PrintingListCanvas({
       saveLayoutRef.current = null;
       redrawStaticsRef.current = null;
       app.destroy(true, { children: true, texture: true, baseTexture: true });
-      // planck world is GC'd when ref is released — no explicit clear needed
+      // planck world is GC'd when ref is released - no explicit clear needed
     };
   }, [spawnOrder, hullMode, resetCount]);
 

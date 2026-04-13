@@ -244,7 +244,7 @@ public class IndexerServiceTests
             // CreateRunAsync has NOT been called yet, so DB records are still "queued".
             await blockingFactory.SecondCallBlocked.WaitAsync(TimeSpan.FromSeconds(2));
 
-            // DB records must still be "queued" — CreateRunAsync hasn't run yet.
+            // DB records must still be "queued" - CreateRunAsync hasn't run yet.
             await using (var db = await factory.CreateDbContextAsync())
             {
                 var a = await db.IndexRuns.FindAsync(runA.Id);

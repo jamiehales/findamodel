@@ -9,7 +9,7 @@ namespace findamodel.Services;
 /// Serialises geometry into 3D model file formats.
 /// Supports binary STL and 3MF (with instancing).
 ///
-/// Triangles are written as-is — the caller is responsible for any coordinate-system
+/// Triangles are written as-is - the caller is responsible for any coordinate-system
 /// conversion before passing them in.
 ///
 /// Thread-safe: stateless; safe for singleton DI registration.
@@ -29,7 +29,7 @@ public class ModelSaverService
         var buffer = new byte[84 + (long)triangles.Count * 50];
         var span = buffer.AsSpan();
 
-        // Header (80 bytes) — must not start with "solid" to avoid ASCII mis-detection
+        // Header (80 bytes) - must not start with "solid" to avoid ASCII mis-detection
         if (!string.IsNullOrEmpty(headerText))
         {
             var encoded = System.Text.Encoding.ASCII.GetBytes(headerText);
@@ -47,7 +47,7 @@ public class ModelSaverService
             WriteVec3(span, ref offset, tri.V0);
             WriteVec3(span, ref offset, tri.V1);
             WriteVec3(span, ref offset, tri.V2);
-            span[offset]     = 0; // attribute word (2 bytes, always 0)
+            span[offset] = 0; // attribute word (2 bytes, always 0)
             span[offset + 1] = 0;
             offset += 2;
         }
@@ -57,9 +57,9 @@ public class ModelSaverService
 
     private static void WriteVec3(Span<byte> buf, ref int offset, Vec3 v)
     {
-        BitConverter.TryWriteBytes(buf.Slice(offset,      4), v.X);
-        BitConverter.TryWriteBytes(buf.Slice(offset + 4,  4), v.Y);
-        BitConverter.TryWriteBytes(buf.Slice(offset + 8,  4), v.Z);
+        BitConverter.TryWriteBytes(buf.Slice(offset, 4), v.X);
+        BitConverter.TryWriteBytes(buf.Slice(offset + 4, 4), v.Y);
+        BitConverter.TryWriteBytes(buf.Slice(offset + 8, 4), v.Z);
         offset += 12;
     }
 
@@ -93,7 +93,7 @@ public class ModelSaverService
                 "<Default Extension=\"texture\" ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodeltexture\"/>" +
                 "</Types>");
 
-            // Attribute order: Type / Target / Id — matches lib3mf output.
+            // Attribute order: Type / Target / Id - matches lib3mf output.
             AddZipEntry(zip, "_rels/.rels",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
@@ -120,7 +120,7 @@ public class ModelSaverService
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        // xmlns first, then unit / xml:lang, then all extension namespaces — matching lib3mf order.
+        // xmlns first, then unit / xml:lang, then all extension namespaces - matching lib3mf order.
         sb.Append(
             "<model" +
             " xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\"" +
@@ -135,11 +135,11 @@ public class ModelSaverService
             " xmlns:i=\"http://schemas.3mf.io/3dmanufacturing/implicit/2023/12\">");
         sb.Append("<resources>");
 
-        // Base mesh objects — not referenced directly in <build>.
+        // Base mesh objects - not referenced directly in <build>.
         foreach (var (id, triangles) in objects)
         {
             // Deduplicate vertices so shared corners are written once.
-            var vertices  = new List<Vec3>();
+            var vertices = new List<Vec3>();
             var vertexMap = new Dictionary<Vec3, int>();
             int GetOrAdd(Vec3 v)
             {
@@ -207,13 +207,13 @@ public class ModelSaverService
     }
 
     // -------------------------------------------------------------------------
-    // GLB (binary glTF 2.0) output — via SharpGLTF.Toolkit
+    // GLB (binary glTF 2.0) output - via SharpGLTF.Toolkit
     // -------------------------------------------------------------------------
 
     /// <summary>
     /// Serialises the supplied geometry as a GLB (binary glTF 2.0) and returns the raw bytes.
     ///
-    /// Geometry must be in Y-up coordinates — glTF's native coordinate system — so no
+    /// Geometry must be in Y-up coordinates - glTF's native coordinate system - so no
     /// axis conversion is applied here.  Each entry in <paramref name="objects"/> defines
     /// one mesh that is stored once.  Each entry in <paramref name="items"/> creates a glTF
     /// node that references one of those meshes; passing the same mesh builder to multiple
@@ -232,7 +232,7 @@ public class ModelSaverService
 
         foreach (var (id, triangles) in objects)
         {
-            var mb   = new SharpGLTF.Geometry.MeshBuilder<
+            var mb = new SharpGLTF.Geometry.MeshBuilder<
                 SharpGLTF.Geometry.VertexTypes.VertexPositionNormal>($"mesh_{id}");
             var prim = mb.UsePrimitive(SharpGLTF.Materials.MaterialBuilder.CreateDefault());
 

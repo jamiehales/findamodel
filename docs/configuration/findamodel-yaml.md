@@ -48,7 +48,7 @@ model_name: "Elf Warrior"
 | `creator` | string | Person or organization that made the model |
 | `collection` | string | Top-level grouping (e.g. a Kickstarter set or product range) |
 | `subcollection` | string | Sub-grouping within a collection |
-| `category` | enum | Type of model — see [Metadata fields](../metadata/) for valid values |
+| `category` | enum | Type of model - see [Metadata fields](../metadata/) for valid values |
 | `type` | enum | Whether the file is a complete model or a single part |
 | `material` | enum | Print technology the model is designed for |
 | `supported` | boolean | Whether the file already includes print supports |
@@ -80,7 +80,7 @@ Rules are evaluated per file at index time. See the [Rules system](../rules/) se
 
 ## Per-file metadata overrides
 
-The `model_metadata` section provides per-file overrides that take the highest priority — they override both plain values and rules.
+The `model_metadata` section provides per-file overrides that take the highest priority - they override both plain values and rules.
 
 ```yaml
 model_metadata:

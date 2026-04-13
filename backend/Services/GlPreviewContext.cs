@@ -126,7 +126,7 @@ public sealed class GlPreviewContext : IDisposable
         """;
 
     // ── Camera constants (mirror ModelViewer.tsx) ─────────────────────────────
-    private const float FovY = MathF.PI / 4f;   // 45° — Canvas camera={{ fov: 45 }}
+    private const float FovY = MathF.PI / 4f;   // 45° - Canvas camera={{ fov: 45 }}
     private const float FramingPadding = 1.15f;           // FRAMING_PADDING in ModelViewer.tsx
     private static readonly System.Numerics.Vector3 CamDir =
         System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(1f, 0.8f, -1f));
@@ -198,7 +198,7 @@ public sealed class GlPreviewContext : IDisposable
             opts.API = new GraphicsAPI(
                 ContextAPI.OpenGL, ContextProfile.Core,
                 ContextFlags.Default, new APIVersion(3, 3));
-            // Disable vsync — we're rendering offscreen
+            // Disable vsync - we're rendering offscreen
             opts.VSync = false;
 
             window = Window.Create(opts);
@@ -218,7 +218,7 @@ public sealed class GlPreviewContext : IDisposable
         catch (Exception ex)
         {
             _failed = true;
-            _logger.LogWarning(ex, "GL context creation failed — GPU rendering unavailable; falling back to CPU rasterizer");
+            _logger.LogWarning(ex, "GL context creation failed - GPU rendering unavailable; falling back to CPU rasterizer");
             _ready.TrySetResult();   // signal "ready" so callers don't hang; IsAvailable = false
             DrainChannel();
             window?.Dispose();
@@ -303,7 +303,7 @@ public sealed class GlPreviewContext : IDisposable
 
         gl.UseProgram(_program);
 
-        // Uniforms — upload System.Numerics matrices with transpose=false:
+        // Uniforms - upload System.Numerics matrices with transpose=false:
         // System.Numerics is row-major (row-vector convention); when passed column-by-column
         // to GLSL (which expects column-major), the raw bytes represent the transpose, which
         // is precisely the column-vector form that GLSL's left-multiply convention requires.
@@ -316,7 +316,7 @@ public sealed class GlPreviewContext : IDisposable
         gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), albedo.X, albedo.Y, albedo.Z);
         gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertCount);
 
-        // ── Draw supports (second pass — depth test still active) ─────────────
+        // ── Draw supports (second pass - depth test still active) ─────────────
         if (supportTriangles is { Count: > 0 })
         {
             var suppVerts = BuildVertexBuffer(supportTriangles);

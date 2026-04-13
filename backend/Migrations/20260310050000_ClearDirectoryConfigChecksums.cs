@@ -11,7 +11,7 @@ namespace findamodel.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // Clears all directory config checksums, forcing a full re-sync of
-            // directory configs on next startup — which recomputes all Calculated*
+            // directory configs on next startup - which recomputes all Calculated*
             // fields (including CalculatedModelName) on every CachedModel record.
             migrationBuilder.Sql("UPDATE DirectoryConfigs SET LocalConfigFileHash = NULL");
         }

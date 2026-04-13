@@ -94,7 +94,7 @@ internal static class ConfigInheritanceResolver
     /// <summary>
     /// Re-resolves all descendants of <paramref name="parentPath"/> using the provided
     /// in-memory dictionary. Updates resolved fields and UpdatedAt in place.
-    /// Does NOT call SaveChanges — callers are responsible for saving.
+    /// Does NOT call SaveChanges - callers are responsible for saving.
     /// </summary>
     internal static void ResolveDescendants(string parentPath, Dictionary<string, DirectoryConfig> all)
     {

@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- lib3mf v2.5.0 precompiled native DLL — must sit beside the test binary at runtime.
+    <!-- lib3mf v2.5.0 precompiled native DLL - must sit beside the test binary at runtime.
          TargetPath flattens it from lib3mf\lib3mf.dll to the root of the output directory
          so that DllImport("lib3mf.dll") can resolve it. -->
     <None Include="lib3mf\lib3mf.dll">

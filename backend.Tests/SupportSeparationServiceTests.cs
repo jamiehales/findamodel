@@ -72,7 +72,7 @@ public class SupportSeparationServiceTests
     [Fact]
     public void Separate_SmallDetachedComponent_IsClassifiedAsSupports()
     {
-        // Body: 20 squares (40 tris), supports: 1 square (2 tris) — 5% of body, < 20% threshold
+        // Body: 20 squares (40 tris), supports: 1 square (2 tris) - 5% of body, < 20% threshold
         var triangles = MakeBodyAndSupports(20, 1);
         var (model, supports) = _sut.Separate(triangles);
 

@@ -444,7 +444,7 @@ export function buildTheme(name: ThemeName) {
 // Backward-compatible default export
 export default buildDefaultTheme();
 
-/** Semantic colour tokens shared across components — derived from theme palette */
+/** Semantic colour tokens shared across components - derived from theme palette */
 export function buildAppColors(_themeName: ThemeName) {
   return {
     fileType: {

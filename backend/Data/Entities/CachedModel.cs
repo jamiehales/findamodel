@@ -18,7 +18,7 @@ public class CachedModel
     public Guid? DirectoryConfigId { get; set; }
     public DirectoryConfig? DirectoryConfig { get; set; }
 
-    // Cached computed metadata — DirectoryConfig resolved values with rules applied to this specific file
+    // Cached computed metadata - DirectoryConfig resolved values with rules applied to this specific file
     public string? CalculatedCreator { get; set; }
     public string? CalculatedCollection { get; set; }
     public string? CalculatedSubcollection { get; set; }
@@ -53,7 +53,7 @@ public class CachedModel
     public string? ScanConfigChecksum { get; set; }              // Hash of all config inputs that affect hull generation (null = needs regeneration)
     public DateTime? HullGeneratedAt { get; set; }
 
-    // Geometry metadata — Y-up, mm, centred (X/Z at origin, base at Y=0)
+    // Geometry metadata - Y-up, mm, centred (X/Z at origin, base at Y=0)
     public float? DimensionXMm { get; set; }
     public float? DimensionYMm { get; set; }
     public float? DimensionZMm { get; set; }

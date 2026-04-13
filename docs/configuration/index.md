@@ -18,7 +18,7 @@ When FindAModel indexes your library it:
 
 1. Walks the directory tree recursively.
 2. Reads any `findamodel.yaml` it finds in each folder.
-3. **Inherits** configuration from parent directories to child directories — values set higher in the tree apply everywhere below unless overridden.
+3. **Inherits** configuration from parent directories to child directories - values set higher in the tree apply everywhere below unless overridden.
 4. Evaluates any [rules](../rules/) defined in the config to compute metadata for each model file.
 
 ---
@@ -53,6 +53,6 @@ models/
 
 ## Next steps
 
-- [findamodel.yaml format](findamodel-yaml) — all supported keys and syntax
-- [Inheritance](inheritance) — detailed rules for how values cascade down the tree
-- [LLM configuration](llm) — internal LLamaSharp and Ollama runtime settings
+- [findamodel.yaml format](findamodel-yaml) - all supported keys and syntax
+- [Inheritance](inheritance) - detailed rules for how values cascade down the tree
+- [LLM configuration](llm) - internal LLamaSharp and Ollama runtime settings

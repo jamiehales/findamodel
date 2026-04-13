@@ -9,9 +9,9 @@ namespace findamodel.Services;
 /// Delegates file parsing and coordinate transformation to <see cref="ModelLoaderService"/>.
 ///
 /// Rendering path (in priority order):
-///   1. <see cref="GlPreviewContext"/> — OpenGL 3.3 hardware renderer with 4× MSAA.
+///   1. <see cref="GlPreviewContext"/> - OpenGL 3.3 hardware renderer with 4× MSAA.
 ///      Matches the Three.js viewer camera, lighting, and coordinate system exactly.
-///   2. <see cref="MeshRenderer"/> — CPU software rasterizer fallback (used when the
+///   2. <see cref="MeshRenderer"/> - CPU software rasterizer fallback (used when the
 ///      GL context is unavailable or when Preview:UseGpu=false in appsettings.json).
 /// </summary>
 public class ModelPreviewService(
@@ -69,7 +69,7 @@ public class ModelPreviewService(
 
         byte[]? png = null;
 
-        // GPU path — try first when enabled and available
+        // GPU path - try first when enabled and available
         if (UseGpu && glContext.IsAvailable)
         {
             try

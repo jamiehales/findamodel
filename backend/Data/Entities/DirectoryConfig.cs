@@ -10,7 +10,7 @@ public class DirectoryConfig
     public DirectoryConfig? Parent { get; set; }
     public List<DirectoryConfig> Children { get; set; } = [];
 
-    // Raw (local) values — sourced exclusively from THIS directory's findamodel.yaml
+    // Raw (local) values - sourced exclusively from THIS directory's findamodel.yaml
     public string? RawCreator { get; set; }
     public string? RawCollection { get; set; }
     public string? RawCategory { get; set; }
@@ -23,7 +23,7 @@ public class DirectoryConfig
     public string? RawTagsJson { get; set; }
     public float? RawRaftHeightMm { get; set; }
 
-    // Resolved (composed) values — computed at scan time by walking ancestors; closest non-null wins
+    // Resolved (composed) values - computed at scan time by walking ancestors; closest non-null wins
     public string? Creator { get; set; }
     public string? Collection { get; set; }
     public string? Subcollection { get; set; }

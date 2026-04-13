@@ -61,7 +61,7 @@ function validateRuleYaml(text: string): string | null {
     const value = trimmed.slice(colonIdx + 1).trim();
     if (value && !value.startsWith("'") && !value.startsWith('"')) {
       if (value.startsWith('[') || value.startsWith('{')) {
-        return `Value "${value}" must be quoted because it starts with a YAML special character — wrap it in single quotes, e.g. '${value}'`;
+        return `Value "${value}" must be quoted because it starts with a YAML special character - wrap it in single quotes, e.g. '${value}'`;
       }
     }
   }
@@ -149,7 +149,7 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
         Options:
       </Typography>
-      {para(<>{inline('include_extension: true')} — include the file extension in the value</>)}
+      {para(<>{inline('include_extension: true')} - include the file extension in the value</>)}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
         Examples:
@@ -176,26 +176,26 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       </Typography>
       {para(
         <>
-          {inline('source: full_path | folder | filename')} — what to match against (default:{' '}
+          {inline('source: full_path | folder | filename')} - what to match against (default:{' '}
           {inline('full_path')})
         </>,
       )}
       {para(
         <>
-          {inline('expression: <pattern>')} — a regex or sed-style substitution (
+          {inline('expression: <pattern>')} - a regex or sed-style substitution (
           {inline('s|pattern|replacement|flags')}). Quote patterns that start with {inline('[')} or{' '}
           {inline('{')} (e.g. {inline("expression: '[^n]supported'")})
         </>,
       )}
       {para(
         <>
-          {inline('values: \{ EnumValue: "pattern" \}')} — for select fields: try each pattern in
+          {inline('values: \{ EnumValue: "pattern" \}')} - for select fields: try each pattern in
           order, return the matching key
         </>,
       )}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Plain regex — returns first capture group, or full match:
+        Plain regex - returns first capture group, or full match:
       </Typography>
       {code("rule: regex\nsource: folder\nexpression: '([^/]+)/[^/]+$'")}
       {para(
@@ -205,13 +205,13 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       )}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Sed-style substitution — transform the matched value:
+        Sed-style substitution - transform the matched value:
       </Typography>
       {code("rule: regex\nsource: folder\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
       {para(<>Same result as above but using a substitution expression</>)}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Enum (select) field — map patterns to values:
+        Enum (select) field - map patterns to values:
       </Typography>
       {code("rule: regex\nsource: full_path\nvalues:\n  Bust: '(?i)bust'\n  Miniature: '(?i)mini'")}
       {para('Returns the first key whose pattern matches the path.')}
@@ -649,7 +649,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
       <Box className={styles.actions}>
         {mutation.isError && (
           <Typography variant="caption" color="error.main" className={styles.inlineError}>
-            Failed to save — please try again.
+            Failed to save - please try again.
           </Typography>
         )}
         {onClose && <Button onClick={onClose}>Close</Button>}

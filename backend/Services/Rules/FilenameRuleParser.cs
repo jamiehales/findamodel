@@ -3,9 +3,9 @@ using System.Text.Json;
 namespace findamodel.Services.Rules;
 
 /// <summary>
-/// Rule: "filename" — sets the field value to the model file's name (without extension by default).
+/// Rule: "filename" - sets the field value to the model file's name (without extension by default).
 /// Options:
-///   include_extension: true — include the file extension in the returned value.
+///   include_extension: true - include the file extension in the returned value.
 /// </summary>
 public static class FilenameRuleParser
 {

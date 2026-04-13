@@ -113,7 +113,7 @@ fn main() {
 
             let (api_base_url, session_token, backend_process) =
                 if let (Some(url), Some(token)) = (external_url, external_token) {
-                    // External backend — wait for it to be healthy then attach.
+                    // External backend - wait for it to be healthy then attach.
                     if let Err(error) = wait_for_health(&url, &token) {
                         return Err(IoError::other(format!(
                             "External backend not healthy: {error}"
@@ -122,7 +122,7 @@ fn main() {
                     }
                     (url, token, Arc::new(Mutex::new(None)))
                 } else {
-                    // Managed sidecar — pick port, generate token, spawn backend.
+                    // Managed sidecar - pick port, generate token, spawn backend.
                     let port = pick_port().map_err(IoError::other)?;
                     let token = generate_session_token();
                     let url = format!("http://127.0.0.1:{port}");

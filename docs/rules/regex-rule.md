@@ -66,7 +66,7 @@ For a file at `/models/Alice/Fantasy/elf_warrior.stl`:
 
 ## Expression modes
 
-### Plain regex — extract a value
+### Plain regex - extract a value
 
 If the expression contains a **capturing group**, the content of the first group is returned. If there are no groups, the full match is returned. If there is no match, the rule returns no value (the field is left unset).
 
@@ -92,7 +92,7 @@ Matching is **case-insensitive** by default.
 
 ---
 
-### Boolean fields — match or no match
+### Boolean fields - match or no match
 
 When the rule is applied to a `boolean` field (`supported`), the expression acts as a presence check:
 - If the regex **matches** → field is set to `true`
@@ -112,7 +112,7 @@ supported:
 
 ---
 
-### Enum fields — values map
+### Enum fields - values map
 
 For enum fields (`category`, `type`, `material`), use the `values` map instead of `expression`. The map keys are the enum values to return; the map values are regexes to test against the input. The first matching key is returned.
 
@@ -129,7 +129,7 @@ category:
 |------|--------|
 | `elf_warrior.stl` | `Miniature` |
 | `dragon_bust.stl` | `Bust` |
-| `spaceship.stl` | *(not set — no match)* |
+| `spaceship.stl` | *(not set - no match)* |
 
 {: .note }
 The keys in the `values` map must exactly match valid values for the target field (case-sensitive). See [Metadata fields](../metadata/) for the valid enum values.
