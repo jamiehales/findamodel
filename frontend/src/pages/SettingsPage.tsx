@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
-  Box,
   Button,
   FormControlLabel,
   MenuItem,
+  List,
+  ListItemButton,
+  ListItemText,
   Switch,
   Chip,
   Divider,
@@ -27,6 +29,7 @@ import type { InstanceStats, MetadataDictionaryField } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
+import { useApplicationLogs } from '../lib/queries';
 import styles from './SettingsPage.module.css';
 
 type FieldKey = 'category' | 'type' | 'material' | 'tags';
@@ -62,7 +65,7 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
   );
 
   return (
-    <Box className={styles.section}>
+    <Stack className={styles.section}>
       <Typography variant="h6">{FIELD_LABELS[field]}</Typography>
 
       <Stack spacing={1} className={styles.group}>
@@ -143,9 +146,21 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
           )}
         </Stack>
       </Stack>
-    </Box>
+    </Stack>
   );
 }
+
+const SETTINGS_SECTIONS = [
+  { key: 'settings', label: 'Settings', path: '/settings' },
+  { key: 'logs', label: 'Logs', path: '/settings/logs' },
+  { key: 'ai', label: 'AI Settings', path: '/settings/ai' },
+  { key: 'schema', label: 'Schema Edits', path: '/settings/schema' },
+  { key: 'stats', label: 'Stats', path: '/settings/stats' },
+] as const;
+
+type SettingsSectionKey = (typeof SETTINGS_SECTIONS)[number]['key'];
+
+const LOG_LIMIT = 500;
 
 function formatEnabled(value: boolean): string {
   return value ? 'Enabled' : 'Disabled';
@@ -194,7 +209,6 @@ function InstanceStatsSection({
 }) {
   return (
     <Stack spacing={2} className={styles.globalSettingsSection}>
-      <Typography variant="h5">Instance Stats</Typography>
       {isPending && <Typography color="text.secondary">Loading instance stats...</Typography>}
       {isError && <Typography color="error">Failed to load instance stats.</Typography>}
       {!isPending && !isError && stats && (
@@ -246,6 +260,7 @@ function InstanceStatsSection({
 }
 
 export default function SettingsPage() {
+  const location = useLocation();
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
   const {
     data: instanceStats,
@@ -266,6 +281,16 @@ export default function SettingsPage() {
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
   const { data, isPending, isError } = useMetadataDictionaryOverview();
+  const [logsChannel, setLogsChannel] = useState('');
+  const [logsSeverity, setLogsSeverity] = useState('');
+  const [showExceptionsOnly, setShowExceptionsOnly] = useState(false);
+  const {
+    data: logsData,
+    isPending: logsPending,
+    isError: logsError,
+    refetch: refetchLogs,
+    isRefetching: logsRefetching,
+  } = useApplicationLogs(logsChannel, logsSeverity, LOG_LIMIT);
 
   useEffect(() => {
     if (appConfig) {
@@ -305,202 +330,333 @@ export default function SettingsPage() {
     minConfidenceValue >= 0 &&
     minConfidenceValue <= 1;
 
+  const currentSection: SettingsSectionKey = useMemo(() => {
+    if (location.pathname.startsWith('/settings/logs')) return 'logs';
+    if (location.pathname.startsWith('/settings/ai')) return 'ai';
+    if (location.pathname.startsWith('/settings/schema')) return 'schema';
+    if (location.pathname.startsWith('/settings/stats')) return 'stats';
+    return 'settings';
+  }, [location.pathname]);
+
+  const logsEntries = useMemo(() => {
+    if (!logsData) return [];
+    if (!showExceptionsOnly) return logsData.entries;
+    return logsData.entries.filter((entry) => !!entry.exception);
+  }, [logsData, showExceptionsOnly]);
+
+  const saveConfig = () =>
+    updateAppConfigMutation.mutate({
+      defaultRaftHeightMm: raftHeightValue,
+      theme,
+      tagGenerationEnabled,
+      aiDescriptionEnabled,
+      tagGenerationProvider,
+      tagGenerationEndpoint: tagGenerationEndpoint.trim(),
+      tagGenerationModel: tagGenerationModel.trim(),
+      tagGenerationTimeoutMs: timeoutValue,
+      tagGenerationMaxTags: maxTagsValue,
+      tagGenerationMinConfidence: minConfidenceValue,
+    });
+
   if (isPending || appConfigPending) return <LoadingView />;
 
   if (isError || appConfigError || !data || !appConfig) {
     return <ErrorView message="Failed to load settings." />;
   }
 
+  if (currentSection === 'logs' && logsPending) return <LoadingView />;
+
+  if (currentSection === 'logs' && (logsError || !logsData)) {
+    return <ErrorView message="Failed to load application logs." />;
+  }
+
   return (
-    <PageLayout variant="medium" spacing={2}>
+    <PageLayout variant="full" spacing={2}>
       <Typography component="h1" variant="page-title">
         Settings
       </Typography>
 
-      <Stack direction="row" spacing={1}>
-        <Button component={Link} to="/settings/logs" variant="outlined">
-          View Application Logs
-        </Button>
-      </Stack>
-
-      <Box className={styles.globalSettingsSection}>
-        <Typography variant="h5">Default Values</Typography>
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
-            <TextField
-              size="small"
-              type="number"
-              label="Raft height (mm)"
-              value={defaultRaftHeightMm}
-              onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
-            />
-          </Stack>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <Typography>Theme</Typography>
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              value={theme}
-              onChange={(_, v) => {
-                if (v) setTheme(v);
-              }}
-            >
-              <ToggleButton value="default">Default</ToggleButton>
-              <ToggleButton value="nord">Nord</ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              disabled={updateAppConfigMutation.isPending || !appConfigValid}
-              onClick={() =>
-                updateAppConfigMutation.mutate({
-                  defaultRaftHeightMm: raftHeightValue,
-                  theme,
-                  tagGenerationEnabled,
-                  aiDescriptionEnabled,
-                  tagGenerationProvider,
-                  tagGenerationEndpoint: tagGenerationEndpoint.trim(),
-                  tagGenerationModel: tagGenerationModel.trim(),
-                  tagGenerationTimeoutMs: timeoutValue,
-                  tagGenerationMaxTags: maxTagsValue,
-                  tagGenerationMinConfidence: minConfidenceValue,
-                })
-              }
-            >
-              Save
-            </Button>
-          </Stack>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} className={styles.settingsLayout}>
+        <Stack className={styles.sidebar}>
+          <List disablePadding>
+            {SETTINGS_SECTIONS.map((section) => (
+              <ListItemButton
+                key={section.key}
+                component={Link}
+                to={section.path}
+                selected={currentSection === section.key}
+              >
+                <ListItemText primary={section.label} />
+              </ListItemButton>
+            ))}
+          </List>
         </Stack>
-      </Box>
 
-      <Box className={styles.globalSettingsSection}>
-        <Typography variant="h5">Tag Generation</Typography>
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={tagGenerationEnabled}
-                  onChange={(e) => setTagGenerationEnabled(e.target.checked)}
-                />
-              }
-              label="Enable tag generation"
-            />
-          </Stack>
-
-          <Stack direction="row" spacing={1}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={aiDescriptionEnabled}
-                  onChange={(e) => setAiDescriptionEnabled(e.target.checked)}
-                />
-              }
-              label="Enable AI description generation"
-            />
-          </Stack>
-
-          <TextField
-            select
-            size="small"
-            label="Provider"
-            value={tagGenerationProvider}
-            onChange={(e) =>
-              setTagGenerationProvider(e.target.value === 'ollama' ? 'ollama' : 'internal')
-            }
-          >
-            <MenuItem value="internal">Internal</MenuItem>
-            <MenuItem value="ollama">Ollama</MenuItem>
-          </TextField>
-
-          {tagGenerationProvider === 'ollama' && (
-            <TextField
-              size="small"
-              label="Endpoint"
-              value={tagGenerationEndpoint}
-              onChange={(e) => setTagGenerationEndpoint(e.target.value)}
-              error={!tagGenerationEndpoint.trim()}
-              helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : undefined}
-            />
+        <Stack spacing={2} className={styles.contentArea}>
+          {currentSection === 'settings' && (
+            <Stack className={styles.globalSettingsSection}>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Raft height (mm)"
+                    value={defaultRaftHeightMm}
+                    onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
+                  />
+                </Stack>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <Typography>Theme</Typography>
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={theme}
+                    onChange={(_, v) => {
+                      if (v) setTheme(v);
+                    }}
+                  >
+                    <ToggleButton value="default">Default</ToggleButton>
+                    <ToggleButton value="nord">Nord</ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    disabled={updateAppConfigMutation.isPending || !appConfigValid}
+                    onClick={saveConfig}
+                  >
+                    Save
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
           )}
 
-          <TextField
-            size="small"
-            label="Model"
-            value={tagGenerationModel}
-            onChange={(e) => setTagGenerationModel(e.target.value)}
-            error={!tagGenerationModel.trim()}
-            helperText={!tagGenerationModel.trim() ? 'Model is required.' : undefined}
-          />
+          {currentSection === 'logs' && logsData && (
+            <Stack spacing={2} className={styles.globalSettingsSection}>
+              <Stack direction="row" spacing={2} className={styles.filterRow}>
+                <TextField
+                  select
+                  size="small"
+                  label="Channel"
+                  value={logsChannel}
+                  onChange={(e) => setLogsChannel(e.target.value)}
+                  className={`${styles.filterControl} ${styles.channelFilterControl}`}
+                >
+                  <MenuItem value="">All channels</MenuItem>
+                  {logsData.availableChannels.map((item) => (
+                    <MenuItem key={item} value={item}>
+                      {item}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
-          <TextField
-            size="small"
-            type="number"
-            label="Timeout (ms)"
-            value={tagGenerationTimeoutMs}
-            onChange={(e) => setTagGenerationTimeoutMs(e.target.value)}
-            error={!Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000}
-            helperText={
-              !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
-                ? 'Must be an integer between 1000 and 300000.'
-                : undefined
-            }
-          />
+                <TextField
+                  select
+                  size="small"
+                  label="Minimum severity"
+                  value={logsSeverity}
+                  onChange={(e) => setLogsSeverity(e.target.value)}
+                  className={styles.filterControl}
+                >
+                  <MenuItem value="">All severities</MenuItem>
+                  {logsData.availableSeverities.map((item) => (
+                    <MenuItem key={item} value={item}>
+                      {item}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
-          <TextField
-            size="small"
-            type="number"
-            label="Max tags"
-            value={tagGenerationMaxTags}
-            onChange={(e) => setTagGenerationMaxTags(e.target.value)}
-            error={!Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64}
-            helperText={
-              !Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64
-                ? 'Must be an integer between 1 and 64.'
-                : undefined
-            }
-          />
+                <Button
+                  variant={showExceptionsOnly ? 'contained' : 'outlined'}
+                  onClick={() => setShowExceptionsOnly((prev) => !prev)}
+                >
+                  {showExceptionsOnly ? 'Showing exceptions only' : 'Filter to exceptions'}
+                </Button>
 
-          <TextField
-            size="small"
-            type="number"
-            label="Min confidence"
-            value={tagGenerationMinConfidence}
-            onChange={(e) => setTagGenerationMinConfidence(e.target.value)}
-            error={
-              !Number.isFinite(minConfidenceValue) ||
-              minConfidenceValue < 0 ||
-              minConfidenceValue > 1
-            }
-            helperText={
-              !Number.isFinite(minConfidenceValue) ||
-              minConfidenceValue < 0 ||
-              minConfidenceValue > 1
-                ? 'Must be a number between 0 and 1.'
-                : undefined
-            }
-          />
+                <Button variant="outlined" disabled={logsRefetching} onClick={() => refetchLogs()}>
+                  Refresh
+                </Button>
+              </Stack>
+
+              <Typography color="text.secondary">
+                Showing newest {LOG_LIMIT} log entries from this running backend instance.
+              </Typography>
+
+              <Stack spacing={1} className={styles.logsList}>
+                {logsEntries.map((entry, index) => (
+                  <Stack key={`${entry.timestamp}-${index}`} className={styles.logCard} spacing={1}>
+                    <Stack direction="row" spacing={1} className={styles.logMetaRow}>
+                      <Typography className={styles.logMetaText}>
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </Typography>
+                      <Typography className={styles.logMetaText}>{entry.severity}</Typography>
+                      <Typography className={styles.logMetaText}>{entry.channel}</Typography>
+                    </Stack>
+                    <Typography variant="body2">{entry.message}</Typography>
+                    {entry.exception && (
+                      <Typography
+                        variant="caption"
+                        component="pre"
+                        className={styles.exceptionText}
+                      >
+                        {entry.exception}
+                      </Typography>
+                    )}
+                  </Stack>
+                ))}
+                {logsEntries.length === 0 && (
+                  <Typography color="text.secondary">
+                    No logs matched the selected filters.
+                  </Typography>
+                )}
+              </Stack>
+            </Stack>
+          )}
+
+          {currentSection === 'ai' && (
+            <Stack className={styles.globalSettingsSection}>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={1}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={tagGenerationEnabled}
+                        onChange={(e) => setTagGenerationEnabled(e.target.checked)}
+                      />
+                    }
+                    label="Enable tag generation"
+                  />
+                </Stack>
+
+                <Stack direction="row" spacing={1}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={aiDescriptionEnabled}
+                        onChange={(e) => setAiDescriptionEnabled(e.target.checked)}
+                      />
+                    }
+                    label="Enable AI description generation"
+                  />
+                </Stack>
+
+                <TextField
+                  select
+                  size="small"
+                  label="Provider"
+                  value={tagGenerationProvider}
+                  onChange={(e) =>
+                    setTagGenerationProvider(e.target.value === 'ollama' ? 'ollama' : 'internal')
+                  }
+                >
+                  <MenuItem value="internal">Internal</MenuItem>
+                  <MenuItem value="ollama">Ollama</MenuItem>
+                </TextField>
+
+                {tagGenerationProvider === 'ollama' && (
+                  <TextField
+                    size="small"
+                    label="Endpoint"
+                    value={tagGenerationEndpoint}
+                    onChange={(e) => setTagGenerationEndpoint(e.target.value)}
+                    error={!tagGenerationEndpoint.trim()}
+                    helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : undefined}
+                  />
+                )}
+
+                <TextField
+                  size="small"
+                  label="Model"
+                  value={tagGenerationModel}
+                  onChange={(e) => setTagGenerationModel(e.target.value)}
+                  error={!tagGenerationModel.trim()}
+                  helperText={!tagGenerationModel.trim() ? 'Model is required.' : undefined}
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Timeout (ms)"
+                  value={tagGenerationTimeoutMs}
+                  onChange={(e) => setTagGenerationTimeoutMs(e.target.value)}
+                  error={
+                    !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
+                  }
+                  helperText={
+                    !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
+                      ? 'Must be an integer between 1000 and 300000.'
+                      : undefined
+                  }
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Max tags"
+                  value={tagGenerationMaxTags}
+                  onChange={(e) => setTagGenerationMaxTags(e.target.value)}
+                  error={!Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64}
+                  helperText={
+                    !Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64
+                      ? 'Must be an integer between 1 and 64.'
+                      : undefined
+                  }
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Min confidence"
+                  value={tagGenerationMinConfidence}
+                  onChange={(e) => setTagGenerationMinConfidence(e.target.value)}
+                  error={
+                    !Number.isFinite(minConfidenceValue) ||
+                    minConfidenceValue < 0 ||
+                    minConfidenceValue > 1
+                  }
+                  helperText={
+                    !Number.isFinite(minConfidenceValue) ||
+                    minConfidenceValue < 0 ||
+                    minConfidenceValue > 1
+                      ? 'Must be a number between 0 and 1.'
+                      : undefined
+                  }
+                />
+
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    disabled={updateAppConfigMutation.isPending || !appConfigValid}
+                    onClick={saveConfig}
+                  >
+                    Save
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
+          )}
+
+          {currentSection === 'schema' && (
+            <Stack spacing={2} className={styles.globalSettingsSection}>
+              <Stack direction="column" spacing={2} className={styles.sectionsColumn}>
+                <FieldSection field="category" data={data.category} />
+                <FieldSection field="type" data={data.type} />
+                <FieldSection field="material" data={data.material} />
+                <FieldSection field="tags" data={data.tags} />
+              </Stack>
+            </Stack>
+          )}
+
+          {currentSection === 'stats' && (
+            <InstanceStatsSection
+              stats={instanceStats}
+              isPending={instanceStatsPending}
+              isError={instanceStatsError}
+            />
+          )}
         </Stack>
-      </Box>
-
-      <Stack
-        direction="row"
-        spacing={2}
-        divider={<Divider orientation="vertical" flexItem />}
-        className={styles.sectionsRow}
-      >
-        <FieldSection field="category" data={data.category} />
-        <FieldSection field="type" data={data.type} />
-        <FieldSection field="material" data={data.material} />
-        <FieldSection field="tags" data={data.tags} />
       </Stack>
-
-      <InstanceStatsSection
-        stats={instanceStats}
-        isPending={instanceStatsPending}
-        isError={instanceStatsError}
-      />
     </PageLayout>
   );
 }

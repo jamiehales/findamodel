@@ -12,11 +12,16 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
 .sectionsRow {
+  align-items: stretch;
+  overflow-x: auto;
+}
+
+.sectionsColumn {
   align-items: stretch;
 }
 
@@ -30,6 +35,23 @@
   gap: 12px;
 }
 
+.settingsLayout {
+  align-items: flex-start;
+}
+
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.contentArea {
+  flex: 1;
+  min-width: 0;
+}
+
 .addRow {
   align-items: center;
 }
@@ -40,6 +62,41 @@
 
 .chipsWrap {
   flex-wrap: wrap;
+}
+
+.filterRow {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filterControl {
+  flex: 0 1 240px;
+  min-width: 240px;
+}
+
+.channelFilterControl {
+  flex-basis: 320px;
+  min-width: 320px;
+}
+
+.logsList {
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.logCard {
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.logMetaRow {
+  flex-wrap: wrap;
+}
+
+.logMetaText {
+  color: var(--mui-palette-text-secondary);
+  font-size: 0.8rem;
 }
 
 .statsGrid {
@@ -61,4 +118,11 @@
 .statValue {
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+  }
 }
