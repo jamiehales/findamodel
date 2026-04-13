@@ -157,18 +157,19 @@ supported:
 | | |
 |---|---|
 | **Type** | String |
-| **Sources** | Plain value, filename rule, regex rule, per-file override |
+| **Sources** | Plain value, regex rule, per-file override |
 | **Description** | The display name for the model shown in the UI. If not set, the raw filename (without extension) is shown. |
 
 ```yaml
 model_name: "Elf Warrior"
 ```
 
-Most commonly populated with the [filename rule](rules/filename-rule):
+Commonly populated with a regex rule against the filename:
 
 ```yaml
 model_name:
-  rule: filename
+  source: filename
+  expression: "^(.*)\\.[^./]+$"
 ```
 
 ---

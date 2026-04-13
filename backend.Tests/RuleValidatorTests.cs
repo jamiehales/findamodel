@@ -13,11 +13,11 @@ public class RuleValidatorTests
     }
 
     [Fact]
-    public void ValidateRules_ValidFilenameRule_ReturnsNoErrors()
+    public void ValidateRules_MissingRuleKey_DefaultsToRegex_AndReturnsNoErrors()
     {
         var rules = new Dictionary<string, string>
         {
-            ["model_name"] = "rule: filename\ninclude_extension: false",
+            ["creator"] = "source: folder\nexpression: ^([^/]+)",
         };
         var errors = RuleValidator.ValidateRules(rules);
         Assert.Empty(errors);
@@ -35,15 +35,15 @@ public class RuleValidatorTests
     }
 
     [Fact]
-    public void ValidateRules_MissingRuleKey_ReturnsError()
+    public void ValidateRules_ExplicitFilenameRule_ReturnsError()
     {
         var rules = new Dictionary<string, string>
         {
-            ["creator"] = "source: folder\nexpression: ^([^/]+)",
+            ["creator"] = "rule: filename",
         };
         var errors = RuleValidator.ValidateRules(rules);
         Assert.True(errors.ContainsKey("creator"));
-        Assert.Contains("rule", errors["creator"]);
+        Assert.Contains("filename", errors["creator"]);
     }
 
     [Fact]
@@ -88,13 +88,13 @@ public class RuleValidatorTests
     {
         var rules = new Dictionary<string, string>
         {
-            ["creator"] = "rule: filename",
-            ["collection"] = "source: folder",       // missing "rule:" key
+            ["creator"] = "source: folder\nexpression: ^([^/]+)",
+            ["collection"] = "source: folder\nexpression: ([^/]+)$",
             ["category"] = "rule: unknowntype",      // unknown rule type
         };
         var errors = RuleValidator.ValidateRules(rules);
         Assert.False(errors.ContainsKey("creator"));
-        Assert.True(errors.ContainsKey("collection"));
+        Assert.False(errors.ContainsKey("collection"));
         Assert.True(errors.ContainsKey("category"));
     }
 
@@ -107,7 +107,7 @@ public class RuleValidatorTests
             ["Creator"] = "source: folder",
         };
         var errors = RuleValidator.ValidateRules(rules);
-        Assert.True(errors.ContainsKey("creator"));
+        Assert.False(errors.ContainsKey("creator"));
     }
 
     [Fact]

@@ -19,6 +19,7 @@ public class MetadataFieldRegistryTests
     [InlineData("creator")]
     [InlineData("collection")]
     [InlineData("subcollection")]
+    [InlineData("tags")]
     [InlineData("category")]
     [InlineData("type")]
     [InlineData("material")]
@@ -50,27 +51,28 @@ public class MetadataFieldRegistryTests
     // ── Keys ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Keys_ContainsAllNineExpectedFields()
+    public void Keys_ContainsAllTenExpectedFields()
     {
         var keys = MetadataFieldRegistry.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         Assert.Contains("creator", keys);
         Assert.Contains("collection", keys);
         Assert.Contains("subcollection", keys);
+        Assert.Contains("tags", keys);
         Assert.Contains("category", keys);
         Assert.Contains("type", keys);
         Assert.Contains("material", keys);
         Assert.Contains("supported", keys);
         Assert.Contains("model_name", keys);
         Assert.Contains("part_name", keys);
-        Assert.Equal(9, keys.Count);
+        Assert.Equal(10, keys.Count);
     }
 
     // ── Definitions ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Definitions_ContainsNineEntries()
+    public void Definitions_ContainsTenEntries()
     {
-        Assert.Equal(9, MetadataFieldRegistry.Definitions.Length);
+        Assert.Equal(10, MetadataFieldRegistry.Definitions.Length);
     }
 
     // ── GetRuleFieldType ──────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ public class MetadataFieldRegistryTests
     [InlineData("creator", RuleFieldType.String)]
     [InlineData("collection", RuleFieldType.String)]
     [InlineData("subcollection", RuleFieldType.String)]
+    [InlineData("tags", RuleFieldType.String)]
     [InlineData("model_name", RuleFieldType.String)]
     [InlineData("part_name", RuleFieldType.String)]
     public void GetRuleFieldType_ReturnsString_ForStringFields(string key, RuleFieldType expected)

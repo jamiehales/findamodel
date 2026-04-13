@@ -188,6 +188,25 @@ public class RegexRuleParserTests
         Assert.Equal("Fantasy", result);
     }
 
+    [Fact]
+    public void ParseMatchingValueKeys_ReturnsAllMatchingKeys_InOrder()
+    {
+        var matches = RegexRuleParser.ParseMatchingValueKeys(
+            "/models/fantasy/mini_knight_supported.stl",
+            Opts(new
+            {
+                source = "full_path",
+                values = new
+                {
+                    Supported = "supported",
+                    Miniature = "mini",
+                    Bust = "bust",
+                }
+            }));
+
+        Assert.Equal(["Supported", "Miniature"], matches);
+    }
+
     // ── Sed substitution ──────────────────────────────────────────────────────
 
     [Fact]

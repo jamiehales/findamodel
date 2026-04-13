@@ -61,7 +61,7 @@ See [Metadata fields](../metadata/) for the full list of valid enum values.
 
 ## Rule fields
 
-Instead of a fixed value, a field can use a **rule** to compute its value dynamically from each file's path. Set the field key to a YAML object with a `rule:` property.
+Instead of a fixed value, a field can use a **rule** to compute its value dynamically from each file's path. Regex is the only rule type and `rule: regex` is optional.
 
 ```yaml
 creator:
@@ -70,8 +70,13 @@ creator:
   expression: "^([^/]+)"
 
 model_name:
-  rule: filename
-  include_extension: false
+  source: filename
+  expression: "^(.*)\\.[^./]+$"
+
+tags:
+  rule: regex
+  source: filename
+  expression: "supported"
 ```
 
 Rules are evaluated per file at index time. See the [Rules system](../rules/) section for a complete reference.
@@ -104,6 +109,7 @@ The key is the **filename only** (not the full path). The following per-file fie
 | `creator` | Override creator for this file |
 | `collection` | Override collection |
 | `subcollection` | Override subcollection |
+| `tags` | Add or override tags for this file |
 | `category` | Override category |
 | `type` | Override type |
 | `material` | Override material |
@@ -162,8 +168,8 @@ supported:
 
 # Extract model name from filename
 model_name:
-  rule: filename
-  include_extension: false
+  source: filename
+  expression: "^(.*)\\.[^./]+$"
 
 # Override specific files
 model_metadata:

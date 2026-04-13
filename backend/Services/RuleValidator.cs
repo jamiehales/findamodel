@@ -7,7 +7,7 @@ internal static class RuleValidator
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder().Build();
 
     private static readonly HashSet<string> KnownRuleTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "filename", "regex" };
+        new(StringComparer.OrdinalIgnoreCase) { "regex" };
 
     /// <summary>
     /// Validates each field rule entry; returns a map of fieldName → error message for any failures.
@@ -36,13 +36,9 @@ internal static class RuleValidator
                 continue;
             }
 
-            if (!ruleObj.TryGetValue("rule", out var ruleNameObj) || ruleNameObj == null)
-            {
-                errors[fieldName] = "Must include a \"rule:\" key (e.g. rule: filename)";
-                continue;
-            }
-
-            var ruleName = ruleNameObj.ToString() ?? "";
+            var ruleName = ruleObj.TryGetValue("rule", out var ruleNameObj) && ruleNameObj != null
+                ? ruleNameObj.ToString() ?? string.Empty
+                : "regex";
             if (!KnownRuleTypes.Contains(ruleName))
                 errors[fieldName] = $"Unknown rule type \"{ruleName}\". Valid types: {string.Join(", ", KnownRuleTypes)}";
         }

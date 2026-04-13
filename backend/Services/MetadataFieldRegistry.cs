@@ -61,6 +61,12 @@ internal static class MetadataFieldRegistry
             SetResolvedValue: (record, value) => record.Subcollection = value as string,
             GetResolvedValue: record => record.Subcollection),
         new(
+            Key: "tags",
+            RuleFieldType: RuleFieldType.String,
+            GetRawValue: record => record.RawTagsJson,
+            SetResolvedValue: (record, value) => record.TagsJson = value as string,
+            GetResolvedValue: record => record.TagsJson),
+        new(
             Key: "category",
             RuleFieldType: RuleFieldType.Enum,
             GetRawValue: record => record.RawCategory,

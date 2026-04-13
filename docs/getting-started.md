@@ -173,6 +173,6 @@ A minimal `findamodel.yaml` to set a creator and extract model names from filena
 creator: "Alice"
 
 model_name:
-  rule: filename
-  include_extension: false
+  source: filename
+  expression: "^(.*)\\.[^./]+$"
 ```

@@ -16,7 +16,7 @@ public static class RuleRegistry
     /// <param name="fieldName">The metadata field name (e.g. "creator").</param>
     /// <param name="filePath">Full path to the model file.</param>
     /// <param name="availableFields">Resolved non-rule field values available for use by rules.</param>
-    /// <param name="ruleConfig">The rule config JSON element (must contain a "rule" property).</param>
+    /// <param name="ruleConfig">The rule config JSON element. If "rule" is omitted, "regex" is assumed.</param>
     /// <param name="fieldType">The expected type of the field; governs how regex results are interpreted.</param>
     /// <returns>The computed value, or null if the rule name is unknown or evaluation fails.</returns>
     public static string? Evaluate(
@@ -26,10 +26,14 @@ public static class RuleRegistry
         JsonElement ruleConfig,
         RuleFieldType fieldType = RuleFieldType.String)
     {
-        if (!ruleConfig.TryGetProperty("rule", out var ruleNameEl)) return null;
-        if (ruleNameEl.ValueKind != JsonValueKind.String) return null;
-        var ruleName = ruleNameEl.GetString();
-        if (string.IsNullOrEmpty(ruleName)) return null;
+        var ruleName = "regex";
+        if (ruleConfig.TryGetProperty("rule", out var ruleNameEl))
+        {
+            if (ruleNameEl.ValueKind != JsonValueKind.String) return null;
+            var configuredRuleName = ruleNameEl.GetString();
+            if (string.IsNullOrWhiteSpace(configuredRuleName)) return null;
+            ruleName = configuredRuleName;
+        }
 
         // Collect options (all properties except "rule")
         var options = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
@@ -41,7 +45,6 @@ public static class RuleRegistry
 
         return ruleName.ToLowerInvariant() switch
         {
-            "filename" => FilenameRuleParser.ParseValue(filePath, availableFields, options),
             "regex"    => RegexRuleParser.ParseValue(filePath, fieldType, options),
             _ => null
         };

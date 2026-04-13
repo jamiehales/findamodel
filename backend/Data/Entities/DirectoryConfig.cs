@@ -37,7 +37,7 @@ public class DirectoryConfig
     public float? RaftHeightMm { get; set; }
 
     // Rule definitions stored as YAML: Dictionary<fieldName, ruleConfigObject>
-    // e.g. "creator:\n  rule: filename\n  include_extension: false\n"
+    // e.g. "creator:\n  source: folder\n  expression: '^([^/]+)'\n"
     // Raw = defined in THIS directory's YAML; Resolved = after inheritance walk
     public string? RawRulesYaml { get; set; }
     public string? ResolvedRulesYaml { get; set; }

@@ -328,7 +328,8 @@ public class ExplorerService(
     /// Converts a rule's JsonElement config to a compact YAML snippet for display.
     /// E.g. {"rule":"filename","include_extension":false} →
     ///   collection:
-    ///     rule: filename
+    ///     source: filename
+    ///     expression: "^(.*)\\.[^./]+$"
     ///     include_extension: false
     /// </summary>
     private static string RuleConfigToYamlSnippet(string fieldName, JsonElement ruleEl)

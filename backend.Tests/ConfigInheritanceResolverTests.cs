@@ -193,7 +193,7 @@ public class ConfigInheritanceResolverTests
             Supported: true,
             RaftHeightMm: 1.5f,
             ModelName: "Elf Warrior",
-            RulesYaml: "creator:\n  rule: filename");
+            RulesYaml: "creator:\n  rule: regex\n  source: folder\n  expression: '^([^/]+)'");
         ConfigInheritanceResolver.ApplyRawFields(record, fields);
         Assert.Equal("Alice", record.RawCreator);
         Assert.Equal("Fantasy", record.RawCollection);
@@ -205,7 +205,7 @@ public class ConfigInheritanceResolverTests
         Assert.True(record.RawSupported);
         Assert.Equal(1.5f, record.RawRaftHeightMm);
         Assert.Equal("Elf Warrior", record.RawModelName);
-        Assert.Equal("creator:\n  rule: filename", record.RawRulesYaml);
+        Assert.Equal("creator:\n  rule: regex\n  source: folder\n  expression: '^([^/]+)'", record.RawRulesYaml);
     }
 
     [Fact]
@@ -329,7 +329,7 @@ public class ConfigInheritanceResolverTests
         var record = new DirectoryConfig
         {
             DirectoryPath = "",
-            RawRulesYaml = "creator:\n  rule: filename\n",
+            RawRulesYaml = "creator:\n  rule: regex\n  source: folder\n  expression: '^([^/]+)'\n",
         };
         var dict = new Dictionary<string, DirectoryConfig> { [""] = record };
 
@@ -345,7 +345,7 @@ public class ConfigInheritanceResolverTests
         var root = new DirectoryConfig
         {
             DirectoryPath = "",
-            RawRulesYaml = "creator:\n  rule: filename\n",
+            RawRulesYaml = "creator:\n  rule: regex\n  source: folder\n  expression: '^([^/]+)'\n",
         };
         var child = new DirectoryConfig { DirectoryPath = "Fantasy" };
         var dict = new Dictionary<string, DirectoryConfig>
@@ -366,7 +366,7 @@ public class ConfigInheritanceResolverTests
         var root = new DirectoryConfig
         {
             DirectoryPath = "",
-            RawRulesYaml = "creator:\n  rule: filename\n",
+            RawRulesYaml = "creator:\n  rule: regex\n  source: folder\n  expression: '^([^/]+)'\n",
         };
         var child = new DirectoryConfig
         {

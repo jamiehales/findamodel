@@ -99,7 +99,7 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                 try
                 {
                     var ruleObj = YamlDeserializer.Deserialize<Dictionary<string, object>>(ruleYaml);
-                    if (ruleObj != null && ruleObj.ContainsKey("rule"))
+                    if (LooksLikeRuleObject(ruleObj))
                         data[fieldName] = ruleObj;
                 }
                 catch (Exception ex)
@@ -136,8 +136,8 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                                 _ => null
                             };
 
-                            if (ruleObj != null && ruleObj.ContainsKey("rule"))
-                                existingRules[fieldName] = ruleObj;
+                            if (LooksLikeRuleObject(ruleObj))
+                                existingRules[fieldName] = ruleObj!;
                         }
                     }
                 }
@@ -204,8 +204,8 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
                 _ => null
             };
 
-            if (ruleObj == null || !ruleObj.ContainsKey("rule")) continue;
-            rules[fieldName] = ruleObj;
+            if (!LooksLikeRuleObject(ruleObj)) continue;
+            rules[fieldName] = ruleObj!;
         }
 
         return rules.Count > 0 ? YamlSerializer.Serialize(rules) : null;
@@ -290,5 +290,18 @@ public sealed class DirectoryConfigReader(ILoggerFactory loggerFactory)
         }
 
         return null;
+    }
+
+    private static bool LooksLikeRuleObject(Dictionary<string, object>? ruleObj)
+    {
+        if (ruleObj == null || ruleObj.Count == 0)
+            return false;
+
+        if (ruleObj.ContainsKey("rule"))
+            return true;
+
+        return ruleObj.ContainsKey("expression")
+            || ruleObj.ContainsKey("values")
+            || ruleObj.ContainsKey("source");
     }
 }

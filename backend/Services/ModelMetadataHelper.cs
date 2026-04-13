@@ -81,6 +81,35 @@ internal static class ModelMetadataHelper
                 : field.ToLowerInvariant();
             var ft = MetadataFieldRegistry.GetRuleFieldType(normalizedField);
             var value = RuleRegistry.Evaluate(field, fullFilePath, available, ruleEl, ft);
+
+            if (normalizedField.Equals("tags", StringComparison.OrdinalIgnoreCase))
+            {
+                var existingTags = values["tags"] as List<string> ?? [];
+                var tagRuleOptions = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in ruleEl.EnumerateObject())
+                {
+                    if (!string.Equals(prop.Name, "rule", StringComparison.OrdinalIgnoreCase))
+                        tagRuleOptions[prop.Name] = prop.Value;
+                }
+
+                var matchedTagKeys = RegexRuleParser.ParseMatchingValueKeys(fullFilePath, tagRuleOptions);
+                if (matchedTagKeys.Count > 0)
+                {
+                    if (ruleConfigs != null)
+                        ruleConfigs[normalizedField] = RuleConfigToYamlSnippet(field, ruleEl);
+                    values["tags"] = TagListHelper.Merge(existingTags, matchedTagKeys);
+                    continue;
+                }
+
+                if (value == null)
+                    continue;
+
+                if (ruleConfigs != null)
+                    ruleConfigs[normalizedField] = RuleConfigToYamlSnippet(field, ruleEl);
+                values["tags"] = TagListHelper.Merge(existingTags, [value]);
+                continue;
+            }
+
             if (value == null) continue;
 
             if (ruleConfigs != null)

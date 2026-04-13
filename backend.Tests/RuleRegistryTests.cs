@@ -34,7 +34,8 @@ public class RuleRegistryTests
     {
         const string yaml = """
             creator:
-              rule: filename
+                            source: folder
+                            expression: "^([^/]+)"
             collection:
               rule: regex
               source: folder
@@ -48,10 +49,10 @@ public class RuleRegistryTests
     [Fact]
     public void DeserializeRules_ParsedElement_ContainsRuleProperty()
     {
-        const string yaml = "creator:\n  rule: filename\n";
+        const string yaml = "creator:\n  rule: regex\n";
         var result = RuleRegistry.DeserializeRules(yaml);
         Assert.True(result["creator"].TryGetProperty("rule", out var ruleEl));
-        Assert.Equal("filename", ruleEl.GetString());
+        Assert.Equal("regex", ruleEl.GetString());
     }
 
     [Fact]
@@ -80,12 +81,11 @@ public class RuleRegistryTests
     }
 
     [Fact]
-    public void Evaluate_FilenameRule_DelegatesToFilenameParser()
+    public void Evaluate_MissingRuleProperty_DefaultsToRegex()
     {
-        var config = JsonDocument.Parse("""{"rule":"filename","include_extension":false}""").RootElement;
+        var config = JsonDocument.Parse("""{"source":"folder","expression":"^/?([^/]+)"}""").RootElement;
         var result = RuleRegistry.Evaluate("model_name", "/models/dragon.stl", [], config);
-        // FilenameRuleParser returns title-cased name without extension
-        Assert.Equal("Dragon", result);
+        Assert.Equal("models", result);
     }
 
     [Fact]
@@ -97,11 +97,11 @@ public class RuleRegistryTests
     }
 
     [Fact]
-    public void Evaluate_RuleNameIsCaseInsensitive()
+    public void Evaluate_ExplicitFilenameRule_ReturnsNull()
     {
-        var config = JsonDocument.Parse("""{"rule":"FILENAME"}""").RootElement;
+        var config = JsonDocument.Parse("""{"rule":"filename"}""").RootElement;
         var result = RuleRegistry.Evaluate("model_name", "/models/dragon.stl", [], config);
-        Assert.NotNull(result);
+        Assert.Null(result);
     }
 
     [Fact]

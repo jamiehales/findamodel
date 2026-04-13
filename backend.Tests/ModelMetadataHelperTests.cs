@@ -55,19 +55,18 @@ public class ModelMetadataHelperTests
     // ── Rules ─────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Compute_FilenameRule_OverridesPlainValue()
+    public void Compute_DefaultRegexRule_OverridesPlainValue()
     {
         // ResolvedRulesYaml takes precedence over the plain resolved field
         var dirConfig = new DirectoryConfig
         {
             ModelName = "Static Name",
-            ResolvedRulesYaml = "model_name:\n  rule: filename\n",
+            ResolvedRulesYaml = "model_name:\n  source: filename\n  expression: \"^(.*)\\\\.[^./]+$\"\n",
         };
 
         var result = ModelMetadataHelper.Compute("/models/fantasy/dragon.stl", dirConfig);
 
-        // filename rule title-cases the base name (single word, no underscores)
-        Assert.Equal("Dragon", result.ModelName);
+        Assert.Equal("dragon", result.ModelName);
     }
 
     [Fact]
@@ -135,14 +134,14 @@ public class ModelMetadataHelperTests
         {
             Creator = "Alice",   // plain value
             Collection = "Fantasy",
-            ResolvedRulesYaml = "model_name:\n  rule: filename\n",  // rule applies only to model_name
+            ResolvedRulesYaml = "model_name:\n  source: filename\n  expression: \"^(.*)\\\\.[^./]+$\"\n",  // rule applies only to model_name
         };
 
         var result = ModelMetadataHelper.Compute("/models/dragon.stl", dirConfig);
 
         Assert.Equal("Alice", result.Creator);
         Assert.Equal("Fantasy", result.Collection);
-        Assert.Equal("Dragon", result.ModelName);
+        Assert.Equal("dragon", result.ModelName);
     }
 
     // ── model_metadata overrides ──────────────────────────────────────────────
@@ -219,6 +218,42 @@ public class ModelMetadataHelperTests
         Assert.Contains("monster", result.Tags);
         Assert.Contains("metal", result.Tags);
         Assert.Equal(4, result.Tags.Count);
+    }
+
+    [Fact]
+    public void Compute_TagsRule_AddsComputedTag_WithoutLosingExistingTags()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            TagsJson = "[\"fantasy\"]",
+            ResolvedRulesYaml = "tags:\n  rule: regex\n  source: filename\n  expression: \"supported\"\n",
+        };
+
+        var supportedResult = ModelMetadataHelper.Compute("/models/elf_supported.stl", dirConfig);
+        Assert.Contains("fantasy", supportedResult.Tags);
+        Assert.Contains("supported", supportedResult.Tags);
+
+        var plainResult = ModelMetadataHelper.Compute("/models/elf_plain.stl", dirConfig);
+        Assert.Contains("fantasy", plainResult.Tags);
+        Assert.DoesNotContain("supported", plainResult.Tags);
+    }
+
+    [Fact]
+    public void Compute_TagsRuleValuesMap_AddsAllMatchingTagKeys()
+    {
+        var dirConfig = new DirectoryConfig
+        {
+            TagsJson = "[\"fantasy\"]",
+            ResolvedRulesYaml =
+                "tags:\n  rule: regex\n  source: filename\n  values:\n    Supported: 'supported'\n    Miniature: 'mini'\n    Bust: 'bust'\n",
+        };
+
+        var result = ModelMetadataHelper.Compute("/models/elf_mini_supported.stl", dirConfig);
+
+        Assert.Contains("fantasy", result.Tags);
+        Assert.Contains("Supported", result.Tags);
+        Assert.Contains("Miniature", result.Tags);
+        Assert.DoesNotContain("Bust", result.Tags);
     }
 
     [Fact]

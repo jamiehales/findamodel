@@ -33,7 +33,7 @@ models/
 ├── Fantasy/
 │   ├── findamodel.yaml      ← sets collection: "Fantasy"
 │   └── Elves/
-│       ├── findamodel.yaml  ← model_name rule: filename
+│       ├── findamodel.yaml  ← model_name regex (source: filename)
 │       ├── elf_warrior.stl
 │       └── elf_mage.stl
 └── SciFi/
@@ -43,7 +43,7 @@ models/
 `elf_warrior.stl` resolves to:
 - `creator` → "Alice" (from root)
 - `collection` → "Fantasy" (from Fantasy/)
-- `model_name` → "Elf Warrior" (from filename rule in Elves/)
+- `model_name` → "elf_warrior" (from regex rule in Elves/)
 
 `spaceship.stl` resolves to:
 - `creator` → "Alice" (from root)

@@ -21,20 +21,35 @@ public static class RegexRuleParser
     // Matches sed-style substitution: s<delim><pattern><delim><replacement><delim>[flags]
     private static readonly Regex SedPattern = new(@"^s(.)(.+?)\1(.*?)\1([gimsxy]*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    public static List<string> ParseMatchingValueKeys(
+        string filePath,
+        Dictionary<string, JsonElement> options)
+    {
+        var input = GetInput(filePath, options);
+        if (input is null) return [];
+
+        if (!options.TryGetValue("values", out var valuesEl)
+            || valuesEl.ValueKind != JsonValueKind.Object)
+            return [];
+
+        var matches = new List<string>();
+        foreach (var prop in valuesEl.EnumerateObject())
+        {
+            var pattern = prop.Value.GetString();
+            if (string.IsNullOrEmpty(pattern)) continue;
+            if (Regex.IsMatch(input, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                matches.Add(prop.Name);
+        }
+
+        return matches;
+    }
+
     public static string? ParseValue(
         string filePath,
         RuleFieldType fieldType,
         Dictionary<string, JsonElement> options)
     {
-        var source = options.TryGetValue("source", out var sv) ? sv.GetString() : "full_path";
-        var input = source?.ToLowerInvariant() switch
-        {
-            "folder" => Path.HasExtension(filePath)
-                              ? (Path.GetDirectoryName(filePath.Replace('\\', '/')) ?? "").Replace('\\', '/')
-                              : filePath.Replace('\\', '/'),
-            "filename" => Path.GetFileName(filePath),
-            _ => filePath.Replace('\\', '/'),  // full_path (default)
-        };
+        var input = GetInput(filePath, options);
         if (input is null) return null;
 
         RegexOptions regexOptions = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
@@ -44,13 +59,7 @@ public static class RegexRuleParser
             && options.TryGetValue("values", out var valuesEl)
             && valuesEl.ValueKind == JsonValueKind.Object)
         {
-            foreach (var prop in valuesEl.EnumerateObject())
-            {
-                var pattern = prop.Value.GetString();
-                if (string.IsNullOrEmpty(pattern)) continue;
-                if (Regex.IsMatch(input, pattern)) return prop.Name;
-            }
-            return null;
+            return ParseMatchingValueKeys(filePath, options).FirstOrDefault();
         }
 
         if (!options.TryGetValue("expression", out var exprEl)) return null;
@@ -90,5 +99,18 @@ public static class RegexRuleParser
         if (flags.Contains('s')) opts |= RegexOptions.Singleline;
         if (flags.Contains('x')) opts |= RegexOptions.IgnorePatternWhitespace;
         return opts;
+    }
+
+    private static string? GetInput(string filePath, Dictionary<string, JsonElement> options)
+    {
+        var source = options.TryGetValue("source", out var sv) ? sv.GetString() : "full_path";
+        return source?.ToLowerInvariant() switch
+        {
+            "folder" => Path.HasExtension(filePath)
+                              ? (Path.GetDirectoryName(filePath.Replace('\\', '/')) ?? "").Replace('\\', '/')
+                              : filePath.Replace('\\', '/'),
+            "filename" => Path.GetFileName(filePath),
+            _ => filePath.Replace('\\', '/'),
+        };
     }
 }

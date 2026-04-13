@@ -45,7 +45,7 @@ models/
 │   ├── findamodel.yaml   collection: "Fantasy"
 │   │
 │   ├── Elves/
-│   │   ├── findamodel.yaml   model_name: { rule: filename }
+│   │   ├── findamodel.yaml   model_name: { source: filename, expression: "^(.*)\\.[^./]+$" }
 │   │   ├── elf_warrior.stl
 │   │   └── elf_mage.stl
 │   │
@@ -62,15 +62,15 @@ Resolved values:
 
 | File | creator | collection | material | model_name |
 |------|---------|------------|----------|------------|
-| `Fantasy/Elves/elf_warrior.stl` | Alice | Fantasy | resin | Elf Warrior |
-| `Fantasy/Elves/elf_mage.stl` | Alice | Fantasy | resin | Elf Mage |
+| `Fantasy/Elves/elf_warrior.stl` | Alice | Fantasy | resin | elf_warrior |
+| `Fantasy/Elves/elf_mage.stl` | Alice | Fantasy | resin | elf_mage |
 | `Fantasy/Dwarves/dwarf_king.stl` | Alice | Fantasy | resin | *(not set)* |
 | `SciFi/spaceship.stl` | Bob | SciFi | resin | *(not set)* |
 
 Key observations:
 - `material: "resin"` is set once at the root and inherited everywhere.
 - `creator: "Bob"` in `SciFi/` overrides the root `creator: "Alice"` for everything under `SciFi/`.
-- The `model_name` filename rule in `Elves/` applies only to files in that directory.
+- The `model_name` regex rule in `Elves/` applies only to files in that directory.
 - `Dwarves/` has no `findamodel.yaml`, so it inherits `collection: "Fantasy"` and `creator: "Alice"` but has no `model_name` rule.
 
 ---
@@ -83,10 +83,11 @@ Rules inherit like plain values - the closest ancestor rule wins. The rule is th
 models/
 ├── findamodel.yaml
 │     model_name:
-│       rule: filename     ← inherited by all subdirs with no own model_name
+│       source: filename
+│       expression: "^(.*)\\.[^./]+$"     ← inherited by all subdirs with no own model_name
 │
 ├── Fantasy/
-│   └── dragon.stl         → model_name evaluates to "Dragon"
+│   └── dragon.stl         → model_name evaluates to "dragon"
 │
 └── SciFi/
     ├── findamodel.yaml

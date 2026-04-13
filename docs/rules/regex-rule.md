@@ -19,14 +19,15 @@ nav_order: 2
 
 ## Overview
 
-The `regex` rule evaluates a regular expression against part of the file's path and returns a value. It is the most flexible rule type and can be used for any metadata field.
+The `regex` rule evaluates a regular expression against part of the file's path and returns a value. It is the only rule type and can be used for any metadata field.
 
 ```yaml
 creator:
-  rule: regex
   source: folder
   expression: "^([^/]+)"
 ```
+
+`rule: regex` is optional. If `rule` is omitted, regex is assumed.
 
 ---
 
@@ -36,7 +37,7 @@ creator:
 |--------|------|----------|-------------|
 | `source` | string | No | Which part of the path to match against. One of `full_path`, `folder`, `filename`. Defaults to `full_path`. |
 | `expression` | string | Yes* | A regex pattern or sed-style substitution expression (`s\|pattern\|replacement\|flags`). |
-| `values` | map | Yes* | For enum fields: a map of enum value → regex pattern. Mutually exclusive with `expression`. |
+| `values` | map | Yes* | For enum and tags fields: a map of value key → regex pattern. Mutually exclusive with `expression`. |
 
 \* Either `expression` or `values` must be present (not both).
 
@@ -136,6 +137,8 @@ The keys in the `values` map must exactly match valid values for the target fiel
 
 {: .note }
 `values` and `expression` are mutually exclusive. If both are provided, `values` takes precedence for enum fields.
+{: .note }
+For `tags`, when using `values`, all matching keys are added as computed tags and merged with inherited folder tags. With `expression`, the single regex result is added as one tag.
 
 ---
 

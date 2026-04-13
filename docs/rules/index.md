@@ -31,16 +31,16 @@ With a single root-level `findamodel.yaml`, rules can automatically extract:
 - `collection` = "Fantasy" (from the second-level folder)
 - `model_name` = "Elf Warrior" or "Elf Mage" (from the filename)
 - `supported` = `true`/`false` (from whether "supported" appears in the filename)
+- `tags` = additional per-model tags (for example, adding `supported` when filenames match)
 
 ---
 
 ## Rule types
 
-FindAModel supports two rule types:
+FindAModel supports one rule type:
 
 | Rule | Best for |
 |------|----------|
-| [`filename`](filename-rule) | Extracting a display name from the file's own name |
 | [`regex`](regex-rule) | Matching patterns anywhere in the path - folder names, full path, or filename |
 
 ---
@@ -51,10 +51,12 @@ A rule replaces the plain value for a field with a YAML object:
 
 ```yaml
 field_name:
-  rule: <rule_type>
+  rule: regex
   <option>: <value>
   ...
 ```
+
+`rule: regex` is optional - if omitted, regex is assumed.
 
 Rules go in `findamodel.yaml` files alongside (or instead of) plain values. They are inherited by subdirectories just like plain values - see [Inheritance](../configuration/inheritance).
 
@@ -76,5 +78,4 @@ Rules override plain values of equal or lower specificity. A plain value in the 
 
 ## Next steps
 
-- [Filename rule](filename-rule) - set a field from the file's name
 - [Regex rule](regex-rule) - match and extract values from path segments
