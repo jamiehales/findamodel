@@ -53,6 +53,8 @@ import {
 export { LAYOUT_LOCALSTORAGE_KEY };
 
 const GRID_PX = 10 * PX_PER_MM;
+const ROTATION_SNAP_DEGREES = 5;
+const WHEEL_DELTA_PER_ROTATION_STEP = 120;
 
 const PAGE_H_PADDING = 128; // ~4rem per side at wide viewports
 function getCanvasScale(): number {
@@ -467,10 +469,23 @@ export default function PrintingListCanvas({
     app.stage.on('pointerupoutside', endDrag);
 
     const canvas = app.view as HTMLCanvasElement;
+    let wheelDeltaAccumulator = 0;
     const onWheel = (e: WheelEvent) => {
       if (!drag) return;
       e.preventDefault();
-      drag.body.setAngle(drag.body.getAngle() + e.deltaY * 0.003);
+      wheelDeltaAccumulator += e.deltaY;
+
+      const steps = Math.trunc(Math.abs(wheelDeltaAccumulator) / WHEEL_DELTA_PER_ROTATION_STEP);
+      if (steps === 0) return;
+
+      const direction = Math.sign(wheelDeltaAccumulator);
+      wheelDeltaAccumulator -= direction * steps * WHEEL_DELTA_PER_ROTATION_STEP;
+
+      const currentDeg = (drag.body.getAngle() * 180) / Math.PI;
+      const snappedCurrentDeg =
+        Math.round(currentDeg / ROTATION_SNAP_DEGREES) * ROTATION_SNAP_DEGREES;
+      const nextDeg = snappedCurrentDeg + direction * steps * ROTATION_SNAP_DEGREES;
+      drag.body.setAngle((nextDeg * Math.PI) / 180);
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
