@@ -12,7 +12,7 @@ import {
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   createPrintingListArchiveJob,
   fetchPrintingListArchiveJob,
@@ -253,6 +253,9 @@ function PrintingListPage() {
             {listName}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center">
+            <Button component={Link} to="/printing-lists" variant="outlined">
+              Switch list
+            </Button>
             {listedModels.length > 0 && (
               <>
                 <Button
