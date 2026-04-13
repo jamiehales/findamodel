@@ -1,10 +1,23 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using findamodel.Data.Entities;
 
 namespace findamodel.Data;
 
 public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : DbContext(options)
 {
+    private static readonly ValueConverter<DateTime, DateTime> UtcDateTimeConverter = new(
+        value => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime(),
+        value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
+
+    private static readonly ValueConverter<DateTime?, DateTime?> NullableUtcDateTimeConverter = new(
+        value => value.HasValue
+            ? (value.Value.Kind == DateTimeKind.Utc ? value : value.Value.ToUniversalTime())
+            : value,
+        value => value.HasValue
+            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            : value);
+
     public DbSet<CachedModel> Models { get; set; }
     public DbSet<DirectoryConfig> DirectoryConfigs { get; set; }
     public DbSet<AppConfig> AppConfigs { get; set; }
@@ -140,5 +153,16 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .WithMany(d => d.Children)
             .HasForeignKey(d => d.ParentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTime))
+                    property.SetValueConverter(UtcDateTimeConverter);
+                else if (property.ClrType == typeof(DateTime?))
+                    property.SetValueConverter(NullableUtcDateTimeConverter);
+            }
+        }
     }
 }

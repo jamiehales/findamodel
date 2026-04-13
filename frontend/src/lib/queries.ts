@@ -18,6 +18,7 @@ import {
   cancelIndexerRun,
   enqueueIndex,
   IndexFlags,
+  type IndexRunFilesView,
   fetchPrintingLists,
   fetchActivePrintingList,
   fetchPrintingList,
@@ -65,9 +66,20 @@ export const queryKeys = {
     runId: string,
     filesPage: number,
     filesPageSize: number,
+    filesView: IndexRunFilesView,
     eventsPage: number,
     eventsPageSize: number,
-  ) => ['indexer', 'run', runId, filesPage, filesPageSize, eventsPage, eventsPageSize] as const,
+  ) =>
+    [
+      'indexer',
+      'run',
+      runId,
+      filesPage,
+      filesPageSize,
+      filesView,
+      eventsPage,
+      eventsPageSize,
+    ] as const,
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
@@ -319,6 +331,7 @@ export function useIndexerRun(
   paging: {
     filesPage: number;
     filesPageSize: number;
+    filesView: IndexRunFilesView;
     eventsPage: number;
     eventsPageSize: number;
   },
@@ -329,6 +342,7 @@ export function useIndexerRun(
       runId ?? 'none',
       paging.filesPage,
       paging.filesPageSize,
+      paging.filesView,
       paging.eventsPage,
       paging.eventsPageSize,
     ),
@@ -337,6 +351,7 @@ export function useIndexerRun(
         runId ?? '',
         paging.filesPage,
         paging.filesPageSize,
+        paging.filesView,
         paging.eventsPage,
         paging.eventsPageSize,
       ),

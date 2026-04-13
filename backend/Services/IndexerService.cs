@@ -170,6 +170,7 @@ public class IndexerService(
         Guid runId,
         int filesPage = 1,
         int filesPageSize = 200,
+        string filesView = "all",
         int eventsPage = 1,
         int eventsPageSize = 200)
     {
@@ -188,9 +189,27 @@ public class IndexerService(
         var filesQuery = db.IndexRunFiles
             .AsNoTracking()
             .Where(f => f.IndexRunId == runId);
+
+        var normalizedFilesView = (filesView ?? "all").Trim().ToLowerInvariant();
+        if (normalizedFilesView == "pending")
+            filesQuery = filesQuery.Where(f => f.Status == "pending");
+        else if (normalizedFilesView == "processed")
+            filesQuery = filesQuery.Where(f => f.Status != "pending");
+
         var filesTotalCount = await filesQuery.CountAsync();
-        var files = await filesQuery
-            .OrderBy(f => f.RelativePath)
+        var orderedFilesQuery = normalizedFilesView switch
+        {
+            "pending" => filesQuery.OrderBy(f => f.RelativePath),
+            "processed" => filesQuery
+                .OrderByDescending(f => f.ProcessedAt)
+                .ThenBy(f => f.RelativePath),
+            _ => filesQuery
+                .OrderBy(f => f.Status == "pending")
+                .ThenByDescending(f => f.ProcessedAt)
+                .ThenBy(f => f.RelativePath)
+        };
+
+        var files = await orderedFilesQuery
             .Skip((normalizedFilesPage - 1) * normalizedFilesPageSize)
             .Take(normalizedFilesPageSize)
             .Select(f => new IndexRunFileDto(

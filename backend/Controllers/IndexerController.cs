@@ -29,10 +29,11 @@ public class IndexerController(IndexerService indexerService) : ControllerBase
         Guid id,
         [FromQuery] int filesPage = 1,
         [FromQuery] int filesPageSize = 200,
+        [FromQuery] string filesView = "all",
         [FromQuery] int eventsPage = 1,
         [FromQuery] int eventsPageSize = 200)
     {
-        var run = await indexerService.GetRunDetailAsync(id, filesPage, filesPageSize, eventsPage, eventsPageSize);
+        var run = await indexerService.GetRunDetailAsync(id, filesPage, filesPageSize, filesView, eventsPage, eventsPageSize);
         if (run == null)
             return NotFound();
 

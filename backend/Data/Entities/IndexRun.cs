@@ -12,8 +12,8 @@ public class IndexRun
     public DateTime? CompletedAt { get; set; }
     public double? DurationMs { get; set; }
 
-    public string Status { get; set; } = "running"; // running | success | failed
-    public string? Outcome { get; set; } // success | failed
+    public string Status { get; set; } = "running"; // running | queued | success | failed | cancelled
+    public string? Outcome { get; set; } // success | failed | cancelled
     public string? Error { get; set; }
 
     public int? TotalFiles { get; set; }

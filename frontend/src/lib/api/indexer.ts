@@ -86,6 +86,8 @@ export interface IndexRunDetail {
   events: PagedResult<IndexRunEvent>;
 }
 
+export type IndexRunFilesView = 'all' | 'pending' | 'processed';
+
 export async function fetchIndexerStatus(): Promise<IndexerStatus> {
   const r = await apiFetch('/api/indexer');
   if (!r.ok) throw new Error('Failed to fetch indexer status');
@@ -116,12 +118,14 @@ export async function fetchIndexerRun(
   runId: string,
   filesPage: number = 1,
   filesPageSize: number = 200,
+  filesView: IndexRunFilesView = 'all',
   eventsPage: number = 1,
   eventsPageSize: number = 200,
 ): Promise<IndexRunDetail> {
   const params = new URLSearchParams({
     filesPage: String(filesPage),
     filesPageSize: String(filesPageSize),
+    filesView,
     eventsPage: String(eventsPage),
     eventsPageSize: String(eventsPageSize),
   });

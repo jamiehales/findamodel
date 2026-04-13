@@ -8,10 +8,13 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import CloseIcon from '@mui/icons-material/Close';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   IndexFlags,
+  type IndexRunFilesView,
   type IndexRunDetail,
   type IndexRunEvent,
   type IndexRunFile,
@@ -30,18 +33,6 @@ import styles from './IndexingPage.module.css';
 
 function formatDate(value: string | null): string {
   if (!value) return '-';
-
-  // Keep displayed wall-clock time aligned with server-provided timestamp text,
-  // instead of letting browser timezone conversion shift the value.
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-  if (match) {
-    const [, year, month, day, hourText, minute, second] = match;
-    const hour24 = Number.parseInt(hourText, 10);
-    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-    const amPm = hour24 >= 12 ? 'PM' : 'AM';
-    return `${month}/${day}/${year}, ${hour12}:${minute}:${second} ${amPm}`;
-  }
-
   return new Date(value).toLocaleString();
 }
 
@@ -163,6 +154,8 @@ function statusChip(status: string) {
   if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
   if (status === 'failed')
     return <Chip size="small" color="error" variant="outlined" label="Failed" />;
+  if (status === 'cancelled')
+    return <Chip size="small" color="warning" variant="outlined" label="Cancelled" />;
   return <Chip size="small" color="success" variant="outlined" label="Success" />;
 }
 
@@ -377,6 +370,7 @@ export default function IndexingPage() {
   }, [runsWithLive]);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [filesView, setFilesView] = useState<IndexRunFilesView>('all');
   const selectedRun = runsWithLive.find((run) => run.id === selectedRunId);
   const effectiveRunId =
     selectedRun && selectedRun.status !== 'queued' ? selectedRunId : defaultSelectedRunId;
@@ -406,6 +400,7 @@ export default function IndexingPage() {
     {
       filesPage,
       filesPageSize: FILES_PAGE_SIZE,
+      filesView,
       eventsPage,
       eventsPageSize: EVENTS_PAGE_SIZE,
     },
@@ -497,6 +492,11 @@ export default function IndexingPage() {
               onGoToEvents={(page) => setEventsPage(page)}
               currentFilesPage={filesPage}
               currentEventsPage={eventsPage}
+              filesView={filesView}
+              onFilesViewChange={(view) => {
+                setFilesView(view);
+                setFilesPage(1);
+              }}
             />
           )}
         </Stack>
@@ -515,6 +515,8 @@ function RunDetailWithPaging({
   onGoToEvents,
   currentFilesPage,
   currentEventsPage,
+  filesView,
+  onFilesViewChange,
 }: {
   detail: IndexRunDetail;
   onPrevFiles: () => void;
@@ -525,6 +527,8 @@ function RunDetailWithPaging({
   onGoToEvents: (page: number) => void;
   currentFilesPage: number;
   currentEventsPage: number;
+  filesView: IndexRunFilesView;
+  onFilesViewChange: (view: IndexRunFilesView) => void;
 }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -635,6 +639,18 @@ function RunDetailWithPaging({
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Indexed Files</Typography>
             <Stack direction="row" spacing={1} alignItems="center" className={styles.pagerRow}>
+              <ToggleButtonGroup
+                size="small"
+                value={filesView}
+                exclusive
+                onChange={(_, view: IndexRunFilesView | null) => {
+                  if (view) onFilesViewChange(view);
+                }}
+              >
+                <ToggleButton value="all">All</ToggleButton>
+                <ToggleButton value="processed">Processed</ToggleButton>
+                <ToggleButton value="pending">Pending</ToggleButton>
+              </ToggleButtonGroup>
               <Typography variant="caption" color="text.secondary">
                 Page {effectiveFilesPage}/{filesTotalPages} ({effectiveFilesTotalCount} files)
               </Typography>
