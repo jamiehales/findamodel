@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build-desktop:
@@ -22,6 +24,8 @@ jobs:
             dotnet-rid: linux-x64
 
     runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -80,6 +84,9 @@ jobs:
           projectPath: desktop-tauri
           tauriScript: yarn tauri
           args: --target ${{ matrix.rust-target }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: Release ${{ github.ref_name }}
+          releaseDraft: true
 
       - name: Upload desktop installers
         uses: actions/upload-artifact@v4
