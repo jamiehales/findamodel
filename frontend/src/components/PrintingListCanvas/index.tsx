@@ -5,7 +5,6 @@ import { World, Vec2, Box } from 'planck';
 import type { Body } from 'planck';
 import {
   Stack,
-  Typography,
   Button,
   MenuItem,
   Select,
