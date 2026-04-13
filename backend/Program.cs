@@ -187,6 +187,47 @@ using (var scope = app.Services.CreateScope())
     var adminUser = await userService.GetAdminUserAsync();
     if (adminUser != null)
         await printingListService.EnsureDefaultListAsync(adminUser.Id);
+
+    // Startup LLM health diagnostics: validate native backends are available
+    try
+    {
+        var appConfigService = scope.ServiceProvider.GetRequiredService<findamodel.Services.AppConfigService>();
+        var config = await appConfigService.GetAsync();
+        var provider = config?.TagGenerationProvider ?? "internal";
+
+        var llmProvider = scope.ServiceProvider.GetRequiredService<findamodel.Services.LocalLlmProviderResolver>()
+            .Resolve(provider);
+
+        if (llmProvider != null)
+        {
+            var settings = new findamodel.Services.LocalLlmProviderSettings(
+                Endpoint: config?.TagGenerationEndpoint ?? "http://localhost:11434",
+                Model: config?.TagGenerationModel ?? "qwen2.5vl:7b",
+                TimeoutMs: config?.TagGenerationTimeoutMs ?? 30000);
+
+            var health = await llmProvider.GetHealthAsync(settings, CancellationToken.None);
+
+            if (health.Reachable)
+            {
+                Log.Information(
+                    "LLM startup check PASSED: provider={Provider}, model={Model}, backend={Backend}",
+                    health.Provider,
+                    health.Model,
+                    health.Metadata?.GetValueOrDefault("backend") ?? "unknown");
+            }
+            else
+            {
+                Log.Warning(
+                    "LLM startup check FAILED: provider={Provider}, error={Error}. Tag generation may be unavailable.",
+                    health.Provider,
+                    health.Error ?? "unknown error");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "LLM startup health check encountered an error. Ensure LLamaSharp native backends are installed.");
+    }
 }
 
 if (!desktopMode && !disableCors && app.Environment.IsDevelopment())
@@ -200,7 +241,40 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", async (findamodel.Services.LocalLlmProviderResolver llmResolver, findamodel.Services.AppConfigService appConfigService) =>
+{
+    try
+    {
+        var config = await appConfigService.GetAsync();
+        var provider = config?.TagGenerationProvider ?? "internal";
+        var llmProvider = llmResolver.Resolve(provider);
+
+        if (llmProvider != null)
+        {
+            var settings = new findamodel.Services.LocalLlmProviderSettings(
+                Endpoint: config?.TagGenerationEndpoint ?? "http://localhost:11434",
+                Model: config?.TagGenerationModel ?? "qwen2.5vl:7b",
+                TimeoutMs: config?.TagGenerationTimeoutMs ?? 30000);
+
+            var health = await llmProvider.GetHealthAsync(settings, CancellationToken.None);
+            return Results.Ok(new
+            {
+                status = "ok",
+                llm = new
+                {
+                    reachable = health.Reachable,
+                    provider = health.Provider,
+                    model = health.Model,
+                    backend = health.Metadata?.GetValueOrDefault("backend"),
+                    error = health.Error
+                }
+            });
+        }
+    }
+    catch { }
+
+    return Results.Ok(new { status = "ok" });
+});
 app.MapControllers();
 
 app.MapFallbackToFile("index.html");

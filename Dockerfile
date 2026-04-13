@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libegl1-mesa \
     libgles2-mesa \
+    libvulkan1 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=backend-build /app/backend/out .
