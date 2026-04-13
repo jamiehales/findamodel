@@ -94,8 +94,14 @@ export default function ModelFilters({ value, onChange, options }: Props) {
   }, [value, onChange]);
 
   return (
-    <Grid container columns={2} spacing={1.5} alignItems="center" className={styles.grid}>
-      <Grid size={2}>
+    <Grid
+      container
+      columns={{ xs: 1, sm: 2, md: 3, lg: 4 }}
+      spacing={1.5}
+      alignItems="center"
+      className={styles.grid}
+    >
+      <Grid size={{ xs: 1, sm: 2, md: 3, lg: 4 }}>
         <TextField
           fullWidth
           size="small"
@@ -161,7 +167,7 @@ export default function ModelFilters({ value, onChange, options }: Props) {
         value={value.fileType}
         onChange={handleMultiChange}
       />
-      <Grid size={1}>
+      <Grid size={{ xs: 1, sm: 2, md: 1, lg: 1 }}>
         <FormControlLabel
           label="Supported"
           control={
