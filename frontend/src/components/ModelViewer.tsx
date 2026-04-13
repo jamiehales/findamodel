@@ -298,6 +298,19 @@ export default function ModelViewer({
   const color = MODEL_COLOR;
   const theme = useTheme();
   const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
+  const orbitTarget = useMemo<[number, number, number]>(
+    () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
+    [model?.sphereCentreX, model?.sphereCentreY, model?.sphereCentreZ],
+  );
+  const halfExtents = useMemo(
+    () =>
+      new THREE.Vector3(
+        (model?.dimensionXMm ?? 0) / 2,
+        (model?.dimensionYMm ?? 0) / 2,
+        (model?.dimensionZMm ?? 0) / 2,
+      ),
+    [model?.dimensionXMm, model?.dimensionYMm, model?.dimensionZMm],
+  );
 
   const hasSupportMesh = isSupportModel && splitData?.supports != null;
   const isGeometryPending = isSupportModel
@@ -338,16 +351,6 @@ export default function ModelViewer({
       </div>
     );
   }
-
-  const orbitTarget = useMemo<[number, number, number]>(
-    () => [model.sphereCentreX ?? 0, model.sphereCentreY ?? 0, model.sphereCentreZ ?? 0],
-    [model.sphereCentreX, model.sphereCentreY, model.sphereCentreZ],
-  );
-
-  const halfExtents = useMemo(
-    () => new THREE.Vector3(model.dimensionXMm / 2, model.dimensionYMm / 2, model.dimensionZMm / 2),
-    [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm],
-  );
 
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
