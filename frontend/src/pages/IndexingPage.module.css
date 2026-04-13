@@ -118,10 +118,6 @@
   flex-wrap: wrap;
 }
 
-.pageJumpInput {
-  width: 68px;
-}
-
 .aiReasonChip {
   border: 1px solid rgba(56, 189, 248, 0.4) !important;
   color: #7dd3fc !important;

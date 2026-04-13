@@ -4,9 +4,8 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
-import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
-import TextField from '@mui/material/TextField';
+import Pagination from '@mui/material/Pagination';
 import Tooltip from '@mui/material/Tooltip';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -484,10 +483,6 @@ export default function IndexingPage() {
           {!isRunPending && !isRunError && runDetail && (
             <RunDetailWithPaging
               detail={runDetail}
-              onPrevFiles={() => setFilesPage((p) => Math.max(1, p - 1))}
-              onNextFiles={() => setFilesPage((p) => p + 1)}
-              onPrevEvents={() => setEventsPage((p) => Math.max(1, p - 1))}
-              onNextEvents={() => setEventsPage((p) => p + 1)}
               onGoToFiles={(page) => setFilesPage(page)}
               onGoToEvents={(page) => setEventsPage(page)}
               currentFilesPage={filesPage}
@@ -507,10 +502,6 @@ export default function IndexingPage() {
 
 function RunDetailWithPaging({
   detail,
-  onPrevFiles,
-  onNextFiles,
-  onPrevEvents,
-  onNextEvents,
   onGoToFiles,
   onGoToEvents,
   currentFilesPage,
@@ -519,10 +510,6 @@ function RunDetailWithPaging({
   onFilesViewChange,
 }: {
   detail: IndexRunDetail;
-  onPrevFiles: () => void;
-  onNextFiles: () => void;
-  onPrevEvents: () => void;
-  onNextEvents: () => void;
   onGoToFiles: (page: number) => void;
   onGoToEvents: (page: number) => void;
   currentFilesPage: number;
@@ -578,23 +565,6 @@ function RunDetailWithPaging({
     1,
     Math.ceil(effectiveEventsTotalCount / Math.max(1, effectiveEventsPageSize)),
   );
-
-  const [filesPageInput, setFilesPageInput] = useState(String(filesPaged.page));
-  const [eventsPageInput, setEventsPageInput] = useState(String(eventsPaged.page));
-
-  useEffect(() => {
-    setFilesPageInput(String(effectiveFilesPage));
-  }, [effectiveFilesPage]);
-
-  useEffect(() => {
-    setEventsPageInput(String(effectiveEventsPage));
-  }, [effectiveEventsPage]);
-
-  function parseJumpPage(value: string, maxPage: number): number | null {
-    const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed)) return null;
-    return Math.min(maxPage, Math.max(1, parsed));
-  }
 
   return (
     <Stack spacing={2}>
@@ -654,45 +624,18 @@ function RunDetailWithPaging({
               <Typography variant="caption" color="text.secondary">
                 Page {effectiveFilesPage}/{filesTotalPages} ({effectiveFilesTotalCount} files)
               </Typography>
-              <TextField
+              <Pagination
+                page={effectiveFilesPage}
+                count={filesTotalPages}
+                color="primary"
                 size="small"
-                value={filesPageInput}
-                onChange={(event) => setFilesPageInput(event.target.value)}
-                className={styles.pageJumpInput}
-                inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                shape="rounded"
+                showFirstButton
+                showLastButton
+                onChange={(_, page) => onGoToFiles(page)}
               />
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  const nextPage = parseJumpPage(filesPageInput, filesTotalPages);
-                  if (nextPage != null) onGoToFiles(nextPage);
-                }}
-              >
-                Go
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onPrevFiles}
-                disabled={effectiveFilesPage <= 1}
-              >
-                Prev
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onNextFiles}
-                disabled={effectiveFilesPage >= filesTotalPages}
-              >
-                Next
-              </Button>
             </Stack>
           </Stack>
-          <Typography variant="caption" color="text.secondary">
-            Shows a paged subset of files for this run, with generated artifact outcomes.
-          </Typography>
-          <Divider />
           <Stack spacing={0.75} className={styles.filesList}>
             {pagedFilesItems.map((file) => (
               <Stack key={file.relativePath} spacing={0.5} className={styles.fileRow}>
@@ -741,42 +684,18 @@ function RunDetailWithPaging({
               <Typography variant="caption" color="text.secondary">
                 Page {effectiveEventsPage}/{eventsTotalPages} ({effectiveEventsTotalCount} events)
               </Typography>
-              <TextField
+              <Pagination
+                page={effectiveEventsPage}
+                count={eventsTotalPages}
+                color="primary"
                 size="small"
-                value={eventsPageInput}
-                onChange={(event) => setEventsPageInput(event.target.value)}
-                className={styles.pageJumpInput}
-                inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                shape="rounded"
+                showFirstButton
+                showLastButton
+                onChange={(_, page) => onGoToEvents(page)}
               />
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  const nextPage = parseJumpPage(eventsPageInput, eventsTotalPages);
-                  if (nextPage != null) onGoToEvents(nextPage);
-                }}
-              >
-                Go
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onPrevEvents}
-                disabled={effectiveEventsPage <= 1}
-              >
-                Prev
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onNextEvents}
-                disabled={effectiveEventsPage >= eventsTotalPages}
-              >
-                Next
-              </Button>
             </Stack>
           </Stack>
-          <Divider />
           <Stack spacing={0.75} className={styles.logList}>
             {pagedEventsItems.map((event, index) => (
               <Stack key={`${event.createdAt}-${index}`} spacing={0.2} className={styles.logRow}>
