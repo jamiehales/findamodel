@@ -101,3 +101,27 @@
   color: var(--color-primary-light) !important;
   background: var(--color-surface-hover) !important;
 }
+
+.refreshIndexButton {
+  position: absolute !important;
+  right: 2.75rem;
+  bottom: 0.5rem;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  color: var(--color-text-secondary) !important;
+  background: rgba(15, 23, 42, 0.2) !important;
+}
+
+.refreshIndexButton:hover:not(:disabled) {
+  color: var(--color-primary-light) !important;
+  background: var(--color-surface-hover) !important;
+}
+
+.refreshIndexButton:disabled {
+  opacity: 0.9;
+}
+
+.refreshSpinner {
+  color: var(--color-primary-light);
+}

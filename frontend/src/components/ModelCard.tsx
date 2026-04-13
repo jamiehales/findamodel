@@ -1,10 +1,13 @@
 import { memo, useState } from 'react';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import { Box, Chip, Stack } from '@mui/material';
 import type { Model } from '../lib/api';
+import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import AppDialog from './AppDialog';
 import AppCard from './AppCard';
 import ModelMetadataEditor from './ModelMetadataEditor';
@@ -25,9 +28,12 @@ interface ModelCardProps {
 function ModelCard({ model, href }: ModelCardProps) {
   const [hovered, setHovered] = useState(false);
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const { mutate: indexModel } = useIndexModel(model.relativePath);
+  const indexingState = useIsModelIndexing(model.relativePath);
   const showSlicerPlaceholder = !model.previewUrl && !model.canExportToPlate;
   const generatedDescription = model.generatedDescription?.trim() ?? '';
   const hasDescription = generatedDescription.length > 0;
+  const isIndexing = indexingState === 'running';
 
   return (
     <>
@@ -99,6 +105,34 @@ function ModelCard({ model, href }: ModelCardProps) {
                 }}
               >
                 <EditRoundedIcon fontSize="inherit" />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip
+              title={
+                indexingState === 'running'
+                  ? 'Refreshing index...'
+                  : indexingState === 'queued'
+                    ? 'Refresh queued...'
+                    : 'Refresh index'
+              }
+              placement="top"
+            >
+              <IconButton
+                size="small"
+                className={styles.refreshIndexButton}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  indexModel();
+                }}
+                disabled={indexingState !== null}
+              >
+                {isIndexing ? (
+                  <CircularProgress size={14} className={styles.refreshSpinner} />
+                ) : (
+                  <RefreshRoundedIcon fontSize="inherit" />
+                )}
               </IconButton>
             </Tooltip>
 
