@@ -17,12 +17,7 @@ import {
 } from '@mui/material';
 import type { SpawnType, HullMode } from '../../lib/api';
 import {
-  CANVAS_WIDTH_MM,
-  CANVAS_HEIGHT_MM,
-  CANVAS_WIDTH_PX,
-  CANVAS_HEIGHT_PX,
   VIEW_TOP_MARGIN_PX,
-  VIEW_HEIGHT_PX,
   WALL_THICKNESS,
   PHYSICS_BORDER_PADDING_PX,
   PX_PER_MM,
@@ -57,48 +52,67 @@ const ROTATION_SNAP_DEGREES = 5;
 const WHEEL_DELTA_PER_ROTATION_STEP = 120;
 
 const PAGE_H_PADDING = 128; // ~4rem per side at wide viewports
-function getCanvasScale(): number {
-  return Math.min(1.5, Math.max(1, (window.innerWidth - PAGE_H_PADDING) / CANVAS_WIDTH_PX));
+function getCanvasScale(canvasWidthPx: number): number {
+  return Math.min(1.5, Math.max(1, (window.innerWidth - PAGE_H_PADDING) / canvasWidthPx));
 }
 
 export default function PrintingListCanvas({
   models,
   items,
+  selectedPrinterId,
+  printers,
+  bedWidthMm,
+  bedDepthMm,
+  onPrinterChange,
   spawnOrder,
   hullMode,
   onSpawnOrderChange,
   onHullModeChange,
   onPausedChange,
 }: Props) {
+  const canvasWidthMm = bedWidthMm;
+  const canvasHeightMm = bedDepthMm;
+  const canvasWidthPx = canvasWidthMm * PX_PER_MM;
+  const canvasHeightPx = canvasHeightMm * PX_PER_MM;
+  const viewHeightPx = canvasHeightPx + VIEW_TOP_MARGIN_PX;
+  const canvasWidthPhys = toPhysics(canvasWidthPx);
+  const canvasHeightPhys = toPhysics(canvasHeightPx);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
   const [resetCount, setResetCount] = useState(0);
-  const [canvasScale, setCanvasScale] = useState(getCanvasScale);
+  const [canvasScale, setCanvasScale] = useState(() => getCanvasScale(canvasWidthPx));
   const canvasScaleRef = useRef(canvasScale);
   useEffect(() => {
+    const s = getCanvasScale(canvasWidthPx);
+    canvasScaleRef.current = s;
+    setCanvasScale(s);
+  }, [canvasWidthPx]);
+
+  useEffect(() => {
     const handleResize = () => {
-      const s = getCanvasScale();
+      const s = getCanvasScale(canvasWidthPx);
       canvasScaleRef.current = s;
       setCanvasScale(s);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [canvasWidthPx]);
 
   // Resize the live PIXI app when scale changes (no simulation restart)
   useEffect(() => {
     const app = appRef.current;
     if (!app) return;
     displayScaleRef.current = canvasScale;
-    app.renderer.resize(CANVAS_WIDTH_PX * canvasScale, VIEW_HEIGHT_PX * canvasScale);
+    app.renderer.resize(canvasWidthPx * canvasScale, viewHeightPx * canvasScale);
     app.stage.hitArea = new PIXI.Rectangle(
       0,
       0,
-      CANVAS_WIDTH_PX * canvasScale,
-      VIEW_HEIGHT_PX * canvasScale,
+      canvasWidthPx * canvasScale,
+      viewHeightPx * canvasScale,
     );
     redrawStaticsRef.current?.(canvasScale);
-  }, [canvasScale]);
+  }, [canvasScale, canvasWidthPx, viewHeightPx]);
   const [pauseOnDrag, setPauseOnDrag] = useState(
     () => localStorage.getItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY) === 'true',
   );
@@ -160,8 +174,8 @@ export default function PrintingListCanvas({
     // ── Pixi application ───────────────────────────────────────────────────
     const initScale = canvasScaleRef.current;
     const app = new PIXI.Application({
-      width: CANVAS_WIDTH_PX * initScale,
-      height: VIEW_HEIGHT_PX * initScale,
+      width: canvasWidthPx * initScale,
+      height: viewHeightPx * initScale,
       backgroundColor: 0x0f172a,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -173,8 +187,8 @@ export default function PrintingListCanvas({
     app.stage.hitArea = new PIXI.Rectangle(
       0,
       0,
-      CANVAS_WIDTH_PX * initScale,
-      VIEW_HEIGHT_PX * initScale,
+      canvasWidthPx * initScale,
+      viewHeightPx * initScale,
     );
 
     // ── planck.js world ────────────────────────────────────────────────────
@@ -191,39 +205,30 @@ export default function PrintingListCanvas({
     const ground = world.createBody({
       type: 'static' as const,
       position: Vec2(
-        toPhysics(CANVAS_WIDTH_PX / 2),
-        toPhysics(CANVAS_HEIGHT_PX + WALL_THICKNESS / 2 - PHYSICS_BORDER_PADDING_PX),
+        toPhysics(canvasWidthPx / 2),
+        toPhysics(canvasHeightPx + WALL_THICKNESS / 2 - PHYSICS_BORDER_PADDING_PX),
       ),
     });
     ground.createFixture(
-      new Box(toPhysics((CANVAS_WIDTH_PX + WALL_THICKNESS * 2) / 2), toPhysics(WALL_THICKNESS / 2)),
+      new Box(toPhysics((canvasWidthPx + WALL_THICKNESS * 2) / 2), toPhysics(WALL_THICKNESS / 2)),
       wallFixOpt,
     );
 
     const wallLeft = world.createBody({
       type: 'static' as const,
-      position: Vec2(toPhysics(-WALL_THICKNESS / 2), toPhysics(CANVAS_HEIGHT_PX / 2)),
+      position: Vec2(toPhysics(-WALL_THICKNESS / 2), toPhysics(canvasHeightPx / 2)),
     });
     wallLeft.createFixture(
-      new Box(
-        toPhysics(WALL_THICKNESS / 2),
-        toPhysics((CANVAS_HEIGHT_PX + WALL_THICKNESS * 2) / 2),
-      ),
+      new Box(toPhysics(WALL_THICKNESS / 2), toPhysics((canvasHeightPx + WALL_THICKNESS * 2) / 2)),
       wallFixOpt,
     );
 
     const wallRight = world.createBody({
       type: 'static' as const,
-      position: Vec2(
-        toPhysics(CANVAS_WIDTH_PX + WALL_THICKNESS / 2),
-        toPhysics(CANVAS_HEIGHT_PX / 2),
-      ),
+      position: Vec2(toPhysics(canvasWidthPx + WALL_THICKNESS / 2), toPhysics(canvasHeightPx / 2)),
     });
     wallRight.createFixture(
-      new Box(
-        toPhysics(WALL_THICKNESS / 2),
-        toPhysics((CANVAS_HEIGHT_PX + WALL_THICKNESS * 2) / 2),
-      ),
+      new Box(toPhysics(WALL_THICKNESS / 2), toPhysics((canvasHeightPx + WALL_THICKNESS * 2) / 2)),
       wallFixOpt,
     );
 
@@ -240,18 +245,18 @@ export default function PrintingListCanvas({
       const scaledGridPx = GRID_PX * sc;
       gridGfx.clear();
       gridGfx.lineStyle(0.5, 0x334155, 0.6);
-      for (let x = scaledGridPx; x < CANVAS_WIDTH_PX * sc; x += scaledGridPx)
+      for (let x = scaledGridPx; x < canvasWidthPx * sc; x += scaledGridPx)
         gridGfx
           .moveTo(x, VIEW_TOP_MARGIN_PX * sc)
-          .lineTo(x, (VIEW_TOP_MARGIN_PX + CANVAS_HEIGHT_PX) * sc);
-      for (let y = scaledGridPx; y < CANVAS_HEIGHT_PX * sc; y += scaledGridPx)
+          .lineTo(x, (VIEW_TOP_MARGIN_PX + canvasHeightPx) * sc);
+      for (let y = scaledGridPx; y < canvasHeightPx * sc; y += scaledGridPx)
         gridGfx
           .moveTo(0, VIEW_TOP_MARGIN_PX * sc + y)
-          .lineTo(CANVAS_WIDTH_PX * sc, VIEW_TOP_MARGIN_PX * sc + y);
+          .lineTo(canvasWidthPx * sc, VIEW_TOP_MARGIN_PX * sc + y);
 
       borderGfx.clear();
       borderGfx.lineStyle({ width: 2, color: 0x64748b, alpha: 1, alignment: 0 });
-      borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX * sc, CANVAS_WIDTH_PX * sc, CANVAS_HEIGHT_PX * sc);
+      borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX * sc, canvasWidthPx * sc, canvasHeightPx * sc);
 
       const wasVisible = outOfBoundsBorderGfx.visible;
       outOfBoundsBorderGfx.clear();
@@ -260,8 +265,8 @@ export default function PrintingListCanvas({
         outOfBoundsBorderGfx,
         0,
         VIEW_TOP_MARGIN_PX * sc,
-        CANVAS_WIDTH_PX * sc,
-        CANVAS_HEIGHT_PX * sc,
+        canvasWidthPx * sc,
+        canvasHeightPx * sc,
         12 * sc,
         8 * sc,
       );
@@ -294,7 +299,7 @@ export default function PrintingListCanvas({
 
     let spawnY = -40; // bodies spawn above the canvas and fall in
 
-    const spawnPlan = buildSpawnPlan(models, items, spawnOrder, hullMode);
+    const spawnPlan = buildSpawnPlan(models, items, spawnOrder, hullMode, canvasWidthPx);
 
     for (const { model, inst, spawnX, metrics } of spawnPlan) {
       const color = modelColor.get(model.id) ?? PALETTE[0];
@@ -377,7 +382,7 @@ export default function PrintingListCanvas({
         visualLocalVerts,
         borderLocalVerts: bVerts,
       } of entries) {
-        const outOfBounds = isOutOfBounds(body, bVerts);
+        const outOfBounds = isOutOfBounds(body, bVerts, canvasWidthPhys, canvasHeightPhys);
         const renderColor = overlapping.has(body) ? color : darkenColor(color, 0.45);
         drawBody(
           gfx,
@@ -533,7 +538,16 @@ export default function PrintingListCanvas({
       app.destroy(true, { children: true, texture: true, baseTexture: true });
       // planck world is GC'd when ref is released - no explicit clear needed
     };
-  }, [spawnOrder, hullMode, resetCount]);
+  }, [
+    spawnOrder,
+    hullMode,
+    resetCount,
+    canvasWidthPx,
+    canvasHeightPx,
+    canvasWidthPhys,
+    canvasHeightPhys,
+    viewHeightPx,
+  ]);
 
   // ── Incremental effect: add/remove bodies when item counts change ──────────
   useEffect(() => {
@@ -572,6 +586,7 @@ export default function PrintingListCanvas({
             currItems,
             entriesRef.current,
             hullModeRef.current,
+            canvasWidthPx,
           );
 
           const { body, visualLocalVerts, borderLocalVerts } = createModelBody(
@@ -646,16 +661,27 @@ export default function PrintingListCanvas({
     }
 
     prevItemsRef.current = { ...currItems };
-  }, [itemsKey, spawnOrder]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [itemsKey, spawnOrder, canvasWidthPx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Stack direction="column" spacing={1}>
       <Stack direction="row" spacing={1} alignContent={'center'} alignItems="center">
-        <Typography variant="body2" color="text.secondary">
-          Printer: Uniformation GK2
-          <br />
-          Print area: {CANVAS_WIDTH_MM} × {CANVAS_HEIGHT_MM} mm
-        </Typography>
+        <FormControl size="small" style={{ minWidth: 250 }}>
+          <InputLabel id="printer-select-label">Printer</InputLabel>
+          <Select
+            labelId="printer-select-label"
+            label="Printer"
+            value={selectedPrinterId ?? ''}
+            onChange={(e) => onPrinterChange?.(e.target.value as string)}
+          >
+            {printers.map((printer) => (
+              <MenuItem key={printer.id} value={printer.id}>
+                {printer.name} ({printer.bedWidthMm} × {printer.bedDepthMm} mm)
+                {printer.isDefault ? ' - default' : ''}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <FormControl size="small">
           <InputLabel id="spawn-order-label">Spawn order</InputLabel>
           <Select
@@ -786,8 +812,8 @@ export default function PrintingListCanvas({
       <div
         ref={containerRef}
         style={{
-          width: CANVAS_WIDTH_PX * canvasScale,
-          height: VIEW_HEIGHT_PX * canvasScale,
+          width: canvasWidthPx * canvasScale,
+          height: viewHeightPx * canvasScale,
           borderRadius: 0,
           overflow: 'hidden',
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',

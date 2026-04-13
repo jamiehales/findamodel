@@ -28,6 +28,8 @@ import {
   useClearPrintingListItems,
   useActivatePrintingList,
   useUpdatePrintingListSettings,
+  usePrinters,
+  useUpdatePrintingListPrinter,
 } from '../lib/queries';
 import ModelCard from '../components/ModelCard';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -45,10 +47,12 @@ function PrintingListPage() {
     () => Array.from(new Set(list?.items.map((i) => i.modelId) ?? [])),
     [list],
   );
-  const { data: listedModels = [], isPending: modelsPending } = useModelsByIds(modelIds);
+  const { data: listedModels = [], isPending: modelsQueryPending } = useModelsByIds(modelIds);
   const { mutate: clearItems } = useClearPrintingListItems();
   const { mutate: activateList } = useActivatePrintingList();
   const { mutate: updateSettings } = useUpdatePrintingListSettings();
+  const { mutate: updatePrinter } = useUpdatePrintingListPrinter();
+  const { data: printers = [] } = usePrinters();
   const [savingPlate, setSavingPlate] = useState(false);
   const [simulationPaused, setSimulationPaused] = useState(false);
   const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null);
@@ -64,7 +68,8 @@ function PrintingListPage() {
   );
 
   const listName = list?.name ?? 'Printing list';
-  const isPending = modelsPending || listPending;
+  const modelsPending = modelIds.length > 0 && modelsQueryPending;
+  const isPending = listPending || modelsPending;
   const hasNonExportableModels = listedModels.some((m) => !m.canExportToPlate);
   const archiveInProgress =
     archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
@@ -158,6 +163,12 @@ function PrintingListPage() {
   function handleHullModeChange(next: HullMode) {
     if (!list) return;
     updateSettings({ id: list.id, spawnType: list.spawnType, hullMode: next });
+  }
+
+  function handlePrinterChange(printerId: string) {
+    if (!list) return;
+    localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+    updatePrinter({ id: list.id, printerConfigId: printerId });
   }
 
   async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
@@ -420,6 +431,11 @@ function PrintingListPage() {
             <PrintingListCanvas
               models={listedModels}
               items={items}
+              selectedPrinterId={list?.printer?.id ?? null}
+              printers={printers}
+              bedWidthMm={list?.printer?.bedWidthMm ?? 228}
+              bedDepthMm={list?.printer?.bedDepthMm ?? 128}
+              onPrinterChange={handlePrinterChange}
               spawnOrder={list?.spawnType ?? 'grouped'}
               hullMode={list?.hullMode ?? 'convex'}
               onSpawnOrderChange={handleSpawnOrderChange}

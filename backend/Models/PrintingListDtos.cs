@@ -13,6 +13,12 @@ public record PrintingListSummaryDto(
     string? OwnerUsername,
     int ItemCount);
 
+public record PrintingListPrinterInfoDto(
+    Guid Id,
+    string Name,
+    float BedWidthMm,
+    float BedDepthMm);
+
 public record PrintingListItemDto(
     Guid Id,
     Guid ModelId,
@@ -27,13 +33,16 @@ public record PrintingListDetailDto(
     string HullMode,
     DateTime CreatedAt,
     string? OwnerUsername,
-    List<PrintingListItemDto> Items);
+        List<PrintingListItemDto> Items,
+        PrintingListPrinterInfoDto? Printer);
 
 public record CreatePrintingListRequest(string Name);
 
 public record RenamePrintingListRequest(string Name);
 
 public record UpdatePrintingListSettingsRequest(string SpawnType, string HullMode);
+
+public record UpdatePrintingListPrinterRequest(Guid? PrinterConfigId);
 
 public record UpsertPrintingListItemRequest(int Quantity);
 

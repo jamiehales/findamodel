@@ -13,6 +13,8 @@ public class PrintingList
     public bool IsDefault { get; set; }
     public string SpawnType { get; set; } = DefaultSpawnType;
     public string HullMode { get; set; } = DefaultHullMode;
+    public Guid? PrinterConfigId { get; set; }
+    public PrinterConfig? PrinterConfig { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<PrintingListItem> Items { get; set; } = [];
 }

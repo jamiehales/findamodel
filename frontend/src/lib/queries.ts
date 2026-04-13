@@ -27,8 +27,14 @@ import {
   deletePrintingList,
   activatePrintingList,
   updatePrintingListSettings,
+  updatePrintingListPrinter,
   upsertPrintingListItem,
   clearPrintingListItems,
+  fetchPrinters,
+  createPrinter,
+  updatePrinter,
+  deletePrinter,
+  setDefaultPrinter,
   type MetadataFields,
   type PrintingListDetail,
   type ModelFilter,
@@ -93,6 +99,7 @@ export const queryKeys = {
   instanceStats: ['settings', 'stats'] as const,
   applicationLogs: (channel: string, severity: string, limit: number) =>
     ['settings', 'logs', channel, severity, limit] as const,
+  printers: ['settings', 'printers'] as const,
 };
 
 export function useModels(limit?: number) {
@@ -540,6 +547,15 @@ export function useUpdatePrintingListSettings() {
   });
 }
 
+export function useUpdatePrintingListPrinter() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, printerConfigId }: { id: string; printerConfigId: string | null }) =>
+      updatePrintingListPrinter(id, printerConfigId),
+    onSuccess: (updated) => syncList(queryClient, updated),
+  });
+}
+
 export function useUpsertPrintingListItem() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -561,5 +577,68 @@ export function useClearPrintingListItems() {
   return useMutation({
     mutationFn: (listId: string) => clearPrintingListItems(listId),
     onSuccess: (updated) => syncList(queryClient, updated),
+  });
+}
+
+export function usePrinters() {
+  return useQuery({
+    queryKey: queryKeys.printers,
+    queryFn: fetchPrinters,
+  });
+}
+
+export function useCreatePrinter() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createPrinter,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.printers });
+    },
+  });
+}
+
+export function useUpdatePrinter() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      name,
+      bedWidthMm,
+      bedDepthMm,
+    }: {
+      id: string;
+      name: string;
+      bedWidthMm: number;
+      bedDepthMm: number;
+    }) => updatePrinter(id, { name, bedWidthMm, bedDepthMm }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.printers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.printingLists });
+      queryClient.invalidateQueries({ queryKey: queryKeys.activePrintingList });
+    },
+  });
+}
+
+export function useDeletePrinter() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deletePrinter(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.printers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.printingLists });
+      queryClient.invalidateQueries({ queryKey: queryKeys.activePrintingList });
+    },
+  });
+}
+
+export function useSetDefaultPrinter() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => setDefaultPrinter(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.printers });
+      queryClient.invalidateQueries({ queryKey: queryKeys.printingLists });
+      queryClient.invalidateQueries({ queryKey: queryKeys.activePrintingList });
+    },
   });
 }

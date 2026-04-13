@@ -1,6 +1,15 @@
 {
   "editor.formatOnSave": true,
   "prettier.requireConfig": true,
+  "chat.tools.global.autoApprove": false,
+  "chat.tools.terminal.autoApprove": {
+    "/rm\\s+-f\\s+debug[\\/]+data[\\/]+findamodel\\.db\\*/i": false,
+    "/rm\\s+-rf\\s+debug[\\/]+data[\\/]+cache(?:$|\\s)/i": false,
+    "/data:\\s+clear\\s+database/i": false,
+    "/data:\\s+clear\\s+cache/i": false,
+    "/Remove-Item\\b/i": false,
+    "/rm\\b/i": false
+  },
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },

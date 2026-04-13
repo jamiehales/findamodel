@@ -18,10 +18,15 @@ import {
 } from '@mui/material';
 import {
   useAppConfig,
+  useCreatePrinter,
+  useDeletePrinter,
   useCreateMetadataDictionaryValue,
   useDeleteMetadataDictionaryValue,
   useInstanceStats,
   useMetadataDictionaryOverview,
+  usePrinters,
+  useSetDefaultPrinter,
+  useUpdatePrinter,
   useUpdateAppConfig,
   useUpdateMetadataDictionaryValue,
 } from '../lib/queries';
@@ -152,9 +157,10 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
 
 const SETTINGS_SECTIONS = [
   { key: 'settings', label: 'Settings', path: '/settings' },
+  { key: 'printers', label: 'Printers', path: '/settings/printers' },
   { key: 'logs', label: 'Logs', path: '/settings/logs' },
   { key: 'ai', label: 'AI Settings', path: '/settings/ai' },
-  { key: 'schema', label: 'Schema Edits', path: '/settings/schema' },
+  { key: 'schema', label: 'Schema', path: '/settings/schema' },
   { key: 'stats', label: 'Stats', path: '/settings/stats' },
 ] as const;
 
@@ -280,7 +286,18 @@ export default function SettingsPage() {
   const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
+  const [newPrinterName, setNewPrinterName] = useState('');
+  const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
+  const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
+  const [printerEdits, setPrinterEdits] = useState<
+    Record<string, { name: string; bedWidthMm: string; bedDepthMm: string }>
+  >({});
   const { data, isPending, isError } = useMetadataDictionaryOverview();
+  const { data: printers = [] } = usePrinters();
+  const createPrinterMutation = useCreatePrinter();
+  const deletePrinterMutation = useDeletePrinter();
+  const setDefaultPrinterMutation = useSetDefaultPrinter();
+  const updatePrinterMutation = useUpdatePrinter();
   const [logsChannel, setLogsChannel] = useState('');
   const [logsSeverity, setLogsSeverity] = useState('');
   const [showExceptionsOnly, setShowExceptionsOnly] = useState(false);
@@ -309,6 +326,20 @@ export default function SettingsPage() {
     }
   }, [appConfig]);
 
+  useEffect(() => {
+    setPrinterEdits((current) => {
+      const next: Record<string, { name: string; bedWidthMm: string; bedDepthMm: string }> = {};
+      for (const printer of printers) {
+        next[printer.id] = current[printer.id] ?? {
+          name: printer.name,
+          bedWidthMm: String(printer.bedWidthMm),
+          bedDepthMm: String(printer.bedDepthMm),
+        };
+      }
+      return next;
+    });
+  }, [printers]);
+
   const raftHeightValue = Number(defaultRaftHeightMm);
   const timeoutValue = Number(tagGenerationTimeoutMs);
   const maxTagsValue = Number(tagGenerationMaxTags);
@@ -331,6 +362,7 @@ export default function SettingsPage() {
     minConfidenceValue <= 1;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
+    if (location.pathname.startsWith('/settings/printers')) return 'printers';
     if (location.pathname.startsWith('/settings/logs')) return 'logs';
     if (location.pathname.startsWith('/settings/ai')) return 'ai';
     if (location.pathname.startsWith('/settings/schema')) return 'schema';
@@ -343,6 +375,14 @@ export default function SettingsPage() {
     if (!showExceptionsOnly) return logsData.entries;
     return logsData.entries.filter((entry) => !!entry.exception);
   }, [logsData, showExceptionsOnly]);
+
+  const existingPrinterRows = useMemo(
+    () =>
+      [...printers].sort((a, b) =>
+        a.isBuiltIn === b.isBuiltIn ? a.name.localeCompare(b.name) : a.isBuiltIn ? -1 : 1,
+      ),
+    [printers],
+  );
 
   const saveConfig = () =>
     updateAppConfigMutation.mutate({
@@ -426,6 +466,180 @@ export default function SettingsPage() {
                     onClick={saveConfig}
                   >
                     Save
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
+          )}
+
+          {currentSection === 'printers' && (
+            <Stack className={styles.globalSettingsSection}>
+              <Stack spacing={2}>
+                <Typography variant="h6">Printers</Typography>
+
+                <Stack spacing={1}>
+                  {existingPrinterRows.map((printer) => {
+                    const edit = printerEdits[printer.id] ?? {
+                      name: printer.name,
+                      bedWidthMm: String(printer.bedWidthMm),
+                      bedDepthMm: String(printer.bedDepthMm),
+                    };
+                    const width = Number(edit.bedWidthMm);
+                    const depth = Number(edit.bedDepthMm);
+                    const canSaveCustom =
+                      !printer.isBuiltIn &&
+                      edit.name.trim().length > 0 &&
+                      Number.isFinite(width) &&
+                      width > 0 &&
+                      Number.isFinite(depth) &&
+                      depth > 0 &&
+                      (edit.name.trim() !== printer.name ||
+                        width !== printer.bedWidthMm ||
+                        depth !== printer.bedDepthMm);
+
+                    return (
+                      <Stack
+                        key={printer.id}
+                        direction={{ xs: 'column', md: 'row' }}
+                        spacing={1}
+                        alignItems={{ xs: 'stretch', md: 'center' }}
+                      >
+                        <TextField
+                          size="small"
+                          label="Name"
+                          value={edit.name}
+                          disabled={printer.isBuiltIn}
+                          onChange={(e) =>
+                            setPrinterEdits((current) => ({
+                              ...current,
+                              [printer.id]: {
+                                ...edit,
+                                name: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                        <TextField
+                          size="small"
+                          type="number"
+                          label="Width (mm)"
+                          value={edit.bedWidthMm}
+                          disabled={printer.isBuiltIn}
+                          onChange={(e) =>
+                            setPrinterEdits((current) => ({
+                              ...current,
+                              [printer.id]: {
+                                ...edit,
+                                bedWidthMm: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                        <TextField
+                          size="small"
+                          type="number"
+                          label="Depth (mm)"
+                          value={edit.bedDepthMm}
+                          disabled={printer.isBuiltIn}
+                          onChange={(e) =>
+                            setPrinterEdits((current) => ({
+                              ...current,
+                              [printer.id]: {
+                                ...edit,
+                                bedDepthMm: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                        <Stack direction="row" spacing={1}>
+                          {!printer.isBuiltIn && (
+                            <Button
+                              variant="contained"
+                              disabled={!canSaveCustom || updatePrinterMutation.isPending}
+                              onClick={() =>
+                                updatePrinterMutation.mutate({
+                                  id: printer.id,
+                                  name: edit.name.trim(),
+                                  bedWidthMm: Number(edit.bedWidthMm),
+                                  bedDepthMm: Number(edit.bedDepthMm),
+                                })
+                              }
+                            >
+                              Save
+                            </Button>
+                          )}
+                          <Button
+                            variant={printer.isDefault ? 'contained' : 'outlined'}
+                            disabled={printer.isDefault || setDefaultPrinterMutation.isPending}
+                            onClick={() => setDefaultPrinterMutation.mutate(printer.id)}
+                          >
+                            {printer.isDefault ? 'Default' : 'Set default'}
+                          </Button>
+                          {!printer.isBuiltIn && (
+                            <Button
+                              variant="warning"
+                              disabled={deletePrinterMutation.isPending || printer.isDefault}
+                              onClick={() => deletePrinterMutation.mutate(printer.id)}
+                            >
+                              Delete
+                            </Button>
+                          )}
+                          {printer.isBuiltIn && <Chip size="small" label="Built in" />}
+                        </Stack>
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+
+                <Divider />
+
+                <Typography variant="h6">New Printer</Typography>
+
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems="center">
+                  <TextField
+                    size="small"
+                    label="Printer name"
+                    value={newPrinterName}
+                    onChange={(e) => setNewPrinterName(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Width (mm)"
+                    value={newPrinterWidthMm}
+                    onChange={(e) => setNewPrinterWidthMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Depth (mm)"
+                    value={newPrinterDepthMm}
+                    onChange={(e) => setNewPrinterDepthMm(e.target.value)}
+                  />
+                  <Button
+                    variant="contained"
+                    disabled={
+                      createPrinterMutation.isPending ||
+                      !newPrinterName.trim() ||
+                      Number(newPrinterWidthMm) <= 0 ||
+                      Number(newPrinterDepthMm) <= 0
+                    }
+                    onClick={() => {
+                      createPrinterMutation.mutate(
+                        {
+                          name: newPrinterName.trim(),
+                          bedWidthMm: Number(newPrinterWidthMm),
+                          bedDepthMm: Number(newPrinterDepthMm),
+                        },
+                        {
+                          onSuccess: () => {
+                            setNewPrinterName('');
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    Add printer
                   </Button>
                 </Stack>
               </Stack>

@@ -11,3 +11,9 @@ If this file and AGENTS.md differ, AGENTS.md is authoritative.
 - For frontend edits, ensure output matches Prettier config and run formatting before finalizing (format touched files or run `yarn --cwd frontend format`).
 - Backend changes to EF Core entities must include a migration.
 - Monitor query performance: extension-method DTO mapping can trigger full-entity materialization. If list/query endpoints degrade, prefer SQL-translatable projection and `AsNoTracking()` on read paths.
+
+## Restricted tasks
+
+**DO NOT RUN THESE TASKS** - they will destroy data or require explicit user permission:
+- `data: clear database` - Destructive operation. Only run if user explicitly requests it.
+- `data: clear cache` - Only run if user explicitly requests it.

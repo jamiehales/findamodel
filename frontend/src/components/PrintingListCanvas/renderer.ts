@@ -1,14 +1,7 @@
 import * as PIXI from 'pixi.js';
 import { Vec2, Polygon } from 'planck';
 import type { Body } from 'planck';
-import {
-  DEBUG_PHYSICS_WIREFRAME,
-  CAT_OBJECT,
-  toPhysics,
-  toPixels,
-  CANVAS_WIDTH_PHYS,
-  CANVAS_HEIGHT_PHYS,
-} from './constants';
+import { DEBUG_PHYSICS_WIREFRAME, CAT_OBJECT, toPhysics, toPixels } from './constants';
 import type { Vec2Like, Entry } from './types';
 
 export function darkenColor(color: number, factor: number): number {
@@ -80,11 +73,16 @@ export function computeOverlapping(entries: Entry[]): Set<Body> {
 }
 
 /** Visual bounds check: true when any border hull vertex is outside plate rectangle. */
-export function isOutOfBounds(body: Body, borderLocalVerts: Vec2Like[]): boolean {
+export function isOutOfBounds(
+  body: Body,
+  borderLocalVerts: Vec2Like[],
+  canvasWidthPhys: number,
+  canvasHeightPhys: number,
+): boolean {
   if (!borderLocalVerts.length) return false;
   return borderLocalVerts.some((v) => {
     const w = body.getWorldPoint(Vec2(toPhysics(v.x), toPhysics(v.y)));
-    return w.x < 0 || w.x > CANVAS_WIDTH_PHYS || w.y < 0 || w.y > CANVAS_HEIGHT_PHYS;
+    return w.x < 0 || w.x > canvasWidthPhys || w.y < 0 || w.y > canvasHeightPhys;
   });
 }
 

@@ -24,6 +24,7 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
     public DbSet<User> Users { get; set; }
     public DbSet<PrintingList> PrintingLists { get; set; }
     public DbSet<PrintingListItem> PrintingListItems { get; set; }
+    public DbSet<PrinterConfig> PrinterConfigs { get; set; }
     public DbSet<MetadataDictionaryValue> MetadataDictionaryValues { get; set; }
     public DbSet<IndexRun> IndexRuns { get; set; }
     public DbSet<IndexRunFile> IndexRunFiles { get; set; }
@@ -115,6 +116,15 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<PrintingList>()
             .Property(l => l.HullMode)
             .HasDefaultValue(PrintingList.DefaultHullMode);
+
+        modelBuilder.Entity<PrinterConfig>()
+            .HasIndex(p => p.IsDefault);
+
+        modelBuilder.Entity<PrintingList>()
+            .HasOne(l => l.PrinterConfig)
+            .WithMany(p => p.PrintingLists)
+            .HasForeignKey(l => l.PrinterConfigId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<PrintingListItem>()
             .HasOne(i => i.PrintingList)

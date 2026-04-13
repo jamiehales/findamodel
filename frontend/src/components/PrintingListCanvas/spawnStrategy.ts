@@ -1,15 +1,15 @@
-import { CANVAS_WIDTH_PX, BODY_MARGIN_PX, toPixels } from './constants';
+import { BODY_MARGIN_PX, toPixels } from './constants';
 import type { ModelFootprintMetrics, SpawnPlanItem, Entry } from './types';
 import type { Model, SpawnType, HullMode } from '../../lib/api';
 import { getModelFootprintMetrics } from './hullHelpers';
 
-export function getRandomSpawnX(): number {
-  return CANVAS_WIDTH_PX * 0.2 + Math.random() * CANVAS_WIDTH_PX * 0.6;
+export function getRandomSpawnX(canvasWidthPx: number): number {
+  return canvasWidthPx * 0.2 + Math.random() * canvasWidthPx * 0.6;
 }
 
-export function clampSpawnX(spawnX: number, widthPx: number): number {
+export function clampSpawnX(spawnX: number, widthPx: number, canvasWidthPx: number): number {
   const margin = widthPx / 2 + BODY_MARGIN_PX + 8;
-  return Math.min(CANVAS_WIDTH_PX - margin, Math.max(margin, spawnX));
+  return Math.min(canvasWidthPx - margin, Math.max(margin, spawnX));
 }
 
 export function compareBySizeDesc(a: ModelFootprintMetrics, b: ModelFootprintMetrics): number {
@@ -21,6 +21,7 @@ export function buildSpawnPlan(
   items: Record<string, number>,
   spawnOrder: SpawnType,
   hullMode: HullMode,
+  canvasWidthPx: number,
 ): SpawnPlanItem[] {
   const baseSequence: Array<{ model: Model; inst: number; metrics: ModelFootprintMetrics }> = [];
 
@@ -46,7 +47,7 @@ export function buildSpawnPlan(
       model,
       inst,
       metrics,
-      spawnX: clampSpawnX(getRandomSpawnX(), metrics.boundingWidthPx),
+      spawnX: clampSpawnX(getRandomSpawnX(canvasWidthPx), metrics.boundingWidthPx, canvasWidthPx),
     }));
   }
 
@@ -60,7 +61,11 @@ export function buildSpawnPlan(
   const plan: SpawnPlanItem[] = [];
   while (remaining.length > 0) {
     const largest = remaining.shift()!;
-    const anchorX = clampSpawnX(getRandomSpawnX(), largest.metrics.boundingWidthPx);
+    const anchorX = clampSpawnX(
+      getRandomSpawnX(canvasWidthPx),
+      largest.metrics.boundingWidthPx,
+      canvasWidthPx,
+    );
 
     plan.push({
       model: largest.model,
@@ -102,7 +107,7 @@ export function buildSpawnPlan(
         model: filler.model,
         inst: filler.inst,
         metrics: filler.metrics,
-        spawnX: clampSpawnX(anchorX, filler.metrics.boundingWidthPx),
+        spawnX: clampSpawnX(anchorX, filler.metrics.boundingWidthPx, canvasWidthPx),
       });
     }
   }
@@ -117,10 +122,15 @@ export function getIncrementalSpawnX(
   items: Record<string, number>,
   entries: Entry[],
   hullMode: HullMode,
+  canvasWidthPx: number,
 ): number {
   const currentMetrics = getModelFootprintMetrics(model, hullMode);
   if (spawnOrder !== 'largestFirstFillGaps') {
-    return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+    return clampSpawnX(
+      getRandomSpawnX(canvasWidthPx),
+      currentMetrics.boundingWidthPx,
+      canvasWidthPx,
+    );
   }
 
   const activeModels = models
@@ -133,7 +143,11 @@ export function getIncrementalSpawnX(
 
   const largest = activeModels[0];
   if (!largest) {
-    return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+    return clampSpawnX(
+      getRandomSpawnX(canvasWidthPx),
+      currentMetrics.boundingWidthPx,
+      canvasWidthPx,
+    );
   }
 
   if (
@@ -145,9 +159,10 @@ export function getIncrementalSpawnX(
       return clampSpawnX(
         toPixels(anchorEntry.body.getPosition().x),
         currentMetrics.boundingWidthPx,
+        canvasWidthPx,
       );
     }
   }
 
-  return clampSpawnX(getRandomSpawnX(), currentMetrics.boundingWidthPx);
+  return clampSpawnX(getRandomSpawnX(canvasWidthPx), currentMetrics.boundingWidthPx, canvasWidthPx);
 }

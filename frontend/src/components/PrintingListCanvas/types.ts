@@ -1,6 +1,6 @@
 import type * as PIXI from 'pixi.js';
 import type { Body } from 'planck';
-import type { Model, SpawnType, HullMode } from '../../lib/api';
+import type { Model, SpawnType, HullMode, PrinterConfig } from '../../lib/api';
 
 export interface Vec2Like {
   x: number;
@@ -52,6 +52,11 @@ export interface SpawnPlanItem {
 export interface Props {
   models: Model[];
   items: Record<string, number>;
+  selectedPrinterId: string | null;
+  printers: PrinterConfig[];
+  bedWidthMm: number;
+  bedDepthMm: number;
+  onPrinterChange?: (printerId: string) => void;
   spawnOrder: SpawnType;
   hullMode: HullMode;
   onSpawnOrderChange?: (next: SpawnType) => void;

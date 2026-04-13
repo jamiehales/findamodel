@@ -17,6 +17,8 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         var existing = await db.PrintingLists.Where(l => l.OwnerId == userId).ToListAsync();
         foreach (var l in existing) l.IsActive = false;
 
+        var defaultPrinterId = await db.PrinterConfigs.Where(p => p.IsDefault).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
+
         var list = new PrintingList
         {
             Id = Guid.NewGuid(),
@@ -26,6 +28,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             IsDefault = true,
             SpawnType = PrintingList.DefaultSpawnType,
             HullMode = PrintingList.DefaultHullMode,
+            PrinterConfigId = defaultPrinterId,
             CreatedAt = DateTime.UtcNow,
         };
         db.PrintingLists.Add(list);
@@ -57,6 +60,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         using var db = dbFactory.CreateDbContext();
         var list = await db.PrintingLists
             .Include(l => l.Owner)
+            .Include(l => l.PrinterConfig)
             .Include(l => l.Items)
             .FirstOrDefaultAsync(l => l.OwnerId == userId && l.IsActive);
 
@@ -68,6 +72,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         using var db = dbFactory.CreateDbContext();
         var list = await db.PrintingLists
             .Include(l => l.Owner)
+            .Include(l => l.PrinterConfig)
             .Include(l => l.Items)
             .FirstOrDefaultAsync(l => l.Id == id);
 
@@ -80,6 +85,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
     {
         using var db = dbFactory.CreateDbContext();
         var hasAny = await db.PrintingLists.AnyAsync(l => l.OwnerId == userId);
+        var defaultPrinterId = await db.PrinterConfigs.Where(p => p.IsDefault).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
 
         var list = new PrintingList
         {
@@ -90,6 +96,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
             IsDefault = false,
             SpawnType = PrintingList.DefaultSpawnType,
             HullMode = PrintingList.DefaultHullMode,
+            PrinterConfigId = defaultPrinterId,
             CreatedAt = DateTime.UtcNow,
         };
         db.PrintingLists.Add(list);
@@ -127,6 +134,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
         using var db = dbFactory.CreateDbContext();
         var list = await db.PrintingLists
             .Include(l => l.Owner)
+            .Include(l => l.PrinterConfig)
             .FirstOrDefaultAsync(l => l.Id == id);
 
         if (list == null) return null;
@@ -134,6 +142,40 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
 
         list.SpawnType = NormalizeSpawnType(spawnType);
         list.HullMode = NormalizeHullMode(hullMode);
+        await db.SaveChangesAsync();
+
+        var items = await db.PrintingListItems.Where(i => i.PrintingListId == id).ToListAsync();
+        return ToDetail(list, items);
+    }
+
+    public async Task<PrintingListDetailDto?> UpdatePrinterAsync(
+        Guid id,
+        Guid userId,
+        bool isAdmin,
+        Guid? printerConfigId)
+    {
+        using var db = dbFactory.CreateDbContext();
+        var list = await db.PrintingLists
+            .Include(l => l.Owner)
+            .Include(l => l.PrinterConfig)
+            .FirstOrDefaultAsync(l => l.Id == id);
+
+        if (list == null) return null;
+        if (!isAdmin && list.OwnerId != userId) return null;
+
+        if (printerConfigId.HasValue)
+        {
+            var printer = await db.PrinterConfigs.FirstOrDefaultAsync(p => p.Id == printerConfigId.Value);
+            if (printer == null) return null;
+            list.PrinterConfig = printer;
+            list.PrinterConfigId = printer.Id;
+        }
+        else
+        {
+            list.PrinterConfig = null;
+            list.PrinterConfigId = null;
+        }
+
         await db.SaveChangesAsync();
 
         var items = await db.PrintingListItems.Where(i => i.PrintingListId == id).ToListAsync();
@@ -202,7 +244,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
     public async Task<PrintingListDetailDto?> UpsertItemAsync(Guid listId, Guid userId, bool isAdmin, Guid modelId, int quantity)
     {
         using var db = dbFactory.CreateDbContext();
-        var list = await db.PrintingLists.Include(l => l.Owner)
+        var list = await db.PrintingLists.Include(l => l.Owner).Include(l => l.PrinterConfig)
             .FirstOrDefaultAsync(l => l.Id == listId);
 
         if (list == null) return null;
@@ -240,7 +282,7 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
     public async Task<PrintingListDetailDto?> ClearItemsAsync(Guid listId, Guid userId, bool isAdmin)
     {
         using var db = dbFactory.CreateDbContext();
-        var list = await db.PrintingLists.Include(l => l.Owner)
+        var list = await db.PrintingLists.Include(l => l.Owner).Include(l => l.PrinterConfig)
             .FirstOrDefaultAsync(l => l.Id == listId);
 
         if (list == null) return null;
@@ -252,7 +294,14 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
 
     private static PrintingListDetailDto ToDetail(PrintingList list, IEnumerable<PrintingListItem> items) =>
         new(list.Id, list.Name, list.IsActive, list.IsDefault, NormalizeSpawnType(list.SpawnType), NormalizeHullMode(list.HullMode), list.CreatedAt, list.Owner.Username,
-            items.Select(i => new PrintingListItemDto(i.Id, i.ModelId, i.Quantity)).ToList());
+            items.Select(i => new PrintingListItemDto(i.Id, i.ModelId, i.Quantity)).ToList(),
+            list.PrinterConfig == null
+                ? null
+                : new PrintingListPrinterInfoDto(
+                    list.PrinterConfig.Id,
+                    list.PrinterConfig.Name,
+                    list.PrinterConfig.BedWidthMm,
+                    list.PrinterConfig.BedDepthMm));
 
     private static string NormalizeSpawnType(string? spawnType) =>
         spawnType?.Trim().ToLowerInvariant() switch

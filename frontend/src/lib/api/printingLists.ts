@@ -21,6 +21,13 @@ export interface PrintingListItem {
   quantity: number;
 }
 
+export interface PrintingListPrinterInfo {
+  id: string;
+  name: string;
+  bedWidthMm: number;
+  bedDepthMm: number;
+}
+
 export interface PrintingListDetail {
   id: string;
   name: string;
@@ -31,6 +38,7 @@ export interface PrintingListDetail {
   createdAt: string;
   ownerUsername: string | null;
   items: PrintingListItem[];
+  printer: PrintingListPrinterInfo | null;
 }
 
 export interface PrintingListArchiveJob {
@@ -103,6 +111,19 @@ export async function updatePrintingListSettings(
     body: JSON.stringify(settings),
   });
   if (!r.ok) throw new Error('Failed to update printing list settings');
+  return r.json();
+}
+
+export async function updatePrintingListPrinter(
+  id: string,
+  printerConfigId: string | null,
+): Promise<PrintingListDetail> {
+  const r = await apiFetch(`/api/printing-lists/${id}/printer`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ printerConfigId }),
+  });
+  if (!r.ok) throw new Error('Failed to update printing list printer');
   return r.json();
 }
 
