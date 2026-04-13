@@ -250,6 +250,7 @@ public class ModelService(
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, relativeDirectories);
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
+        var generatePreviewsOnScan = appConfig.GeneratePreviewsEnabled;
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
         var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
 
@@ -264,7 +265,8 @@ public class ModelService(
                 .ToListAsync())
             : [];
         logger.LogDebug(
-            "Scan AI-generation settings: tagsEnabled={TagsEnabled}, descriptionEnabled={DescriptionEnabled}, provider={Provider}, schemaCount={SchemaCount}",
+            "Scan settings: previewsEnabled={PreviewsEnabled}, tagsEnabled={TagsEnabled}, descriptionEnabled={DescriptionEnabled}, provider={Provider}, schemaCount={SchemaCount}",
+            generatePreviewsOnScan,
             generateTagsOnScan,
             generateDescriptionsOnScan,
             appConfig.TagGenerationProvider,
@@ -333,6 +335,7 @@ public class ModelService(
                             directoryConfigs,
                             defaultRaftHeightMm,
                             appConfig,
+                            generatePreviewsOnScan,
                             configuredTagSchema,
                             generateTagsOnScan,
                             generateDescriptionsOnScan);
@@ -680,6 +683,7 @@ public class ModelService(
         var directoryConfigs = await metadataConfigService.EnsureDirectoryConfigsAsync(modelsPath, [directory]);
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
+        var generatePreviewsOnScan = appConfig.GeneratePreviewsEnabled;
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
         var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
         cancellationToken.ThrowIfCancellationRequested();
@@ -711,6 +715,7 @@ public class ModelService(
         cancellationToken.ThrowIfCancellationRequested();
         var checksumChanged = existing is null || existing.Checksum != checksum;
         var previewStale = existing is not null
+            && generatePreviewsOnScan
             && !IsNonGeometryType(fileType)
             && NeedsPreviewRegeneration(existing.PreviewGenerationVersion);
         var hullStale = existing is not null
@@ -797,7 +802,14 @@ public class ModelService(
         if (existing is null)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum, defaultRaftHeightMm);
+            var data = await ComputeFileDataAsync(
+                fullPath,
+                fileType,
+                directory,
+                directoryConfigs,
+                checksum,
+                defaultRaftHeightMm,
+                includePreview: generatePreviewsOnScan);
             existing = new CachedModel
             {
                 Id = Guid.NewGuid(),
@@ -820,7 +832,14 @@ public class ModelService(
             if (existing.Checksum != checksum)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var data = await ComputeFileDataAsync(fullPath, fileType, directory, directoryConfigs, checksum, defaultRaftHeightMm);
+                var data = await ComputeFileDataAsync(
+                    fullPath,
+                    fileType,
+                    directory,
+                    directoryConfigs,
+                    checksum,
+                    defaultRaftHeightMm,
+                    includePreview: generatePreviewsOnScan);
                 existing.FileType = fileType;
                 existing.DirectoryConfigId = data.DirConfig?.Id;
                 ApplyFileData(existing, data, info);
@@ -838,7 +857,7 @@ public class ModelService(
                     fileType,
                     existing.Checksum,
                     expectedRaftHeightMm,
-                    includePreview: previewStale,
+                    includePreview: generatePreviewsOnScan && previewStale,
                     includeHulls: true);
                 ApplyGeometryRefreshData(existing, refresh);
                 generatedPreview = refresh.PreviewGenerated;
@@ -1070,6 +1089,7 @@ public class ModelService(
         Dictionary<string, DirectoryConfig> directoryConfigs,
         float defaultRaftHeightMm,
         AppConfigDto appConfig,
+        bool generatePreviewsOnScan,
         List<string> configuredTagSchema,
         bool generateTagsOnScan,
         bool generateDescriptionsOnScan)
@@ -1095,7 +1115,8 @@ public class ModelService(
                 defaultRaftHeightMm);
             var hullMetadataMismatch = !IsNonGeometryType(fileType)
                 && NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
-            var previewStale = !IsNonGeometryType(fileType)
+            var previewStale = generatePreviewsOnScan
+                && !IsNonGeometryType(fileType)
                 && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
             var tagsStale = false;
             var descriptionStale = false;
@@ -1156,7 +1177,14 @@ public class ModelService(
 
             if (currentChecksum != existingEntry.Checksum)
             {
-                var data = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, currentChecksum, defaultRaftHeightMm);
+                var data = await ComputeFileDataAsync(
+                    file,
+                    fileType,
+                    directory,
+                    directoryConfigs,
+                    currentChecksum,
+                    defaultRaftHeightMm,
+                    includePreview: generatePreviewsOnScan);
                 return new PreparedScanResult(
                     existingEntry.Id,
                     file,
@@ -1185,7 +1213,7 @@ public class ModelService(
                     fileType,
                     currentChecksum,
                     expectedRaftHeightMm,
-                    includePreview: previewStale,
+                    includePreview: generatePreviewsOnScan && previewStale,
                     includeHulls: true);
                 return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, refresh, false, false, null);
             }
@@ -1216,7 +1244,14 @@ public class ModelService(
             return new PreparedScanResult(existingEntry.Id, file, relativePath, directory, fileName, fileType, info, null, previewRefresh, false, false, null);
         }
 
-        var newData = await ComputeFileDataAsync(file, fileType, directory, directoryConfigs, null, defaultRaftHeightMm);
+        var newData = await ComputeFileDataAsync(
+            file,
+            fileType,
+            directory,
+            directoryConfigs,
+            null,
+            defaultRaftHeightMm,
+            includePreview: generatePreviewsOnScan);
         return new PreparedScanResult(
             null,
             file,
@@ -1236,7 +1271,8 @@ public class ModelService(
         string file, string fileType, string directory,
         Dictionary<string, DirectoryConfig> directoryConfigs,
         string? knownChecksum = null,
-        float defaultRaftHeightMm = HullCalculationService.DefaultRaftHeightMm)
+        float defaultRaftHeightMm = HullCalculationService.DefaultRaftHeightMm,
+        bool includePreview = true)
     {
         var checksum = knownChecksum ?? await ComputeChecksumAsync(file);
         directoryConfigs.TryGetValue(directory, out var dirConfig);
@@ -1259,7 +1295,7 @@ public class ModelService(
         if (!IsNonGeometryType(fileType))
         {
             geometry = await loaderService.LoadModelAsync(file, fileType);
-            if (geometry is not null)
+            if (includePreview && geometry is not null)
             {
                 var previewResult = await previewService.GeneratePreviewWithStatusAsync(geometry, checksum);
                 previewImagePath = previewResult.RelativePath;

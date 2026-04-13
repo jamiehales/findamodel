@@ -61,6 +61,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue(2f);
 
         modelBuilder.Entity<AppConfig>()
+            .Property(c => c.GeneratePreviewsEnabled)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationProvider)
             .HasDefaultValue("internal");
 

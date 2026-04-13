@@ -276,6 +276,7 @@ export default function SettingsPage() {
   const updateAppConfigMutation = useUpdateAppConfig();
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
+  const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
   const [aiDescriptionEnabled, setAiDescriptionEnabled] = useState(false);
   const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
@@ -316,6 +317,7 @@ export default function SettingsPage() {
     if (appConfig) {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
       setTheme(appConfig.theme);
+      setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
       setTagGenerationEnabled(appConfig.tagGenerationEnabled);
       setAiDescriptionEnabled(appConfig.aiDescriptionEnabled);
       setTagGenerationProvider(
@@ -392,6 +394,7 @@ export default function SettingsPage() {
     updateAppConfigMutation.mutate({
       defaultRaftHeightMm: raftHeightValue,
       theme,
+      generatePreviewsEnabled,
       tagGenerationEnabled,
       aiDescriptionEnabled,
       tagGenerationProvider,
@@ -464,6 +467,17 @@ export default function SettingsPage() {
                     <ToggleButton value="default">Default</ToggleButton>
                     <ToggleButton value="nord">Nord</ToggleButton>
                   </ToggleButtonGroup>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={generatePreviewsEnabled}
+                        onChange={(e) => setGeneratePreviewsEnabled(e.target.checked)}
+                      />
+                    }
+                    label="Generate previews"
+                  />
                 </Stack>
                 <Stack direction="row" spacing={1}>
                   <Button

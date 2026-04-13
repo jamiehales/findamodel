@@ -3,6 +3,7 @@ namespace findamodel.Models;
 public record AppConfigDto(
     float DefaultRaftHeightMm,
     string Theme,
+    bool GeneratePreviewsEnabled,
     bool TagGenerationEnabled,
     bool AiDescriptionEnabled,
     string TagGenerationProvider,
@@ -25,6 +26,7 @@ public record AppConfigDto(
 public record UpdateAppConfigRequest(
     float DefaultRaftHeightMm,
     string Theme,
+    bool GeneratePreviewsEnabled,
     bool TagGenerationEnabled,
     bool AiDescriptionEnabled,
     string TagGenerationProvider,
@@ -40,6 +42,7 @@ public record InitialSetupRequest(
     string ModelsDirectoryPath,
     float DefaultRaftHeightMm,
     string Theme,
+    bool GeneratePreviewsEnabled,
     bool TagGenerationEnabled,
     bool AiDescriptionEnabled,
     string TagGenerationProvider,
@@ -57,6 +60,7 @@ public record InitialSetupDefaultsDto(
     string? ModelsDirectoryPath,
     float DefaultRaftHeightMm,
     string Theme,
+    bool GeneratePreviewsEnabled,
     bool TagGenerationEnabled,
     bool AiDescriptionEnabled,
     string TagGenerationProvider,

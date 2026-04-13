@@ -45,7 +45,7 @@ public static class RuleRegistry
 
         return ruleName.ToLowerInvariant() switch
         {
-            "regex"    => RegexRuleParser.ParseValue(filePath, fieldType, options),
+            "regex" => RegexRuleParser.ParseValue(filePath, fieldType, options),
             _ => null
         };
     }

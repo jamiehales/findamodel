@@ -30,6 +30,7 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
   const [modelsDirectoryPath, setModelsDirectoryPath] = useState('');
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('2');
   const [theme, setTheme] = useState('nord');
+  const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
   const [aiDescriptionEnabled, setAiDescriptionEnabled] = useState(false);
   const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
@@ -78,6 +79,7 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
     setModelsDirectoryPath(defaults.modelsDirectoryPath ?? '');
     setDefaultRaftHeightMm(String(defaults.defaultRaftHeightMm));
     setTheme(defaults.theme === 'default' ? 'default' : 'nord');
+    setGeneratePreviewsEnabled(defaults.generatePreviewsEnabled);
     // AI features are intentionally opt-in during initial setup.
     setTagGenerationEnabled(false);
     setAiDescriptionEnabled(false);
@@ -143,6 +145,7 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
         modelsDirectoryPath: modelsDirectoryPath.trim(),
         defaultRaftHeightMm: raftHeight,
         theme,
+        generatePreviewsEnabled,
         tagGenerationEnabled,
         aiDescriptionEnabled,
         tagGenerationProvider,

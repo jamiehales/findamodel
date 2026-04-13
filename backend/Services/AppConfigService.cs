@@ -12,6 +12,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DatabaseDefaultRaftHeightMm = 2f;
     public const string DefaultTagGenerationModel = "Qwen2.5-7B-Instruct";
     private const string DefaultTheme = "nord";
+    private const bool DefaultGeneratePreviewsEnabled = true;
     private const bool DefaultTagGenerationEnabled = false;
     private const bool DefaultAiDescriptionEnabled = false;
     private const string DefaultTagGenerationProvider = "internal";
@@ -77,6 +78,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         var config = await EnsureConfigAsync(db);
         config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
         config.Theme = request.Theme;
+        config.GeneratePreviewsEnabled = request.GeneratePreviewsEnabled;
         config.TagGenerationEnabled = request.TagGenerationEnabled;
         config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
@@ -157,6 +159,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.ModelsDirectoryPath = fullPath;
         config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
         config.Theme = request.Theme;
+        config.GeneratePreviewsEnabled = request.GeneratePreviewsEnabled;
         config.TagGenerationEnabled = request.TagGenerationEnabled;
         config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
@@ -193,6 +196,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             ModelsDirectoryPath: !string.IsNullOrWhiteSpace(configuration["Models:DirectoryPath"]) ? configuration["Models:DirectoryPath"] : config.ModelsDirectoryPath,
             DefaultRaftHeightMm: config.DefaultRaftHeightMm,
             Theme: config.Theme,
+            GeneratePreviewsEnabled: config.GeneratePreviewsEnabled,
             TagGenerationEnabled: config.TagGenerationEnabled,
             AiDescriptionEnabled: config.AiDescriptionEnabled,
             TagGenerationProvider: config.TagGenerationProvider,
@@ -208,6 +212,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         return new AppConfigDto(
             config.DefaultRaftHeightMm,
             config.Theme,
+            config.GeneratePreviewsEnabled,
             config.TagGenerationEnabled,
             config.AiDescriptionEnabled,
             config.TagGenerationProvider,
@@ -244,6 +249,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             Id = SingletonConfigId,
             DefaultRaftHeightMm = configuration.GetValue<float?>("AppConfig:DefaultRaftHeightMm") ?? DatabaseDefaultRaftHeightMm,
             Theme = configuration["AppConfig:Theme"] ?? DefaultTheme,
+            GeneratePreviewsEnabled = configuration.GetValue<bool?>("AppConfig:GeneratePreviewsEnabled") ?? DefaultGeneratePreviewsEnabled,
             TagGenerationEnabled = configuration.GetValue<bool?>("AppConfig:TagGenerationEnabled") ?? DefaultTagGenerationEnabled,
             AiDescriptionEnabled = configuration.GetValue<bool?>("AppConfig:AiDescriptionEnabled") ?? DefaultAiDescriptionEnabled,
             TagGenerationProvider = configuration["AppConfig:TagGenerationProvider"] ?? DefaultTagGenerationProvider,

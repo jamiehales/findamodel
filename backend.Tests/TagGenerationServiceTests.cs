@@ -191,6 +191,7 @@ public class TagGenerationServiceTests
         return new AppConfigDto(
             DefaultRaftHeightMm: 2f,
             Theme: "nord",
+            GeneratePreviewsEnabled: true,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",

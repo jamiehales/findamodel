@@ -65,6 +65,7 @@ public class AppConfigServiceTests
         var sut = new AppConfigService(CreateFactory(nameof(GetAsync_CreatesDefaultRecord_WhenDbIsEmpty)), CreateConfiguration());
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
+        Assert.True(dto.GeneratePreviewsEnabled);
         Assert.False(dto.TagGenerationEnabled);
         Assert.False(dto.AiDescriptionEnabled);
         Assert.Equal("internal", dto.TagGenerationProvider);
@@ -129,6 +130,7 @@ public class AppConfigServiceTests
         var updated = await sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
+            GeneratePreviewsEnabled: true,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
@@ -166,6 +168,7 @@ public class AppConfigServiceTests
         var updated = await sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
+            GeneratePreviewsEnabled: true,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
@@ -241,6 +244,7 @@ public class AppConfigServiceTests
         var updated = await sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
+            GeneratePreviewsEnabled: true,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "ollama",
@@ -272,6 +276,7 @@ public class AppConfigServiceTests
         await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
+            GeneratePreviewsEnabled: true,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "not-real",
@@ -312,6 +317,7 @@ public class AppConfigServiceTests
                 ModelsDirectoryPath: modelsRoot,
                 DefaultRaftHeightMm: 2f,
                 Theme: "nord",
+                GeneratePreviewsEnabled: true,
                 TagGenerationEnabled: true,
                 AiDescriptionEnabled: true,
                 TagGenerationProvider: "internal",
