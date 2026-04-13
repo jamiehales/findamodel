@@ -339,16 +339,14 @@ export default function ModelViewer({
     );
   }
 
-  const orbitTarget: [number, number, number] = [
-    model.sphereCentreX ?? 0,
-    model.sphereCentreY ?? 0,
-    model.sphereCentreZ ?? 0,
-  ];
+  const orbitTarget = useMemo<[number, number, number]>(
+    () => [model.sphereCentreX ?? 0, model.sphereCentreY ?? 0, model.sphereCentreZ ?? 0],
+    [model.sphereCentreX, model.sphereCentreY, model.sphereCentreZ],
+  );
 
-  const halfExtents = new THREE.Vector3(
-    model.dimensionXMm / 2,
-    model.dimensionYMm / 2,
-    model.dimensionZMm / 2,
+  const halfExtents = useMemo(
+    () => new THREE.Vector3(model.dimensionXMm / 2, model.dimensionYMm / 2, model.dimensionZMm / 2),
+    [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm],
   );
 
   return (
