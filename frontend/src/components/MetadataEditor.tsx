@@ -556,7 +556,14 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 error={!!ruleError}
                 helperText={ruleError ?? undefined}
                 placeholder={inheritedRule ?? undefined}
-                slotProps={{ input: { className: styles.ruleInput } }}
+                slotProps={{
+                  input: { className: styles.ruleInput },
+                  htmlInput: {
+                    spellCheck: false,
+                    autoCorrect: 'off',
+                    autoCapitalize: 'off',
+                  },
+                }}
               />
             )}
 
