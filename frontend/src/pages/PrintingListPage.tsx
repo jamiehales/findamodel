@@ -386,7 +386,7 @@ function PrintingListPage() {
       )}
 
       {(hasNonExportableModels || plateWarning) && (
-        <Alert severity="warning">
+        <Alert severity="warning" onClose={() => setPlateWarning(null)}>
           {plateWarning ??
             'Some files in this list (LYS, LYT, CTB) cannot be included in exported plates and will be skipped during plate generation.'}
         </Alert>

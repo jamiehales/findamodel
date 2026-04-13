@@ -9,7 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import CloseIcon from '@mui/icons-material/Close';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   IndexFlags,
   type IndexRunDetail,
@@ -28,29 +28,27 @@ import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './IndexingPage.module.css';
 
-function parseApiDate(value: string): Date {
-  const trimmed = value.trim();
-  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed);
-  const looksIsoWithoutZone = /^\d{4}-\d{2}-\d{2}T/.test(trimmed) && !hasExplicitTimezone;
-  return new Date(looksIsoWithoutZone ? `${trimmed}Z` : trimmed);
-}
-
-function parseApiTimeMs(value: string | null): number | null {
-  if (!value) return null;
-  const ms = parseApiDate(value).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
-
 function formatDate(value: string | null): string {
   if (!value) return '-';
-  return parseApiDate(value).toLocaleString();
+
+  // Keep displayed wall-clock time aligned with server-provided timestamp text,
+  // instead of letting browser timezone conversion shift the value.
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+  if (match) {
+    const [, year, month, day, hourText, minute, second] = match;
+    const hour24 = Number.parseInt(hourText, 10);
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    const amPm = hour24 >= 12 ? 'PM' : 'AM';
+    return `${month}/${day}/${year}, ${hour12}:${minute}:${second} ${amPm}`;
+  }
+
+  return new Date(value).toLocaleString();
 }
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  const start = parseApiTimeMs(startedAt);
-  if (start == null) return '-';
-  const completed = parseApiTimeMs(completedAt);
-  const end = completed ?? Date.now();
+  if (!startedAt) return '-';
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
   const seconds = Math.max(0, Math.floor((end - start) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -130,13 +128,23 @@ function resolveFileDurationMs(file: unknown, run: IndexRunSummary): number | nu
   if (rawDuration != null && Number.isFinite(rawDuration)) return rawDuration;
 
   if (typeof record.processedAt === 'string' && run.startedAt) {
-    const processedAtMs = parseApiTimeMs(record.processedAt);
-    const startedAtMs = parseApiTimeMs(run.startedAt);
-    if (processedAtMs != null && startedAtMs != null && processedAtMs >= startedAtMs)
+    const processedAtMs = new Date(record.processedAt).getTime();
+    const startedAtMs = new Date(run.startedAt).getTime();
+    if (
+      Number.isFinite(processedAtMs) &&
+      Number.isFinite(startedAtMs) &&
+      processedAtMs >= startedAtMs
+    )
       return processedAtMs - startedAtMs;
   }
 
   return null;
+}
+
+function formatRunProcessingTime(run: IndexRunSummary): string {
+  if (run.startedAt) return formatDuration(run.startedAt, run.completedAt);
+  if (run.status === 'running' && run.requestedAt) return formatDuration(run.requestedAt, null);
+  return '-';
 }
 
 function flagsLabel(flags: number): string {
@@ -153,8 +161,6 @@ function targetLabel(run: Pick<IndexRunSummary, 'directoryFilter' | 'relativeMod
 function statusChip(status: string) {
   if (status === 'running') return <Chip size="small" variant="status-running" label="Running" />;
   if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
-  if (status === 'cancelled')
-    return <Chip size="small" color="warning" variant="outlined" label="Cancelled" />;
   if (status === 'failed')
     return <Chip size="small" color="error" variant="outlined" label="Failed" />;
   return <Chip size="small" color="success" variant="outlined" label="Success" />;
@@ -170,6 +176,7 @@ const EVENTS_PAGE_SIZE = 200;
 function RunSummaryCard({
   run,
   selected,
+  selectable,
   onSelect,
   canCancel,
   onCancel,
@@ -177,43 +184,46 @@ function RunSummaryCard({
 }: {
   run: IndexRunSummary;
   selected: boolean;
+  selectable: boolean;
   onSelect: () => void;
   canCancel: boolean;
   onCancel: () => void;
   isCancelling: boolean;
 }) {
   const [, setTick] = useState(0);
-
+  const firstSeenAtMsRef = useRef<number>(Date.now());
   useEffect(() => {
-    if (run.status !== 'running' || !run.startedAt) return;
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [run.status, run.startedAt]);
+  }, []);
 
   const total = run.totalFiles ?? 0;
   const percent = total > 0 ? Math.round((run.processedFiles / total) * 100) : 0;
-  const processingTimeLabel =
-    run.status === 'running' && run.startedAt
-      ? formatElapsedMs(Date.now() - (parseApiTimeMs(run.startedAt) ?? Date.now()))
-      : null;
-  const durationLabel =
-    run.status !== 'running' && run.startedAt && run.completedAt
-      ? formatDuration(run.startedAt, run.completedAt)
-      : null;
+  const runtimeLabel = (() => {
+    if (run.status !== 'running') return formatRunProcessingTime(run);
+
+    const serverStart = run.startedAt ?? run.requestedAt;
+    if (!serverStart) return formatElapsedMs(Date.now() - firstSeenAtMsRef.current);
+
+    const serverElapsedMs = Date.now() - new Date(serverStart).getTime();
+    const localElapsedMs = Date.now() - firstSeenAtMsRef.current;
+    return formatElapsedMs(Math.max(0, serverElapsedMs, localElapsedMs));
+  })();
 
   return (
     <Stack
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
+      role={selectable ? 'button' : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      onClick={selectable ? onSelect : undefined}
       onKeyDown={(event) => {
+        if (!selectable) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onSelect();
         }
       }}
       spacing={0.5}
-      className={`${styles.runCard} ${selected ? styles.runCardActive : ''}`}
+      className={`${styles.runCard} ${selected ? styles.runCardActive : ''} ${!selectable ? styles.runCardDisabled : ''}`}
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Typography variant="subtitle2" className={styles.cardTitle}>
@@ -221,7 +231,7 @@ function RunSummaryCard({
         </Typography>
         <Stack direction="row" spacing={0.5} alignItems="center">
           {canCancel && (
-            <Tooltip title={isCancelling ? 'Cancelling...' : 'Cancel run'}>
+            <Tooltip title={isCancelling ? 'Cancelling...' : 'Cancel'}>
               <span>
                 <IconButton
                   size="small"
@@ -230,7 +240,7 @@ function RunSummaryCard({
                     onCancel();
                   }}
                   disabled={isCancelling}
-                  aria-label="Cancel run"
+                  aria-label="Cancel"
                 >
                   <CloseIcon fontSize="small" />
                 </IconButton>
@@ -246,16 +256,9 @@ function RunSummaryCard({
       <Typography variant="caption" color="text.secondary">
         Requested {formatDate(run.requestedAt)}
       </Typography>
-      {processingTimeLabel && (
-        <Typography variant="caption" color="text.secondary">
-          Processing time {processingTimeLabel}
-        </Typography>
-      )}
-      {durationLabel && (
-        <Typography variant="caption" color="text.secondary">
-          Duration {durationLabel}
-        </Typography>
-      )}
+      <Typography variant="caption" color="text.secondary">
+        Processing time {runtimeLabel}
+      </Typography>
       {run.totalFiles != null && (
         <>
           <LinearProgress
@@ -284,65 +287,104 @@ export default function IndexingPage() {
     adaptivePolling: true,
   });
 
-  const defaultSelectedRunId = useMemo(() => {
-    const liveRunId = status?.currentRequest?.runId;
-    if (liveRunId && runs?.some((r) => r.id === liveRunId)) return liveRunId;
-    return runs?.[0]?.id ?? null;
-  }, [status?.currentRequest?.runId, runs]);
-
   const runsWithLive = useMemo(() => {
     if (!runs) return [];
-    const current = status?.currentRequest;
-    if (!current) return runs;
 
-    const currentRunId = current.runId;
-    if (currentRunId && runs.some((r) => r.id === currentRunId)) {
-      const updated = runs.map((run) =>
-        run.id === currentRunId
-          ? {
-              ...run,
-              status: 'running' as const,
-              startedAt: run.startedAt ?? current.requestedAt,
-              totalFiles: current.totalFiles ?? run.totalFiles,
-              processedFiles: Math.max(run.processedFiles, current.processedFiles),
-            }
-          : run,
-      );
-      // Active run must be first regardless of requestedAt ordering (FIFO means
-      // the oldest queued request processes first, so it may not be at [0]).
-      const activeIdx = updated.findIndex((r) => r.status === 'running');
-      if (activeIdx > 0) {
-        const [active] = updated.splice(activeIdx, 1);
-        updated.unshift(active);
+    const updatedRuns = [...runs];
+    const current = status?.currentRequest;
+    const queue = status?.queue ?? [];
+
+    if (current) {
+      const currentRunId = current.runId;
+      if (currentRunId && updatedRuns.some((run) => run.id === currentRunId)) {
+        for (let i = 0; i < updatedRuns.length; i += 1) {
+          if (updatedRuns[i].id !== currentRunId) continue;
+          updatedRuns[i] = {
+            ...updatedRuns[i],
+            status: 'running',
+            startedAt: updatedRuns[i].startedAt ?? current.requestedAt,
+            totalFiles: current.totalFiles ?? updatedRuns[i].totalFiles,
+            processedFiles: Math.max(updatedRuns[i].processedFiles, current.processedFiles),
+          };
+          break;
+        }
+      } else {
+        updatedRuns.unshift({
+          id: currentRunId ?? current.id,
+          directoryFilter: current.directoryFilter,
+          relativeModelPath: current.relativeModelPath,
+          flags: current.flags,
+          requestedAt: current.requestedAt,
+          startedAt: current.requestedAt,
+          completedAt: null,
+          totalFiles: current.totalFiles,
+          processedFiles: current.processedFiles,
+          status: 'running',
+          outcome: null,
+          error: null,
+        });
       }
-      return updated;
     }
 
-    return [
-      {
-        id: currentRunId ?? current.id,
-        directoryFilter: current.directoryFilter,
-        relativeModelPath: current.relativeModelPath,
-        flags: current.flags,
-        requestedAt: current.requestedAt,
-        startedAt: current.requestedAt,
-        completedAt: null,
-        totalFiles: current.totalFiles,
-        processedFiles: current.processedFiles,
-        status: 'running' as const,
-        outcome: null,
-        error: null,
-      },
-      ...runs,
-    ];
-  }, [runs, status?.currentRequest]);
+    for (const queued of queue) {
+      const queuedRunId = queued.runId;
+
+      if (queuedRunId && updatedRuns.some((run) => run.id === queuedRunId)) {
+        for (let i = 0; i < updatedRuns.length; i += 1) {
+          if (updatedRuns[i].id !== queuedRunId) continue;
+          updatedRuns[i] = {
+            ...updatedRuns[i],
+            status: 'queued',
+            totalFiles: queued.totalFiles ?? updatedRuns[i].totalFiles,
+            processedFiles: Math.max(updatedRuns[i].processedFiles, queued.processedFiles),
+          };
+          break;
+        }
+      } else {
+        updatedRuns.push({
+          id: queuedRunId ?? `queued:${queued.id}`,
+          directoryFilter: queued.directoryFilter,
+          relativeModelPath: queued.relativeModelPath,
+          flags: queued.flags,
+          requestedAt: queued.requestedAt,
+          startedAt: null,
+          completedAt: null,
+          totalFiles: queued.totalFiles,
+          processedFiles: queued.processedFiles,
+          status: 'queued',
+          outcome: null,
+          error: null,
+        });
+      }
+    }
+
+    const runningRuns = updatedRuns.filter((run) => run.status === 'running');
+    const queuedRuns = updatedRuns.filter((run) => run.status === 'queued');
+    const otherRuns = updatedRuns.filter(
+      (run) => run.status !== 'running' && run.status !== 'queued',
+    );
+    return [...runningRuns, ...queuedRuns, ...otherRuns];
+  }, [runs, status?.currentRequest, status?.queue]);
+
+  const defaultSelectedRunId = useMemo(() => {
+    return runsWithLive.find((run) => run.status !== 'queued')?.id ?? null;
+  }, [runsWithLive]);
+
+  const groupedRuns = useMemo(() => {
+    const running = runsWithLive.filter((run) => run.status === 'running');
+    const rest = runsWithLive.filter((run) => run.status !== 'running');
+    return { running, rest };
+  }, [runsWithLive]);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const effectiveRunId = selectedRunId ?? defaultSelectedRunId;
+  const selectedRun = runsWithLive.find((run) => run.id === selectedRunId);
+  const effectiveRunId =
+    selectedRun && selectedRun.status !== 'queued' ? selectedRunId : defaultSelectedRunId;
   const [filesPage, setFilesPage] = useState(1);
   const [eventsPage, setEventsPage] = useState(1);
 
-  function canCancelRun(run: Pick<IndexRunSummary, 'status'>): boolean {
+  function canCancelRun(run: Pick<IndexRunSummary, 'id' | 'status'>): boolean {
+    if (run.id.startsWith('queued:')) return false;
     return run.status === 'queued' || run.status === 'running';
   }
 
@@ -400,11 +442,31 @@ export default function IndexingPage() {
                   No indexing runs in the last 7 days.
                 </Typography>
               )}
-              {runsWithLive.map((run) => (
+              {groupedRuns.running.map((run) => (
                 <RunSummaryCard
                   key={run.id}
                   run={run}
                   selected={run.id === effectiveRunId}
+                  selectable={run.status !== 'queued'}
+                  onSelect={() => {
+                    setSelectedRunId(run.id);
+                    setFilesPage(1);
+                    setEventsPage(1);
+                  }}
+                  canCancel={canCancelRun(run)}
+                  onCancel={() => cancelRun(run.id)}
+                  isCancelling={cancelRunMutation.isPending && cancellingRunId === run.id}
+                />
+              ))}
+              {groupedRuns.running.length > 0 && groupedRuns.rest.length > 0 && (
+                <Divider className={styles.runSectionDivider}>Queued and completed runs</Divider>
+              )}
+              {groupedRuns.rest.map((run) => (
+                <RunSummaryCard
+                  key={run.id}
+                  run={run}
+                  selected={run.id === effectiveRunId}
+                  selectable={run.status !== 'queued'}
                   onSelect={() => {
                     setSelectedRunId(run.id);
                     setFilesPage(1);
@@ -427,12 +489,6 @@ export default function IndexingPage() {
           {!isRunPending && !isRunError && runDetail && (
             <RunDetailWithPaging
               detail={runDetail}
-              canCancel={canCancelRun(runDetail.run)}
-              onCancel={() => {
-                cancelRun(runDetail.run.id);
-              }}
-              isCancelling={cancelRunMutation.isPending && cancellingRunId === runDetail.run.id}
-              cancelError={cancelRunMutation.error?.message ?? null}
               onPrevFiles={() => setFilesPage((p) => Math.max(1, p - 1))}
               onNextFiles={() => setFilesPage((p) => p + 1)}
               onPrevEvents={() => setEventsPage((p) => Math.max(1, p - 1))}
@@ -451,10 +507,6 @@ export default function IndexingPage() {
 
 function RunDetailWithPaging({
   detail,
-  canCancel,
-  onCancel,
-  isCancelling,
-  cancelError,
   onPrevFiles,
   onNextFiles,
   onPrevEvents,
@@ -465,10 +517,6 @@ function RunDetailWithPaging({
   currentEventsPage,
 }: {
   detail: IndexRunDetail;
-  canCancel: boolean;
-  onCancel: () => void;
-  isCancelling: boolean;
-  cancelError: string | null;
   onPrevFiles: () => void;
   onNextFiles: () => void;
   onPrevEvents: () => void;
@@ -550,14 +598,7 @@ function RunDetailWithPaging({
         <Stack spacing={1.25} className={styles.panelBody}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Typography variant="h6">Current Progress</Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              {canCancel && (
-                <Button size="small" variant="outlined" onClick={onCancel} disabled={isCancelling}>
-                  {isCancelling ? 'Cancelling...' : 'Cancel run'}
-                </Button>
-              )}
-              {statusChip(run.status)}
-            </Stack>
+            {statusChip(run.status)}
           </Stack>
           <Typography variant="body2" color="text.secondary">
             {targetLabel(run)}
@@ -584,11 +625,6 @@ function RunDetailWithPaging({
           {run.error && (
             <Typography variant="body2" className={styles.errorText}>
               {run.error}
-            </Typography>
-          )}
-          {cancelError && (
-            <Typography variant="body2" className={styles.errorText}>
-              {cancelError}
             </Typography>
           )}
         </Stack>
@@ -729,7 +765,7 @@ function RunDetailWithPaging({
             {pagedEventsItems.map((event, index) => (
               <Stack key={`${event.createdAt}-${index}`} spacing={0.2} className={styles.logRow}>
                 <Typography variant="caption" className={styles.logMeta}>
-                  [{parseApiDate(event.createdAt).toLocaleTimeString()}] {event.level.toUpperCase()}
+                  [{new Date(event.createdAt).toLocaleTimeString()}] {event.level.toUpperCase()}
                   {event.relativePath ? ` • ${event.relativePath}` : ''}
                 </Typography>
                 <Typography variant="body2">{event.message}</Typography>

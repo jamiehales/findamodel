@@ -39,6 +39,7 @@ function MultiSelect({
   alwaysVisible?: boolean;
 }) {
   const isEmpty = choices.length === 0;
+  const isDisabled = !alwaysVisible && isEmpty;
   return (
     <Grid size={1}>
       <Autocomplete
@@ -47,7 +48,7 @@ function MultiSelect({
         options={choices}
         value={value}
         onChange={(_, selected) => onChange(field, selected)}
-        disabled={isEmpty}
+        disabled={isDisabled}
         renderInput={(params) => <TextField {...params} label={label} />}
       />
     </Grid>
