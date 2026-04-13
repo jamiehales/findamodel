@@ -13,8 +13,8 @@ public class InternalLocalLlmProvider(
 {
     private readonly ILogger _logger = loggerFactory.CreateLogger(LogChannels.Llm);
     private readonly SemaphoreSlim _modelLock = new(1, 1);
+    private string? _loadedModelPath;
     private LLamaWeights? _weights;
-    private InferenceParams _inferenceParams = new();
     private ModelParams? _modelParams;
 
     public string Name => "internal";
@@ -23,7 +23,7 @@ public class InternalLocalLlmProvider(
     {
         try
         {
-            var modelPath = await modelStore.EnsureModelAsync(ct);
+            var modelPath = await modelStore.EnsureModelAsync(settings.Model, ct);
             await EnsureModelLoadedAsync(modelPath, ct);
 
             return new LocalLlmHealth(
@@ -48,7 +48,7 @@ public class InternalLocalLlmProvider(
 
     public async Task<LocalLlmResponse> GenerateAsync(LocalLlmProviderSettings settings, LocalLlmRequest request, CancellationToken ct)
     {
-        var modelPath = await modelStore.EnsureModelAsync(ct);
+        var modelPath = await modelStore.EnsureModelAsync(settings.Model, ct);
         await EnsureModelLoadedAsync(modelPath, ct);
 
         _logger.LogDebug(
@@ -64,7 +64,7 @@ public class InternalLocalLlmProvider(
             request.TaskKind,
             combinedPrompt.Length);
 
-        var modelOutput = await RunCompletionAsync(combinedPrompt, ct);
+        var modelOutput = await RunCompletionAsync(combinedPrompt, request.MaxOutputTokens, ct);
 
         return request.TaskKind switch
         {
@@ -76,14 +76,25 @@ public class InternalLocalLlmProvider(
 
     private async Task EnsureModelLoadedAsync(string modelPath, CancellationToken ct)
     {
-        if (_weights != null)
+        if (_weights != null && string.Equals(_loadedModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
             return;
 
         await _modelLock.WaitAsync(ct);
         try
         {
-            if (_weights != null)
+            if (_weights != null && string.Equals(_loadedModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
                 return;
+
+            if (_weights != null && !string.Equals(_loadedModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "Internal LLM model change detected - reinitializing runtime from {OldModelPath} to {NewModelPath}",
+                    _loadedModelPath,
+                    modelPath);
+                (_weights as IDisposable)?.Dispose();
+                _weights = null;
+                _modelParams = null;
+            }
 
             var useGpu = configuration.GetValue("LocalLlm:Internal:UseGpu", true);
             var gpuLayers = Math.Max(0, configuration.GetValue("LocalLlm:Internal:GpuLayerCount", 35));
@@ -100,17 +111,11 @@ public class InternalLocalLlmProvider(
                 _weights = LLamaWeights.LoadFromFile(_modelParams);
             }
 
-            _inferenceParams = new InferenceParams
-            {
-                MaxTokens = 512,
-                AntiPrompts = ["User:", "</s>"],
-                SamplingPipeline = new DefaultSamplingPipeline(),
-            };
-
             _logger.LogInformation(
                 "Internal LLamaSharp model loaded from {ModelPath} (GpuLayerCount={GpuLayerCount})",
                 modelPath,
                 _modelParams.GpuLayerCount);
+            _loadedModelPath = modelPath;
         }
         finally
         {
@@ -118,7 +123,7 @@ public class InternalLocalLlmProvider(
         }
     }
 
-    private async Task<string> RunCompletionAsync(string prompt, CancellationToken ct)
+    private async Task<string> RunCompletionAsync(string prompt, int requestedMaxOutputTokens, CancellationToken ct)
     {
         if (_weights == null || _modelParams == null)
             throw new InvalidOperationException("Internal model is not loaded.");
@@ -135,8 +140,9 @@ public class InternalLocalLlmProvider(
 
         var session = new ChatSession(executor, history);
         var sb = new StringBuilder();
+        var inferenceParams = CreateInferenceParams(requestedMaxOutputTokens);
 
-        await foreach (var chunk in session.ChatAsync(new ChatHistory.Message(AuthorRole.User, prompt), _inferenceParams).WithCancellation(ct))
+        await foreach (var chunk in session.ChatAsync(new ChatHistory.Message(AuthorRole.User, prompt), inferenceParams).WithCancellation(ct))
         {
             sb.Append(chunk);
         }
@@ -289,6 +295,30 @@ public class InternalLocalLlmProvider(
         {
             ContextSize = 4096,
             GpuLayerCount = Math.Max(0, gpuLayerCount),
+        };
+    }
+
+    internal static int ResolveCompletionTokenLimit(int requestedMaxOutputTokens) =>
+        LocalLlmGenerationDefaults.ResolveInternalOutputTokenLimit(requestedMaxOutputTokens);
+
+    private static InferenceParams CreateInferenceParams(int requestedMaxOutputTokens)
+    {
+        return new InferenceParams
+        {
+            MaxTokens = ResolveCompletionTokenLimit(requestedMaxOutputTokens),
+            AntiPrompts = ["User:", "</s>"],
+            SamplingPipeline = CreateSamplingPipeline(),
+        };
+    }
+
+    internal static DefaultSamplingPipeline CreateSamplingPipeline()
+    {
+        return new DefaultSamplingPipeline
+        {
+            Temperature = LocalLlmGenerationDefaults.Temperature,
+            TopP = LocalLlmGenerationDefaults.TopP,
+            TopK = LocalLlmGenerationDefaults.TopK,
+            RepeatPenalty = LocalLlmGenerationDefaults.RepeatPenalty,
         };
     }
 }

@@ -10,12 +10,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
 {
     private const int SingletonConfigId = 1;
     public const float DatabaseDefaultRaftHeightMm = 2f;
+    public const string DefaultTagGenerationModel = "Qwen2.5-7B-Instruct";
     private const string DefaultTheme = "nord";
     private const bool DefaultTagGenerationEnabled = false;
     private const bool DefaultAiDescriptionEnabled = false;
     private const string DefaultTagGenerationProvider = "internal";
     private const string DefaultTagGenerationEndpoint = "http://localhost:11434";
-    private const string DefaultTagGenerationModel = "qwen2.5vl:7b";
     private const int DefaultTagGenerationTimeoutMs = 60000;
     private const int DefaultTagGenerationMaxTags = 12;
     private const float DefaultTagGenerationMinConfidence = 0.45f;
@@ -64,9 +64,6 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (string.IsNullOrWhiteSpace(request.TagGenerationEndpoint))
             throw new ArgumentException("Tag generation endpoint is required.", nameof(request.TagGenerationEndpoint));
 
-        if (string.IsNullOrWhiteSpace(request.TagGenerationModel))
-            throw new ArgumentException("Tag generation model is required.", nameof(request.TagGenerationModel));
-
         if (request.TagGenerationTimeoutMs < 1000 || request.TagGenerationTimeoutMs > 300000)
             throw new ArgumentException("Tag generation timeout must be between 1000ms and 300000ms.", nameof(request.TagGenerationTimeoutMs));
 
@@ -84,7 +81,9 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
         config.TagGenerationEndpoint = request.TagGenerationEndpoint.Trim();
-        config.TagGenerationModel = request.TagGenerationModel.Trim();
+        config.TagGenerationModel = NormalizeModelOverride(
+            request.TagGenerationModel,
+            ResolveConfiguredTagGenerationModel(request.TagGenerationProvider));
         config.TagGenerationTimeoutMs = request.TagGenerationTimeoutMs;
         config.TagGenerationMaxTags = request.TagGenerationMaxTags;
         config.TagGenerationMinConfidence = request.TagGenerationMinConfidence;
@@ -142,9 +141,6 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (string.IsNullOrWhiteSpace(request.TagGenerationEndpoint))
             throw new ArgumentException("Tag generation endpoint is required.", nameof(request.TagGenerationEndpoint));
 
-        if (string.IsNullOrWhiteSpace(request.TagGenerationModel))
-            throw new ArgumentException("Tag generation model is required.", nameof(request.TagGenerationModel));
-
         if (request.TagGenerationTimeoutMs < 1000 || request.TagGenerationTimeoutMs > 300000)
             throw new ArgumentException("Tag generation timeout must be between 1000ms and 300000ms.", nameof(request.TagGenerationTimeoutMs));
 
@@ -165,7 +161,9 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
         config.TagGenerationEndpoint = request.TagGenerationEndpoint.Trim();
-        config.TagGenerationModel = request.TagGenerationModel.Trim();
+        config.TagGenerationModel = NormalizeModelOverride(
+            request.TagGenerationModel,
+            ResolveConfiguredTagGenerationModel(request.TagGenerationProvider));
         config.TagGenerationTimeoutMs = request.TagGenerationTimeoutMs;
         config.TagGenerationMaxTags = request.TagGenerationMaxTags;
         config.TagGenerationMinConfidence = request.TagGenerationMinConfidence;
@@ -199,7 +197,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AiDescriptionEnabled: config.AiDescriptionEnabled,
             TagGenerationProvider: config.TagGenerationProvider,
             TagGenerationEndpoint: config.TagGenerationEndpoint,
-            TagGenerationModel: config.TagGenerationModel,
+            TagGenerationModel: ResolveEffectiveTagGenerationModel(config),
             TagGenerationTimeoutMs: config.TagGenerationTimeoutMs,
             TagGenerationMaxTags: config.TagGenerationMaxTags,
             TagGenerationMinConfidence: config.TagGenerationMinConfidence);
@@ -214,7 +212,9 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AiDescriptionEnabled,
             config.TagGenerationProvider,
             config.TagGenerationEndpoint,
-            config.TagGenerationModel,
+            ResolveEffectiveTagGenerationModel(config),
+            ResolveConfiguredTagGenerationModel(config.TagGenerationProvider),
+            config.TagGenerationModel?.Trim() ?? string.Empty,
             config.TagGenerationTimeoutMs,
             config.TagGenerationMaxTags,
             config.TagGenerationMinConfidence,
@@ -248,7 +248,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AiDescriptionEnabled = configuration.GetValue<bool?>("AppConfig:AiDescriptionEnabled") ?? DefaultAiDescriptionEnabled,
             TagGenerationProvider = configuration["AppConfig:TagGenerationProvider"] ?? DefaultTagGenerationProvider,
             TagGenerationEndpoint = configuration["AppConfig:TagGenerationEndpoint"] ?? DefaultTagGenerationEndpoint,
-            TagGenerationModel = configuration["AppConfig:TagGenerationModel"] ?? DefaultTagGenerationModel,
+            TagGenerationModel = null,
             TagGenerationTimeoutMs = configuration.GetValue<int?>("AppConfig:TagGenerationTimeoutMs") ?? DefaultTagGenerationTimeoutMs,
             TagGenerationMaxTags = configuration.GetValue<int?>("AppConfig:TagGenerationMaxTags") ?? DefaultTagGenerationMaxTags,
             TagGenerationMinConfidence = configuration.GetValue<float?>("AppConfig:TagGenerationMinConfidence") ?? DefaultTagGenerationMinConfidence,
@@ -272,6 +272,27 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             : trimmed;
     }
 
+    private static string? NormalizeModelOverride(string model, string configuredDefault)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+            return null;
+
+        var trimmed = model.Trim();
+        return string.Equals(trimmed, configuredDefault, StringComparison.Ordinal)
+            ? null
+            : trimmed;
+    }
+
+    public static string GetDefaultTagGenerationModel() => DefaultTagGenerationModel;
+
+    private string ResolveConfiguredTagGenerationModel(string? provider = null)
+    {
+        var configured = configuration["AppConfig:TagGenerationModel"];
+        return string.IsNullOrWhiteSpace(configured)
+            ? GetDefaultTagGenerationModel()
+            : configured.Trim();
+    }
+
     private string ResolveConfiguredTagGenerationPromptTemplate()
     {
         var configured = configuration["AppConfig:TagGenerationPromptTemplate"];
@@ -292,6 +313,16 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     {
         var configuredDefault = ResolveConfiguredTagGenerationPromptTemplate();
         var stored = config.TagGenerationPromptTemplate?.Trim();
+        return !string.IsNullOrWhiteSpace(stored)
+            && !string.Equals(stored, configuredDefault, StringComparison.Ordinal)
+            ? stored
+            : configuredDefault;
+    }
+
+    private string ResolveEffectiveTagGenerationModel(AppConfig config)
+    {
+        var configuredDefault = ResolveConfiguredTagGenerationModel(config.TagGenerationProvider);
+        var stored = config.TagGenerationModel?.Trim();
         return !string.IsNullOrWhiteSpace(stored)
             && !string.Equals(stored, configuredDefault, StringComparison.Ordinal)
             ? stored

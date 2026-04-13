@@ -8,6 +8,8 @@ public record AppConfigDto(
     string TagGenerationProvider,
     string TagGenerationEndpoint,
     string TagGenerationModel,
+    string TagGenerationModelDefault,
+    string TagGenerationModelOverride,
     int TagGenerationTimeoutMs,
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence,

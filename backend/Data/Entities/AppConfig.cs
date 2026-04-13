@@ -10,7 +10,7 @@ public class AppConfig
     public bool AiDescriptionEnabled { get; set; } = false;
     public string TagGenerationProvider { get; set; } = "internal";
     public string TagGenerationEndpoint { get; set; } = "http://localhost:11434";
-    public string TagGenerationModel { get; set; } = "qwen2.5vl:7b";
+    public string? TagGenerationModel { get; set; }
     public int TagGenerationTimeoutMs { get; set; } = 60000;
     public int TagGenerationMaxTags { get; set; } = 12;
     public float TagGenerationMinConfidence { get; set; } = 0.45f;

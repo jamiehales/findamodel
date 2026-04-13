@@ -2,42 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Backend: Desktop Mode",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "backend: build",
-      "postDebugTask": "backend: stop orphan",
-      "program": "${workspaceFolder}/backend/bin/Debug/net9.0/findamodel.dll",
-      "args": [],
-      "cwd": "${workspaceFolder}/backend",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "stopAtEntry": false,
-      "env": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "FINDAMODEL_MODE": "desktop",
-        "FINDAMODEL_URL": "http://127.0.0.1:5001",
-        "FINDAMODEL_DESKTOP_SESSION_TOKEN": "dev-desktop-token",
-        "FINDAMODEL_DATA_PATH": "${workspaceFolder}/debug/data",
-        "FINDAMODEL_DISABLE_CORS": "true"
-      }
-    },
-    {
       "name": "Backend: .NET Launch",
-      "type": "coreclr",
+      "type": "dotnet",
       "request": "launch",
-      "preLaunchTask": "backend: build",
-      "postDebugTask": "backend: stop orphan",
-      "program": "${workspaceFolder}/backend/bin/Debug/net9.0/findamodel.dll",
-      "args": [],
-      "cwd": "${workspaceFolder}/backend",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "stopAtEntry": false,
-      "env": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "ASPNETCORE_URLS": "http://localhost:5000"
-      }
+      "projectPath": "${workspaceFolder}/backend/findamodel.csproj"
     },
     {
       "name": "Frontend: Vite Dev Server",
@@ -58,44 +26,18 @@
       "name": "Desktop: Tauri Dev",
       "type": "node",
       "request": "launch",
-      "noDebug": true,
       "preLaunchTask": "desktop-tauri: install",
       "runtimeExecutable": "yarn",
       "runtimeArgs": ["tauri", "dev"],
       "cwd": "${workspaceFolder}/desktop-tauri",
       "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "env": {
-        "FINDAMODEL_EXTERNAL_BACKEND_URL": "http://127.0.0.1:5001",
-        "FINDAMODEL_EXTERNAL_BACKEND_TOKEN": "dev-desktop-token"
-      }
-    },
-    {
-      "name": "Seq: Dashboard",
-      "type": "node",
-      "request": "launch",
-      "noDebug": true,
-      "runtimeExecutable": "docker",
-      "runtimeArgs": ["run", "--rm", "--name", "findamodel-seq", "-e", "ACCEPT_EULA=Y", "-e", "SEQ_FIRSTRUN_NOAUTHENTICATION=true", "-p", "5341:80", "datalust/seq:latest"],
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "serverReadyAction": {
-        "pattern": "Seq listening",
-        "action": "openExternally",
-        "uriFormat": "http://localhost:5341"
-      }
+      "internalConsoleOptions": "neverOpen"
     }
   ],
   "compounds": [
     {
-      "name": "Desktop: Backend + Tauri Shell",
-      "configurations": ["Backend: Desktop Mode", "Desktop: Tauri Dev"],
-      "presentation": { "order": 1 },
-      "stopAll": true
-    },
-    {
       "name": "Full Stack: Backend + Frontend",
-      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server", "Seq: Dashboard"],
+      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server"],
       "stopAll": true
     }
   ]

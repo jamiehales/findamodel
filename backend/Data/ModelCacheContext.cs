@@ -77,10 +77,6 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue("http://localhost:11434");
 
         modelBuilder.Entity<AppConfig>()
-            .Property(c => c.TagGenerationModel)
-            .HasDefaultValue("qwen2.5vl:7b");
-
-        modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationTimeoutMs)
             .HasDefaultValue(60000);
 

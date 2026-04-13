@@ -62,8 +62,11 @@ public class OllamaLocalLlmProvider(
             ["format"] = "json",
             ["options"] = new Dictionary<string, object?>
             {
-                ["temperature"] = 0.1,
-                ["num_predict"] = Math.Max(64, request.MaxOutputTokens),
+                ["temperature"] = LocalLlmGenerationDefaults.Temperature,
+                ["top_p"] = LocalLlmGenerationDefaults.TopP,
+                ["top_k"] = LocalLlmGenerationDefaults.TopK,
+                ["repeat_penalty"] = LocalLlmGenerationDefaults.RepeatPenalty,
+                ["num_predict"] = LocalLlmGenerationDefaults.ResolveOllamaOutputTokenLimit(request.MaxOutputTokens),
             },
         };
 

@@ -41,25 +41,6 @@
       "isBackground": true
     },
     {
-      "label": "backend: stop orphan",
-      "type": "process",
-      "command": "pwsh",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'dotnet.exe' -and $_.CommandLine -match 'backend\\bin\\Debug\\net9.0\\findamodel.dll' }; if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force } }"
-      ],
-      "presentation": {
-        "panel": "new",
-        "clear": true,
-        "showReuseMessage": false,
-        "close": true
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "frontend: install",
       "type": "shell",
       "command": "yarn install",
@@ -105,26 +86,6 @@
         "close": true
       },
       "problemMatcher": []
-    },
-    {
-      "label": "infra: seq",
-      "type": "shell",
-      "command": "if (docker ps --format '{{.Names}}' | Select-String -Quiet '^findamodel-seq$') { docker logs -f findamodel-seq } elseif (docker ps -a --format '{{.Names}}' | Select-String -Quiet '^findamodel-seq$') { docker start findamodel-seq; docker logs -f findamodel-seq } else { docker run --rm --name findamodel-seq -e ACCEPT_EULA=Y -p 5341:80 datalust/seq:latest }",
-      "isBackground": true,
-      "presentation": {
-        "panel": "dedicated",
-        "clear": true,
-        "showReuseMessage": false,
-        "reveal": "silent"
-      },
-      "problemMatcher": {
-        "pattern": { "regexp": "^$" },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "Seq listening"
-        }
-      }
     },
     {
       "label": "desktop-tauri: install",
@@ -177,7 +138,7 @@
       "options": {
         "cwd": "${workspaceFolder}/desktop-tauri",
         "env": {
-          "FINDAMODEL_EXTERNAL_BACKEND_URL": "http://127.0.0.1:5001",
+          "FINDAMODEL_EXTERNAL_BACKEND_URL": "http://127.0.0.1:5000",
           "FINDAMODEL_EXTERNAL_BACKEND_TOKEN": "dev-desktop-token"
         }
       },

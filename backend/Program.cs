@@ -101,6 +101,7 @@ builder.Services.AddSingleton<findamodel.Services.PrinterService>();
 builder.Services.AddSingleton<findamodel.Services.QueryService>();
 builder.Services.AddHostedService<findamodel.Services.ModelIndexerService>();
 builder.Services.AddHostedService<findamodel.Services.InternalLlmWarmupService>();
+builder.Services.AddHostedService<findamodel.Services.LlmStartupDiagnosticsService>();
 
 if (!desktopMode && !disableCors && builder.Environment.IsDevelopment())
 {
@@ -195,46 +196,6 @@ using (var scope = app.Services.CreateScope())
     if (adminUser != null)
         await printingListService.EnsureDefaultListAsync(adminUser.Id);
 
-    // Startup LLM health diagnostics: validate native backends are available
-    try
-    {
-        var appConfigService = scope.ServiceProvider.GetRequiredService<findamodel.Services.AppConfigService>();
-        var config = await appConfigService.GetAsync();
-        var provider = config?.TagGenerationProvider ?? "internal";
-
-        var llmProvider = scope.ServiceProvider.GetRequiredService<findamodel.Services.LocalLlmProviderResolver>()
-            .Resolve(provider);
-
-        if (llmProvider != null)
-        {
-            var settings = new findamodel.Services.LocalLlmProviderSettings(
-                Endpoint: config?.TagGenerationEndpoint ?? "http://localhost:11434",
-                Model: config?.TagGenerationModel ?? "qwen2.5vl:7b",
-                TimeoutMs: config?.TagGenerationTimeoutMs ?? 30000);
-
-            var health = await llmProvider.GetHealthAsync(settings, CancellationToken.None);
-
-            if (health.Reachable)
-            {
-                Log.Information(
-                    "LLM startup check PASSED: provider={Provider}, model={Model}, backend={Backend}",
-                    health.Provider,
-                    health.Model,
-                    health.Metadata?.GetValueOrDefault("backend") ?? "unknown");
-            }
-            else
-            {
-                Log.Warning(
-                    "LLM startup check FAILED: provider={Provider}, error={Error}. Tag generation may be unavailable.",
-                    health.Provider,
-                    health.Error ?? "unknown error");
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "LLM startup health check encountered an error. Ensure LLamaSharp native backends are installed.");
-    }
 }
 
 if (!desktopMode && !disableCors && app.Environment.IsDevelopment())
@@ -260,7 +221,7 @@ app.MapGet("/health", async (findamodel.Services.LocalLlmProviderResolver llmRes
         {
             var settings = new findamodel.Services.LocalLlmProviderSettings(
                 Endpoint: config?.TagGenerationEndpoint ?? "http://localhost:11434",
-                Model: config?.TagGenerationModel ?? "qwen2.5vl:7b",
+                Model: config?.TagGenerationModel ?? findamodel.Services.AppConfigService.GetDefaultTagGenerationModel(),
                 TimeoutMs: config?.TagGenerationTimeoutMs ?? 30000);
 
             var health = await llmProvider.GetHealthAsync(settings, CancellationToken.None);

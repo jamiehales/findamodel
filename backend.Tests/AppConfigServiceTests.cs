@@ -68,7 +68,7 @@ public class AppConfigServiceTests
         Assert.False(dto.TagGenerationEnabled);
         Assert.False(dto.AiDescriptionEnabled);
         Assert.Equal("internal", dto.TagGenerationProvider);
-        Assert.Equal("qwen2.5vl:7b", dto.TagGenerationModel);
+        Assert.Equal(AppConfigService.DefaultTagGenerationModel, dto.TagGenerationModel);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public class AppConfigServiceTests
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
             TagGenerationEndpoint: "http://localhost:11434",
-            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationModel: "",
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f,
@@ -170,7 +170,7 @@ public class AppConfigServiceTests
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
             TagGenerationEndpoint: "http://localhost:11434",
-            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationModel: "",
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f,
@@ -235,7 +235,8 @@ public class AppConfigServiceTests
     [Fact]
     public async Task UpdateAsync_PersistsTagGenerationSettings()
     {
-        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_PersistsTagGenerationSettings)), CreateConfiguration());
+        var factory = CreateFactory(nameof(UpdateAsync_PersistsTagGenerationSettings));
+        var sut = new AppConfigService(factory, CreateConfiguration());
 
         var updated = await sut.UpdateAsync(new(
             DefaultRaftHeightMm: 3f,
@@ -244,7 +245,7 @@ public class AppConfigServiceTests
             AiDescriptionEnabled: true,
             TagGenerationProvider: "ollama",
             TagGenerationEndpoint: "http://localhost:11434",
-            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f,
@@ -257,6 +258,10 @@ public class AppConfigServiceTests
         Assert.Equal(45000, updated.TagGenerationTimeoutMs);
         Assert.Equal(10, updated.TagGenerationMaxTags);
         Assert.Equal(0.5f, updated.TagGenerationMinConfidence);
+
+        await using var db = factory.CreateDbContext();
+        var stored = await db.AppConfigs.SingleAsync();
+        Assert.Null(stored.TagGenerationModel);
     }
 
     [Fact]
@@ -271,7 +276,7 @@ public class AppConfigServiceTests
             AiDescriptionEnabled: true,
             TagGenerationProvider: "not-real",
             TagGenerationEndpoint: "http://localhost:11434",
-            TagGenerationModel: "qwen2.5vl:7b",
+            TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
             TagGenerationTimeoutMs: 45000,
             TagGenerationMaxTags: 10,
             TagGenerationMinConfidence: 0.5f,
@@ -311,7 +316,7 @@ public class AppConfigServiceTests
                 AiDescriptionEnabled: true,
                 TagGenerationProvider: "internal",
                 TagGenerationEndpoint: "http://localhost:11434",
-                TagGenerationModel: "qwen2.5vl:7b",
+                TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
                 TagGenerationTimeoutMs: 60000,
                 TagGenerationMaxTags: 12,
                 TagGenerationMinConfidence: 0.45f));

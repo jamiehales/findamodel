@@ -100,6 +100,8 @@ export interface AppConfig {
   tagGenerationProvider: string;
   tagGenerationEndpoint: string;
   tagGenerationModel: string;
+  tagGenerationModelDefault: string;
+  tagGenerationModelOverride: string;
   tagGenerationTimeoutMs: number;
   tagGenerationMaxTags: number;
   tagGenerationMinConfidence: number;

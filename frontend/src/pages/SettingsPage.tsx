@@ -282,7 +282,7 @@ export default function SettingsPage() {
     'internal',
   );
   const [tagGenerationEndpoint, setTagGenerationEndpoint] = useState('http://localhost:11434');
-  const [tagGenerationModel, setTagGenerationModel] = useState('qwen2.5vl:7b');
+  const [tagGenerationModelOverride, setTagGenerationModelOverride] = useState('');
   const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
@@ -322,7 +322,7 @@ export default function SettingsPage() {
         appConfig.tagGenerationProvider === 'ollama' ? 'ollama' : 'internal',
       );
       setTagGenerationEndpoint(appConfig.tagGenerationEndpoint);
-      setTagGenerationModel(appConfig.tagGenerationModel);
+      setTagGenerationModelOverride(appConfig.tagGenerationModelOverride);
       setTagGenerationTimeoutMs(String(appConfig.tagGenerationTimeoutMs));
       setTagGenerationMaxTags(String(appConfig.tagGenerationMaxTags));
       setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
@@ -355,7 +355,6 @@ export default function SettingsPage() {
     Number.isFinite(raftHeightValue) &&
     raftHeightValue >= 0 &&
     tagGenerationEndpoint.trim().length > 0 &&
-    tagGenerationModel.trim().length > 0 &&
     Number.isInteger(timeoutValue) &&
     timeoutValue >= 1000 &&
     timeoutValue <= 300000 &&
@@ -397,7 +396,7 @@ export default function SettingsPage() {
       aiDescriptionEnabled,
       tagGenerationProvider,
       tagGenerationEndpoint: tagGenerationEndpoint.trim(),
-      tagGenerationModel: tagGenerationModel.trim(),
+      tagGenerationModel: tagGenerationModelOverride.trim(),
       tagGenerationTimeoutMs: timeoutValue,
       tagGenerationMaxTags: maxTagsValue,
       tagGenerationMinConfidence: minConfidenceValue,
@@ -786,14 +785,24 @@ export default function SettingsPage() {
                   />
                 )}
 
-                <TextField
-                  size="small"
-                  label="Model"
-                  value={tagGenerationModel}
-                  onChange={(e) => setTagGenerationModel(e.target.value)}
-                  error={!tagGenerationModel.trim()}
-                  helperText={!tagGenerationModel.trim() ? 'Model is required.' : undefined}
-                />
+                <Stack spacing={1}>
+                  <TextField
+                    size="small"
+                    label="Model"
+                    InputLabelProps={{ shrink: true }}
+                    value={tagGenerationModelOverride}
+                    placeholder={appConfig.tagGenerationModelDefault}
+                    onChange={(e) => setTagGenerationModelOverride(e.target.value)}
+                    helperText={
+                      !tagGenerationModelOverride.trim()
+                        ? 'Using the built-in model from backend defaults.'
+                        : undefined
+                    }
+                  />
+                  <Button variant="outlined" onClick={() => setTagGenerationModelOverride('')}>
+                    Reset model to default
+                  </Button>
+                </Stack>
 
                 <TextField
                   size="small"

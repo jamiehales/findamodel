@@ -36,7 +36,7 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
     'internal',
   );
   const [tagGenerationEndpoint, setTagGenerationEndpoint] = useState('http://localhost:11434');
-  const [tagGenerationModel, setTagGenerationModel] = useState('qwen2.5vl:7b');
+  const [tagGenerationModel, setTagGenerationModel] = useState('Qwen2.5-7B-Instruct');
   const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
   const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
   const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
