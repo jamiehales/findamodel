@@ -9,6 +9,8 @@ General:
 * Scale assumptions: production catalog size is approximately 100,000 models
 * Scale assumptions: a printing list usually contains approximately 20-30 models
 * Given those assumptions, prefer server-side filtering/pagination/batched endpoints; avoid full-catalog fetches in UI flows and avoid N+1 per-model request patterns
+* Always add tests for new backend functionality — unit or integration tests in `backend.Tests/` using the xUnit + EF InMemory/SQLite pattern already present
+* Always run the full backend test suite (`dotnet test backend.Tests/findamodel.Tests.csproj`) after completing any implementation and fix any failures before finishing
 
 Frontend:
 * Prefer usage of MUI layout (Stack, Grid) instead of Box and divs

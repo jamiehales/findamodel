@@ -180,6 +180,9 @@ using (var scope = app.Services.CreateScope())
     var userService = scope.ServiceProvider.GetRequiredService<findamodel.Services.UserService>();
     await userService.SeedAdminUserAsync();
 
+    var indexerService = scope.ServiceProvider.GetRequiredService<findamodel.Services.IndexerService>();
+    await indexerService.RequeueInterruptedRunsAsync();
+
     var printingListService = scope.ServiceProvider.GetRequiredService<findamodel.Services.PrintingListService>();
     var adminUser = await userService.GetAdminUserAsync();
     if (adminUser != null)

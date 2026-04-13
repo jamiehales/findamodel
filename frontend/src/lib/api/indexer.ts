@@ -45,7 +45,7 @@ export interface IndexRunSummary {
   completedAt: string | null;
   totalFiles: number | null;
   processedFiles: number;
-  status: 'running' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'success' | 'failed';
   outcome: 'success' | 'failed' | null;
   error: string | null;
 }

@@ -144,6 +144,7 @@ function targetLabel(run: Pick<IndexRunSummary, 'directoryFilter' | 'relativeMod
 
 function statusChip(status: string) {
   if (status === 'running') return <Chip size="small" variant="status-running" label="Running" />;
+  if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
   if (status === 'failed')
     return <Chip size="small" color="error" variant="outlined" label="Failed" />;
   return <Chip size="small" color="success" variant="outlined" label="Success" />;
@@ -253,7 +254,7 @@ export default function IndexingPage() {
 
     const currentRunId = current.runId;
     if (currentRunId && runs.some((r) => r.id === currentRunId)) {
-      return runs.map((run) =>
+      const updated = runs.map((run) =>
         run.id === currentRunId
           ? {
               ...run,
@@ -264,6 +265,14 @@ export default function IndexingPage() {
             }
           : run,
       );
+      // Active run must be first regardless of requestedAt ordering (FIFO means
+      // the oldest queued request processes first, so it may not be at [0]).
+      const activeIdx = updated.findIndex((r) => r.status === 'running');
+      if (activeIdx > 0) {
+        const [active] = updated.splice(activeIdx, 1);
+        updated.unshift(active);
+      }
+      return updated;
     }
 
     return [

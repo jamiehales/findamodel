@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using findamodel.Data;
 using findamodel.Data.Entities;
 using findamodel.Models;
+using System.Threading;
 
 namespace findamodel.Services;
 
@@ -22,6 +23,7 @@ public class IndexerService(
     private readonly LinkedList<CompletedIndexEntry> _recent = new();
     private const int RecentLimit = 15;
     private static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(7);
+    private readonly SemaphoreSlim _singleRequestGate = new(1, 1);
     private IndexEntry? _current;
     private Task? _processingTask;
 
@@ -30,7 +32,8 @@ public class IndexerService(
     /// If a request for the same target is already queued,
     /// its flags are merged and it is moved to the front of the queue.
     /// </summary>
-    public IndexRequestDto Enqueue(string? directoryFilter, string? relativeModelPath, IndexFlags flags)
+    public IndexRequestDto Enqueue(string? directoryFilter, string? relativeModelPath, IndexFlags flags,
+        Guid? existingRunId = null)
     {
         lock (_lock)
         {
@@ -46,7 +49,7 @@ public class IndexerService(
                 return existing.ToDto("queued");
             }
 
-            var entry = new IndexEntry(filter, modelPath, flags);
+            var entry = new IndexEntry(filter, modelPath, flags, existingRunId);
             entry.Node = _queue.AddLast(entry);
 
             if (_processingTask == null || _processingTask.IsCompleted)
@@ -57,12 +60,60 @@ public class IndexerService(
     }
 
     /// <summary>Returns a point-in-time snapshot of the current queue state.</summary>
+    /// <summary>
+    /// Called once at startup: finds any IndexRun records left in "running" state
+    /// (due to a previous server crash/restart), resets them to "queued" and
+    /// re-enqueues them reusing the same RunId so the existing record transitions
+    /// queued → running rather than creating a new record.
+    /// </summary>
+    public async Task RequeueInterruptedRunsAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var interrupted = await db.IndexRuns
+            .Where(r => r.Status == "running")
+            .OrderBy(r => r.RequestedAt)
+            .ToListAsync();
+
+        if (interrupted.Count == 0)
+            return;
+
+        // Remove stale partial progress data from the interrupted runs.
+        var interruptedIds = interrupted.Select(r => r.Id).ToList();
+        db.IndexRunFiles.RemoveRange(db.IndexRunFiles.Where(f => interruptedIds.Contains(f.IndexRunId)));
+        db.IndexRunEvents.RemoveRange(db.IndexRunEvents.Where(e => interruptedIds.Contains(e.IndexRunId)));
+
+        foreach (var run in interrupted)
+        {
+            run.Status = "queued";
+            run.Outcome = null;
+            run.Error = null;
+            run.StartedAt = null;
+            run.CompletedAt = null;
+            run.ProcessedFiles = 0;
+            run.TotalFiles = null;
+        }
+
+        await db.SaveChangesAsync();
+
+        // Re-enqueue in original request order (FIFO), reusing the existing RunId.
+        foreach (var run in interrupted)
+        {
+            logger.LogInformation(
+                "Re-queueing interrupted index run {RunId} ({Flags}, filter: {Filter})",
+                run.Id, (IndexFlags)run.Flags, run.DirectoryFilter ?? run.RelativeModelPath ?? "(all)");
+            Enqueue(run.DirectoryFilter, run.RelativeModelPath, (IndexFlags)run.Flags, existingRunId: run.Id);
+        }
+    }
+
     public IndexerStatusDto GetStatus()
     {
         lock (_lock)
         {
             var currentDto = _current?.ToDto("running");
-            var queueDtos = _queue.Select(e => e.ToDto("queued")).ToList();
+            var queueDtos = _queue
+                .OrderByDescending(e => e.RequestedAt)
+                .Select(e => e.ToDto("queued"))
+                .ToList();
             var recentDtos = _recent.Select(e => e.ToDto()).ToList();
             return new IndexerStatusDto(_current != null, currentDto, queueDtos, recentDtos);
         }
@@ -168,7 +219,16 @@ public class IndexerService(
                 _current = entry;
             }
 
-            var completed = await ProcessRequestAsync(entry);
+            await _singleRequestGate.WaitAsync();
+            CompletedIndexEntry completed;
+            try
+            {
+                completed = await ProcessRequestAsync(entry);
+            }
+            finally
+            {
+                _singleRequestGate.Release();
+            }
 
             lock (_lock)
             {
@@ -259,17 +319,32 @@ public class IndexerService(
     private async Task CreateRunAsync(IndexEntry entry, DateTime startedAt)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        db.IndexRuns.Add(new IndexRun
+        var existingRun = await db.IndexRuns.FirstOrDefaultAsync(r => r.Id == entry.RunId);
+        if (existingRun != null)
         {
-            Id = entry.RunId,
-            DirectoryFilter = entry.DirectoryFilter,
-            RelativeModelPath = entry.RelativeModelPath,
-            Flags = (int)entry.Flags,
-            RequestedAt = entry.RequestedAt,
-            StartedAt = startedAt,
-            Status = "running",
-            ProcessedFiles = 0,
-        });
+            // Re-queued after a server restart — update the existing record in-place.
+            existingRun.StartedAt = startedAt;
+            existingRun.Status = "running";
+            existingRun.ProcessedFiles = 0;
+            existingRun.TotalFiles = null;
+            existingRun.CompletedAt = null;
+            existingRun.Outcome = null;
+            existingRun.Error = null;
+        }
+        else
+        {
+            db.IndexRuns.Add(new IndexRun
+            {
+                Id = entry.RunId,
+                DirectoryFilter = entry.DirectoryFilter,
+                RelativeModelPath = entry.RelativeModelPath,
+                Flags = (int)entry.Flags,
+                RequestedAt = entry.RequestedAt,
+                StartedAt = startedAt,
+                Status = "running",
+                ProcessedFiles = 0,
+            });
+        }
         await db.SaveChangesAsync();
     }
 
@@ -339,10 +414,11 @@ public class IndexerService(
             run.Outcome,
             run.Error);
 
-    private sealed class IndexEntry(string? directoryFilter, string? relativeModelPath, IndexFlags flags)
+    private sealed class IndexEntry(string? directoryFilter, string? relativeModelPath, IndexFlags flags,
+        Guid? runId = null)
     {
         public Guid Id { get; } = Guid.NewGuid();
-        public Guid RunId { get; } = Guid.NewGuid();
+        public Guid RunId { get; } = runId ?? Guid.NewGuid();
         public string? DirectoryFilter { get; } = directoryFilter;
         public string? RelativeModelPath { get; } = relativeModelPath;
         public IndexFlags Flags { get; set; } = flags;

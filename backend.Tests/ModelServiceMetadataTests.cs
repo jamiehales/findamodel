@@ -26,6 +26,11 @@ public class ModelServiceMetadataTests
         var options = new DbContextOptionsBuilder<ModelCacheContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
+        // Seed AppConfig with tag generation disabled so tag/description staleness
+        // doesn't interfere with assertions in metadata-focused tests.
+        using var db = new ModelCacheContext(options);
+        db.AppConfigs.Add(new AppConfig { Id = 1, TagGenerationEnabled = false });
+        db.SaveChanges();
         return new InMemoryDbContextFactory(options);
     }
 

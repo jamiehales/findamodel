@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using findamodel.Data;
 using findamodel.Data.Entities;
@@ -294,34 +294,48 @@ public class ModelService(
             files.Count,
             fileScanThreads);
 
-        var preparedResults = new ConcurrentBag<PreparedScanResult>();
-        await Parallel.ForEachAsync(
-            files,
-            new ParallelOptions { MaxDegreeOfParallelism = fileScanThreads },
-            async (file, _) =>
+        var preparedResults = Channel.CreateUnbounded<PreparedScanResult>(
+            new UnboundedChannelOptions
             {
-                var prepared = await PrepareScanResultAsync(
-                    file,
-                    modelsPath,
-                    existingModels,
-                    directoryConfigs,
-                    defaultRaftHeightMm,
-                    appConfig,
-                    configuredTagSchema,
-                    generateTagsOnScan);
-                if (prepared is not null)
-                    preparedResults.Add(prepared);
+                SingleReader = true,
+                SingleWriter = false,
             });
 
-        var orderedResults = preparedResults
-            .OrderBy(r => r.RelativePath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var producer = Task.Run(async () =>
+        {
+            try
+            {
+                await Parallel.ForEachAsync(
+                    files,
+                    new ParallelOptions { MaxDegreeOfParallelism = fileScanThreads },
+                    async (file, ct) =>
+                    {
+                        var prepared = await PrepareScanResultAsync(
+                            file,
+                            modelsPath,
+                            existingModels,
+                            directoryConfigs,
+                            defaultRaftHeightMm,
+                            appConfig,
+                            configuredTagSchema,
+                            generateTagsOnScan);
+                        if (prepared is not null)
+                            await preparedResults.Writer.WriteAsync(prepared, ct);
+                    });
+
+                preparedResults.Writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                preparedResults.Writer.TryComplete(ex);
+            }
+        });
 
         var processedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var newCount = 0;
         var updatedCount = 0;
-        foreach (var result in orderedResults)
+        await foreach (var result in preparedResults.Reader.ReadAllAsync())
         {
             var perFileTimer = System.Diagnostics.Stopwatch.StartNew();
             processedRelativePaths.Add(result.RelativePath);
@@ -494,6 +508,8 @@ public class ModelService(
             }
             newCount++;
         }
+
+        await producer;
 
         var unchangedFiles = files
             .Select(f => Path.GetRelativePath(modelsPath, f).Replace('\\', '/'))
@@ -722,7 +738,7 @@ public class ModelService(
                 existing.FileModifiedAt = info.LastWriteTimeUtc;
                 existing.FileSize = info.Length;
             }
-            else
+            else if (!IsNonGeometryType(fileType) && previewStale)
             {
                 var refresh = await ComputeGeometryRefreshDataAsync(
                     fullPath,
