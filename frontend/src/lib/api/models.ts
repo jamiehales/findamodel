@@ -119,8 +119,13 @@ export interface FilterOptions {
   fileTypes: string[];
 }
 
-function appendFilterParams(params: URLSearchParams, filter: ModelFilter): void {
+function appendFilterParams(
+  params: URLSearchParams,
+  filter: ModelFilter,
+  modelName?: string,
+): void {
   if (filter.search) params.set('search', filter.search);
+  if (modelName) params.set('modelName', modelName);
   for (const v of filter.creator) params.append('creator', v);
   for (const v of filter.collection) params.append('collection', v);
   for (const v of filter.subcollection) params.append('subcollection', v);
@@ -136,11 +141,12 @@ export async function fetchQueryModels(
   filter: ModelFilter,
   limit: number,
   offset: number = 0,
+  modelName?: string,
 ): Promise<ModelQueryResult> {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
   params.set('offset', String(offset));
-  appendFilterParams(params, filter);
+  appendFilterParams(params, filter, modelName);
   const r = await apiFetch(`/api/query?${params}`);
   if (!r.ok) throw new Error('Failed to query models');
   const result = (await r.json()) as ModelQueryResult;
@@ -150,9 +156,12 @@ export async function fetchQueryModels(
   };
 }
 
-export async function fetchFilterOptions(filter: ModelFilter): Promise<FilterOptions> {
+export async function fetchFilterOptions(
+  filter: ModelFilter,
+  modelName?: string,
+): Promise<FilterOptions> {
   const params = new URLSearchParams();
-  appendFilterParams(params, filter);
+  appendFilterParams(params, filter, modelName);
   const r = await apiFetch(`/api/query/options?${params}`);
   if (!r.ok) throw new Error('Failed to fetch filter options');
   return r.json();

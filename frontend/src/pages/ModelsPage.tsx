@@ -1,9 +1,13 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import { useSearchParams } from 'react-router-dom';
 import ModelGrid from '../components/ModelGrid';
 import ModelFilters from '../components/ModelFilters';
-import { useFilterOptions, useMetadataDictionaryOverview } from '../lib/queries';
+import {
+  useFilterOptions,
+  useMetadataDictionaryOverview,
+  useModelNameOptions,
+} from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './ModelsPage.module.css';
@@ -26,9 +30,10 @@ function toFilter(searchParams: URLSearchParams): ModelFilter {
   };
 }
 
-function toSearchParams(filter: ModelFilter): URLSearchParams {
+function toSearchParams(filter: ModelFilter, modelName: string): URLSearchParams {
   const params = new URLSearchParams();
   if (filter.search) params.set('search', filter.search);
+  if (modelName) params.set('modelName', modelName);
   for (const value of filter.creator) params.append('creator', value);
   for (const value of filter.collection) params.append('collection', value);
   for (const value of filter.subcollection) params.append('subcollection', value);
@@ -44,8 +49,25 @@ function toSearchParams(filter: ModelFilter): URLSearchParams {
 function ModelsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = useMemo(() => toFilter(searchParams), [searchParams]);
-  const { data: filterOptions } = useFilterOptions(filter);
+  const selectedModelName = searchParams.get('modelName') ?? '';
+  const [modelNameInput, setModelNameInput] = useState('');
+  const [debouncedModelNameInput, setDebouncedModelNameInput] = useState('');
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedModelNameInput(modelNameInput);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [modelNameInput]);
+
+  const { data: filterOptions } = useFilterOptions(filter, selectedModelName);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
+  const { data: modelNameOptions = [], isPending: modelNameOptionsLoading } = useModelNameOptions(
+    filter,
+    50,
+    debouncedModelNameInput,
+  );
 
   const mergedOptions = useMemo(() => {
     if (!filterOptions) return filterOptions;
@@ -56,19 +78,35 @@ function ModelsPage() {
 
   const handleFilterChange = useCallback(
     (nextFilter: ModelFilter) => {
-      setSearchParams(toSearchParams(nextFilter));
+      setSearchParams(toSearchParams(nextFilter, selectedModelName));
     },
-    [setSearchParams],
+    [selectedModelName, setSearchParams],
+  );
+
+  const handleModelNameChange = useCallback(
+    (nextModelName: string) => {
+      setSearchParams(toSearchParams(filter, nextModelName));
+    },
+    [filter, setSearchParams],
   );
 
   return (
     <PageLayout spacing={4}>
       {mergedOptions && (
         <Box className={styles.filtersWrapper}>
-          <ModelFilters value={filter} onChange={handleFilterChange} options={mergedOptions} />
+          <ModelFilters
+            value={filter}
+            onChange={handleFilterChange}
+            options={mergedOptions}
+            modelNameOptions={modelNameOptions}
+            modelNameOptionsLoading={modelNameOptionsLoading}
+            modelNameValue={selectedModelName}
+            onModelNameInputChange={setModelNameInput}
+            onModelNameChange={handleModelNameChange}
+          />
         </Box>
       )}
-      <ModelGrid filter={filter} />
+      <ModelGrid filter={filter} modelName={selectedModelName} />
     </PageLayout>
   );
 }

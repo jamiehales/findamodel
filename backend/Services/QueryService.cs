@@ -135,6 +135,15 @@ public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
                 || (m.GeneratedDescription != null && m.GeneratedDescription.ToLower().Contains(term)));
         }
 
+        // Dedicated model-name filter that combines with text search and all other filters.
+        if (!string.IsNullOrWhiteSpace(request.ModelName))
+        {
+            var modelNameTerm = request.ModelName.Trim().ToLower();
+            query = query.Where(m =>
+                (m.CalculatedModelName != null && m.CalculatedModelName.ToLower().Contains(modelNameTerm))
+                || m.FileName.ToLower().Contains(modelNameTerm));
+        }
+
         // Multi-value filters on per-model calculated metadata fields (rules applied)
         if (includeCreator && request.Creator is { Length: > 0 })
             query = query.Where(m => m.CalculatedCreator != null && request.Creator.Contains(m.CalculatedCreator));

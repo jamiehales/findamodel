@@ -13,16 +13,17 @@ const PAGE_SIZE = 25;
 
 interface Props {
   filter?: ModelFilter;
+  modelName?: string;
 }
 
-function FilteredGrid({ filter }: { filter: ModelFilter }) {
+function FilteredGrid({ filter, modelName }: { filter: ModelFilter; modelName?: string }) {
   const [page, setPage] = useState(1);
   const offset = (page - 1) * PAGE_SIZE;
-  const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset);
+  const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset, modelName);
 
   useEffect(() => {
     setPage(1);
-  }, [filter]);
+  }, [filter, modelName]);
 
   if (isPending) return <LoadingState />;
   if (isError || !data || data.models.length === 0) return null;
@@ -77,8 +78,8 @@ function LoadingState() {
   );
 }
 
-function ModelGrid({ filter }: Props) {
-  if (filter) return <FilteredGrid filter={filter} />;
+function ModelGrid({ filter, modelName }: Props) {
+  if (filter) return <FilteredGrid filter={filter} modelName={modelName} />;
   return <UnfilteredGrid />;
 }
 

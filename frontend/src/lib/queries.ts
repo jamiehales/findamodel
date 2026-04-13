@@ -97,9 +97,12 @@ export const queryKeys = {
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
-  queryModels: (filter: ModelFilter, limit: number, offset: number) =>
-    ['query', 'models', filter, limit, offset] as const,
-  filterOptions: (filter: ModelFilter) => ['query', 'options', filter] as const,
+  queryModels: (filter: ModelFilter, limit: number, offset: number, modelName?: string) =>
+    ['query', 'models', filter, limit, offset, modelName ?? ''] as const,
+  modelNameOptions: (filter: ModelFilter, limit: number, modelNameInput?: string) =>
+    ['query', 'model-name-options', filter, limit, modelNameInput ?? ''] as const,
+  filterOptions: (filter: ModelFilter, modelName?: string) =>
+    ['query', 'options', filter, modelName ?? ''] as const,
   metadataDictionaryOverview: ['settings', 'metadata-dictionary'] as const,
   appConfig: ['settings', 'config'] as const,
   setupStatus: ['settings', 'setup-status'] as const,
@@ -185,18 +188,39 @@ export function useModelOtherParts(id: string) {
   });
 }
 
-export function useQueryModels(filter: ModelFilter, limit: number, offset: number) {
+export function useQueryModels(
+  filter: ModelFilter,
+  limit: number,
+  offset: number,
+  modelName?: string,
+) {
   return useQuery({
-    queryKey: queryKeys.queryModels(filter, limit, offset),
-    queryFn: () => fetchQueryModels(filter, limit, offset),
+    queryKey: queryKeys.queryModels(filter, limit, offset, modelName),
+    queryFn: () => fetchQueryModels(filter, limit, offset, modelName),
     placeholderData: (previousData) => previousData,
   });
 }
 
-export function useFilterOptions(filter: ModelFilter) {
+export function useModelNameOptions(
+  filter: ModelFilter,
+  limit: number = 50,
+  modelNameInput?: string,
+) {
   return useQuery({
-    queryKey: queryKeys.filterOptions(filter),
-    queryFn: () => fetchFilterOptions(filter),
+    queryKey: queryKeys.modelNameOptions(filter, limit, modelNameInput),
+    queryFn: async () => {
+      const result = await fetchQueryModels(filter, limit, 0, modelNameInput);
+      return Array.from(new Set(result.models.map((model) => model.name)));
+    },
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useFilterOptions(filter: ModelFilter, modelName?: string) {
+  return useQuery({
+    queryKey: queryKeys.filterOptions(filter, modelName),
+    queryFn: () => fetchFilterOptions(filter, modelName),
     staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });

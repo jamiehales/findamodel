@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -7,10 +7,19 @@ import TextField from '@mui/material/TextField';
 import type { FilterOptions, ModelFilter } from '../lib/api';
 import styles from './ModelFilters.module.css';
 
+function sortCaseInsensitive(values: string[]): string[] {
+  return [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
 interface Props {
   value: ModelFilter;
   onChange: (f: ModelFilter) => void;
   options: FilterOptions;
+  modelNameOptions: string[];
+  modelNameOptionsLoading: boolean;
+  modelNameValue: string;
+  onModelNameInputChange: (value: string) => void;
+  onModelNameChange: (value: string) => void;
 }
 
 function MultiSelect({
@@ -38,6 +47,7 @@ function MultiSelect({
   onChange: (field: string, selected: string[]) => void;
   alwaysVisible?: boolean;
 }) {
+  const sortedChoices = useMemo(() => sortCaseInsensitive(choices), [choices]);
   const isEmpty = choices.length === 0;
   const isDisabled = !alwaysVisible && isEmpty;
   return (
@@ -45,7 +55,7 @@ function MultiSelect({
       <Autocomplete
         multiple
         size="small"
-        options={choices}
+        options={sortedChoices}
         value={value}
         onChange={(_, selected) => onChange(field, selected)}
         disabled={isDisabled}
@@ -62,24 +72,57 @@ function nextSupportedState(current: boolean | null): boolean | null {
   return null;
 }
 
-export default function ModelFilters({ value, onChange, options }: Props) {
+export default function ModelFilters({
+  value,
+  onChange,
+  options,
+  modelNameOptions,
+  modelNameOptionsLoading,
+  modelNameValue,
+  onModelNameInputChange,
+  onModelNameChange,
+}: Props) {
   const [searchInput, setSearchInput] = useState(value.search);
+  const [modelNameInput, setModelNameInput] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sortedModelNameOptions = useMemo(
+    () => sortCaseInsensitive(modelNameOptions),
+    [modelNameOptions],
+  );
 
-  // Keep local search state in sync if parent resets the filter
+  // Keep free-text search in sync with query params
   useEffect(() => {
     setSearchInput(value.search);
   }, [value.search]);
 
+  useEffect(() => {
+    setModelNameInput(modelNameValue);
+  }, [modelNameValue]);
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    },
+    [],
+  );
+
   const handleSearchChange = useCallback(
     (raw: string) => {
       setSearchInput(raw);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
         onChange({ ...value, search: raw });
-      }, 300);
+      }, 250);
     },
-    [value, onChange],
+    [onChange, value],
+  );
+
+  const handleModelNameInputChange = useCallback(
+    (raw: string) => {
+      setModelNameInput(raw);
+      onModelNameInputChange(raw);
+    },
+    [onModelNameInputChange],
   );
 
   const handleMultiChange = useCallback(
@@ -107,7 +150,7 @@ export default function ModelFilters({ value, onChange, options }: Props) {
           size="small"
           label="Search"
           value={searchInput}
-          onChange={(e) => handleSearchChange(e.target.value)}
+          onChange={(event) => handleSearchChange(event.target.value)}
         />
       </Grid>
       <MultiSelect
@@ -131,13 +174,32 @@ export default function ModelFilters({ value, onChange, options }: Props) {
         value={value.subcollection}
         onChange={handleMultiChange}
       />
+      <Grid size={1}>
+        <Autocomplete
+          options={sortedModelNameOptions}
+          value={modelNameValue || null}
+          inputValue={modelNameInput}
+          onInputChange={(_event, nextInputValue) => handleModelNameInputChange(nextInputValue)}
+          onChange={(_event, selectedValue) => {
+            const next = selectedValue ?? '';
+            setModelNameInput(next);
+            onModelNameChange(next);
+          }}
+          loading={modelNameOptionsLoading}
+          size="small"
+          freeSolo={false}
+          clearOnBlur={false}
+          renderInput={(params) => (
+            <TextField {...params} fullWidth size="small" label="Model name" />
+          )}
+        />
+      </Grid>
       <MultiSelect
         label="Tags"
         field="tags"
         choices={options.tags}
         value={value.tags}
         onChange={handleMultiChange}
-        alwaysVisible
       />
       <MultiSelect
         label="Category"

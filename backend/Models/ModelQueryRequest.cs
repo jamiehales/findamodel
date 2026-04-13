@@ -3,6 +3,7 @@ namespace findamodel.Models;
 public class ModelQueryRequest
 {
     public string? Search { get; set; }
+    public string? ModelName { get; set; }
     public string[]? Creator { get; set; }
     public string[]? Collection { get; set; }
     public string[]? Subcollection { get; set; }

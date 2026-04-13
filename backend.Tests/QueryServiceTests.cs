@@ -213,6 +213,76 @@ public class QueryServiceTests
     }
 
     [Fact]
+    public async Task QueryModelsAsync_SearchAndModelNameFilters_AreCombined()
+    {
+        var (factory, connection) = CreateFactory();
+        try
+        {
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.Models.AddRange(
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "orc-captain-axe.stl",
+                        Directory = "warband",
+                        FileType = "stl",
+                        Checksum = "smn1",
+                        FileSize = 10,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedModelName = "Orc Captain Axe",
+                        GeneratedDescription = "Captain with raised axe and heavy armor.",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "orc-captain-banner.stl",
+                        Directory = "warband",
+                        FileType = "stl",
+                        Checksum = "smn2",
+                        FileSize = 11,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedModelName = "Orc Captain Banner",
+                        GeneratedDescription = "Captain carrying a banner.",
+                    },
+                    new CachedModel
+                    {
+                        Id = Guid.NewGuid(),
+                        FileName = "elf-ranger-axe.stl",
+                        Directory = "forest",
+                        FileType = "stl",
+                        Checksum = "smn3",
+                        FileSize = 9,
+                        FileModifiedAt = DateTime.UtcNow,
+                        CachedAt = DateTime.UtcNow,
+                        CalculatedModelName = "Elf Ranger Axe",
+                        GeneratedDescription = "Ranger with light gear.",
+                    });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = new QueryService(factory);
+            var result = await sut.QueryModelsAsync(new ModelQueryRequest
+            {
+                Search = "axe",
+                ModelName = "orc captain",
+                Limit = 25,
+                Offset = 0,
+            });
+
+            Assert.Single(result.Models);
+            Assert.Equal("Orc Captain Axe", result.Models[0].Name);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task GetFilterOptionsAsync_ScopesCreatorByOtherFilters()
     {
         var (factory, connection) = CreateFactory();
