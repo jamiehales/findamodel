@@ -118,23 +118,45 @@ public class SupportSeparationServiceTests
         Assert.Equal(60, model.Count);      // 30 body squares × 2 triangles each
     }
 
+    [Fact]
+    public void Separate_PointContactSupportTip_IsClassifiedAsSupport()
+    {
+        // Body: large detached component. Tip: tiny component touching body at one vertex only.
+        var body = Enumerable.Range(0, 20).SelectMany(i => MakeSquare(xOffset: i, zOffset: 0)).ToList();
+        var up = new Vec3(0, 1, 0);
+        var tip = new List<Triangle3D>
+        {
+            new(new Vec3(0, 0, 0), new Vec3(-0.2f, 0, 0), new Vec3(0, 0.2f, 0), up),
+            new(new Vec3(0, 0, 0), new Vec3(0, 0.2f, 0), new Vec3(0, 0, -0.2f), up),
+        };
+        var triangles = body.Concat(tip).ToList();
+
+        var (model, supports) = _sut.Separate(triangles);
+
+        Assert.NotNull(supports);
+        Assert.Equal(2, supports!.Count);
+        Assert.Equal(40, model.Count);
+    }
+
     // ── Quantization tolerance ────────────────────────────────────────────────
 
     [Fact]
-    public void Separate_VerticesWithinQuantizationTolerance_TreatedAsConnected()
+    public void Separate_SharedEdgeWithinQuantizationTolerance_TreatedAsConnected()
     {
-        // Two triangles whose shared vertex differs by < 0.01mm (quantization grid)
+        // Two triangles sharing an edge where one endpoint differs by < 0.01mm.
+        // Quantization should collapse that endpoint and keep the component connected.
         var v0 = new Vec3(0, 0, 0);
         var v1 = new Vec3(1, 0, 0);
         var v2 = new Vec3(0, 0, 1);
-        var v3 = new Vec3(0, 0, 0.001f); // within 0.01mm of v0 → same quantized cell
-        var v4 = new Vec3(-1, 0, 0);
+        var v3 = new Vec3(0, 0, 1.001f); // within 0.01mm of v2 → same quantized cell
+        var v4 = new Vec3(1, 0, 0);
+        var v5 = new Vec3(1, 0, 1);
         var up = new Vec3(0, 1, 0);
 
         var triangles = new List<Triangle3D>
         {
             new(v0, v1, v2, up),
-            new(v3, v4, v2, up),
+            new(v3, v4, v5, up),
         };
 
         var (model, supports) = _sut.Separate(triangles);

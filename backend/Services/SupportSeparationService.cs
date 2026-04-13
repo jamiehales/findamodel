@@ -2,13 +2,13 @@ namespace findamodel.Services;
 
 /// <summary>
 /// Separates a pre-supported mesh into model body and support components using
-/// connected-component analysis (union-find on shared quantized vertices).
+/// connected-component analysis (union-find on shared quantized edges).
 ///
 /// Heuristic: connected components whose triangle count is below
 /// <see cref="SupportSizeThreshold"/> × (largest component size) are classified
 /// as supports. This works well for pre-supported STL/OBJ files where supports
-/// are physically detached from the main body (no shared vertices) or connected
-/// only at tiny break-away contact points.
+/// are physically detached from the main body (no shared edges) or touch only at
+/// tiny break-away contact points.
 /// </summary>
 public class SupportSeparationService
 {
@@ -31,6 +31,39 @@ public class SupportSeparationService
     /// </summary>
     private const float VertexGridSize = 0.01f;
 
+    private readonly struct QuantizedEdge : IEquatable<QuantizedEdge>
+    {
+        public readonly (int X, int Y, int Z) A;
+        public readonly (int X, int Y, int Z) B;
+
+        public QuantizedEdge((int X, int Y, int Z) p0, (int X, int Y, int Z) p1)
+        {
+            if (Compare(p0, p1) <= 0)
+            {
+                A = p0;
+                B = p1;
+            }
+            else
+            {
+                A = p1;
+                B = p0;
+            }
+        }
+
+        public bool Equals(QuantizedEdge other) => A.Equals(other.A) && B.Equals(other.B);
+
+        public override bool Equals(object? obj) => obj is QuantizedEdge other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(A, B);
+
+        private static int Compare((int X, int Y, int Z) left, (int X, int Y, int Z) right)
+        {
+            if (left.X != right.X) return left.X.CompareTo(right.X);
+            if (left.Y != right.Y) return left.Y.CompareTo(right.Y);
+            return left.Z.CompareTo(right.Z);
+        }
+    }
+
     /// <summary>
     /// Partitions the supplied triangles into model body and support geometry.
     /// Returns <c>null</c> for <c>supports</c> when no clear support components
@@ -45,15 +78,20 @@ public class SupportSeparationService
         var parent = new int[triangles.Count];
         for (int i = 0; i < parent.Length; i++) parent[i] = i;
 
-        // Maps quantized vertex → index of the first triangle that used it
-        var vertexOwner = new Dictionary<(int X, int Y, int Z), int>(triangles.Count * 3);
+        // Maps quantized edge → index of the first triangle that used it.
+        // Edge-based connectivity keeps point-contact tips detached from body.
+        var edgeOwner = new Dictionary<QuantizedEdge, int>(triangles.Count * 3);
 
         for (int i = 0; i < triangles.Count; i++)
         {
             var tri = triangles[i];
-            Union(parent, i, GetOrSetOwner(vertexOwner, Quantize(tri.V0), i));
-            Union(parent, i, GetOrSetOwner(vertexOwner, Quantize(tri.V1), i));
-            Union(parent, i, GetOrSetOwner(vertexOwner, Quantize(tri.V2), i));
+            var q0 = Quantize(tri.V0);
+            var q1 = Quantize(tri.V1);
+            var q2 = Quantize(tri.V2);
+
+            Union(parent, i, GetOrSetOwner(edgeOwner, new QuantizedEdge(q0, q1), i));
+            Union(parent, i, GetOrSetOwner(edgeOwner, new QuantizedEdge(q1, q2), i));
+            Union(parent, i, GetOrSetOwner(edgeOwner, new QuantizedEdge(q2, q0), i));
         }
 
         // ── 2. Compute component sizes ────────────────────────────────────────
@@ -98,7 +136,7 @@ public class SupportSeparationService
          (int)MathF.Round(v.Y / VertexGridSize),
          (int)MathF.Round(v.Z / VertexGridSize));
 
-    private static int GetOrSetOwner(Dictionary<(int, int, int), int> map, (int, int, int) key, int idx)
+    private static int GetOrSetOwner(Dictionary<QuantizedEdge, int> map, QuantizedEdge key, int idx)
     {
         if (!map.TryGetValue(key, out var owner))
         {
