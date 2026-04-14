@@ -284,6 +284,10 @@ export function useUpdateAppConfig() {
     mutationFn: (request: UpdateAppConfigRequest) => updateAppConfig(request),
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.appConfig, updated);
+      queryClient.invalidateQueries({ queryKey: ['models'] });
+      queryClient.invalidateQueries({ queryKey: ['model'] });
+      queryClient.invalidateQueries({ queryKey: ['query'] });
+      queryClient.invalidateQueries({ queryKey: ['explorer'] });
     },
   });
 }
@@ -295,6 +299,10 @@ export function useCompleteInitialSetup() {
     onSuccess: (updated) => {
       queryClient.setQueryData(queryKeys.appConfig, updated);
       queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus });
+      queryClient.invalidateQueries({ queryKey: ['models'] });
+      queryClient.invalidateQueries({ queryKey: ['model'] });
+      queryClient.invalidateQueries({ queryKey: ['query'] });
+      queryClient.invalidateQueries({ queryKey: ['explorer'] });
     },
   });
 }

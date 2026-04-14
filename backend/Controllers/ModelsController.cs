@@ -74,21 +74,39 @@ public class ModelsController(
     }
 
     [HttpGet("{id:guid}/preview")]
-    public async Task<IActionResult> GetPreview(Guid id)
+    public async Task<IActionResult> GetPreview(Guid id, [FromQuery] bool? includeSupports = null)
     {
-        var previewPath = await modelService.GetPreviewImagePathAsync(id);
-        if (string.IsNullOrEmpty(previewPath)) return NotFound();
+        var requestedIncludeSupports = includeSupports ?? true;
+        var previewPaths = await modelService.GetPreviewImagePathCandidatesAsync(id, requestedIncludeSupports);
+        if (previewPaths == null) return NotFound();
 
         // Compute cache path the same way as Program.cs
         var dataPath = config["Configuration:DataPath"] ?? "data";
         var resolvedDataPath = Path.GetFullPath(dataPath);
         var cacheRendersPath = Path.Combine(resolvedDataPath, "cache", "renders");
 
-        var fullPath = Path.Combine(cacheRendersPath, previewPath);
-        if (!System.IO.File.Exists(fullPath)) return NotFound();
+        string? selectedPreviewPath = null;
+        var servedRequestedVariant = false;
+        foreach (var candidate in previewPaths.EnumerateCandidates())
+        {
+            var candidateFullPath = Path.Combine(cacheRendersPath, candidate.RelativePath);
+            if (!System.IO.File.Exists(candidateFullPath))
+                continue;
 
-        // The URL includes ?v={version} so this specific URL is immutable - cache forever.
-        Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            selectedPreviewPath = candidate.RelativePath;
+            servedRequestedVariant = candidate.IsPreferred;
+            break;
+        }
+
+        if (selectedPreviewPath == null) return NotFound();
+
+        var fullPath = Path.Combine(cacheRendersPath, selectedPreviewPath);
+
+        // Exact-variant URLs are immutable. Fallback responses remain short-lived because
+        // the requested variant might be generated later under the same URL.
+        Response.Headers.CacheControl = servedRequestedVariant
+            ? "public, max-age=31536000, immutable"
+            : "public, max-age=60";
         return PhysicalFile(fullPath, "image/png");
     }
 

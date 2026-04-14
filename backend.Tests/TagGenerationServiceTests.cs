@@ -8,6 +8,54 @@ namespace findamodel.Tests;
 public class TagGenerationServiceTests
 {
     [Fact]
+    public void ResolvePreviewPath_PrefersSupportFreeVariant_WhenPresent()
+    {
+        var model = CreateModel();
+        var rendersPath = Path.Combine(Path.GetTempPath(), $"findamodel-tag-preview-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rendersPath);
+
+        try
+        {
+            var withSupportsPath = Path.Combine(rendersPath, ModelPreviewService.GetRelativePath(model.Checksum, includeSupports: true));
+            var withoutSupportsPath = Path.Combine(rendersPath, ModelPreviewService.GetRelativePath(model.Checksum, includeSupports: false));
+            File.WriteAllText(withSupportsPath, "with");
+            File.WriteAllText(withoutSupportsPath, "without");
+
+            var resolved = TagGenerationService.ResolvePreviewPath(model, rendersPath);
+
+            Assert.Equal(withoutSupportsPath, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(rendersPath))
+                Directory.Delete(rendersPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolvePreviewPath_FallsBackToStoredPreview_WhenSupportFreeVariantMissing()
+    {
+        var model = CreateModel();
+        var rendersPath = Path.Combine(Path.GetTempPath(), $"findamodel-tag-preview-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rendersPath);
+
+        try
+        {
+            var storedPreviewPath = Path.Combine(rendersPath, model.PreviewImagePath!);
+            File.WriteAllText(storedPreviewPath, "with");
+
+            var resolved = TagGenerationService.ResolvePreviewPath(model, rendersPath);
+
+            Assert.Equal(storedPreviewPath, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(rendersPath))
+                Directory.Delete(rendersPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ComputeGenerationChecksum_ChangesWhenSchemaChanges()
     {
         var model = CreateModel();

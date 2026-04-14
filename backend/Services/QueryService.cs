@@ -4,7 +4,8 @@ using findamodel.Models;
 
 namespace findamodel.Services;
 
-public class QueryService(IDbContextFactory<ModelCacheContext> dbFactory)
+public class QueryService(
+    IDbContextFactory<ModelCacheContext> dbFactory)
 {
     public async Task<ModelQueryResult> QueryModelsAsync(ModelQueryRequest request)
     {

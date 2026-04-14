@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
+import { useRenderControls } from './RenderControlsContext';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
@@ -287,6 +288,7 @@ export default function ModelViewer({
   supported,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
+  const { showSupports, setSupportsToggleAvailable } = useRenderControls();
   const isSupportModel = supported === true;
   const { data: splitData, isPending: isSplitPending } = useSplitGeometry(modelId, isSupportModel);
   const shouldFetchFullGeometry = !isSupportModel || splitData === null;
@@ -294,7 +296,6 @@ export default function ModelViewer({
     modelId,
     shouldFetchFullGeometry,
   );
-  const [showSupports, setShowSupports] = useState(true);
   const color = MODEL_COLOR;
   const theme = useTheme();
   const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
@@ -313,6 +314,12 @@ export default function ModelViewer({
   );
 
   const hasSupportMesh = isSupportModel && splitData?.supports != null;
+
+  useEffect(() => {
+    setSupportsToggleAvailable(hasSupportMesh);
+    return () => setSupportsToggleAvailable(false);
+  }, [hasSupportMesh, setSupportsToggleAvailable]);
+
   const isGeometryPending = isSupportModel
     ? isSplitPending || (splitData === null && isFullGeometryPending)
     : isFullGeometryPending;
@@ -388,20 +395,6 @@ export default function ModelViewer({
             }}
           />
         </Canvas>
-        {hasSupportMesh && (
-          <button
-            style={{
-              ...toggleButtonStyle,
-              background: showSupports ? 'rgba(245,158,11,0.25)' : 'rgba(255,255,255,0.07)',
-              color: showSupports ? '#f59e0b' : '#64748b',
-              borderColor: showSupports ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.12)',
-            }}
-            onClick={() => setShowSupports((v) => !v)}
-            title={showSupports ? 'Hide supports' : 'Show supports'}
-          >
-            {showSupports ? 'Supports: On' : 'Supports: Off'}
-          </button>
-        )}
       </div>
     </ViewerErrorBoundary>
   );
@@ -417,18 +410,4 @@ const containerStyle: React.CSSProperties = {
   width: '100%',
   height: '100%',
   background: 'var(--color-bg-default)',
-};
-
-const toggleButtonStyle: React.CSSProperties = {
-  position: 'absolute',
-  bottom: 10,
-  right: 10,
-  padding: '4px 10px',
-  border: '1px solid',
-  borderRadius: 6,
-  cursor: 'pointer',
-  fontSize: '0.75rem',
-  fontWeight: 500,
-  letterSpacing: '0.05em',
-  transition: 'background 0.15s, color 0.15s',
 };

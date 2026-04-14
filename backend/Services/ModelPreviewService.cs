@@ -25,11 +25,12 @@ public class ModelPreviewService(
     /// Increment this when the preview rendering implementation changes so that
     /// existing cached previews are automatically invalidated on the next scan.
     /// </summary>
-    public const int CurrentPreviewGenerationVersion = 6;
+    public const int CurrentPreviewGenerationVersion = 7;
 
     private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Preview);
     private const int RenderWidth = 512;
     private const int RenderHeight = 512;
+    private const string SupportsRemovedSuffix = "_supportsremoved";
     private string? _cacheRendersPath;
 
     private bool UseGpu => configuration.GetValue("Preview:UseGpu", defaultValue: true);
@@ -54,27 +55,76 @@ public class ModelPreviewService(
     /// </summary>
     public sealed record PreviewGenerationResult(string? RelativePath, bool Generated);
 
+    public sealed record PreviewVariantGenerationResult(
+        PreviewGenerationResult WithSupports,
+        PreviewGenerationResult WithoutSupports)
+    {
+        public PreviewGenerationResult ForPreference(bool includeSupports) =>
+            includeSupports ? WithSupports : WithoutSupports;
+    }
+
+    public static string GetRelativePath(string modelFileHash, bool includeSupports) =>
+        includeSupports
+            ? $"{modelFileHash}.png"
+            : $"{modelFileHash}{SupportsRemovedSuffix}.png";
+
     /// <summary>
     /// Renders a preview when needed and reports whether it was generated in this call.
     /// If a hash-matched cached image already exists on disk, it is reused.
     /// </summary>
-    public async Task<PreviewGenerationResult> GeneratePreviewWithStatusAsync(LoadedGeometry geometry, string modelFileHash, string fileType = "")
+    public async Task<PreviewGenerationResult> GeneratePreviewWithStatusAsync(
+        LoadedGeometry geometry,
+        string modelFileHash,
+        bool includeSupports,
+        string fileType = "")
+    {
+        var result = await GeneratePreviewVariantsWithStatusAsync(
+            geometry,
+            modelFileHash,
+            generateWithSupports: includeSupports,
+            generateWithoutSupports: !includeSupports,
+            fileType);
+        return result.ForPreference(includeSupports);
+    }
+
+    public async Task<PreviewVariantGenerationResult> GeneratePreviewVariantsWithStatusAsync(
+        LoadedGeometry geometry,
+        string modelFileHash,
+        bool generateWithSupports,
+        bool generateWithoutSupports,
+        string fileType = "")
     {
         if (geometry.Triangles.Count == 0)
         {
             logger.LogWarning("GeneratePreviewAsync called with empty geometry");
-            return new PreviewGenerationResult(null, false);
+            return new PreviewVariantGenerationResult(
+                new PreviewGenerationResult(null, false),
+                new PreviewGenerationResult(null, false));
         }
 
         if (_cacheRendersPath == null)
-            return new PreviewGenerationResult(null, false);
+            return new PreviewVariantGenerationResult(
+                new PreviewGenerationResult(null, false),
+                new PreviewGenerationResult(null, false));
 
-        var filename = $"{modelFileHash}.png";
-        var fullPath = Path.Combine(_cacheRendersPath, filename);
-        if (File.Exists(fullPath))
+        var withSupportsPath = GetRelativePath(modelFileHash, includeSupports: true);
+        var withoutSupportsPath = GetRelativePath(modelFileHash, includeSupports: false);
+        var withSupportsFullPath = Path.Combine(_cacheRendersPath, withSupportsPath);
+        var withoutSupportsFullPath = Path.Combine(_cacheRendersPath, withoutSupportsPath);
+        var withSupportsExists = File.Exists(withSupportsFullPath);
+        var withoutSupportsExists = File.Exists(withoutSupportsFullPath);
+
+        if ((!generateWithSupports || withSupportsExists) && (!generateWithoutSupports || withoutSupportsExists))
         {
-            logger.LogDebug("Reusing cached preview at {Path}", fullPath);
-            return new PreviewGenerationResult(filename, false);
+            if (generateWithSupports && withSupportsExists)
+                logger.LogDebug("Reusing cached preview at {Path}", withSupportsFullPath);
+
+            if (generateWithoutSupports && withoutSupportsExists)
+                logger.LogDebug("Reusing cached preview at {Path}", withoutSupportsFullPath);
+
+            return new PreviewVariantGenerationResult(
+                new PreviewGenerationResult(generateWithSupports ? withSupportsPath : null, false),
+                new PreviewGenerationResult(generateWithoutSupports ? withoutSupportsPath : null, false));
         }
 
         // Separate body from supports so they can be rendered in distinct colours.
@@ -84,36 +134,64 @@ public class ModelPreviewService(
             "Rendering preview ({BodyCount} body triangles, {SupportCount} support triangles)",
             bodyTris.Count, supportTris?.Count ?? 0);
 
-        byte[]? png = null;
+        var withSupportsResult = new PreviewGenerationResult(generateWithSupports ? withSupportsPath : null, false);
+        var withoutSupportsResult = new PreviewGenerationResult(generateWithoutSupports ? withoutSupportsPath : null, false);
 
-        // GPU path - try first when enabled and available
-        if (UseGpu && glContext.IsAvailable)
+        var needsWithSupportsRender = generateWithSupports && !withSupportsExists;
+        var needsWithoutSupportsRender = generateWithoutSupports && !withoutSupportsExists;
+
+        if (needsWithSupportsRender && needsWithoutSupportsRender)
         {
-            try
+            var variantPngs = await RenderPreviewVariantsAsync(bodyTris, supportTris);
+            if (variantPngs.WithSupportsPng != null)
             {
-                png = await glContext.RenderAsync(bodyTris, RenderWidth, RenderHeight, BodyColor, supportTris, SupportColor);
+                File.WriteAllBytes(withSupportsFullPath, variantPngs.WithSupportsPng);
+                logger.LogInformation("Saved preview to {Path}", withSupportsFullPath);
+                withSupportsResult = new PreviewGenerationResult(withSupportsPath, true);
             }
-            catch (Exception ex)
+
+            if (variantPngs.WithoutSupportsPng != null)
             {
-                logger.LogWarning(ex, "GPU render failed; falling back to CPU rasterizer");
+                File.WriteAllBytes(withoutSupportsFullPath, variantPngs.WithoutSupportsPng);
+                logger.LogInformation("Saved preview to {Path}", withoutSupportsFullPath);
+                withoutSupportsResult = new PreviewGenerationResult(withoutSupportsPath, true);
+            }
+
+            return new PreviewVariantGenerationResult(withSupportsResult, withoutSupportsResult);
+        }
+
+        if (needsWithSupportsRender)
+        {
+            var png = await RenderPreviewAsync(bodyTris, supportTris, includeSupports: true);
+            if (png != null)
+            {
+                File.WriteAllBytes(withSupportsFullPath, png);
+                logger.LogInformation("Saved preview to {Path}", withSupportsFullPath);
+                withSupportsResult = new PreviewGenerationResult(withSupportsPath, true);
             }
         }
 
-        // CPU fallback
-        if (png == null)
-            png = await Task.Run(() => MeshRenderer.Render(bodyTris, RenderWidth, RenderHeight, BodyVec3, supportTris, SupportVec3));
+        if (needsWithoutSupportsRender)
+        {
+            var png = await RenderPreviewAsync(bodyTris, supportTris, includeSupports: false);
+            if (png != null)
+            {
+                File.WriteAllBytes(withoutSupportsFullPath, png);
+                logger.LogInformation("Saved preview to {Path}", withoutSupportsFullPath);
+                withoutSupportsResult = new PreviewGenerationResult(withoutSupportsPath, true);
+            }
+        }
 
-        if (png == null)
-            return new PreviewGenerationResult(null, false);
-
-        File.WriteAllBytes(fullPath, png);
-        logger.LogInformation("Saved preview to {Path}", fullPath);
-        return new PreviewGenerationResult(filename, true);
+        return new PreviewVariantGenerationResult(withSupportsResult, withoutSupportsResult);
     }
 
-    public async Task<string?> GeneratePreviewAsync(LoadedGeometry geometry, string modelFileHash, string fileType = "")
+    public async Task<string?> GeneratePreviewAsync(
+        LoadedGeometry geometry,
+        string modelFileHash,
+        bool includeSupports,
+        string fileType = "")
     {
-        var result = await GeneratePreviewWithStatusAsync(geometry, modelFileHash, fileType);
+        var result = await GeneratePreviewWithStatusAsync(geometry, modelFileHash, includeSupports, fileType);
         return result.RelativePath;
     }
 
@@ -121,7 +199,7 @@ public class ModelPreviewService(
     /// Loads the file via ModelLoaderService then renders and saves a preview.
     /// Returns the relative filename if saved, null otherwise.
     /// </summary>
-    public async Task<string?> GeneratePreviewAsync(string filePath, string fileType, string modelFileHash)
+    public async Task<string?> GeneratePreviewAsync(string filePath, string fileType, string modelFileHash, bool includeSupports)
     {
         try
         {
@@ -132,12 +210,91 @@ public class ModelPreviewService(
                 return null;
             }
             logger.LogInformation("Rendering preview for {FilePath} ({Count} triangles)", filePath, geometry.Triangles.Count);
-            return await GeneratePreviewAsync(geometry, modelFileHash, fileType);
+            return await GeneratePreviewAsync(geometry, modelFileHash, includeSupports, fileType);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to generate preview for {FilePath}", filePath);
             return null;
         }
+    }
+
+    private sealed record RenderedPreviewVariants(byte[]? WithSupportsPng, byte[]? WithoutSupportsPng);
+
+    private async Task<RenderedPreviewVariants> RenderPreviewVariantsAsync(List<Triangle3D> bodyTris, List<Triangle3D>? supportTris)
+    {
+        if (UseGpu && glContext.IsAvailable)
+        {
+            try
+            {
+                var result = await glContext.RenderVariantPairAsync(
+                    bodyTris,
+                    supportTris,
+                    RenderWidth,
+                    RenderHeight,
+                    BodyColor,
+                    SupportColor);
+                if (result != null)
+                    return new RenderedPreviewVariants(result.WithSupportsPng, result.ModelOnlyPng);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "GPU dual preview render failed; falling back to CPU rasterizer");
+            }
+        }
+
+        var withSupportsPng = await Task.Run(() => MeshRenderer.Render(
+            bodyTris,
+            RenderWidth,
+            RenderHeight,
+            BodyVec3,
+            supportTris,
+            SupportVec3));
+        var withoutSupportsPng = await Task.Run(() => MeshRenderer.Render(
+            bodyTris,
+            RenderWidth,
+            RenderHeight,
+            BodyVec3,
+            null,
+            SupportVec3));
+
+        return new RenderedPreviewVariants(withSupportsPng, withoutSupportsPng);
+    }
+
+    private async Task<byte[]?> RenderPreviewAsync(List<Triangle3D> bodyTris, List<Triangle3D>? supportTris, bool includeSupports)
+    {
+        byte[]? png = null;
+        var visibleSupports = includeSupports ? supportTris : null;
+
+        if (UseGpu && glContext.IsAvailable)
+        {
+            try
+            {
+                png = await glContext.RenderAsync(
+                    bodyTris,
+                    RenderWidth,
+                    RenderHeight,
+                    BodyColor,
+                    visibleSupports,
+                    SupportColor);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "GPU render failed; falling back to CPU rasterizer");
+            }
+        }
+
+        if (png == null)
+        {
+            png = await Task.Run(() => MeshRenderer.Render(
+                bodyTris,
+                RenderWidth,
+                RenderHeight,
+                BodyVec3,
+                visibleSupports,
+                SupportVec3));
+        }
+
+        return png;
     }
 }

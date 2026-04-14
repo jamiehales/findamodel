@@ -162,7 +162,6 @@ public class ExplorerService(
         var resolvedRules = RuleRegistry.DeserializeRules(currentDirConfig?.ResolvedRulesYaml);
 
         // ---- Build model items ----
-        var previewBase = "/api/models";
         var models = modelFileNames.Select(fi =>
         {
             var relPath = relativePath == "" ? fi.Name : $"{relativePath}/{fi.Name}";
@@ -177,7 +176,9 @@ public class ExplorerService(
                 FileType: fi.Extension.TrimStart('.').ToLower(),
                 FileSize: cm?.FileSize ?? fi.Length,
                 HasPreview: cm?.PreviewImagePath != null,
-                PreviewUrl: cm?.PreviewImagePath != null ? $"{previewBase}/{cm.Id}/preview?v={cm.PreviewGenerationVersion ?? 0}" : null,
+                PreviewUrl: cm?.PreviewImagePath != null
+                    ? PreviewUrlBuilder.Build(cm.Id, cm.PreviewGenerationVersion)
+                    : null,
                 ResolvedMetadata: resolvedMeta,
                 RuleConfigs: ruleConfigs);
         }).ToList();

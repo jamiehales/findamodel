@@ -77,6 +77,29 @@ public class ModelServiceMetadataTests
             tagGenerationService);
     }
 
+    private static ModelService CreateScanSut(
+        IConfiguration configuration,
+        IDbContextFactory<ModelCacheContext> dbFactory)
+    {
+        var loggerFactory = NullLoggerFactory.Instance;
+        var configReader = new DirectoryConfigReader(loggerFactory);
+        var metadataConfigService = new MetadataConfigService(configuration, loggerFactory, dbFactory, configReader);
+        var appConfigService = new AppConfigService(dbFactory, configuration);
+        var loaderService = new ModelLoaderService(loggerFactory);
+        var hullCalculationService = new HullCalculationService(loaderService, loggerFactory);
+
+        return new ModelService(
+            configuration,
+            loggerFactory,
+            dbFactory,
+            loaderService,
+            previewService: null!,
+            hullCalculationService,
+            metadataConfigService,
+            appConfigService,
+            tagGenerationService: null!);
+    }
+
     [Fact]
     public async Task GetModelMetadataAsync_ReturnsEntry_ForMatchingModelFile()
     {
@@ -263,6 +286,126 @@ public class ModelServiceMetadataTests
             // Re-index should no-op for unchanged non-geometry files.
             var indexedAgain = await sut.ScanAndCacheSingleAsync("sample.ctb");
             Assert.False(indexedAgain);
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetPreviewImagePathCandidatesAsync_PrefersRequestedVariant_AndFallsBackToStoredPath()
+    {
+        var dbFactory = CreateFactory(nameof(GetPreviewImagePathCandidatesAsync_PrefersRequestedVariant_AndFallsBackToStoredPath));
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        try
+        {
+            var modelId = Guid.NewGuid();
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "dragon.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = "abc123",
+                    PreviewImagePath = "abc123.png",
+                    FileSize = 1,
+                    FileModifiedAt = DateTime.UtcNow,
+                    CachedAt = DateTime.UtcNow,
+                });
+
+                await db.SaveChangesAsync();
+            }
+
+            var sut = CreateSut(CreateConfiguration(modelsRoot), dbFactory);
+            var candidates = await sut.GetPreviewImagePathCandidatesAsync(modelId, includeSupports: false);
+
+            Assert.NotNull(candidates);
+            Assert.Collection(
+                candidates!.EnumerateCandidates(),
+                candidate =>
+                {
+                    Assert.Equal("abc123_supportsremoved.png", candidate.RelativePath);
+                    Assert.True(candidate.IsPreferred);
+                },
+                candidate =>
+                {
+                    Assert.Equal("abc123.png", candidate.RelativePath);
+                    Assert.False(candidate.IsPreferred);
+                });
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ScanAndCacheSingleAsync_PreservesExistingPreview_WhenPreviewGenerationDisabled()
+    {
+        var dbFactory = CreateFactory(nameof(ScanAndCacheSingleAsync_PreservesExistingPreview_WhenPreviewGenerationDisabled));
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        var modelFilePath = Path.Combine(modelsRoot, "dragon.stl");
+        await File.WriteAllTextAsync(
+            modelFilePath,
+            """
+            solid triangle
+              facet normal 0 0 1
+                outer loop
+                  vertex 0 0 0
+                  vertex 1 0 0
+                  vertex 0 1 0
+                endloop
+              endfacet
+            endsolid triangle
+            """);
+
+        var checksum = await ComputeChecksumAsync(modelFilePath);
+        const string existingChecksum = "oldchecksum";
+        var modelId = Guid.NewGuid();
+
+        try
+        {
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "dragon.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = existingChecksum,
+                    PreviewImagePath = $"{existingChecksum}.png",
+                    PreviewGenerationVersion = ModelPreviewService.CurrentPreviewGenerationVersion,
+                    ScanConfigChecksum = ScanConfig.Compute(HullCalculationService.DefaultRaftHeightMm),
+                    FileSize = new FileInfo(modelFilePath).Length,
+                    FileModifiedAt = File.GetLastWriteTimeUtc(modelFilePath).AddMinutes(-1),
+                    CachedAt = DateTime.UtcNow,
+                });
+
+                var appConfig = await db.AppConfigs.SingleAsync(c => c.Id == 1);
+                appConfig.GeneratePreviewsEnabled = false;
+                await db.SaveChangesAsync();
+            }
+
+            var sut = CreateScanSut(CreateConfiguration(modelsRoot), dbFactory);
+            var indexed = await sut.ScanAndCacheSingleAsync("dragon.stl");
+
+            Assert.True(indexed);
+
+            await using var verifyDb = await dbFactory.CreateDbContextAsync();
+            var model = await verifyDb.Models.SingleAsync(m => m.Id == modelId);
+            Assert.Equal($"{existingChecksum}.png", model.PreviewImagePath);
+            Assert.Equal(ModelPreviewService.CurrentPreviewGenerationVersion, model.PreviewGenerationVersion);
+            Assert.Equal(checksum, model.Checksum);
         }
         finally
         {

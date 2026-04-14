@@ -20,6 +20,17 @@ export function apiUrl(path: string): string {
   return appendDesktopToken(rawUrl, desktopSessionToken);
 }
 
+export function withPreviewSupports(url: string, includeSupports: boolean): string {
+  const parsed = new URL(url, window.location.origin);
+  parsed.searchParams.set('includeSupports', includeSupports ? 'true' : 'false');
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return parsed.toString();
+  }
+
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const { desktopSessionToken } = getRuntimeConfig();
   const headers = new Headers(init?.headers);

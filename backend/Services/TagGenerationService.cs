@@ -80,7 +80,7 @@ public class TagGenerationService(
             appConfig.TagGenerationEndpoint,
             appConfig.TagGenerationModel,
             appConfig.TagGenerationTimeoutMs);
-        var previewPath = ResolvePreviewPath(model);
+        var previewPath = ResolvePreviewPath(model, _rendersPath);
         if (string.IsNullOrWhiteSpace(previewPath))
         {
             _logger.LogDebug("AI generation skipped for model {ModelId}: no valid preview image path", model.Id);
@@ -252,13 +252,23 @@ public class TagGenerationService(
         return (result, confidence);
     }
 
-    private string? ResolvePreviewPath(CachedModel model)
+    internal static string? ResolvePreviewPath(CachedModel model, string rendersPath)
     {
         if (string.IsNullOrWhiteSpace(model.PreviewImagePath))
             return null;
 
-        var fullPath = Path.Combine(_rendersPath, model.PreviewImagePath);
-        return File.Exists(fullPath) ? fullPath : null;
+        var withoutSupportsPath = ModelPreviewService.GetRelativePath(model.Checksum, includeSupports: false);
+        var withoutSupportsFullPath = Path.Combine(rendersPath, withoutSupportsPath);
+        if (File.Exists(withoutSupportsFullPath))
+            return withoutSupportsFullPath;
+
+        var storedFullPath = Path.Combine(rendersPath, model.PreviewImagePath);
+        if (File.Exists(storedFullPath))
+            return storedFullPath;
+
+        var withSupportsPath = ModelPreviewService.GetRelativePath(model.Checksum, includeSupports: true);
+        var withSupportsFullPath = Path.Combine(rendersPath, withSupportsPath);
+        return File.Exists(withSupportsFullPath) ? withSupportsFullPath : null;
     }
 
     private static Dictionary<string, float> ParseConfidence(string? json)

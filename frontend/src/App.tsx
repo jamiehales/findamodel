@@ -8,6 +8,7 @@ import SettingsPage from './pages/SettingsPage';
 import IndexingPage from './pages/IndexingPage';
 import NavBar from './components/NavBar';
 import InitialSetupPage from './pages/InitialSetupPage';
+import { RenderControlsProvider } from './components/RenderControlsContext';
 import { useSetupStatus } from './lib/queries';
 import { Container, Stack, Typography } from '@mui/material';
 
@@ -37,17 +38,19 @@ function App() {
 
   return (
     <BrowserRouter>
-      <NavBar />
-      <Routes>
-        <Route path="/" element={<ModelsPage />} />
-        <Route path="/model/:id" element={<ModelPage />} />
-        <Route path="/printing-list/:listId" element={<PrintingListPage />} />
-        <Route path="/printing-lists" element={<PrintingListsManagePage />} />
-        <Route path="/explore" element={<ExplorePage />} />
-        <Route path="/explore/*" element={<ExplorePage />} />
-        <Route path="/indexing" element={<IndexingPage />} />
-        <Route path="/settings/*" element={<SettingsPage />} />
-      </Routes>
+      <RenderControlsProvider>
+        <NavBar />
+        <Routes>
+          <Route path="/" element={<ModelsPage />} />
+          <Route path="/model/:id" element={<ModelPage />} />
+          <Route path="/printing-list/:listId" element={<PrintingListPage />} />
+          <Route path="/printing-lists" element={<PrintingListsManagePage />} />
+          <Route path="/explore" element={<ExplorePage />} />
+          <Route path="/explore/*" element={<ExplorePage />} />
+          <Route path="/indexing" element={<IndexingPage />} />
+          <Route path="/settings/*" element={<SettingsPage />} />
+        </Routes>
+      </RenderControlsProvider>
     </BrowserRouter>
   );
 }

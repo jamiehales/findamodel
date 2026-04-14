@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -13,6 +13,8 @@ import CodeTooltip from './CodeTooltip';
 import PrintingListControls from './PrintingListControls';
 import styles from './ExplorerModelCard.module.css';
 import { formatBytes } from '../lib/utils';
+import { useRenderControls } from './RenderControlsContext';
+import { withPreviewSupports } from '../lib/http';
 
 function MetaBadge({
   value,
@@ -100,6 +102,7 @@ interface Props {
 }
 
 function ExplorerModelCard({ model, href }: Props) {
+  const { showSupports } = useRenderControls();
   const fileType = model.fileType.toLowerCase();
   const badgeClass =
     fileType === 'stl'
@@ -115,6 +118,10 @@ function ExplorerModelCard({ model, href }: Props) {
   const [hovered, setHovered] = useState(false);
   const indexModel = useIndexModel(model.relativePath);
   const indexingState = useIsModelIndexing(model.relativePath);
+  const previewUrl = useMemo(
+    () => (model.previewUrl ? withPreviewSupports(model.previewUrl, showSupports) : null),
+    [model.previewUrl, showSupports],
+  );
 
   return (
     <AppCard
@@ -124,8 +131,8 @@ function ExplorerModelCard({ model, href }: Props) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {model.previewUrl ? (
-        <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
+      {previewUrl ? (
+        <Box component="img" src={previewUrl} alt="" className={styles.preview} />
       ) : (
         <Box className={styles.previewPlaceholder}>
           <LayersRoundedIcon className={styles.previewPlaceholderIcon} />

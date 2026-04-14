@@ -242,6 +242,20 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
                     </Grid>
                   </Grid>
 
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={generatePreviewsEnabled}
+                            onChange={(e) => setGeneratePreviewsEnabled(e.target.checked)}
+                          />
+                        }
+                        label="Generate previews during indexing"
+                      />
+                    </Grid>
+                  </Grid>
+
                   <Stack direction="row" justifyContent="flex-end">
                     <Button
                       variant={isStepOneValid ? 'affirmative' : 'outlined'}

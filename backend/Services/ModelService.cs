@@ -69,13 +69,39 @@ public class ModelService(
         return m?.ToModelDto();
     }
 
-    public async Task<string?> GetPreviewImagePathAsync(Guid id)
+    public sealed record PreviewPathCandidates(string PreferredPath, string FallbackPath, string? StoredPath)
+    {
+        public IEnumerable<(string RelativePath, bool IsPreferred)> EnumerateCandidates()
+        {
+            yield return (PreferredPath, true);
+
+            if (!string.Equals(FallbackPath, PreferredPath, StringComparison.OrdinalIgnoreCase))
+                yield return (FallbackPath, false);
+
+            if (!string.IsNullOrWhiteSpace(StoredPath)
+                && !string.Equals(StoredPath, PreferredPath, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(StoredPath, FallbackPath, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return (StoredPath, false);
+            }
+        }
+    }
+
+    public async Task<PreviewPathCandidates?> GetPreviewImagePathCandidatesAsync(Guid id, bool includeSupports)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Models
+        var previewInfo = await db.Models
             .Where(m => m.Id == id)
-            .Select(m => m.PreviewImagePath)
+            .Select(m => new { m.Checksum, m.PreviewImagePath })
             .FirstOrDefaultAsync();
+
+        if (previewInfo == null || string.IsNullOrWhiteSpace(previewInfo.PreviewImagePath))
+            return null;
+
+        return new PreviewPathCandidates(
+            ModelPreviewService.GetRelativePath(previewInfo.Checksum, includeSupports),
+            ModelPreviewService.GetRelativePath(previewInfo.Checksum, !includeSupports),
+            previewInfo.PreviewImagePath);
     }
 
     public async Task<ModelDto?> UpdateModelMetadataAsync(Guid id, UpdateModelMetadataRequest request)
@@ -128,11 +154,6 @@ public class ModelService(
             var yaml = DirectoryConfigReader.YamlSerializer.Serialize(data);
             await File.WriteAllTextAsync(configPath, yaml);
         }
-
-        var relativePath = string.IsNullOrEmpty(model.Directory)
-            ? model.FileName
-            : $"{model.Directory}/{model.FileName}";
-        await ScanAndCacheSingleAsync(relativePath);
 
         return await GetModelDtoAsync(id);
     }
@@ -313,7 +334,6 @@ public class ModelService(
                 SingleReader = true,
                 SingleWriter = false,
             });
-
         var producer = Task.Run(async () =>
         {
             try
@@ -839,7 +859,8 @@ public class ModelService(
                     directoryConfigs,
                     checksum,
                     defaultRaftHeightMm,
-                    includePreview: generatePreviewsOnScan);
+                    includePreview: generatePreviewsOnScan,
+                    existingPreviewImagePath: existing.PreviewImagePath);
                 existing.FileType = fileType;
                 existing.DirectoryConfigId = data.DirConfig?.Id;
                 ApplyFileData(existing, data, info);
@@ -1002,7 +1023,9 @@ public class ModelService(
                 string.IsNullOrEmpty(m.Directory) ? m.FileName : $"{m.Directory}/{m.FileName}",
                 m.FileType,
                 m.FileSize,
-                m.PreviewImagePath != null ? $"/api/models/{m.Id}/preview?v={m.PreviewGenerationVersion ?? 0}" : null))
+                m.PreviewImagePath != null
+                    ? PreviewUrlBuilder.Build(m.Id, m.PreviewGenerationVersion)
+                    : null))
             .ToList();
     }
 
@@ -1012,6 +1035,7 @@ public class ModelService(
     private sealed record ModelFileData(
         string Checksum,
         string? PreviewImagePath,
+        DateTime? PreviewGeneratedAt,
         bool PreviewGenerated,
         string? ConvexHull,
         string? ConcaveHull,
@@ -1034,6 +1058,7 @@ public class ModelService(
         bool IncludeHulls,
         bool GeometryLoaded,
         string? PreviewImagePath,
+        DateTime? PreviewGeneratedAt,
         bool PreviewGenerated,
         string? ConvexHull,
         string? ConcaveHull,
@@ -1184,7 +1209,8 @@ public class ModelService(
                     directoryConfigs,
                     currentChecksum,
                     defaultRaftHeightMm,
-                    includePreview: generatePreviewsOnScan);
+                    includePreview: generatePreviewsOnScan,
+                    existingPreviewImagePath: existingEntry.PreviewImagePath);
                 return new PreparedScanResult(
                     existingEntry.Id,
                     file,
@@ -1272,7 +1298,8 @@ public class ModelService(
         Dictionary<string, DirectoryConfig> directoryConfigs,
         string? knownChecksum = null,
         float defaultRaftHeightMm = HullCalculationService.DefaultRaftHeightMm,
-        bool includePreview = true)
+        bool includePreview = true,
+        string? existingPreviewImagePath = null)
     {
         var checksum = knownChecksum ?? await ComputeChecksumAsync(file);
         directoryConfigs.TryGetValue(directory, out var dirConfig);
@@ -1286,6 +1313,7 @@ public class ModelService(
         // Skip expensive geometry pipeline for file types that do not contain mesh geometry.
         LoadedGeometry? geometry = null;
         string? previewImagePath = null;
+        DateTime? previewGeneratedAt = null;
         var previewGenerated = false;
         string? convexHull = null, concaveHull = null, convexSansRaftHull = null;
         var hullGenerated = false;
@@ -1297,9 +1325,17 @@ public class ModelService(
             geometry = await loaderService.LoadModelAsync(file, fileType);
             if (includePreview && geometry is not null)
             {
-                var previewResult = await previewService.GeneratePreviewWithStatusAsync(geometry, checksum);
-                previewImagePath = previewResult.RelativePath;
-                previewGenerated = previewResult.Generated;
+                var previewResult = await previewService.GeneratePreviewVariantsWithStatusAsync(
+                    geometry,
+                    checksum,
+                    generateWithSupports: true,
+                    generateWithoutSupports: true);
+                (previewImagePath, previewGeneratedAt) = ResolveCachedPreviewMetadata(checksum, existingPreviewImagePath);
+                previewGenerated = previewResult.WithSupports.Generated || previewResult.WithoutSupports.Generated;
+            }
+            else
+            {
+                (previewImagePath, previewGeneratedAt) = ResolveCachedPreviewMetadata(checksum, existingPreviewImagePath);
             }
 
             if (geometry is not null)
@@ -1320,6 +1356,7 @@ public class ModelService(
         return new ModelFileData(
             checksum,
             previewImagePath,
+            previewGeneratedAt,
             previewGenerated,
             convexHull,
             concaveHull,
@@ -1338,6 +1375,42 @@ public class ModelService(
             sphereRadius);
     }
 
+    private (string? PreviewImagePath, DateTime? PreviewGeneratedAt) ResolveCachedPreviewMetadata(
+        string checksum,
+        string? existingPreviewImagePath)
+    {
+        var rendersPath = config["Cache:RendersPath"];
+        if (string.IsNullOrWhiteSpace(rendersPath))
+            return (existingPreviewImagePath, null);
+
+        var withSupportsPath = ModelPreviewService.GetRelativePath(checksum, includeSupports: true);
+        var withoutSupportsPath = ModelPreviewService.GetRelativePath(checksum, includeSupports: false);
+        var withSupportsFullPath = Path.Combine(rendersPath, withSupportsPath);
+        var withoutSupportsFullPath = Path.Combine(rendersPath, withoutSupportsPath);
+        var withSupportsExists = File.Exists(withSupportsFullPath);
+        var withoutSupportsExists = File.Exists(withoutSupportsFullPath);
+
+        if (withSupportsExists || withoutSupportsExists)
+        {
+            var previewTimes = new List<DateTime>(capacity: 2);
+            if (withSupportsExists)
+                previewTimes.Add(File.GetLastWriteTimeUtc(withSupportsFullPath));
+            if (withoutSupportsExists)
+                previewTimes.Add(File.GetLastWriteTimeUtc(withoutSupportsFullPath));
+
+            return (withSupportsPath, previewTimes.Min());
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingPreviewImagePath))
+        {
+            var existingPreviewFullPath = Path.Combine(rendersPath, existingPreviewImagePath);
+            if (File.Exists(existingPreviewFullPath))
+                return (existingPreviewImagePath, File.GetLastWriteTimeUtc(existingPreviewFullPath));
+        }
+
+        return (null, null);
+    }
+
     private static bool IsNonGeometryType(string fileType) => NonGeometryTypes.Contains(fileType);
 
     private static void ApplyFileData(CachedModel entity, ModelFileData d, FileInfo info)
@@ -1347,7 +1420,7 @@ public class ModelService(
         entity.FileModifiedAt = info.LastWriteTimeUtc;
         entity.CachedAt = DateTime.UtcNow;
         entity.PreviewImagePath = d.PreviewImagePath;
-        entity.PreviewGeneratedAt = d.PreviewImagePath != null ? DateTime.UtcNow : null;
+        entity.PreviewGeneratedAt = d.PreviewGeneratedAt;
         entity.PreviewGenerationVersion = d.PreviewImagePath != null ? ModelPreviewService.CurrentPreviewGenerationVersion : null;
         ApplyHullData(entity, d.ConvexHull, d.ConcaveHull, d.ConvexSansRaftHull, d.HasGeometry, d.RaftHeightMm);
         entity.ApplyCalculatedMetadata(d.Metadata);
@@ -1373,7 +1446,7 @@ public class ModelService(
             return;
 
         entity.PreviewImagePath = refresh.PreviewImagePath;
-        entity.PreviewGeneratedAt = refresh.PreviewImagePath != null ? DateTime.UtcNow : null;
+        entity.PreviewGeneratedAt = refresh.PreviewGeneratedAt;
         entity.PreviewGenerationVersion = refresh.PreviewImagePath != null ? ModelPreviewService.CurrentPreviewGenerationVersion : null;
     }
 
@@ -1387,15 +1460,20 @@ public class ModelService(
     {
         var geometry = await loaderService.LoadModelAsync(filePath, fileType);
         if (geometry is null)
-            return new GeometryRefreshData(includePreview, includeHulls, false, null, false, null, null, null, false, raftHeightMm);
+            return new GeometryRefreshData(includePreview, includeHulls, false, null, null, false, null, null, null, false, raftHeightMm);
 
         string? previewImagePath = null;
+        DateTime? previewGeneratedAt = null;
         var previewGenerated = false;
         if (includePreview)
         {
-            var previewResult = await previewService.GeneratePreviewWithStatusAsync(geometry, checksum);
-            previewImagePath = previewResult.RelativePath;
-            previewGenerated = previewResult.Generated;
+            var previewResult = await previewService.GeneratePreviewVariantsWithStatusAsync(
+                geometry,
+                checksum,
+                generateWithSupports: true,
+                generateWithoutSupports: true);
+            (previewImagePath, previewGeneratedAt) = ResolveCachedPreviewMetadata(checksum, existingPreviewImagePath: null);
+            previewGenerated = previewResult.WithSupports.Generated || previewResult.WithoutSupports.Generated;
         }
 
         string? convexHull = null;
@@ -1414,11 +1492,12 @@ public class ModelService(
             includeHulls,
             true,
             previewImagePath,
-                previewGenerated,
+            previewGeneratedAt,
+            previewGenerated,
             convexHull,
             concaveHull,
             convexSansRaftHull,
-                hullGenerated,
+            hullGenerated,
             raftHeightMm);
     }
 

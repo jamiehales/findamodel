@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -17,6 +17,8 @@ import PrintingListControls from './PrintingListControls';
 import FilterPill from './FilterPill';
 import styles from './ModelCard.module.css';
 import { formatBytes } from '../lib/utils';
+import { useRenderControls } from './RenderControlsContext';
+import { withPreviewSupports } from '../lib/http';
 
 function getFileName(relativePath: string): string {
   const parts = relativePath.split('/');
@@ -31,11 +33,16 @@ interface ModelCardProps {
 function ModelCard({ model, href }: ModelCardProps) {
   const [hovered, setHovered] = useState(false);
   const [metadataOpen, setMetadataOpen] = useState(false);
+  const { showSupports } = useRenderControls();
   const location = useLocation();
   const navigate = useNavigate();
   const { mutate: indexModel } = useIndexModel(model.relativePath);
   const indexingState = useIsModelIndexing(model.relativePath);
-  const showSlicerPlaceholder = !model.previewUrl && !model.canExportToPlate;
+  const previewUrl = useMemo(
+    () => (model.previewUrl ? withPreviewSupports(model.previewUrl, showSupports) : null),
+    [model.previewUrl, showSupports],
+  );
+  const showSlicerPlaceholder = !previewUrl && !model.canExportToPlate;
   const generatedDescription = model.generatedDescription?.trim() ?? '';
   const hasDescription = generatedDescription.length > 0;
   const isIndexing = indexingState === 'running';
@@ -87,8 +94,8 @@ function ModelCard({ model, href }: ModelCardProps) {
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
           >
-            {model.previewUrl ? (
-              <Box component="img" src={model.previewUrl} alt="" className={styles.preview} />
+            {previewUrl ? (
+              <Box component="img" src={previewUrl} alt="" className={styles.preview} />
             ) : showSlicerPlaceholder ? (
               <Box className={styles.previewPlaceholder}>
                 <LayersRoundedIcon className={styles.previewPlaceholderIcon} />

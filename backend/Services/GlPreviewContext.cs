@@ -32,10 +32,11 @@ namespace findamodel.Services;
 public sealed class GlPreviewContext : IDisposable
 {
     private readonly ILogger _logger;
+    private string _rendererName = "unknown";
 
     // Single-item channel: render requests queued and executed on the GL thread.
-    private readonly Channel<RenderRequest> _channel =
-        Channel.CreateBounded<RenderRequest>(new BoundedChannelOptions(64)
+    private readonly Channel<GlRequest> _channel =
+        Channel.CreateBounded<GlRequest>(new BoundedChannelOptions(64)
         {
             FullMode = BoundedChannelFullMode.Wait,
         });
@@ -146,6 +147,24 @@ public sealed class GlPreviewContext : IDisposable
     /// </summary>
     public bool IsAvailable => _ready.Task.IsCompletedSuccessfully && !_failed;
 
+    internal string RendererName => _rendererName;
+
+    internal async Task<VariantPairRenderResult?> RenderVariantPairAsync(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo)
+        => await RenderVariantPairAsync(
+            bodyTriangles,
+            supportTriangles,
+            width,
+            height,
+            bodyAlbedo,
+            supportAlbedo,
+            VariantPairRenderStrategy.SharedBodyUpload);
+
     /// <summary>
     /// Waits for GL initialisation to complete (success or failure).
     /// Must be awaited before the first <see cref="RenderAsync"/> call if you want
@@ -170,6 +189,65 @@ public sealed class GlPreviewContext : IDisposable
         var tcs = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
         await _channel.Writer.WriteAsync(new RenderRequest(tcs, triangles, width, height, albedo, supportTriangles, supportAlbedo))
                              .ConfigureAwait(false);
+        return await tcs.Task.ConfigureAwait(false);
+    }
+
+    internal sealed record VariantPairRenderResult(byte[]? ModelOnlyPng, byte[]? WithSupportsPng);
+
+    internal async Task<VariantPairRenderResult?> RenderVariantPairCurrentAsync(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo)
+        => await RenderVariantPairAsync(
+            bodyTriangles,
+            supportTriangles,
+            width,
+            height,
+            bodyAlbedo,
+            supportAlbedo,
+            VariantPairRenderStrategy.CurrentDualUploads);
+
+    internal async Task<VariantPairRenderResult?> RenderVariantPairSharedBodyBufferAsync(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo)
+        => await RenderVariantPairAsync(
+            bodyTriangles,
+            supportTriangles,
+            width,
+            height,
+            bodyAlbedo,
+            supportAlbedo,
+            VariantPairRenderStrategy.SharedBodyUpload);
+
+    private async Task<VariantPairRenderResult?> RenderVariantPairAsync(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo,
+        VariantPairRenderStrategy strategy)
+    {
+        await _ready.Task.ConfigureAwait(false);
+        if (_failed) return null;
+
+        var tcs = new TaskCompletionSource<VariantPairRenderResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _channel.Writer.WriteAsync(new VariantPairRenderRequest(
+            tcs,
+            bodyTriangles,
+            supportTriangles,
+            width,
+            height,
+            bodyAlbedo,
+            supportAlbedo,
+            strategy)).ConfigureAwait(false);
         return await tcs.Task.ConfigureAwait(false);
     }
 
@@ -207,6 +285,7 @@ public sealed class GlPreviewContext : IDisposable
             _gl = window.CreateOpenGL();
 
             string renderer = _gl.GetStringS(StringName.Renderer) ?? "unknown";
+            _rendererName = renderer;
             _logger.LogInformation("GL context ready. Renderer: {Renderer}. Version: {Version}",
                 renderer, _gl.GetStringS(StringName.Version));
 
@@ -230,15 +309,46 @@ public sealed class GlPreviewContext : IDisposable
         {
             while (_channel.Reader.TryRead(out var req))
             {
-                try
+                switch (req)
                 {
-                    byte[]? png = RenderInternal(req.Triangles, req.Width, req.Height, req.Albedo, req.SupportTriangles, req.SupportAlbedo);
-                    req.Tcs.TrySetResult(png);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "GL render failed");
-                    req.Tcs.TrySetResult(null);
+                    case RenderRequest renderRequest:
+                        try
+                        {
+                            byte[]? png = RenderInternal(
+                                renderRequest.Triangles,
+                                renderRequest.Width,
+                                renderRequest.Height,
+                                renderRequest.Albedo,
+                                renderRequest.SupportTriangles,
+                                renderRequest.SupportAlbedo);
+                            renderRequest.Tcs.TrySetResult(png);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "GL render failed");
+                            renderRequest.Tcs.TrySetResult(null);
+                        }
+                        break;
+
+                    case VariantPairRenderRequest variantPairRequest:
+                        try
+                        {
+                            var result = RenderVariantPairInternal(
+                                variantPairRequest.BodyTriangles,
+                                variantPairRequest.SupportTriangles,
+                                variantPairRequest.Width,
+                                variantPairRequest.Height,
+                                variantPairRequest.BodyAlbedo,
+                                variantPairRequest.SupportAlbedo,
+                                variantPairRequest.Strategy);
+                            variantPairRequest.Tcs.TrySetResult(result);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "GL variant-pair render failed");
+                            variantPairRequest.Tcs.TrySetResult(null);
+                        }
+                        break;
                 }
             }
         }
@@ -258,7 +368,17 @@ public sealed class GlPreviewContext : IDisposable
     private void DrainChannel()
     {
         while (_channel.Reader.TryRead(out var req))
-            req.Tcs.TrySetResult(null);
+        {
+            switch (req)
+            {
+                case RenderRequest renderRequest:
+                    renderRequest.Tcs.TrySetResult(null);
+                    break;
+                case VariantPairRenderRequest variantPairRequest:
+                    variantPairRequest.Tcs.TrySetResult(null);
+                    break;
+            }
+        }
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -269,20 +389,7 @@ public sealed class GlPreviewContext : IDisposable
         var gl = _gl!;
 
         EnsureFbo(width, height);
-
-        // ── Camera matrices (exact port of calculateCameraDistanceForBox in ModelViewer.tsx) ──
-        // Frame on all geometry (body + supports combined) so nothing is clipped.
-        var framingTris = supportTriangles is { Count: > 0 }
-            ? triangles.Concat(supportTriangles).ToList()
-            : triangles;
-        var (center, halfExtents) = BoundingBox(framingTris);
-        float aspect = (float)width / height;
-        float dist = CalculateCameraDistanceForBox(halfExtents, CamDir, FovY, aspect);
-        var eye = center + CamDir * dist;
-
-        var view = Matrix4x4.CreateLookAt(eye, center, System.Numerics.Vector3.UnitY);
-        var proj = Matrix4x4.CreatePerspectiveFieldOfView(FovY, aspect, nearPlaneDistance: 0.1f, farPlaneDistance: dist * 4f);
-        var model = Matrix4x4.Identity;
+        var scene = CreateSceneMatrices(triangles, supportTriangles, width, height);
 
         // ── Build vertex buffer: [pos(3), normal(3)] per vertex ───────────────
         // Pre-computed flat normals live on Triangle3D.Normal; we duplicate to all 3 verts.
@@ -290,27 +397,10 @@ public sealed class GlPreviewContext : IDisposable
         float[] verts = BuildVertexBuffer(triangles);
 
         // ── GL draw ───────────────────────────────────────────────────────────
-        gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
-        gl.Viewport(0, 0, (uint)width, (uint)height);
-        gl.ClearColor(0f, 0f, 0f, 0f);  // transparent
-        gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        gl.Enable(EnableCap.DepthTest);
-        gl.DepthFunc(DepthFunction.Less);
-
         gl.BindVertexArray(_vao);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
         gl.BufferData<float>(BufferTargetARB.ArrayBuffer, verts.AsSpan(), BufferUsageARB.StreamDraw);
-
-        gl.UseProgram(_program);
-
-        // Uniforms - upload System.Numerics matrices with transpose=false:
-        // System.Numerics is row-major (row-vector convention); when passed column-by-column
-        // to GLSL (which expects column-major), the raw bytes represent the transpose, which
-        // is precisely the column-vector form that GLSL's left-multiply convention requires.
-        SetUniformMatrix4(gl, "uModel", model);
-        SetUniformMatrix4(gl, "uView", view);
-        SetUniformMatrix4(gl, "uProj", proj);
-        gl.Uniform3(gl.GetUniformLocation(_program, "uCameraPos"), eye.X, eye.Y, eye.Z);
+        BeginScene(gl, scene, width, height);
 
         // ── Draw body ─────────────────────────────────────────────────────────
         gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), albedo.X, albedo.Y, albedo.Z);
@@ -325,6 +415,96 @@ public sealed class GlPreviewContext : IDisposable
             gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)(supportTriangles.Count * 3));
         }
 
+        return CaptureFramebufferAsPng(gl, width, height);
+    }
+
+    private VariantPairRenderResult? RenderVariantPairInternal(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo,
+        VariantPairRenderStrategy strategy)
+    {
+        return strategy switch
+        {
+            VariantPairRenderStrategy.CurrentDualUploads => new VariantPairRenderResult(
+                RenderInternal(bodyTriangles, width, height, bodyAlbedo, null, supportAlbedo),
+                RenderInternal(bodyTriangles, width, height, bodyAlbedo, supportTriangles, supportAlbedo)),
+            VariantPairRenderStrategy.SharedBodyUpload => RenderVariantPairSharedBodyUploadInternal(
+                bodyTriangles,
+                supportTriangles,
+                width,
+                height,
+                bodyAlbedo,
+                supportAlbedo),
+            _ => throw new ArgumentOutOfRangeException(nameof(strategy), strategy, null),
+        };
+    }
+
+    private VariantPairRenderResult RenderVariantPairSharedBodyUploadInternal(
+        List<Triangle3D> bodyTriangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height,
+        System.Numerics.Vector3 bodyAlbedo,
+        System.Numerics.Vector3 supportAlbedo)
+    {
+        var gl = _gl!;
+        EnsureFbo(width, height);
+
+        var modelOnlyScene = CreateSceneMatrices(bodyTriangles, null, width, height);
+        var withSupportsScene = CreateSceneMatrices(bodyTriangles, supportTriangles, width, height);
+        var bodyVerts = BuildVertexBuffer(bodyTriangles);
+        var bodyVertCount = bodyTriangles.Count * 3;
+
+        gl.BindVertexArray(_vao);
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+        gl.BufferData<float>(BufferTargetARB.ArrayBuffer, bodyVerts.AsSpan(), BufferUsageARB.StreamDraw);
+
+        BeginScene(gl, modelOnlyScene, width, height);
+        gl.BindVertexArray(_vao);
+        gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), bodyAlbedo.X, bodyAlbedo.Y, bodyAlbedo.Z);
+        gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)bodyVertCount);
+        var modelOnlyPng = CaptureFramebufferAsPng(gl, width, height);
+
+        BeginScene(gl, withSupportsScene, width, height);
+        gl.BindVertexArray(_vao);
+        gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), bodyAlbedo.X, bodyAlbedo.Y, bodyAlbedo.Z);
+        gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)bodyVertCount);
+
+        uint supportVao = 0;
+        uint supportVbo = 0;
+        try
+        {
+            if (supportTriangles is { Count: > 0 })
+            {
+                var supportVerts = BuildVertexBuffer(supportTriangles);
+                supportVao = gl.GenVertexArray();
+                supportVbo = gl.GenBuffer();
+                ConfigureBufferVao(gl, supportVao, supportVbo);
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, supportVbo);
+                gl.BufferData<float>(BufferTargetARB.ArrayBuffer, supportVerts.AsSpan(), BufferUsageARB.StreamDraw);
+                gl.BindVertexArray(supportVao);
+                gl.Uniform3(gl.GetUniformLocation(_program, "uAlbedo"), supportAlbedo.X, supportAlbedo.Y, supportAlbedo.Z);
+                gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)(supportTriangles.Count * 3));
+            }
+
+            var withSupportsPng = CaptureFramebufferAsPng(gl, width, height);
+            return new VariantPairRenderResult(modelOnlyPng, withSupportsPng);
+        }
+        finally
+        {
+            if (supportVao != 0)
+                gl.DeleteVertexArray(supportVao);
+            if (supportVbo != 0)
+                gl.DeleteBuffer(supportVbo);
+        }
+    }
+
+    private byte[] CaptureFramebufferAsPng(GL gl, int width, int height)
+    {
         // ── MSAA resolve ──────────────────────────────────────────────────────
         gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFbo);
         gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _resolveFbo);
@@ -381,6 +561,49 @@ public sealed class GlPreviewContext : IDisposable
         ReadOnlySpan<float> span = MemoryMarshal.Cast<Matrix4x4, float>(
             MemoryMarshal.CreateReadOnlySpan(ref m, 1));
         gl.UniformMatrix4(loc, 1, false, span);
+    }
+
+    private sealed record SceneMatrices(
+        Matrix4x4 View,
+        Matrix4x4 Projection,
+        Matrix4x4 Model,
+        System.Numerics.Vector3 Eye);
+
+    private SceneMatrices CreateSceneMatrices(
+        List<Triangle3D> triangles,
+        List<Triangle3D>? supportTriangles,
+        int width,
+        int height)
+    {
+        var framingTris = supportTriangles is { Count: > 0 }
+            ? triangles.Concat(supportTriangles).ToList()
+            : triangles;
+        var (center, halfExtents) = BoundingBox(framingTris);
+        float aspect = (float)width / height;
+        float dist = CalculateCameraDistanceForBox(halfExtents, CamDir, FovY, aspect);
+        var eye = center + CamDir * dist;
+
+        return new SceneMatrices(
+            Matrix4x4.CreateLookAt(eye, center, System.Numerics.Vector3.UnitY),
+            Matrix4x4.CreatePerspectiveFieldOfView(FovY, aspect, nearPlaneDistance: 0.1f, farPlaneDistance: dist * 4f),
+            Matrix4x4.Identity,
+            eye);
+    }
+
+    private void BeginScene(GL gl, SceneMatrices scene, int width, int height)
+    {
+        gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
+        gl.Viewport(0, 0, (uint)width, (uint)height);
+        gl.ClearColor(0f, 0f, 0f, 0f);
+        gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        gl.Enable(EnableCap.DepthTest);
+        gl.DepthFunc(DepthFunction.Less);
+        gl.UseProgram(_program);
+
+        SetUniformMatrix4(gl, "uModel", scene.Model);
+        SetUniformMatrix4(gl, "uView", scene.View);
+        SetUniformMatrix4(gl, "uProj", scene.Projection);
+        gl.Uniform3(gl.GetUniformLocation(_program, "uCameraPos"), scene.Eye.X, scene.Eye.Y, scene.Eye.Z);
     }
 
     // ── FBO management ────────────────────────────────────────────────────────
@@ -490,22 +713,20 @@ public sealed class GlPreviewContext : IDisposable
     private void SetupVao()
     {
         var gl = _gl!;
-        uint stride = (uint)(6 * sizeof(float));  // pos(3) + normal(3)
-
         _vao = gl.GenVertexArray();
-        gl.BindVertexArray(_vao);
-
         _vbo = gl.GenBuffer();
-        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+        ConfigureBufferVao(gl, _vao, _vbo);
+    }
 
-        // location 0: position (offset 0)
+    private static void ConfigureBufferVao(GL gl, uint vao, uint vbo)
+    {
+        uint stride = (uint)(6 * sizeof(float));
+        gl.BindVertexArray(vao);
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo);
         gl.EnableVertexAttribArray(0);
         gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
-
-        // location 1: normal (offset 12 bytes)
         gl.EnableVertexAttribArray(1);
         gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
-
         gl.BindVertexArray(0);
     }
 
@@ -574,6 +795,8 @@ public sealed class GlPreviewContext : IDisposable
 
     // ── Inner types ───────────────────────────────────────────────────────────
 
+    private abstract record GlRequest;
+
     private sealed record RenderRequest(
         TaskCompletionSource<byte[]?> Tcs,
         List<Triangle3D> Triangles,
@@ -581,5 +804,21 @@ public sealed class GlPreviewContext : IDisposable
         int Height,
         System.Numerics.Vector3 Albedo,
         List<Triangle3D>? SupportTriangles,
-        System.Numerics.Vector3 SupportAlbedo);
+        System.Numerics.Vector3 SupportAlbedo) : GlRequest;
+
+    private sealed record VariantPairRenderRequest(
+        TaskCompletionSource<VariantPairRenderResult?> Tcs,
+        List<Triangle3D> BodyTriangles,
+        List<Triangle3D>? SupportTriangles,
+        int Width,
+        int Height,
+        System.Numerics.Vector3 BodyAlbedo,
+        System.Numerics.Vector3 SupportAlbedo,
+        VariantPairRenderStrategy Strategy) : GlRequest;
+
+    private enum VariantPairRenderStrategy
+    {
+        CurrentDualUploads,
+        SharedBodyUpload,
+    }
 }

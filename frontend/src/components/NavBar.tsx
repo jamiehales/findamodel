@@ -3,14 +3,17 @@ import IconButton from '@mui/material/IconButton';
 import Toolbar from '@mui/material/Toolbar';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import ForestRoundedIcon from '@mui/icons-material/ForestRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { NavLink, Link, useMatch } from 'react-router-dom';
 import { useActivePrintingList } from '../lib/queries';
+import { useRenderControls } from './RenderControlsContext';
 import IndexerStatus from './IndexerStatus';
 import styles from './NavBar.module.css';
 
 export default function NavBar() {
   const { data: activeList } = useActivePrintingList();
+  const { showSupports, setShowSupports } = useRenderControls();
   const totalCount = activeList?.items.reduce((a, i) => a + i.quantity, 0) ?? 0;
   const printingListMatch = useMatch('/printing-list/*');
   const printingListsMatch = useMatch('/printing-lists');
@@ -61,6 +64,15 @@ export default function NavBar() {
           </Link>
         </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center" className={styles.actionsRight}>
+          <IconButton
+            size="small"
+            aria-label={showSupports ? 'Hide supports' : 'Show supports'}
+            title={showSupports ? 'Hide supports' : 'Show supports'}
+            onClick={() => setShowSupports((value) => !value)}
+            className={`${styles.supportsIconButton}${showSupports ? ` ${styles.supportsIconButtonActive}` : ''}`}
+          >
+            <ForestRoundedIcon fontSize="small" />
+          </IconButton>
           <IconButton
             component={Link}
             to="/settings"

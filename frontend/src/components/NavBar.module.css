@@ -11,6 +11,20 @@
   margin-left: 0.5rem;
 }
 
+.supportsIconButton {
+  color: var(--color-text-secondary) !important;
+}
+
+.supportsIconButton:hover {
+  color: var(--color-text-primary) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.supportsIconButtonActive {
+  color: #f59e0b !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+}
+
 .navLink {
   display: inline-flex;
   align-items: center;
