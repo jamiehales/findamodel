@@ -150,7 +150,7 @@ public class InternalLocalLlmProvider(
         return sb.ToString().Trim();
     }
 
-    private static string BuildPrompt(LocalLlmRequest request)
+    internal static string BuildPrompt(LocalLlmRequest request)
     {
         var sb = new StringBuilder();
         sb.AppendLine(request.SystemPrompt);
@@ -186,8 +186,6 @@ public class InternalLocalLlmProvider(
         else
         {
             sb.AppendLine("Task: generate a concise description.");
-            sb.AppendLine("Respond with JSON exactly: {\"description\":\"...\",\"confidence\":0.0}");
-            sb.AppendLine("Return only the JSON object. Do not add any leading or trailing text.");
             sb.AppendLine(request.UserPrompt);
         }
 

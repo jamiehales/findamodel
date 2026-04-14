@@ -20,12 +20,10 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     private const int DefaultTagGenerationTimeoutMs = 60000;
     private const int DefaultTagGenerationMaxTags = 12;
     private const float DefaultTagGenerationMinConfidence = 0.45f;
-    private const string DefaultTagGenerationPromptTemplate =
+    public const string DefaultTagGenerationPromptTemplate =
         "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
-    private const string LegacyDescriptionGenerationPromptTemplate =
-        "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. Do not mention confidence, JSON, or model limitations. Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
-    private const string DefaultDescriptionGenerationPromptTemplate =
-        "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}', the full path is '{{fullPath}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use.";
+    public const string DefaultDescriptionGenerationPromptTemplate =
+        "You are an image analyzer. Your role is to look at the image provided, and generate a list of keywords based on it. Do not refer to color or brightness in any way. Following are examples of keywords that could be used. Type of object: animal, object, person, humanoid. Characteristics: cute, ugly, round, straight. Name: lamp, dog, man, woman, monster, cat. Actions: shooting, ducking, jumping, lying, dancing. An example for a humanoid lizard that's a guard, looking out for intruders, with a parrot on his shoulder would be: lizard guarding anxious crossbow arrows crouching parrot bird animal humanoid guard fat armor smooth boots hat feather. Do not limit yourself to these specific keywords. If something looks like two different things, use both. Respond with the top 25 keywords, be verbose. Use spaces to separate the keywords, and only use lowercase. Respond with ONLY human readable text, ZERO formatting, markup or punctuation.";
     private static readonly HashSet<string> AllowedThemes = new(StringComparer.OrdinalIgnoreCase)
     {
         "default",

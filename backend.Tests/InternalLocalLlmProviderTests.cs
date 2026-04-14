@@ -27,4 +27,35 @@ public class InternalLocalLlmProviderTests
         var actual = InternalLocalLlmProvider.ResolveCompletionTokenLimit(requested);
         Assert.Equal(expected, actual);
     }
+
+    [Fact]
+    public void BuildPrompt_AppendsJsonFormatInstructions_ForTags()
+    {
+        var prompt = InternalLocalLlmProvider.BuildPrompt(new LocalLlmRequest
+        {
+            TaskKind = LocalLlmTaskKind.Tags,
+            SystemPrompt = "system",
+            UserPrompt = "user prompt",
+            AllowedTags = ["beast", "dragon"],
+        });
+
+        Assert.Contains("Respond with JSON exactly", prompt);
+        Assert.Contains("Return only the JSON object", prompt);
+        Assert.Contains("user prompt", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_DoesNotAppendJsonFormatInstructions_ForDescriptions()
+    {
+        var prompt = InternalLocalLlmProvider.BuildPrompt(new LocalLlmRequest
+        {
+            TaskKind = LocalLlmTaskKind.Description,
+            SystemPrompt = "system",
+            UserPrompt = "user prompt",
+        });
+
+        Assert.DoesNotContain("Respond with JSON exactly", prompt);
+        Assert.DoesNotContain("Return only the JSON object", prompt);
+        Assert.Contains("user prompt", prompt);
+    }
 }

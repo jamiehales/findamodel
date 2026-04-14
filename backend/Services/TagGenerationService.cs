@@ -443,7 +443,7 @@ public class TagGenerationService(
     private static string BuildDescriptionUserPrompt(string template, string modelName, string fullPath)
     {
         var safeTemplate = string.IsNullOrWhiteSpace(template)
-            ? "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}', the full path is '{{fullPath}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use."
+            ? AppConfigService.DefaultDescriptionGenerationPromptTemplate
             : template;
 
         return safeTemplate

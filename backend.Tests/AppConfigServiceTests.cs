@@ -85,37 +85,6 @@ public class AppConfigServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_UsesConfiguredDescriptionDefault_WhenStoredPromptIsLegacyDefault()
-    {
-        var factory = CreateFactory(nameof(GetAsync_UsesConfiguredDescriptionDefault_WhenStoredPromptIsLegacyDefault));
-        const string legacyPrompt = "Write exactly two concise, searchable sentences describing this 3D model named '{{modelName}}'. Sentence 1: a general visual overview based on the image and provided metadata context. Sentence 2: key visible characteristics as a comma-separated list (for example: staff, large teeth, spikes, wings, hat, cloak, ammo, gun). Use only observable visual details and supplied metadata; do not infer gameplay role or likely use. Do not mention confidence, JSON, or model limitations. Return JSON only as {\"description\":\"...\",\"confidence\":0.0}.";
-        const string configuredPrompt = "Configured description prompt with {{modelName}} and {{fullPath}}.";
-
-        await using (var seed = factory.CreateDbContext())
-        {
-            seed.AppConfigs.Add(new AppConfig
-            {
-                Id = 1,
-                DescriptionGenerationPromptTemplate = legacyPrompt,
-            });
-            await seed.SaveChangesAsync();
-        }
-
-        var sut = new AppConfigService(factory, CreateConfiguration(new Dictionary<string, string?>
-        {
-            ["AppConfig:DescriptionGenerationPromptTemplate"] = configuredPrompt,
-        }));
-
-        var dto = await sut.GetAsync();
-
-        Assert.Equal(configuredPrompt, dto.DescriptionGenerationPromptTemplate);
-
-        await using var db = factory.CreateDbContext();
-        var stored = await db.AppConfigs.SingleAsync();
-        Assert.Equal(legacyPrompt, stored.DescriptionGenerationPromptTemplate);
-    }
-
-    [Fact]
     public async Task UpdateAsync_DoesNotPersistPromptOverrides_WhenSavingConfiguredDefaults()
     {
         const string configuredTagPrompt = "Configured tag prompt {{maxTags}} {{allowedTags}}";
