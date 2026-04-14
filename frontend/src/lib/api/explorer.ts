@@ -192,6 +192,7 @@ export interface InstanceStats {
   hullGenerationVersion: number;
   previewGpuEnabled: boolean;
   previewGpuAvailable: boolean;
+  previewRenderer: string;
   internalLlmGpuEnabled: boolean;
   internalLlmGpuLayerCount: number;
   modelCount: number;

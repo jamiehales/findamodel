@@ -15,6 +15,24 @@ fi
 
 umask "$EFFECTIVE_UMASK"
 
+NVIDIA_EGL_VENDOR_DIR="/usr/share/glvnd/egl_vendor.d"
+NVIDIA_EGL_VENDOR_FILE="$NVIDIA_EGL_VENDOR_DIR/10_nvidia.json"
+NVIDIA_EGL_LIBRARY="/usr/lib/x86_64-linux-gnu/libEGL_nvidia.so.0"
+
+# Some container runtimes mount NVIDIA EGL libraries without the matching GLVND
+# vendor JSON. When that happens, headless OpenGL falls back to Mesa llvmpipe.
+if [ -f "$NVIDIA_EGL_LIBRARY" ] && [ ! -f "$NVIDIA_EGL_VENDOR_FILE" ]; then
+    mkdir -p "$NVIDIA_EGL_VENDOR_DIR"
+    cat >"$NVIDIA_EGL_VENDOR_FILE" <<'EOF'
+{
+  "file_format_version": "1.0.0",
+  "ICD": {
+    "library_path": "libEGL_nvidia.so.0"
+  }
+}
+EOF
+fi
+
 # Ensure numeric uid/gid values to avoid confusing startup failures.
 case "$PUID" in
     ''|*[!0-9]*)

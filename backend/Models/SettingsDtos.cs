@@ -93,6 +93,7 @@ public record InstanceStatsDto(
     int HullGenerationVersion,
     bool PreviewGpuEnabled,
     bool PreviewGpuAvailable,
+    string PreviewRenderer,
     bool InternalLlmGpuEnabled,
     int InternalLlmGpuLayerCount,
     int ModelCount,

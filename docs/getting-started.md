@@ -43,11 +43,12 @@ docker run -d \
 
 Then open [http://localhost:5000](http://localhost:5000) in your browser.
 
-If you want NVIDIA GPU acceleration for local LLM inference, add:
+If you want NVIDIA GPU acceleration for local LLM inference and OpenGL preview rendering, add:
 
 ```bash
 --gpus all \
--e NVIDIA_VISIBLE_DEVICES=all
+-e NVIDIA_VISIBLE_DEVICES=all \
+-e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 ```
 
 ### Environment variables
@@ -60,8 +61,8 @@ If you want NVIDIA GPU acceleration for local LLM inference, add:
 | `PGID` | `1000` | Run the app process as this group id (LinuxServer style) |
 | `UMASK` | `022` | Umask applied before starting the app process |
 | `UMASK_SET` | _(deprecated)_ | Legacy alias for `UMASK` for LinuxServer compatibility |
-| `NVIDIA_VISIBLE_DEVICES` | `all` | NVIDIA device visibility for GPU inference (`none` to force CPU-only) |
-| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility` | Required NVIDIA driver capabilities for inference |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | NVIDIA device visibility for GPU inference and preview rendering (`none` to force CPU-only) |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility,graphics` | Required NVIDIA driver capabilities for CUDA inference and OpenGL preview rendering |
 | `ASPNETCORE_URLS` | `http://+:8080` | Bind address |
 
 ### docker-compose example
@@ -88,7 +89,12 @@ For NVIDIA GPU acceleration in Compose, add:
     gpus: all
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 ```
+
+If the Rendering stats panel shows `GL renderer: llvmpipe ...`, the container is still using Mesa software rendering rather than the NVIDIA driver. In that case, verify both `--gpus all` or `gpus: all` and the `graphics` driver capability are present.
+
+FindAModel also creates `/usr/share/glvnd/egl_vendor.d/10_nvidia.json` at container startup when NVIDIA EGL libraries are mounted into the container but the GLVND vendor file is missing. This helps headless OpenGL preview rendering avoid falling back to Mesa `llvmpipe` on hosts where the NVIDIA runtime exposes the libraries but not the vendor registration.
 
 ---
 

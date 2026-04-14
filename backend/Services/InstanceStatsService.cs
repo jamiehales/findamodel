@@ -36,6 +36,7 @@ public class InstanceStatsService(
             HullGenerationVersion: HullCalculationService.CurrentHullGenerationVersion,
             PreviewGpuEnabled: previewRuntimeInfoProvider.GpuEnabled,
             PreviewGpuAvailable: previewRuntimeInfoProvider.GpuAvailable,
+            PreviewRenderer: previewRuntimeInfoProvider.RendererName,
             InternalLlmGpuEnabled: internalLlmGpuEnabled,
             InternalLlmGpuLayerCount: internalLlmGpuEnabled ? internalLlmGpuLayerCount : 0,
             ModelCount: modelCount,

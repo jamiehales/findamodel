@@ -83,7 +83,10 @@ public class InstanceStatsServiceTests
 
         var sut = new InstanceStatsService(
             factory,
-            new FakePreviewRuntimeInfoProvider(gpuEnabled: true, gpuAvailable: false),
+            new FakePreviewRuntimeInfoProvider(
+                gpuEnabled: true,
+                gpuAvailable: false,
+                rendererName: "llvmpipe (LLVM 15.0.6, 256 bits)"),
             configuration,
             new TestHostEnvironment("Development"));
 
@@ -97,6 +100,7 @@ public class InstanceStatsServiceTests
         Assert.Equal(HullCalculationService.CurrentHullGenerationVersion, result.HullGenerationVersion);
         Assert.True(result.PreviewGpuEnabled);
         Assert.False(result.PreviewGpuAvailable);
+        Assert.Equal("llvmpipe (LLVM 15.0.6, 256 bits)", result.PreviewRenderer);
         Assert.True(result.InternalLlmGpuEnabled);
         Assert.Equal(42, result.InternalLlmGpuLayerCount);
         Assert.Equal(2, result.ModelCount);
@@ -122,13 +126,17 @@ public class InstanceStatsServiceTests
 
         var sut = new InstanceStatsService(
             CreateFactory(nameof(GetAsync_ZeroesInternalGpuLayers_WhenGpuDisabled)),
-            new FakePreviewRuntimeInfoProvider(gpuEnabled: false, gpuAvailable: false),
+            new FakePreviewRuntimeInfoProvider(
+                gpuEnabled: false,
+                gpuAvailable: false,
+                rendererName: "unavailable"),
             configuration,
             new TestHostEnvironment("Production"));
 
         var result = await sut.GetAsync();
 
         Assert.False(result.PreviewGpuEnabled);
+        Assert.Equal("unavailable", result.PreviewRenderer);
         Assert.False(result.InternalLlmGpuEnabled);
         Assert.Equal(0, result.InternalLlmGpuLayerCount);
         Assert.Equal(0, result.ModelCount);
@@ -151,12 +159,14 @@ public class InstanceStatsServiceTests
             => Task.FromResult(CreateDbContext());
     }
 
-    private sealed class FakePreviewRuntimeInfoProvider(bool gpuEnabled, bool gpuAvailable)
+    private sealed class FakePreviewRuntimeInfoProvider(bool gpuEnabled, bool gpuAvailable, string rendererName)
         : IPreviewRuntimeInfoProvider
     {
         public bool GpuEnabled { get; } = gpuEnabled;
 
         public bool GpuAvailable { get; } = gpuAvailable;
+
+        public string RendererName { get; } = rendererName;
     }
 
     private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment

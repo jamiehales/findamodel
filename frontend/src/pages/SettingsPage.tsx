@@ -233,6 +233,7 @@ function InstanceStatsSection({
             rows={[
               { label: 'Preview GPU', value: formatEnabled(stats.previewGpuEnabled) },
               { label: 'GPU availability', value: formatAvailability(stats.previewGpuAvailable) },
+              { label: 'GL renderer', value: stats.previewRenderer },
               { label: 'Preview version', value: stats.previewGenerationVersion },
               { label: 'Hull version', value: stats.hullGenerationVersion },
             ]}
