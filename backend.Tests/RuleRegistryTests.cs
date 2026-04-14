@@ -89,6 +89,14 @@ public class RuleRegistryTests
     }
 
     [Fact]
+    public void Evaluate_MissingSource_DefaultsToFullPath()
+    {
+        var config = JsonDocument.Parse("""{"rule":"regex","expression":"Fantasy"}""").RootElement;
+        var result = RuleRegistry.Evaluate("creator", "/models/Fantasy/warrior.stl", [], config);
+        Assert.Equal("Fantasy", result);
+    }
+
+    [Fact]
     public void Evaluate_RegexRule_DelegatesToRegexParser()
     {
         var config = JsonDocument.Parse("""{"rule":"regex","source":"folder","expression":"^([^/]+)"}""").RootElement;

@@ -23,11 +23,11 @@ The `regex` rule evaluates a regular expression against part of the file's path 
 
 ```yaml
 creator:
-  source: folder
-  expression: "^([^/]+)"
+  expression: "^/models/([^/]+)"
 ```
 
 `rule: regex` is optional. If `rule` is omitted, regex is assumed.
+When you want to match against the full path, omit `source` entirely - `full_path` is the default.
 
 ---
 
@@ -72,10 +72,9 @@ For a file at `/models/Alice/Fantasy/elf_warrior.stl`:
 If the expression contains a **capturing group**, the content of the first group is returned. If there are no groups, the full match is returned. If there is no match, the rule returns no value (the field is left unset).
 
 ```yaml
-# Extract the first path segment after /models/
+# Extract the creator folder from the full path
 creator:
   rule: regex
-  source: folder
   expression: "^/models/([^/]+)"
 ```
 
@@ -157,11 +156,10 @@ This is useful for transforming a path segment into a cleaned-up string.
 ```yaml
 collection:
   rule: regex
-  source: folder
   expression: "s|.*/([^/]+)/[^/]+$|\1|"
 ```
 
-For `/models/Alice/Fantasy/Elves/elf.stl` (folder = `/models/Alice/Fantasy/Elves`), captures `Fantasy` (the parent of `Elves`).
+For `/models/Alice/Fantasy/Elves/elf.stl`, captures `Fantasy` (the parent of `Elves`).
 
 #### Supported flags
 
@@ -181,8 +179,7 @@ For `/models/Alice/Fantasy/Elves/elf.stl` (folder = `/models/Alice/Fantasy/Elves
 ```yaml
 creator:
   rule: regex
-  source: folder
-  expression: "^/?([^/]+)"
+  expression: "^/models/([^/]+)"
 ```
 
 `/models/Alice/Fantasy/elf.stl` → `"Alice"`
@@ -194,19 +191,17 @@ creator:
 ```yaml
 collection:
   rule: regex
-  source: folder
-  expression: "([^/]+)$"
+  expression: "/([^/]+)/[^/]+$"
 ```
 
-`/models/Alice/Fantasy/Elves/elf.stl` (folder = `/models/Alice/Fantasy/Elves`) → `"Elves"`
+`/models/Alice/Fantasy/Elves/elf.stl` → `"Elves"`
 
 To capture the grandparent instead:
 
 ```yaml
 collection:
   rule: regex
-  source: folder
-  expression: "([^/]+)/[^/]+$"
+  expression: "/([^/]+)/[^/]+/[^/]+$"
 ```
 
 → `"Fantasy"`
@@ -239,27 +234,33 @@ category:
 
 ---
 
-### Extract and transform: title-case a folder segment
+### Extract and transform a folder segment
 
 Use a sed expression to clean up a folder name:
 
 ```yaml
 collection:
   rule: regex
-  source: folder
-  expression: "s|_| |g"
+  expression: "s|.*/([^/]+)/[^/]+$|\1|"
 ```
 
-Converts `_` to spaces in the folder path. Combined with a capture group:
+Extracts the immediate parent folder from the full path. To clean up underscores after that, combine the capture with a replacement:
 
 ```yaml
 collection:
   rule: regex
-  source: folder
-  expression: "s|.*/([^/]+)$|\1|"
+  expression: "s|.*/([^_]+)_([^/]+)/[^/]+$|\1 \2|"
 ```
 
-Extracts (but does not title-case) the immediate parent folder.
+For `/models/Alice/Dark_Elves/elf.stl`, this returns `"Dark Elves"`.
+
+---
+
+## Choosing a source
+
+- Omit `source` when you want to match the whole path. This is the default and usually the most flexible starting point.
+- Use `source: folder` when you specifically want directory-only matching and do not want the filename included.
+- Use `source: filename` when you only care about the file name or extension.
 
 ---
 

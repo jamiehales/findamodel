@@ -112,6 +112,15 @@ public class RegexRuleParserTests
         Assert.Equal("Fantasy", result);
     }
 
+    [Fact]
+    public void FullPathSource_IsUsedByDefault_WhenSourceIsOmitted()
+    {
+        var result = Eval(
+            "/models/Fantasy/warrior.stl",
+            new { expression = @"Fantasy" });
+        Assert.Equal("Fantasy", result);
+    }
+
     // ── Bool field type ───────────────────────────────────────────────────────
 
     [Fact]

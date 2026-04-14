@@ -342,7 +342,6 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         var stored = config.DescriptionGenerationPromptTemplate?.Trim();
         return !string.IsNullOrWhiteSpace(stored)
             && !string.Equals(stored, configuredDefault, StringComparison.Ordinal)
-            && !string.Equals(stored, LegacyDescriptionGenerationPromptTemplate, StringComparison.Ordinal)
             && !string.Equals(stored, DefaultDescriptionGenerationPromptTemplate, StringComparison.Ordinal)
             ? stored
             : configuredDefault;

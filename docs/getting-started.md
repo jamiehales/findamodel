@@ -176,3 +176,5 @@ model_name:
   source: filename
   expression: "^(.*)\\.[^./]+$"
 ```
+
+When writing regex rules that should match the full path, you can omit `source` entirely because `full_path` is the default.

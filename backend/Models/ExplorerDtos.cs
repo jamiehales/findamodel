@@ -16,7 +16,7 @@ public record UpdateDirectoryConfigRequest(
     /// <summary>
     /// When non-null, fully defines the rule set for this directory (replaces any existing rules).
     /// Each entry maps a YAML field name (e.g. "creator", "model_name") to the inner rule YAML
-    /// (e.g. "source: folder\nexpression: '^([^/]+)'"). Plain values in the request take precedence over rules.
+    /// (e.g. "expression: '^/models/([^/]+)'"). Plain values in the request take precedence over rules.
     /// </summary>
     Dictionary<string, string>? FieldRules = null);
 
@@ -42,7 +42,7 @@ public record ConfigFieldsDto
 /// LocalRuleFields contains field names whose values in this directory's YAML are rule
 /// definitions rather than plain values (e.g. "creator", "model_name").
 /// LocalRuleContents maps each rule field name to its inner YAML content for editing
-/// (e.g. "source: folder\nexpression: '^([^/]+)'", without the outer field key wrapper).
+/// (e.g. "expression: '^/models/([^/]+)'", without the outer field key wrapper).
 /// ParentResolvedRules maps field names to their inherited rule YAML snippets.
 /// </summary>
 public record DirectoryConfigDetailDto(

@@ -66,8 +66,7 @@ Instead of a fixed value, a field can use a **rule** to compute its value dynami
 ```yaml
 creator:
   rule: regex
-  source: folder
-  expression: "^([^/]+)"
+  expression: "^/models/([^/]+)"
 
 model_name:
   source: filename
@@ -158,8 +157,7 @@ material: "resin"
 # Determine collection from the immediate parent folder name
 collection:
   rule: regex
-  source: folder
-  expression: "([^/]+)$"
+  expression: "/([^/]+)/[^/]+$"
 
 # Determine support status from the filename
 supported:

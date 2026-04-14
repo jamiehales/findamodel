@@ -7,6 +7,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
+import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 import Divider from '@mui/material/Divider';
 import {
@@ -47,6 +48,7 @@ const FIELDS: FieldDef[] = SHARED_FIELDS.filter(
 }));
 
 const TAGS_YAML_NAME = 'tags';
+const DEFAULT_REGEX_RULE_PLACEHOLDER = "source: full_path\nexpression: '...'";
 
 function validateRuleYaml(text: string): string | null {
   const lines = text.trim().split('\n');
@@ -70,6 +72,10 @@ function validateRuleYaml(text: string): string | null {
     return 'Only "rule: regex" is supported. You can also omit the rule key and regex will be assumed.';
   }
   return null;
+}
+
+function getRulePlaceholder(inheritedRule?: string | null) {
+  return inheritedRule?.trim() ? inheritedRule : DEFAULT_REGEX_RULE_PLACEHOLDER;
 }
 
 function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -179,7 +185,7 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
         Plain regex - returns first capture group, or full match:
       </Typography>
-      {code("rule: regex\nsource: folder\nexpression: '([^/]+)/[^/]+$'")}
+      {code("rule: regex\nexpression: '.*/([^/]+)/[^/]+$'")}
       {para(
         <>
           For a file at {inline('Artists/Sculptor Name/dragon.stl')} → {inline('Sculptor Name')}
@@ -189,19 +195,19 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
         Sed-style substitution - transform the matched value:
       </Typography>
-      {code("rule: regex\nsource: folder\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
+      {code("rule: regex\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
       {para(<>Same result as above but using a substitution expression</>)}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
         Enum (select) field - map patterns to values:
       </Typography>
-      {code("source: full_path\nvalues:\n  Bust: '(?i)bust'\n  Miniature: '(?i)mini'")}
+      {code("source: full_path\nvalues:\n  Bust: 'bust'\n  Miniature: 'mini'")}
       {para('For select fields, returns the first key whose pattern matches the path.')}
 
       <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
         Tags field - map multiple patterns to tags:
       </Typography>
-      {code("source: full_path\nvalues:\n  Supported: '(?i)supported'\n  Miniature: '(?i)mini'")}
+      {code("source: full_path\nvalues:\n  Supported: 'supported'\n  Miniature: 'mini'")}
       {para('For tags, every matching key is added as a computed tag for the model.')}
 
       <Divider sx={{ my: 1.5 }} />
@@ -213,6 +219,29 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
       {para(
         'If a folder has a plain value set for a field, that value takes precedence over any inherited rule.',
       )}
+      <Divider sx={{ my: 1.5 }} />
+      <Typography variant="body2" color="text.primary">
+        Rules system overview:{' '}
+        <Link
+          href="https://jamiehales.github.io/findamodel/rules/"
+          target="_blank"
+          rel="noreferrer"
+          underline="hover"
+        >
+          docs
+        </Link>
+      </Typography>
+      <Typography variant="body2" color="text.primary" sx={{ mt: 0.5 }}>
+        Regex rule reference:{' '}
+        <Link
+          href="https://jamiehales.github.io/findamodel/rules/regex-rule.html"
+          target="_blank"
+          rel="noreferrer"
+          underline="hover"
+        >
+          docs
+        </Link>
+      </Typography>
     </AppDialog>
   );
 }
@@ -531,7 +560,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
             onChange={(e) => handleRuleChange(TAGS_YAML_NAME, e.target.value)}
             error={!!(ruleErrors[TAGS_YAML_NAME] ?? null)}
             helperText={ruleErrors[TAGS_YAML_NAME] ?? undefined}
-            placeholder={inheritedTagsRule ?? undefined}
+            placeholder={getRulePlaceholder(inheritedTagsRule)}
             slotProps={{
               input: { className: styles.ruleInput },
               htmlInput: {
@@ -644,7 +673,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
                 onChange={(e) => handleRuleChange(field.yamlName, e.target.value)}
                 error={!!ruleError}
                 helperText={ruleError ?? undefined}
-                placeholder={inheritedRule ?? undefined}
+                placeholder={getRulePlaceholder(inheritedRule)}
                 slotProps={{
                   input: { className: styles.ruleInput },
                   htmlInput: {
