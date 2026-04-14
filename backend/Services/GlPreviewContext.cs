@@ -541,7 +541,8 @@ public sealed class GlPreviewContext : IDisposable
         int vi = 0;
         foreach (var tri in tris)
         {
-            float nx = tri.Normal.X, ny = tri.Normal.Y, nz = tri.Normal.Z;
+            var previewNormal = PreviewMeshNormalHelper.Compute(tri);
+            float nx = previewNormal.X, ny = previewNormal.Y, nz = previewNormal.Z;
             buf[vi++] = tri.V0.X; buf[vi++] = tri.V0.Y; buf[vi++] = tri.V0.Z;
             buf[vi++] = nx; buf[vi++] = ny; buf[vi++] = nz;
             buf[vi++] = tri.V1.X; buf[vi++] = tri.V1.Y; buf[vi++] = tri.V1.Z;
