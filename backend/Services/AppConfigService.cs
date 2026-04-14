@@ -13,6 +13,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const string DefaultTagGenerationModel = "Qwen2.5-7B-Instruct";
     private const string DefaultTheme = "nord";
     private const bool DefaultGeneratePreviewsEnabled = true;
+    private const int DefaultMinimumPreviewGenerationVersion = ModelPreviewService.CurrentPreviewGenerationVersion;
     private const bool DefaultTagGenerationEnabled = false;
     private const bool DefaultAiDescriptionEnabled = false;
     private const string DefaultTagGenerationProvider = "internal";
@@ -57,6 +58,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (!AllowedThemes.Contains(request.Theme))
             throw new ArgumentException($"Unknown theme '{request.Theme}'.", nameof(request.Theme));
 
+        ValidateMinimumPreviewGenerationVersion(request.MinimumPreviewGenerationVersion, nameof(request.MinimumPreviewGenerationVersion));
+
         if (!AllowedTagGenerationProviders.Contains(request.TagGenerationProvider))
             throw new ArgumentException($"Unknown tag generation provider '{request.TagGenerationProvider}'.", nameof(request.TagGenerationProvider));
 
@@ -77,6 +80,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
         config.Theme = request.Theme;
         config.GeneratePreviewsEnabled = request.GeneratePreviewsEnabled;
+        config.MinimumPreviewGenerationVersion = request.MinimumPreviewGenerationVersion;
         config.TagGenerationEnabled = request.TagGenerationEnabled;
         config.AiDescriptionEnabled = request.AiDescriptionEnabled;
         config.TagGenerationProvider = request.TagGenerationProvider.Trim().ToLowerInvariant();
@@ -211,6 +215,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.DefaultRaftHeightMm,
             config.Theme,
             config.GeneratePreviewsEnabled,
+            NormalizeMinimumPreviewGenerationVersion(config.MinimumPreviewGenerationVersion),
             config.TagGenerationEnabled,
             config.AiDescriptionEnabled,
             config.TagGenerationProvider,
@@ -248,6 +253,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             DefaultRaftHeightMm = configuration.GetValue<float?>("AppConfig:DefaultRaftHeightMm") ?? DatabaseDefaultRaftHeightMm,
             Theme = configuration["AppConfig:Theme"] ?? DefaultTheme,
             GeneratePreviewsEnabled = configuration.GetValue<bool?>("AppConfig:GeneratePreviewsEnabled") ?? DefaultGeneratePreviewsEnabled,
+            MinimumPreviewGenerationVersion = ResolveConfiguredMinimumPreviewGenerationVersion(),
             TagGenerationEnabled = configuration.GetValue<bool?>("AppConfig:TagGenerationEnabled") ?? DefaultTagGenerationEnabled,
             AiDescriptionEnabled = configuration.GetValue<bool?>("AppConfig:AiDescriptionEnabled") ?? DefaultAiDescriptionEnabled,
             TagGenerationProvider = configuration["AppConfig:TagGenerationProvider"] ?? DefaultTagGenerationProvider,
@@ -275,6 +281,21 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             ? string.Empty
             : trimmed;
     }
+
+    private static void ValidateMinimumPreviewGenerationVersion(int minimumPreviewGenerationVersion, string paramName)
+    {
+        if (minimumPreviewGenerationVersion < 0 || minimumPreviewGenerationVersion > ModelPreviewService.CurrentPreviewGenerationVersion)
+            throw new ArgumentException(
+                $"Minimum preview version must be between 0 and {ModelPreviewService.CurrentPreviewGenerationVersion}.",
+                paramName);
+    }
+
+    private static int NormalizeMinimumPreviewGenerationVersion(int minimumPreviewGenerationVersion) =>
+        Math.Clamp(minimumPreviewGenerationVersion, 0, ModelPreviewService.CurrentPreviewGenerationVersion);
+
+    private int ResolveConfiguredMinimumPreviewGenerationVersion() =>
+        NormalizeMinimumPreviewGenerationVersion(
+            configuration.GetValue<int?>("AppConfig:MinimumPreviewGenerationVersion") ?? DefaultMinimumPreviewGenerationVersion);
 
     private static string? NormalizeModelOverride(string model, string configuredDefault)
     {

@@ -25,7 +25,7 @@ public class ModelPreviewService(
     /// Increment this when the preview rendering implementation changes so that
     /// existing cached previews are automatically invalidated on the next scan.
     /// </summary>
-    public const int CurrentPreviewGenerationVersion = 7;
+    public const int CurrentPreviewGenerationVersion = 8;
 
     private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.Preview);
     private const int RenderWidth = 512;

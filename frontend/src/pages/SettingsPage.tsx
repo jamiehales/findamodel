@@ -277,6 +277,7 @@ export default function SettingsPage() {
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
+  const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
   const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
   const [aiDescriptionEnabled, setAiDescriptionEnabled] = useState(false);
   const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
@@ -318,6 +319,7 @@ export default function SettingsPage() {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
       setTheme(appConfig.theme);
       setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
+      setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
       setTagGenerationEnabled(appConfig.tagGenerationEnabled);
       setAiDescriptionEnabled(appConfig.aiDescriptionEnabled);
       setTagGenerationProvider(
@@ -348,14 +350,20 @@ export default function SettingsPage() {
   }, [printers]);
 
   const raftHeightValue = Number(defaultRaftHeightMm);
+  const minimumPreviewGenerationVersionValue = Number(minimumPreviewGenerationVersion);
   const timeoutValue = Number(tagGenerationTimeoutMs);
   const maxTagsValue = Number(tagGenerationMaxTags);
   const minConfidenceValue = Number(tagGenerationMinConfidence);
+  const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
     Number.isFinite(raftHeightValue) &&
     raftHeightValue >= 0 &&
+    Number.isInteger(minimumPreviewGenerationVersionValue) &&
+    minimumPreviewGenerationVersionValue >= 0 &&
+    (previewGenerationVersionLimit === undefined ||
+      minimumPreviewGenerationVersionValue <= previewGenerationVersionLimit) &&
     tagGenerationEndpoint.trim().length > 0 &&
     Number.isInteger(timeoutValue) &&
     timeoutValue >= 1000 &&
@@ -395,6 +403,7 @@ export default function SettingsPage() {
       defaultRaftHeightMm: raftHeightValue,
       theme,
       generatePreviewsEnabled,
+      minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
       tagGenerationEnabled,
       aiDescriptionEnabled,
       tagGenerationProvider,
@@ -477,6 +486,26 @@ export default function SettingsPage() {
                       />
                     }
                     label="Generate previews"
+                  />
+                </Stack>
+                <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Minimum preview version"
+                    value={minimumPreviewGenerationVersion}
+                    onChange={(e) => setMinimumPreviewGenerationVersion(e.target.value)}
+                    error={
+                      !Number.isInteger(minimumPreviewGenerationVersionValue) ||
+                      minimumPreviewGenerationVersionValue < 0 ||
+                      (previewGenerationVersionLimit !== undefined &&
+                        minimumPreviewGenerationVersionValue > previewGenerationVersionLimit)
+                    }
+                    helperText={
+                      previewGenerationVersionLimit === undefined
+                        ? 'Set the minimum cached preview version accepted during indexing.'
+                        : `Must be an integer between 0 and ${previewGenerationVersionLimit}. Existing previews below this version will be regenerated on scan.`
+                    }
                   />
                 </Stack>
                 <Stack direction="row" spacing={1}>

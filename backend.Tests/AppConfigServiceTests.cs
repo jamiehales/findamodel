@@ -66,6 +66,7 @@ public class AppConfigServiceTests
         var dto = await sut.GetAsync();
         Assert.Equal(AppConfigService.DatabaseDefaultRaftHeightMm, dto.DefaultRaftHeightMm);
         Assert.True(dto.GeneratePreviewsEnabled);
+        Assert.Equal(ModelPreviewService.CurrentPreviewGenerationVersion, dto.MinimumPreviewGenerationVersion);
         Assert.False(dto.TagGenerationEnabled);
         Assert.False(dto.AiDescriptionEnabled);
         Assert.Equal("internal", dto.TagGenerationProvider);
@@ -100,6 +101,7 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: ModelPreviewService.CurrentPreviewGenerationVersion,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
@@ -138,6 +140,7 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: ModelPreviewService.CurrentPreviewGenerationVersion,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",
@@ -214,6 +217,7 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: 5,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "ollama",
@@ -227,6 +231,7 @@ public class AppConfigServiceTests
 
         Assert.True(updated.TagGenerationEnabled);
         Assert.True(updated.AiDescriptionEnabled);
+        Assert.Equal(5, updated.MinimumPreviewGenerationVersion);
         Assert.Equal("ollama", updated.TagGenerationProvider);
         Assert.Equal(45000, updated.TagGenerationTimeoutMs);
         Assert.Equal(10, updated.TagGenerationMaxTags);
@@ -234,6 +239,7 @@ public class AppConfigServiceTests
 
         await using var db = factory.CreateDbContext();
         var stored = await db.AppConfigs.SingleAsync();
+        Assert.Equal(5, stored.MinimumPreviewGenerationVersion);
         Assert.Null(stored.TagGenerationModel);
     }
 
@@ -246,9 +252,54 @@ public class AppConfigServiceTests
             DefaultRaftHeightMm: 3f,
             Theme: "nord",
             GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: ModelPreviewService.CurrentPreviewGenerationVersion,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "not-real",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}")));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ThrowsForNegativeMinimumPreviewVersion()
+    {
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsForNegativeMinimumPreviewVersion)), CreateConfiguration());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: -1,
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}")));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ThrowsWhenMinimumPreviewVersionExceedsCurrentRendererVersion()
+    {
+        var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsWhenMinimumPreviewVersionExceedsCurrentRendererVersion)), CreateConfiguration());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: ModelPreviewService.CurrentPreviewGenerationVersion + 1,
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
             TagGenerationEndpoint: "http://localhost:11434",
             TagGenerationModel: AppConfigService.DefaultTagGenerationModel,
             TagGenerationTimeoutMs: 45000,
@@ -298,6 +349,7 @@ public class AppConfigServiceTests
 
             Assert.True(updated.SetupCompleted);
             Assert.Equal(Path.GetFullPath(modelsRoot), updated.ModelsDirectoryPath);
+            Assert.Equal(ModelPreviewService.CurrentPreviewGenerationVersion, updated.MinimumPreviewGenerationVersion);
         }
         finally
         {

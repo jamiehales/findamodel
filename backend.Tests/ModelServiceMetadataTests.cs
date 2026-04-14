@@ -29,7 +29,12 @@ public class ModelServiceMetadataTests
         // Seed AppConfig with tag generation disabled so tag/description staleness
         // doesn't interfere with assertions in metadata-focused tests.
         using var db = new ModelCacheContext(options);
-        db.AppConfigs.Add(new AppConfig { Id = 1, TagGenerationEnabled = false });
+        db.AppConfigs.Add(new AppConfig
+        {
+            Id = 1,
+            TagGenerationEnabled = false,
+            MinimumPreviewGenerationVersion = ModelPreviewService.CurrentPreviewGenerationVersion,
+        });
         db.SaveChanges();
         return new InMemoryDbContextFactory(options);
     }
@@ -412,6 +417,95 @@ public class ModelServiceMetadataTests
             if (Directory.Exists(modelsRoot))
                 Directory.Delete(modelsRoot, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task ScanAndCacheSingleAsync_SkipsPreviewRefresh_WhenStoredPreviewVersionMeetsConfiguredMinimum()
+    {
+        var dbFactory = CreateFactory(nameof(ScanAndCacheSingleAsync_SkipsPreviewRefresh_WhenStoredPreviewVersionMeetsConfiguredMinimum));
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+
+        var modelFilePath = Path.Combine(modelsRoot, "dragon.stl");
+        await File.WriteAllTextAsync(
+            modelFilePath,
+            """
+            solid triangle
+              facet normal 0 0 1
+                outer loop
+                  vertex 0 0 0
+                  vertex 1 0 0
+                  vertex 0 1 0
+                endloop
+              endfacet
+            endsolid triangle
+            """);
+
+        var checksum = await ComputeChecksumAsync(modelFilePath);
+        var acceptedPreviewVersion = ModelPreviewService.CurrentPreviewGenerationVersion - 1;
+        var modelId = Guid.NewGuid();
+
+        try
+        {
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "dragon.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = checksum,
+                    PreviewImagePath = $"{checksum}.png",
+                    PreviewGenerationVersion = acceptedPreviewVersion,
+                    ScanConfigChecksum = ScanConfig.Compute(HullCalculationService.DefaultRaftHeightMm),
+                    FileSize = new FileInfo(modelFilePath).Length,
+                    FileModifiedAt = File.GetLastWriteTimeUtc(modelFilePath),
+                    CachedAt = DateTime.UtcNow,
+                });
+
+                var appConfig = await db.AppConfigs.SingleAsync(c => c.Id == 1);
+                appConfig.GeneratePreviewsEnabled = true;
+                appConfig.MinimumPreviewGenerationVersion = acceptedPreviewVersion;
+                await db.SaveChangesAsync();
+            }
+
+            var sut = CreateScanSut(CreateConfiguration(modelsRoot), dbFactory);
+            var indexed = await sut.ScanAndCacheSingleAsync("dragon.stl");
+
+            Assert.False(indexed);
+
+            await using var verifyDb = await dbFactory.CreateDbContextAsync();
+            var model = await verifyDb.Models.SingleAsync(m => m.Id == modelId);
+            Assert.Equal(acceptedPreviewVersion, model.PreviewGenerationVersion);
+            Assert.Equal($"{checksum}.png", model.PreviewImagePath);
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, null, 0, true)]
+    [InlineData("preview.png", null, 0, true)]
+    [InlineData("preview.png", 5, 5, false)]
+    [InlineData("preview.png", 4, 5, true)]
+    [InlineData("preview.png", 6, 5, false)]
+    public void NeedsPreviewRegeneration_UsesConfiguredMinimumVersion(
+        string? previewImagePath,
+        int? storedVersion,
+        int minimumVersion,
+        bool expected)
+    {
+        var method = typeof(ModelService).GetMethod("NeedsPreviewRegeneration", BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+
+        var result = (bool?)method!.Invoke(null, [previewImagePath, storedVersion, minimumVersion]);
+
+        Assert.Equal(expected, result);
     }
 
     [Fact]

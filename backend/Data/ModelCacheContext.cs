@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using findamodel.Data.Entities;
+using findamodel.Services;
 
 namespace findamodel.Data;
 
@@ -63,6 +64,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<AppConfig>()
             .Property(c => c.GeneratePreviewsEnabled)
             .HasDefaultValue(true);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.MinimumPreviewGenerationVersion)
+            .HasDefaultValue(ModelPreviewService.CurrentPreviewGenerationVersion);
 
         modelBuilder.Entity<AppConfig>()
             .Property(c => c.TagGenerationProvider)

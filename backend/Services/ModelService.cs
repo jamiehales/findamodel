@@ -272,6 +272,7 @@ public class ModelService(
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
         var generatePreviewsOnScan = appConfig.GeneratePreviewsEnabled;
+        var minimumPreviewGenerationVersion = ResolveMinimumPreviewGenerationVersion(appConfig.MinimumPreviewGenerationVersion);
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
         var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
 
@@ -704,6 +705,7 @@ public class ModelService(
         var appConfig = await appConfigService.GetAsync();
         var defaultRaftHeightMm = appConfig.DefaultRaftHeightMm;
         var generatePreviewsOnScan = appConfig.GeneratePreviewsEnabled;
+        var minimumPreviewGenerationVersion = ResolveMinimumPreviewGenerationVersion(appConfig.MinimumPreviewGenerationVersion);
         var generateTagsOnScan = appConfig.TagGenerationEnabled;
         var generateDescriptionsOnScan = appConfig.AiDescriptionEnabled;
         cancellationToken.ThrowIfCancellationRequested();
@@ -737,7 +739,7 @@ public class ModelService(
         var previewStale = existing is not null
             && generatePreviewsOnScan
             && !IsNonGeometryType(fileType)
-            && NeedsPreviewRegeneration(existing.PreviewGenerationVersion);
+            && NeedsPreviewRegeneration(existing.PreviewImagePath, existing.PreviewGenerationVersion, minimumPreviewGenerationVersion);
         var hullStale = existing is not null
             && !IsNonGeometryType(fileType)
             && NeedsHullRegeneration(existing.ScanConfigChecksum, expectedRaftHeightMm);
@@ -809,9 +811,10 @@ public class ModelService(
                 ScanConfig.Compute(expectedRaftHeightMm));
         else if (existing is not null)
             logger.LogInformation(
-                "Single-model index refreshing preview due to version mismatch: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
+                "Single-model index refreshing preview due to version mismatch: {FilePath} (stored version: {StoredVersion}, required minimum version: {MinimumVersion}, current version: {CurrentVersion})",
                 fullPath,
                 existing.PreviewGenerationVersion,
+                minimumPreviewGenerationVersion,
                 ModelPreviewService.CurrentPreviewGenerationVersion);
         else
             logger.LogInformation("Indexing single model file: {FilePath}", fullPath);
@@ -1138,11 +1141,12 @@ public class ModelService(
                 directory,
                 directoryConfigs,
                 defaultRaftHeightMm);
+            var minimumPreviewGenerationVersion = ResolveMinimumPreviewGenerationVersion(appConfig.MinimumPreviewGenerationVersion);
             var hullMetadataMismatch = !IsNonGeometryType(fileType)
                 && NeedsHullRegeneration(existingEntry.ScanConfigChecksum, expectedRaftHeightMm);
             var previewStale = generatePreviewsOnScan
                 && !IsNonGeometryType(fileType)
-                && NeedsPreviewRegeneration(existingEntry.PreviewGenerationVersion);
+                && NeedsPreviewRegeneration(existingEntry.PreviewImagePath, existingEntry.PreviewGenerationVersion, minimumPreviewGenerationVersion);
             var tagsStale = false;
             var descriptionStale = false;
             if (generateTagsOnScan || generateDescriptionsOnScan)
@@ -1255,9 +1259,10 @@ public class ModelService(
             }
 
             logger.LogInformation(
-                "Preview version mismatch, regenerating preview for: {FilePath} (stored version: {StoredVersion}, current version: {CurrentVersion})",
+                "Preview version mismatch, regenerating preview for: {FilePath} (stored version: {StoredVersion}, required minimum version: {MinimumVersion}, current version: {CurrentVersion})",
                 file,
                 existingEntry.PreviewGenerationVersion,
+                minimumPreviewGenerationVersion,
                 ModelPreviewService.CurrentPreviewGenerationVersion);
 
             var previewRefresh = await ComputeGeometryRefreshDataAsync(
@@ -1529,8 +1534,13 @@ public class ModelService(
     private static bool NeedsHullRegeneration(string? storedChecksum, float expectedRaftHeightMm) =>
         storedChecksum != ScanConfig.Compute(expectedRaftHeightMm);
 
-    private static bool NeedsPreviewRegeneration(int? storedVersion) =>
-        storedVersion != ModelPreviewService.CurrentPreviewGenerationVersion;
+    private static bool NeedsPreviewRegeneration(string? previewImagePath, int? storedVersion, int minimumVersion) =>
+        string.IsNullOrWhiteSpace(previewImagePath)
+        || !storedVersion.HasValue
+        || storedVersion.Value < minimumVersion;
+
+    private static int ResolveMinimumPreviewGenerationVersion(int configuredMinimumVersion) =>
+        Math.Clamp(configuredMinimumVersion, 0, ModelPreviewService.CurrentPreviewGenerationVersion);
 
     private static float ResolveRaftHeightMm(
         string directory,

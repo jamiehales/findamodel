@@ -240,6 +240,7 @@ public class TagGenerationServiceTests
             DefaultRaftHeightMm: 2f,
             Theme: "nord",
             GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: ModelPreviewService.CurrentPreviewGenerationVersion,
             TagGenerationEnabled: true,
             AiDescriptionEnabled: true,
             TagGenerationProvider: "internal",

@@ -6,6 +6,7 @@ public class AppConfig
     public float DefaultRaftHeightMm { get; set; } = 2f;
     public string Theme { get; set; } = "nord";
     public bool GeneratePreviewsEnabled { get; set; } = true;
+    public int MinimumPreviewGenerationVersion { get; set; }
 
     public bool TagGenerationEnabled { get; set; } = false;
     public bool AiDescriptionEnabled { get; set; } = false;
