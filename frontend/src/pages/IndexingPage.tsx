@@ -351,9 +351,15 @@ export default function IndexingPage() {
     }
 
     const runningRuns = updatedRuns.filter((run) => run.status === 'running');
-    const queuedRuns = updatedRuns.filter((run) => run.status === 'queued');
+    const queuedRuns = queue
+      .map((queued) => {
+        const queuedId = queued.runId ?? `queued:${queued.id}`;
+        return updatedRuns.find((run) => run.id === queuedId) ?? null;
+      })
+      .filter((run): run is IndexRunSummary => run !== null);
+    const queuedRunIds = new Set(queuedRuns.map((run) => run.id));
     const otherRuns = updatedRuns.filter(
-      (run) => run.status !== 'running' && run.status !== 'queued',
+      (run) => run.status !== 'running' && !queuedRunIds.has(run.id),
     );
     return [...runningRuns, ...queuedRuns, ...otherRuns];
   }, [runs, status?.currentRequest, status?.queue]);

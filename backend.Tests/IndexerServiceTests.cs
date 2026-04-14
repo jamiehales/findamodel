@@ -107,7 +107,7 @@ public class IndexerServiceTests
     }
 
     [Fact]
-    public async Task Enqueue_ProcessesInFifoOrder_WhileQueueDisplayIsNewestFirst()
+    public async Task Enqueue_ProcessesInFifoOrder_AndDisplaysQueuedRunsNextUpFirst()
     {
         var (factory, connection) = CreateFactory();
         var blockingFactory = new BlockingFirstCreateDbContextFactory(factory);
@@ -130,10 +130,10 @@ public class IndexerServiceTests
             var blockedStatus = sut.GetStatus();
             Assert.Equal(first.Id, blockedStatus.CurrentRequest?.Id);
 
-            // Queue presentation is newest-first for UI readability.
+            // Queue presentation should match the actual next-up order.
             Assert.Equal(2, blockedStatus.Queue.Count);
-            Assert.Equal(third.Id, blockedStatus.Queue[0].Id);
-            Assert.Equal(second.Id, blockedStatus.Queue[1].Id);
+            Assert.Equal(second.Id, blockedStatus.Queue[0].Id);
+            Assert.Equal(third.Id, blockedStatus.Queue[1].Id);
 
             blockingFactory.ReleaseFirstCall();
             await WaitUntilAsync(() => !sut.GetStatus().IsRunning, TimeSpan.FromSeconds(5));
@@ -157,7 +157,7 @@ public class IndexerServiceTests
     }
 
     [Fact]
-    public async Task GetStatus_QueueOrder_IsDescendingByRequestedTime()
+    public async Task GetStatus_QueueOrder_IsNextUpFirst()
     {
         var (factory, connection) = CreateFactory();
         var blockingFactory = new BlockingFirstCreateDbContextFactory(factory);
@@ -182,8 +182,8 @@ public class IndexerServiceTests
 
             var status = sut.GetStatus();
             Assert.Equal(2, status.Queue.Count);
-            Assert.Equal(newest.Id, status.Queue[0].Id);
-            Assert.Equal(middle.Id, status.Queue[1].Id);
+            Assert.Equal(middle.Id, status.Queue[0].Id);
+            Assert.Equal(newest.Id, status.Queue[1].Id);
         }
         finally
         {

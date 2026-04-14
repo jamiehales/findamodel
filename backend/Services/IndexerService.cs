@@ -112,7 +112,6 @@ public class IndexerService(
         {
             var currentDto = _current?.ToDto("running");
             var queueDtos = _queue
-                .OrderByDescending(e => e.RequestedAt)
                 .Select(e => e.ToDto("queued"))
                 .ToList();
             var recentDtos = _recent.Select(e => e.ToDto()).ToList();
