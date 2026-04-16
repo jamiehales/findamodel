@@ -76,8 +76,6 @@ public class ModelSaverService
         IReadOnlyList<(int Id, IReadOnlyList<Triangle3D> Triangles)> objects,
         IReadOnlyList<(int ObjectId, string Transform)> items)
     {
-        var modelXml = Build3dModelXml(objects, items);
-
         using var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -100,7 +98,9 @@ public class ModelSaverService
                 "<Relationship Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\" Target=\"/3D/3dmodel.model\" Id=\"rel0\"/>" +
                 "</Relationships>");
 
-            AddZipEntry(zip, "3D/3dmodel.model", modelXml);
+            var modelEntry = zip.CreateEntry("3D/3dmodel.model", CompressionLevel.Optimal);
+            using var stream = modelEntry.Open();
+            Write3dModelXml(stream, objects, items);
         }
 
         return ms.ToArray();
@@ -110,18 +110,19 @@ public class ModelSaverService
     {
         var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
         using var stream = entry.Open();
-        var bytes = Encoding.UTF8.GetBytes(content);
-        stream.Write(bytes, 0, bytes.Length);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, leaveOpen: false);
+        writer.Write(content);
     }
 
-    private static string Build3dModelXml(
+    private static void Write3dModelXml(
+        Stream stream,
         IReadOnlyList<(int Id, IReadOnlyList<Triangle3D> Triangles)> objects,
         IReadOnlyList<(int ObjectId, string Transform)> items)
     {
-        var sb = new StringBuilder();
-        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, leaveOpen: true);
+        writer.Write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         // xmlns first, then unit / xml:lang, then all extension namespaces - matching lib3mf order.
-        sb.Append(
+        writer.Write(
             "<model" +
             " xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\"" +
             " unit=\"millimeter\" xml:lang=\"en-US\"" +
@@ -133,7 +134,7 @@ public class ModelSaverService
             " xmlns:sc=\"http://schemas.microsoft.com/3dmanufacturing/securecontent/2019/04\"" +
             " xmlns:v=\"http://schemas.3mf.io/3dmanufacturing/volumetric/2022/01\"" +
             " xmlns:i=\"http://schemas.3mf.io/3dmanufacturing/implicit/2023/12\">");
-        sb.Append("<resources>");
+        writer.Write("<resources>");
 
         // Base mesh objects - not referenced directly in <build>.
         foreach (var (id, triangles) in objects)
@@ -159,13 +160,13 @@ public class ModelSaverService
                 triIndices[i] = (GetOrAdd(tri.V0), GetOrAdd(tri.V1), GetOrAdd(tri.V2));
             }
 
-            sb.Append($"<object id=\"{id}\" type=\"model\" p:UUID=\"{Guid.NewGuid()}\"><mesh><vertices>");
+            writer.Write($"<object id=\"{id}\" type=\"model\" p:UUID=\"{Guid.NewGuid()}\"><mesh><vertices>");
             foreach (var v in vertices)
-                AppendVertex(sb, v);
-            sb.Append("</vertices><triangles>");
+                AppendVertex(writer, v);
+            writer.Write("</vertices><triangles>");
             foreach (var (v0, v1, v2) in triIndices)
-                sb.Append($"<triangle v1=\"{v0}\" v2=\"{v1}\" v3=\"{v2}\"/>");
-            sb.Append("</triangles></mesh></object>");
+                writer.Write($"<triangle v1=\"{v0}\" v2=\"{v1}\" v3=\"{v2}\"/>");
+            writer.Write("</triangles></mesh></object>");
         }
 
         // Per-placement component wrapper objects.
@@ -178,17 +179,16 @@ public class ModelSaverService
         var instanceIds = new List<int>(items.Count);
         foreach (var (objectId, transform) in items)
         {
-            sb.Append($"<object id=\"{instanceId}\" type=\"model\" p:UUID=\"{Guid.NewGuid()}\">" +
-                      $"<components><component objectid=\"{objectId}\" transform=\"{transform}\" p:UUID=\"{Guid.NewGuid()}\"/></components></object>");
+            writer.Write($"<object id=\"{instanceId}\" type=\"model\" p:UUID=\"{Guid.NewGuid()}\">" +
+                         $"<components><component objectid=\"{objectId}\" transform=\"{transform}\" p:UUID=\"{Guid.NewGuid()}\"/></components></object>");
             instanceIds.Add(instanceId++);
         }
 
-        sb.Append($"</resources><build p:UUID=\"{Guid.NewGuid()}\">");
+        writer.Write($"</resources><build p:UUID=\"{Guid.NewGuid()}\">");
         foreach (var id in instanceIds)
-            sb.Append($"<item objectid=\"{id}\" p:UUID=\"{Guid.NewGuid()}\"/>");
-        sb.Append("</build></model>");
-
-        return sb.ToString();
+            writer.Write($"<item objectid=\"{id}\" p:UUID=\"{Guid.NewGuid()}\"/>");
+        writer.Write("</build></model>");
+        writer.Flush();
     }
 
     /// <summary>
@@ -201,9 +201,9 @@ public class ModelSaverService
         return r == 0f ? "0" : r.ToString("F6", CultureInfo.InvariantCulture);
     }
 
-    private static void AppendVertex(StringBuilder sb, Vec3 v)
+    private static void AppendVertex(TextWriter writer, Vec3 v)
     {
-        sb.Append($"<vertex x=\"{FormatCoord(v.X)}\" y=\"{FormatCoord(v.Y)}\" z=\"{FormatCoord(v.Z)}\"/>");
+        writer.Write($"<vertex x=\"{FormatCoord(v.X)}\" y=\"{FormatCoord(v.Y)}\" z=\"{FormatCoord(v.Z)}\"/>");
     }
 
     // -------------------------------------------------------------------------

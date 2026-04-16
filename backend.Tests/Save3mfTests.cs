@@ -451,6 +451,28 @@ public class Save3mfTests
         Assert.Equal(buildIds.Count, buildIds.Distinct().Count());
     }
 
+    [Fact]
+    public void Instancing_ThousandsOfPlacementsRemainValid()
+    {
+        var items = Enumerable.Range(0, 5000)
+            .Select(i => (1, $"1 0 0 0 1 0 0 0 1 {i} 0 0"))
+            .ToArray();
+
+        var bytes = Simple3mf(items);
+        var doc = ModelXml(bytes);
+
+        var meshObjects = doc.Descendants(Ns3mf + "object")
+            .Where(o => o.Element(Ns3mf + "mesh") != null)
+            .ToList();
+
+        var buildCount = doc.Root!.Element(Ns3mf + "build")!
+            .Elements(Ns3mf + "item")
+            .Count();
+
+        Assert.Single(meshObjects);
+        Assert.Equal(items.Length, buildCount);
+    }
+
     // ── lib3mf round-trip validation ─────────────────────────────────────────────
     //
     // These tests load the generated 3MF bytes into the precompiled lib3mf library
