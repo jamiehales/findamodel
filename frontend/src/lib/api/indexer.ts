@@ -12,6 +12,7 @@ export interface IndexRequest {
   totalFiles: number | null;
   processedFiles: number;
   status: 'queued' | 'running';
+  isCancellationRequested: boolean;
 }
 
 export interface CompletedIndexRequest {
@@ -45,9 +46,10 @@ export interface IndexRunSummary {
   completedAt: string | null;
   totalFiles: number | null;
   processedFiles: number;
-  status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'cancelling' | 'success' | 'failed' | 'cancelled';
   outcome: 'success' | 'failed' | 'cancelled' | null;
   error: string | null;
+  isCancellationRequested: boolean;
 }
 
 export interface PagedResult<T> {

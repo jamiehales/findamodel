@@ -18,7 +18,8 @@ public record IndexRequestDto(
     DateTime RequestedAt,
     int? TotalFiles,
     int ProcessedFiles,
-    string Status);  // "queued" | "running"
+    string Status,
+    bool IsCancellationRequested);  // "queued" | "running"
 
 /// <summary>A completed indexing request retained in recent in-memory history.</summary>
 public record CompletedIndexRequestDto(
@@ -46,7 +47,8 @@ public record IndexRunSummaryDto(
     int ProcessedFiles,
     string Status,
     string? Outcome,
-    string? Error);
+    string? Error,
+    bool IsCancellationRequested);
 
 public record IndexRunFileDto(
     string RelativePath,

@@ -321,6 +321,40 @@ public class IndexerServiceTests
     }
 
     [Fact]
+    public async Task CancelAsync_MarksRunningRequestAsCancellationRequested_InLiveStatus()
+    {
+        var (factory, connection) = CreateFactory();
+        var blockingFactory = new BlockingFirstCreateDbContextFactory(factory);
+        try
+        {
+            using var loggerFactory = LoggerFactory.Create(_ => { });
+            var sut = new IndexerService(
+                metadataConfigService: null!,
+                modelService: null!,
+                dbFactory: blockingFactory,
+                loggerFactory: loggerFactory);
+
+            var request = sut.Enqueue("running", null, IndexFlags.None);
+
+            await blockingFactory.FirstCallSeen.WaitAsync(TimeSpan.FromSeconds(2));
+            await WaitUntilAsync(() => sut.GetStatus().CurrentRequest is not null, TimeSpan.FromSeconds(2));
+
+            var cancelled = await sut.CancelAsync(request.RunId!.Value);
+            Assert.True(cancelled);
+
+            var liveStatus = sut.GetStatus();
+            Assert.NotNull(liveStatus.CurrentRequest);
+            Assert.Equal(request.RunId, liveStatus.CurrentRequest!.RunId);
+            Assert.True(liveStatus.CurrentRequest.IsCancellationRequested);
+        }
+        finally
+        {
+            blockingFactory.ReleaseFirstCall();
+            await connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task CancelAsync_CancelsRunningRequest_AndPersistsCancelledOutcome()
     {
         var (factory, connection) = CreateFactory();

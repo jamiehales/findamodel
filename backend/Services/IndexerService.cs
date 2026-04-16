@@ -23,8 +23,11 @@ public class IndexerService(
     private readonly LinkedList<CompletedIndexEntry> _recent = new();
     private const int RecentLimit = 15;
     private static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan CancelledLiveStatusVisibility = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _singleRequestGate = new(1, 1);
     private IndexEntry? _current;
+    private IndexEntry? _lastVisibleCurrent;
+    private DateTime _lastVisibleCurrentAt;
     private CancellationTokenSource? _currentCancellation;
     private Task? _processingTask;
 
@@ -110,12 +113,20 @@ public class IndexerService(
     {
         lock (_lock)
         {
-            var currentDto = _current?.ToDto("running");
+            var visibleCurrent = _current;
+            if (visibleCurrent is null
+                && _lastVisibleCurrent?.CancellationRequested == true
+                && DateTime.UtcNow - _lastVisibleCurrentAt <= CancelledLiveStatusVisibility)
+            {
+                visibleCurrent = _lastVisibleCurrent;
+            }
+
+            var currentDto = visibleCurrent?.ToDto("running");
             var queueDtos = _queue
                 .Select(e => e.ToDto("queued"))
                 .ToList();
             var recentDtos = _recent.Select(e => e.ToDto()).ToList();
-            return new IndexerStatusDto(_current != null, currentDto, queueDtos, recentDtos);
+            return new IndexerStatusDto(visibleCurrent != null, currentDto, queueDtos, recentDtos);
         }
     }
 
@@ -133,6 +144,9 @@ public class IndexerService(
             }
             else if (_current is not null && MatchesRequest(_current, requestOrRunId))
             {
+                _current.CancellationRequested = true;
+                _lastVisibleCurrent = _current;
+                _lastVisibleCurrentAt = DateTime.UtcNow;
                 currentCancellation = _currentCancellation;
             }
             else
@@ -274,6 +288,8 @@ public class IndexerService(
                 entry = _queue.First!.Value;
                 _queue.RemoveFirst();
                 _current = entry;
+                _lastVisibleCurrent = entry;
+                _lastVisibleCurrentAt = DateTime.UtcNow;
                 requestCancellation = new CancellationTokenSource();
                 _currentCancellation = requestCancellation;
             }
@@ -292,6 +308,16 @@ public class IndexerService(
             lock (_lock)
             {
                 _current = null;
+                if (entry.CancellationRequested)
+                {
+                    _lastVisibleCurrent = entry;
+                    _lastVisibleCurrentAt = DateTime.UtcNow;
+                }
+                else if (ReferenceEquals(_lastVisibleCurrent, entry))
+                {
+                    _lastVisibleCurrent = null;
+                }
+
                 _currentCancellation?.Dispose();
                 _currentCancellation = null;
                 _recent.AddFirst(completed);
@@ -531,7 +557,8 @@ public class IndexerService(
             run.ProcessedFiles,
             run.Status,
             run.Outcome,
-            run.Error);
+            run.Error,
+            false);
 
     private sealed class IndexEntry(string? directoryFilter, string? relativeModelPath, IndexFlags flags,
         Guid? runId = null)
@@ -544,11 +571,22 @@ public class IndexerService(
         public DateTime RequestedAt { get; } = DateTime.UtcNow;
         public int? TotalFiles { get; set; }
         public int ProcessedFiles { get; set; }
+        public bool CancellationRequested { get; set; }
 
         public LinkedListNode<IndexEntry>? Node { get; set; }
 
         public IndexRequestDto ToDto(string status) =>
-            new(Id, RunId, DirectoryFilter, RelativeModelPath, Flags, RequestedAt, TotalFiles, ProcessedFiles, status);
+            new(
+                Id,
+                RunId,
+                DirectoryFilter,
+                RelativeModelPath,
+                Flags,
+                RequestedAt,
+                TotalFiles,
+                ProcessedFiles,
+                status,
+                CancellationRequested);
     }
 
     private sealed class CompletedIndexEntry(

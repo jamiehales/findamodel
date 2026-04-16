@@ -4,6 +4,7 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
+import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Pagination from '@mui/material/Pagination';
 import Tooltip from '@mui/material/Tooltip';
@@ -149,6 +150,8 @@ function targetLabel(run: Pick<IndexRunSummary, 'directoryFilter' | 'relativeMod
 }
 
 function statusChip(status: string) {
+  if (status === 'cancelling')
+    return <Chip size="small" color="warning" variant="outlined" label="Cancelling" />;
   if (status === 'running') return <Chip size="small" variant="status-running" label="Running" />;
   if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
   if (status === 'failed')
@@ -222,7 +225,7 @@ function RunSummaryCard({
           {targetLabel(run)}
         </Typography>
         <Stack direction="row" spacing={0.5} alignItems="center">
-          {canCancel && (
+          {(canCancel || isCancelling) && (
             <Tooltip title={isCancelling ? 'Cancelling...' : 'Cancel'}>
               <span>
                 <IconButton
@@ -232,9 +235,9 @@ function RunSummaryCard({
                     onCancel();
                   }}
                   disabled={isCancelling}
-                  aria-label="Cancel"
+                  aria-label={isCancelling ? 'Cancelling' : 'Cancel'}
                 >
-                  <CloseIcon fontSize="small" />
+                  {isCancelling ? <CircularProgress size={16} /> : <CloseIcon fontSize="small" />}
                 </IconButton>
               </span>
             </Tooltip>
@@ -293,10 +296,11 @@ export default function IndexingPage() {
           if (updatedRuns[i].id !== currentRunId) continue;
           updatedRuns[i] = {
             ...updatedRuns[i],
-            status: 'running',
+            status: current.isCancellationRequested ? 'cancelling' : 'running',
             startedAt: updatedRuns[i].startedAt ?? current.requestedAt,
             totalFiles: current.totalFiles ?? updatedRuns[i].totalFiles,
             processedFiles: Math.max(updatedRuns[i].processedFiles, current.processedFiles),
+            isCancellationRequested: current.isCancellationRequested,
           };
           break;
         }
@@ -311,9 +315,10 @@ export default function IndexingPage() {
           completedAt: null,
           totalFiles: current.totalFiles,
           processedFiles: current.processedFiles,
-          status: 'running',
+          status: current.isCancellationRequested ? 'cancelling' : 'running',
           outcome: null,
           error: null,
+          isCancellationRequested: current.isCancellationRequested,
         });
       }
     }
@@ -326,9 +331,10 @@ export default function IndexingPage() {
           if (updatedRuns[i].id !== queuedRunId) continue;
           updatedRuns[i] = {
             ...updatedRuns[i],
-            status: 'queued',
+            status: queued.isCancellationRequested ? 'cancelling' : 'queued',
             totalFiles: queued.totalFiles ?? updatedRuns[i].totalFiles,
             processedFiles: Math.max(updatedRuns[i].processedFiles, queued.processedFiles),
+            isCancellationRequested: queued.isCancellationRequested,
           };
           break;
         }
@@ -343,9 +349,10 @@ export default function IndexingPage() {
           completedAt: null,
           totalFiles: queued.totalFiles,
           processedFiles: queued.processedFiles,
-          status: 'queued',
+          status: queued.isCancellationRequested ? 'cancelling' : 'queued',
           outcome: null,
           error: null,
+          isCancellationRequested: queued.isCancellationRequested,
         });
       }
     }
@@ -369,10 +376,26 @@ export default function IndexingPage() {
   }, [runsWithLive]);
 
   const groupedRuns = useMemo(() => {
-    const running = runsWithLive.filter((run) => run.status === 'running');
-    const rest = runsWithLive.filter((run) => run.status !== 'running');
+    const running = runsWithLive.filter(
+      (run) => run.status === 'running' || run.status === 'cancelling',
+    );
+    const rest = runsWithLive.filter(
+      (run) => run.status !== 'running' && run.status !== 'cancelling',
+    );
     return { running, rest };
   }, [runsWithLive]);
+
+  useEffect(() => {
+    if (!cancellingRunId) return;
+
+    const stillCancellable = runsWithLive.some(
+      (run) => run.id === cancellingRunId && canCancelRun(run),
+    );
+
+    if (!stillCancellable) {
+      setCancellingRunId(null);
+    }
+  }, [cancellingRunId, runsWithLive]);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [filesView, setFilesView] = useState<IndexRunFilesView>('all');
@@ -389,9 +412,11 @@ export default function IndexingPage() {
   }
 
   function cancelRun(runId: string): void {
+    if (cancellingRunId === runId) return;
+
     setCancellingRunId(runId);
     cancelRunMutation.mutate(runId, {
-      onSettled: () => {
+      onError: () => {
         setCancellingRunId((current) => (current === runId ? null : current));
       },
     });
@@ -456,7 +481,7 @@ export default function IndexingPage() {
                   }}
                   canCancel={canCancelRun(run)}
                   onCancel={() => cancelRun(run.id)}
-                  isCancelling={cancelRunMutation.isPending && cancellingRunId === run.id}
+                  isCancelling={run.status === 'cancelling' || cancellingRunId === run.id}
                 />
               ))}
               {groupedRuns.running.length > 0 && groupedRuns.rest.length > 0 && (
@@ -475,7 +500,7 @@ export default function IndexingPage() {
                   }}
                   canCancel={canCancelRun(run)}
                   onCancel={() => cancelRun(run.id)}
-                  isCancelling={cancelRunMutation.isPending && cancellingRunId === run.id}
+                  isCancelling={run.status === 'cancelling' || cancellingRunId === run.id}
                 />
               ))}
             </Stack>
