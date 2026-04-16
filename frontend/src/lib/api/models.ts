@@ -427,6 +427,20 @@ export interface PlateGenerationResult {
   skippedModels: string[];
 }
 
+export interface PlateGenerationJob {
+  jobId: string;
+  fileName: string;
+  format: '3mf' | 'stl' | 'glb';
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  totalEntries: number;
+  completedEntries: number;
+  progressPercent: number;
+  currentEntryName: string | null;
+  errorMessage: string | null;
+  warning: string | null;
+  skippedModels: string[];
+}
+
 export async function generatePlate(
   placements: PlatePlacement[],
   format: '3mf' | 'stl' | 'glb' = '3mf',
@@ -455,4 +469,31 @@ export async function generatePlate(
     warning,
     skippedModels,
   };
+}
+
+export async function createPlateGenerationJob(
+  placements: PlatePlacement[],
+  format: '3mf' | 'stl' | 'glb' = '3mf',
+): Promise<PlateGenerationJob> {
+  const r = await apiFetch('/api/plate/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ placements, format }),
+  });
+  if (!r.ok) {
+    const message = await r.text();
+    throw new Error(message || 'Failed to start plate generation');
+  }
+
+  return r.json();
+}
+
+export async function fetchPlateGenerationJob(jobId: string): Promise<PlateGenerationJob> {
+  const r = await apiFetch(`/api/plate/jobs/${jobId}`);
+  if (!r.ok) throw new Error('Failed to fetch plate generation status');
+  return r.json();
+}
+
+export function getPlateGenerationDownloadUrl(jobId: string): string {
+  return apiUrl(`/api/plate/jobs/${jobId}/file`);
 }

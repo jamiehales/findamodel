@@ -14,10 +14,13 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
+  createPlateGenerationJob,
   createPrintingListArchiveJob,
+  fetchPlateGenerationJob,
   fetchPrintingListArchiveJob,
-  generatePlate,
+  getPlateGenerationDownloadUrl,
   getPrintingListArchiveDownloadUrl,
+  type PlateGenerationJob,
   type PrintingListArchiveJob,
   type SpawnType,
   type HullMode,
@@ -60,7 +63,10 @@ function PrintingListPage() {
   const [archiveJob, setArchiveJob] = useState<PrintingListArchiveJob | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiveDownloading, setArchiveDownloading] = useState(false);
+  const [plateJob, setPlateJob] = useState<PlateGenerationJob | null>(null);
+  const [plateDownloading, setPlateDownloading] = useState(false);
   const [plateWarning, setPlateWarning] = useState<string | null>(null);
+  const [plateError, setPlateError] = useState<string | null>(null);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -74,6 +80,9 @@ function PrintingListPage() {
   const archiveInProgress =
     archiveJob != null && archiveJob.status !== 'failed' && archiveJob.status !== 'completed';
   const archiveBusy = archiveInProgress || archiveDownloading;
+  const plateInProgress =
+    plateJob != null && plateJob.status !== 'failed' && plateJob.status !== 'completed';
+  const plateBusy = savingPlate || plateInProgress || plateDownloading;
 
   useEffect(() => {
     if (!archiveJob || (archiveJob.status !== 'queued' && archiveJob.status !== 'running')) return;
@@ -155,6 +164,100 @@ function PrintingListPage() {
     };
   }, [archiveDownloading, archiveJob]);
 
+  useEffect(() => {
+    if (!plateJob || (plateJob.status !== 'queued' && plateJob.status !== 'running')) return;
+
+    let disposed = false;
+    let polling = false;
+
+    const pollJob = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const nextJob = await fetchPlateGenerationJob(plateJob.jobId);
+        if (!disposed) setPlateJob(nextJob);
+      } catch (error) {
+        if (!disposed) {
+          const message =
+            error instanceof Error ? error.message : 'Failed to fetch plate generation progress';
+          setPlateError(message);
+          setSavingPlate(false);
+          setPlateJob((current) =>
+            current
+              ? {
+                  ...current,
+                  status: 'failed',
+                  errorMessage: message,
+                }
+              : current,
+          );
+        }
+      } finally {
+        polling = false;
+      }
+    };
+
+    void pollJob();
+    const intervalId = window.setInterval(() => {
+      void pollJob();
+    }, 500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [plateJob?.jobId, plateJob?.status]);
+
+  useEffect(() => {
+    if (!plateJob || plateJob.status !== 'completed' || plateDownloading) return;
+
+    let disposed = false;
+
+    const downloadPlate = async () => {
+      setPlateDownloading(true);
+      if (plateJob.warning) {
+        const skippedList =
+          plateJob.skippedModels.length > 0
+            ? ` Skipped: ${plateJob.skippedModels.join(', ')}.`
+            : '';
+        setPlateWarning(`${plateJob.warning}${skippedList}`);
+      }
+
+      try {
+        if (disposed) return;
+
+        const url = getPlateGenerationDownloadUrl(plateJob.jobId);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = plateJob.fileName;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setPlateJob(null);
+      } catch (error) {
+        if (!disposed) {
+          setPlateError(error instanceof Error ? error.message : 'Failed to download plate');
+        }
+      } finally {
+        if (!disposed) {
+          setSavingPlate(false);
+          setPlateDownloading(false);
+        }
+      }
+    };
+
+    void downloadPlate();
+
+    return () => {
+      disposed = true;
+    };
+  }, [plateDownloading, plateJob]);
+
+  useEffect(() => {
+    if (plateJob?.status === 'failed') setSavingPlate(false);
+  }, [plateJob?.status]);
+
   function handleSpawnOrderChange(next: SpawnType) {
     if (!list) return;
     updateSettings({ id: list.id, spawnType: next, hullMode: list.hullMode });
@@ -173,9 +276,17 @@ function PrintingListPage() {
 
   async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
     setPlateWarning(null);
+    setPlateError(null);
+    setPlateJob(null);
     setSavingPlate(true);
     try {
-      let placements: Parameters<typeof generatePlate>[0] = [];
+      let placements: {
+        modelId: string;
+        instanceIndex: number;
+        xMm: number;
+        yMm: number;
+        angleRad: number;
+      }[] = [];
       try {
         const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
         if (raw) {
@@ -200,22 +311,10 @@ function PrintingListPage() {
         /* proceed with empty placements */
       }
 
-      const result = await generatePlate(placements, format);
-      if (result.warning) {
-        const skippedList =
-          result.skippedModels.length > 0 ? ` Skipped: ${result.skippedModels.join(', ')}.` : '';
-        setPlateWarning(`${result.warning}${skippedList}`);
-      }
-
-      const url = URL.createObjectURL(result.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = format === 'stl' ? 'plate.stl' : format === 'glb' ? 'plate.glb' : 'plate.3mf';
-      a.click();
-      URL.revokeObjectURL(url);
+      const job = await createPlateGenerationJob(placements, format);
+      setPlateJob(job);
     } catch (error) {
-      setPlateWarning(error instanceof Error ? error.message : 'Failed to generate plate');
-    } finally {
+      setPlateError(error instanceof Error ? error.message : 'Failed to generate plate');
       setSavingPlate(false);
     }
   }
@@ -255,6 +354,18 @@ function PrintingListPage() {
         : archiveJob?.status === 'completed'
           ? 'Zip ready. Starting download…'
           : null;
+  const plateCurrentFile = plateJob?.currentEntryName?.split('/').pop() ?? null;
+  const plateStatusText = plateDownloading
+    ? 'Downloading plate…'
+    : plateJob?.status === 'queued'
+      ? 'Queueing plate export…'
+      : plateJob?.status === 'running'
+        ? plateJob.totalEntries > 0
+          ? `Preparing plate ${plateJob.completedEntries} of ${plateJob.totalEntries} models…`
+          : 'Preparing plate…'
+        : plateJob?.status === 'completed'
+          ? 'Plate ready. Starting download…'
+          : null;
 
   return (
     <PageLayout spacing={3}>
@@ -274,7 +385,7 @@ function PrintingListPage() {
                   onClick={() => {
                     void handleDownloadAllModels();
                   }}
-                  disabled={savingPlate || archiveBusy}
+                  disabled={plateBusy || archiveBusy}
                   startIcon={
                     archiveBusy ? (
                       <CircularProgress size={16} color="inherit" />
@@ -289,19 +400,19 @@ function PrintingListPage() {
                   <Button
                     variant="outlined"
                     onClick={() => handleSavePlate('3mf')}
-                    disabled={savingPlate || !simulationPaused}
-                    startIcon={savingPlate ? <CircularProgress size={16} color="inherit" /> : null}
+                    disabled={plateBusy || archiveBusy || !simulationPaused}
+                    startIcon={plateBusy ? <CircularProgress size={16} color="inherit" /> : null}
                     sx={{
                       borderRadius: '999px 0 0 999px',
                       borderRight: 'none',
                     }}
                   >
-                    {savingPlate ? 'Preparing…' : 'Export plate'}
+                    {plateBusy ? 'Preparing…' : 'Export plate'}
                   </Button>
                   <Button
                     variant="outlined"
                     onClick={(e) => setFormatMenuAnchor(e.currentTarget)}
-                    disabled={savingPlate || !simulationPaused}
+                    disabled={plateBusy || archiveBusy || !simulationPaused}
                     aria-label="export format options"
                     aria-haspopup="menu"
                     sx={{
@@ -362,6 +473,40 @@ function PrintingListPage() {
           </MenuItem>
         </Menu>
       </Stack>
+
+      {(plateStatusText || plateError || plateJob?.errorMessage) && (
+        <Box className={styles.archiveStatusCard}>
+          {plateStatusText && (
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={16} color="inherit" />
+                <Typography className={styles.archiveStatusTitle}>{plateStatusText}</Typography>
+              </Stack>
+              <LinearProgress
+                variant={plateJob && plateJob.totalEntries > 0 ? 'determinate' : 'indeterminate'}
+                value={plateJob?.progressPercent ?? 0}
+                className={styles.archiveProgress}
+              />
+              {plateJob && plateJob.totalEntries > 0 && (
+                <Typography className={styles.archiveStatusMeta}>
+                  {plateJob.progressPercent}% complete
+                </Typography>
+              )}
+              {plateCurrentFile && (
+                <Typography className={styles.archiveStatusMeta}>
+                  Current model: {plateCurrentFile}
+                </Typography>
+              )}
+            </Stack>
+          )}
+
+          {(plateError || plateJob?.errorMessage) && (
+            <Alert severity="error" onClose={() => setPlateError(null)}>
+              {plateError ?? plateJob?.errorMessage}
+            </Alert>
+          )}
+        </Box>
+      )}
 
       {(archiveStatusText || archiveError || archiveJob?.errorMessage) && (
         <Box className={styles.archiveStatusCard}>
