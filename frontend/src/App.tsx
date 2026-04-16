@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useEffect, useLayoutEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ModelsPage from './pages/ModelsPage';
 import ModelPage from './pages/ModelPage';
 import PrintingListPage from './pages/PrintingListPage';
@@ -11,6 +12,25 @@ import InitialSetupPage from './pages/InitialSetupPage';
 import { RenderControlsProvider } from './components/RenderControlsContext';
 import { useSetupStatus } from './lib/queries';
 import { Container, Stack, Typography } from '@mui/material';
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname]);
+
+  return null;
+}
 
 function App() {
   const setupStatusQuery = useSetupStatus();
@@ -38,6 +58,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <RenderControlsProvider>
         <NavBar />
         <Routes>
