@@ -1,9 +1,11 @@
 import AppBar from '@mui/material/AppBar';
+import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Toolbar from '@mui/material/Toolbar';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import ForestRoundedIcon from '@mui/icons-material/ForestRounded';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { NavLink, Link, useMatch } from 'react-router-dom';
 import { useActivePrintingList } from '../lib/queries';
@@ -64,15 +66,23 @@ export default function NavBar() {
           </Link>
         </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center" className={styles.actionsRight}>
-          <IconButton
+          <Button
             size="small"
+            variant="outlined"
             aria-label={showSupports ? 'Hide supports' : 'Show supports'}
             title={showSupports ? 'Hide supports' : 'Show supports'}
             onClick={() => setShowSupports((value) => !value)}
-            className={`${styles.supportsIconButton}${showSupports ? ` ${styles.supportsIconButtonActive}` : ''}`}
+            className={`${styles.supportsToggleButton}${showSupports ? ` ${styles.supportsToggleButtonActive}` : ''}`}
+            startIcon={
+              showSupports ? (
+                <VisibilityOutlinedIcon fontSize="small" />
+              ) : (
+                <VisibilityOffOutlinedIcon fontSize="small" />
+              )
+            }
           >
-            <ForestRoundedIcon fontSize="small" />
-          </IconButton>
+            Supports
+          </Button>
           <IconButton
             component={Link}
             to="/settings"

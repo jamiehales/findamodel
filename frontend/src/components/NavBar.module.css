@@ -11,17 +11,22 @@
   margin-left: 0.5rem;
 }
 
-.supportsIconButton {
+.supportsToggleButton {
   color: var(--color-text-secondary) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
 }
 
-.supportsIconButton:hover {
+.supportsToggleButton:hover {
   color: var(--color-text-primary) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
   background: rgba(255, 255, 255, 0.06) !important;
 }
 
-.supportsIconButtonActive {
+.supportsToggleButtonActive {
   color: #f59e0b !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
   background: rgba(245, 158, 11, 0.12) !important;
 }
 
