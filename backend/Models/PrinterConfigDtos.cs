@@ -5,9 +5,11 @@ public record PrinterConfigDto(
     string Name,
     float BedWidthMm,
     float BedDepthMm,
+    int PixelWidth,
+    int PixelHeight,
     bool IsBuiltIn,
     bool IsDefault);
 
-public record CreatePrinterConfigRequest(string Name, float BedWidthMm, float BedDepthMm);
+public record CreatePrinterConfigRequest(string Name, float BedWidthMm, float BedDepthMm, int PixelWidth, int PixelHeight);
 
-public record UpdatePrinterConfigRequest(string Name, float BedWidthMm, float BedDepthMm);
+public record UpdatePrinterConfigRequest(string Name, float BedWidthMm, float BedDepthMm, int PixelWidth, int PixelHeight);

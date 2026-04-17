@@ -29,13 +29,15 @@ public class PrinterServiceTests
     {
         var sut = new PrinterService(CreateFactory(nameof(CreateAsync_CreatesCustomPrinter)));
 
-        var (dto, error) = await sut.CreateAsync(new("Saturn 4 Ultra", 218, 123));
+        var (dto, error) = await sut.CreateAsync(new("Saturn 4 Ultra", 218, 123, 11520, 5120));
 
         Assert.Null(error);
         Assert.NotNull(dto);
         Assert.False(dto!.IsBuiltIn);
         Assert.False(dto.IsDefault);
         Assert.Equal("Saturn 4 Ultra", dto.Name);
+        Assert.Equal(11520, dto.PixelWidth);
+        Assert.Equal(5120, dto.PixelHeight);
     }
 
     [Fact]
@@ -50,6 +52,8 @@ public class PrinterServiceTests
                 Name = "Uniformation GK2",
                 BedWidthMm = 228,
                 BedDepthMm = 128,
+                PixelWidth = 7680,
+                PixelHeight = 4320,
                 IsBuiltIn = true,
                 IsDefault = true,
             });
@@ -82,6 +86,8 @@ public class PrinterServiceTests
                     Name = "Uniformation GK2",
                     BedWidthMm = 228,
                     BedDepthMm = 128,
+                    PixelWidth = 7680,
+                    PixelHeight = 4320,
                     IsBuiltIn = true,
                     IsDefault = true,
                 },
@@ -91,6 +97,8 @@ public class PrinterServiceTests
                     Name = "Saturn 4 Ultra",
                     BedWidthMm = 218,
                     BedDepthMm = 123,
+                    PixelWidth = 11520,
+                    PixelHeight = 5120,
                     IsBuiltIn = false,
                     IsDefault = false,
                 });

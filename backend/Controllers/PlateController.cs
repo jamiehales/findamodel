@@ -64,6 +64,7 @@ public class PlateController(
         {
             ".stl" => "model/stl",
             ".glb" => "model/gltf-binary",
+            ".zip" => "application/zip",
             _ => "application/vnd.ms-3mf",
         };
 

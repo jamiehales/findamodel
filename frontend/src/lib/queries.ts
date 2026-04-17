@@ -672,12 +672,16 @@ export function useUpdatePrinter() {
       name,
       bedWidthMm,
       bedDepthMm,
+      pixelWidth,
+      pixelHeight,
     }: {
       id: string;
       name: string;
       bedWidthMm: number;
       bedDepthMm: number;
-    }) => updatePrinter(id, { name, bedWidthMm, bedDepthMm }),
+      pixelWidth: number;
+      pixelHeight: number;
+    }) => updatePrinter(id, { name, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.printers });
       queryClient.invalidateQueries({ queryKey: queryKeys.printingLists });

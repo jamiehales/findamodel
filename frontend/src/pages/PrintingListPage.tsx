@@ -274,7 +274,9 @@ function PrintingListPage() {
     updatePrinter({ id: list.id, printerConfigId: printerId });
   }
 
-  async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
+  async function handleSavePlate(
+    format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+  ) {
     setPlateWarning(null);
     setPlateError(null);
     setPlateJob(null);
@@ -311,7 +313,7 @@ function PrintingListPage() {
         /* proceed with empty placements */
       }
 
-      const job = await createPlateGenerationJob(placements, format);
+      const job = await createPlateGenerationJob(placements, format, list?.printer?.id ?? null);
       setPlateJob(job);
     } catch (error) {
       setPlateError(error instanceof Error ? error.message : 'Failed to generate plate');
@@ -470,6 +472,30 @@ function PrintingListPage() {
             }}
           >
             Export as GLB
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('pngzip');
+            }}
+          >
+            Export as PNG slices (default)
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('pngzip_mesh');
+            }}
+          >
+            Export as PNG slices - Method 1
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
+              handleSavePlate('pngzip_orthographic');
+            }}
+          >
+            Export as PNG slices - Method 2
           </MenuItem>
         </Menu>
       </Stack>

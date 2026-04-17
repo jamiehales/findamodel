@@ -6,6 +6,8 @@ public class PrinterConfig
     public string Name { get; set; } = "";
     public float BedWidthMm { get; set; }
     public float BedDepthMm { get; set; }
+    public int PixelWidth { get; set; }
+    public int PixelHeight { get; set; }
     public bool IsBuiltIn { get; set; }
     public bool IsDefault { get; set; }
 

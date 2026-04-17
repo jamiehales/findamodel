@@ -23,6 +23,8 @@ public sealed class PlateExportService(
     ModelService modelService,
     ModelLoaderService loaderService,
     ModelSaverService saverService,
+    PlateSliceRasterService sliceRasterService,
+    PrinterService printerService,
     IConfiguration config)
 {
     private const int MaxConcurrentModelLoads = 2;
@@ -35,8 +37,8 @@ public sealed class PlateExportService(
     public static string NormalizeFormat(string? format)
     {
         var normalized = (format ?? "3mf").ToLowerInvariant();
-        if (normalized is not ("3mf" or "stl" or "glb"))
-            throw new ArgumentException($"Unsupported format '{format}'. Supported: 3mf, stl, glb");
+        if (normalized is not ("3mf" or "stl" or "glb" or "pngzip" or "pngzip_mesh" or "pngzip_orthographic"))
+            throw new ArgumentException($"Unsupported format '{format}'. Supported: 3mf, stl, glb, pngzip, pngzip_mesh, pngzip_orthographic");
 
         return normalized;
     }
@@ -45,7 +47,17 @@ public sealed class PlateExportService(
     {
         "stl" => "plate.stl",
         "glb" => "plate.glb",
+        "pngzip_mesh" => "plate-slices-mesh.zip",
+        "pngzip_orthographic" => "plate-slices-orthographic.zip",
+        "pngzip" => "plate-slices.zip",
         _ => "plate.3mf",
+    };
+
+    private static PngSliceExportMethod ResolvePngSliceMethod(string format) => format switch
+    {
+        "pngzip_orthographic" => PngSliceExportMethod.OrthographicProjection,
+        "pngzip_mesh" => PngSliceExportMethod.MeshIntersection,
+        _ => PlateSliceRasterService.DefaultZipDownloadMethod,
     };
 
     public async Task<PlateExportFileResult> GeneratePlateAsync(
@@ -171,6 +183,14 @@ public sealed class PlateExportService(
                 GetFileName(format),
                 warning,
                 skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList()),
+            "pngzip" or "pngzip_mesh" or "pngzip_orthographic" => await GeneratePngZipAsync(
+                request,
+                format,
+                exportPlacements,
+                geometryByModelId,
+                warning,
+                skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(),
+                cancellationToken),
             _ => throw new NotImplementedException($"Unhandled format '{format}'"),
         };
 
@@ -217,40 +237,93 @@ public sealed class PlateExportService(
 
     private byte[] GenerateStl(IReadOnlyList<ExportPlacement> placements, Dictionary<Guid, LoadedGeometry> geometryByModelId)
     {
+        var placedTriangles = GeneratePlacedTriangles(placements, geometryByModelId, convertToZUp: true);
+        return saverService.SaveStl(placedTriangles.Count, placedTriangles, "findamodel plate");
+    }
+
+    private async Task<PlateExportFileResult> GeneratePngZipAsync(
+        GeneratePlateRequest request,
+        string format,
+        IReadOnlyList<ExportPlacement> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        string? warning,
+        IReadOnlyList<string> skippedModels,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var printer = request.PrinterConfigId.HasValue
+            ? await printerService.GetByIdAsync(request.PrinterConfigId.Value)
+            : await printerService.GetDefaultAsync();
+
+        if (printer == null)
+            throw new InvalidOperationException("A printer configuration is required for PNG slice export.");
+
+        var normalizedPlacements = placements
+            .Select(p => new ExportPlacement(
+                p.ModelId,
+                p.XMm - (printer.BedWidthMm / 2f),
+                (printer.BedDepthMm / 2f) - p.YMm,
+                p.AngleRad))
+            .ToList();
+
+        var placedTriangles = GeneratePlacedTriangles(normalizedPlacements, geometryByModelId, convertToZUp: false);
+        var content = sliceRasterService.GenerateSliceArchive(
+            placedTriangles,
+            printer.BedWidthMm,
+            printer.BedDepthMm,
+            printer.PixelWidth,
+            printer.PixelHeight,
+            ResolvePngSliceMethod(format));
+
+        return new PlateExportFileResult(
+            content,
+            "application/zip",
+            GetFileName(format),
+            warning,
+            skippedModels);
+    }
+
+    private List<Triangle3D> GeneratePlacedTriangles(
+        IReadOnlyList<ExportPlacement> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        bool convertToZUp)
+    {
         Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
             => new(v.X * cosA - v.Z * sinA + xMm, v.Y, v.X * sinA + v.Z * cosA + yMm);
 
         Vec3 RotateY(Vec3 n, float sinA, float cosA)
             => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
-        int totalTriangleCount = 0;
-        checked
+        var merged = new List<Triangle3D>();
+        foreach (var placement in placements)
         {
-            foreach (var placement in placements)
+            var geometry = geometryByModelId[placement.ModelId];
+            float sinA = MathF.Sin((float)placement.AngleRad);
+            float cosA = MathF.Cos((float)placement.AngleRad);
+            foreach (var tri in geometry.Triangles)
             {
-                totalTriangleCount += geometryByModelId[placement.ModelId].Triangles.Count;
-            }
-        }
+                var v0 = PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm);
+                var v1 = PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm);
+                var v2 = PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm);
+                var normal = RotateY(tri.Normal, sinA, cosA);
 
-        IEnumerable<Triangle3D> EnumerateTriangles()
-        {
-            foreach (var placement in placements)
-            {
-                var geometry = geometryByModelId[placement.ModelId];
-                float sinA = MathF.Sin((float)placement.AngleRad);
-                float cosA = MathF.Cos((float)placement.AngleRad);
-                foreach (var tri in geometry.Triangles)
+                if (convertToZUp)
                 {
-                    yield return new Triangle3D(
-                        YUpToZUp(PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                        YUpToZUp(PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                        YUpToZUp(PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                        YUpToZUp(RotateY(tri.Normal, sinA, cosA)));
+                    merged.Add(new Triangle3D(
+                        YUpToZUp(v0),
+                        YUpToZUp(v1),
+                        YUpToZUp(v2),
+                        YUpToZUp(normal)));
+                }
+                else
+                {
+                    merged.Add(new Triangle3D(v0, v1, v2, normal));
                 }
             }
         }
 
-        return saverService.SaveStl(totalTriangleCount, EnumerateTriangles(), "findamodel plate");
+        return merged;
     }
 
     private byte[] GenerateGlb(

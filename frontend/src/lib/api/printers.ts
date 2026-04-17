@@ -5,6 +5,8 @@ export interface PrinterConfig {
   name: string;
   bedWidthMm: number;
   bedDepthMm: number;
+  pixelWidth: number;
+  pixelHeight: number;
   isBuiltIn: boolean;
   isDefault: boolean;
 }
@@ -19,6 +21,8 @@ export async function createPrinter(request: {
   name: string;
   bedWidthMm: number;
   bedDepthMm: number;
+  pixelWidth: number;
+  pixelHeight: number;
 }): Promise<PrinterConfig> {
   const r = await apiFetch('/api/printers', {
     method: 'POST',
@@ -31,7 +35,13 @@ export async function createPrinter(request: {
 
 export async function updatePrinter(
   id: string,
-  request: { name: string; bedWidthMm: number; bedDepthMm: number },
+  request: {
+    name: string;
+    bedWidthMm: number;
+    bedDepthMm: number;
+    pixelWidth: number;
+    pixelHeight: number;
+  },
 ): Promise<PrinterConfig> {
   const r = await apiFetch(`/api/printers/${id}`, {
     method: 'PUT',

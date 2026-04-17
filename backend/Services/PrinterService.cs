@@ -13,7 +13,15 @@ public class PrinterService(IDbContextFactory<ModelCacheContext> dbFactory)
         return await db.PrinterConfigs
             .OrderBy(p => p.IsBuiltIn ? 0 : 1)
             .ThenBy(p => p.Name)
-            .Select(p => new PrinterConfigDto(p.Id, p.Name, p.BedWidthMm, p.BedDepthMm, p.IsBuiltIn, p.IsDefault))
+            .Select(p => new PrinterConfigDto(
+                p.Id,
+                p.Name,
+                p.BedWidthMm,
+                p.BedDepthMm,
+                p.PixelWidth,
+                p.PixelHeight,
+                p.IsBuiltIn,
+                p.IsDefault))
             .ToListAsync();
     }
 
@@ -21,16 +29,30 @@ public class PrinterService(IDbContextFactory<ModelCacheContext> dbFactory)
     {
         using var db = dbFactory.CreateDbContext();
         var p = await db.PrinterConfigs.FirstOrDefaultAsync(p => p.IsDefault);
-        return p == null ? null : new PrinterConfigDto(p.Id, p.Name, p.BedWidthMm, p.BedDepthMm, p.IsBuiltIn, p.IsDefault);
+        return p == null
+            ? null
+            : new PrinterConfigDto(p.Id, p.Name, p.BedWidthMm, p.BedDepthMm, p.PixelWidth, p.PixelHeight, p.IsBuiltIn, p.IsDefault);
+    }
+
+    public async Task<PrinterConfigDto?> GetByIdAsync(Guid id)
+    {
+        using var db = dbFactory.CreateDbContext();
+        var p = await db.PrinterConfigs.FirstOrDefaultAsync(p => p.Id == id);
+        return p == null
+            ? null
+            : new PrinterConfigDto(p.Id, p.Name, p.BedWidthMm, p.BedDepthMm, p.PixelWidth, p.PixelHeight, p.IsBuiltIn, p.IsDefault);
     }
 
     public async Task<(PrinterConfigDto? Dto, string? Error)> CreateAsync(CreatePrinterConfigRequest request)
     {
-        var (name, width, depth) = (request.Name.Trim(), request.BedWidthMm, request.BedDepthMm);
+        var (name, width, depth, pixelWidth, pixelHeight) =
+            (request.Name.Trim(), request.BedWidthMm, request.BedDepthMm, request.PixelWidth, request.PixelHeight);
         if (string.IsNullOrWhiteSpace(name))
             return (null, "Name is required.");
         if (width <= 0 || depth <= 0)
             return (null, "Bed dimensions must be positive.");
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+            return (null, "Display resolution must be positive.");
 
         using var db = dbFactory.CreateDbContext();
         var printer = new PrinterConfig
@@ -39,21 +61,26 @@ public class PrinterService(IDbContextFactory<ModelCacheContext> dbFactory)
             Name = name,
             BedWidthMm = width,
             BedDepthMm = depth,
+            PixelWidth = pixelWidth,
+            PixelHeight = pixelHeight,
             IsBuiltIn = false,
             IsDefault = false,
         };
         db.PrinterConfigs.Add(printer);
         await db.SaveChangesAsync();
-        return (new PrinterConfigDto(printer.Id, printer.Name, printer.BedWidthMm, printer.BedDepthMm, false, false), null);
+        return (new PrinterConfigDto(printer.Id, printer.Name, printer.BedWidthMm, printer.BedDepthMm, printer.PixelWidth, printer.PixelHeight, false, false), null);
     }
 
     public async Task<(PrinterConfigDto? Dto, string? Error)> UpdateAsync(Guid id, UpdatePrinterConfigRequest request)
     {
-        var (name, width, depth) = (request.Name.Trim(), request.BedWidthMm, request.BedDepthMm);
+        var (name, width, depth, pixelWidth, pixelHeight) =
+            (request.Name.Trim(), request.BedWidthMm, request.BedDepthMm, request.PixelWidth, request.PixelHeight);
         if (string.IsNullOrWhiteSpace(name))
             return (null, "Name is required.");
         if (width <= 0 || depth <= 0)
             return (null, "Bed dimensions must be positive.");
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+            return (null, "Display resolution must be positive.");
 
         using var db = dbFactory.CreateDbContext();
         var printer = await db.PrinterConfigs.FindAsync(id);
@@ -63,8 +90,10 @@ public class PrinterService(IDbContextFactory<ModelCacheContext> dbFactory)
         printer.Name = name;
         printer.BedWidthMm = width;
         printer.BedDepthMm = depth;
+        printer.PixelWidth = pixelWidth;
+        printer.PixelHeight = pixelHeight;
         await db.SaveChangesAsync();
-        return (new PrinterConfigDto(printer.Id, printer.Name, printer.BedWidthMm, printer.BedDepthMm, printer.IsBuiltIn, printer.IsDefault), null);
+        return (new PrinterConfigDto(printer.Id, printer.Name, printer.BedWidthMm, printer.BedDepthMm, printer.PixelWidth, printer.PixelHeight, printer.IsBuiltIn, printer.IsDefault), null);
     }
 
     public async Task<(bool Found, string? Error)> DeleteAsync(Guid id)

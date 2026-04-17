@@ -295,8 +295,19 @@ export default function SettingsPage() {
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
+  const [newPrinterPixelWidth, setNewPrinterPixelWidth] = useState('7680');
+  const [newPrinterPixelHeight, setNewPrinterPixelHeight] = useState('4320');
   const [printerEdits, setPrinterEdits] = useState<
-    Record<string, { name: string; bedWidthMm: string; bedDepthMm: string }>
+    Record<
+      string,
+      {
+        name: string;
+        bedWidthMm: string;
+        bedDepthMm: string;
+        pixelWidth: string;
+        pixelHeight: string;
+      }
+    >
   >({});
   const { data, isPending, isError } = useMetadataDictionaryOverview();
   const { data: printers = [] } = usePrinters();
@@ -338,12 +349,23 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setPrinterEdits((current) => {
-      const next: Record<string, { name: string; bedWidthMm: string; bedDepthMm: string }> = {};
+      const next: Record<
+        string,
+        {
+          name: string;
+          bedWidthMm: string;
+          bedDepthMm: string;
+          pixelWidth: string;
+          pixelHeight: string;
+        }
+      > = {};
       for (const printer of printers) {
         next[printer.id] = current[printer.id] ?? {
           name: printer.name,
           bedWidthMm: String(printer.bedWidthMm),
           bedDepthMm: String(printer.bedDepthMm),
+          pixelWidth: String(printer.pixelWidth),
+          pixelHeight: String(printer.pixelHeight),
         };
       }
       return next;
@@ -533,9 +555,13 @@ export default function SettingsPage() {
                       name: printer.name,
                       bedWidthMm: String(printer.bedWidthMm),
                       bedDepthMm: String(printer.bedDepthMm),
+                      pixelWidth: String(printer.pixelWidth),
+                      pixelHeight: String(printer.pixelHeight),
                     };
                     const width = Number(edit.bedWidthMm);
                     const depth = Number(edit.bedDepthMm);
+                    const pixelWidth = Number(edit.pixelWidth);
+                    const pixelHeight = Number(edit.pixelHeight);
                     const canSaveCustom =
                       !printer.isBuiltIn &&
                       edit.name.trim().length > 0 &&
@@ -543,9 +569,15 @@ export default function SettingsPage() {
                       width > 0 &&
                       Number.isFinite(depth) &&
                       depth > 0 &&
+                      Number.isFinite(pixelWidth) &&
+                      pixelWidth > 0 &&
+                      Number.isFinite(pixelHeight) &&
+                      pixelHeight > 0 &&
                       (edit.name.trim() !== printer.name ||
                         width !== printer.bedWidthMm ||
-                        depth !== printer.bedDepthMm);
+                        depth !== printer.bedDepthMm ||
+                        pixelWidth !== printer.pixelWidth ||
+                        pixelHeight !== printer.pixelHeight);
 
                     return (
                       <Stack
@@ -601,6 +633,38 @@ export default function SettingsPage() {
                             }))
                           }
                         />
+                        <TextField
+                          size="small"
+                          type="number"
+                          label="Resolution X (px)"
+                          value={edit.pixelWidth}
+                          disabled={printer.isBuiltIn}
+                          onChange={(e) =>
+                            setPrinterEdits((current) => ({
+                              ...current,
+                              [printer.id]: {
+                                ...edit,
+                                pixelWidth: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                        <TextField
+                          size="small"
+                          type="number"
+                          label="Resolution Y (px)"
+                          value={edit.pixelHeight}
+                          disabled={printer.isBuiltIn}
+                          onChange={(e) =>
+                            setPrinterEdits((current) => ({
+                              ...current,
+                              [printer.id]: {
+                                ...edit,
+                                pixelHeight: e.target.value,
+                              },
+                            }))
+                          }
+                        />
                         <Stack direction="row" spacing={1}>
                           {!printer.isBuiltIn && (
                             <Button
@@ -612,6 +676,8 @@ export default function SettingsPage() {
                                   name: edit.name.trim(),
                                   bedWidthMm: Number(edit.bedWidthMm),
                                   bedDepthMm: Number(edit.bedDepthMm),
+                                  pixelWidth: Number(edit.pixelWidth),
+                                  pixelHeight: Number(edit.pixelHeight),
                                 })
                               }
                             >
@@ -666,13 +732,29 @@ export default function SettingsPage() {
                     value={newPrinterDepthMm}
                     onChange={(e) => setNewPrinterDepthMm(e.target.value)}
                   />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Resolution X (px)"
+                    value={newPrinterPixelWidth}
+                    onChange={(e) => setNewPrinterPixelWidth(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Resolution Y (px)"
+                    value={newPrinterPixelHeight}
+                    onChange={(e) => setNewPrinterPixelHeight(e.target.value)}
+                  />
                   <Button
                     variant="contained"
                     disabled={
                       createPrinterMutation.isPending ||
                       !newPrinterName.trim() ||
                       Number(newPrinterWidthMm) <= 0 ||
-                      Number(newPrinterDepthMm) <= 0
+                      Number(newPrinterDepthMm) <= 0 ||
+                      Number(newPrinterPixelWidth) <= 0 ||
+                      Number(newPrinterPixelHeight) <= 0
                     }
                     onClick={() => {
                       createPrinterMutation.mutate(
@@ -680,6 +762,8 @@ export default function SettingsPage() {
                           name: newPrinterName.trim(),
                           bedWidthMm: Number(newPrinterWidthMm),
                           bedDepthMm: Number(newPrinterDepthMm),
+                          pixelWidth: Number(newPrinterPixelWidth),
+                          pixelHeight: Number(newPrinterPixelHeight),
                         },
                         {
                           onSuccess: () => {

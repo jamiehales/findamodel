@@ -430,7 +430,7 @@ export interface PlateGenerationResult {
 export interface PlateGenerationJob {
   jobId: string;
   fileName: string;
-  format: '3mf' | 'stl' | 'glb';
+  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic';
   status: 'queued' | 'running' | 'completed' | 'failed';
   totalEntries: number;
   completedEntries: number;
@@ -443,12 +443,13 @@ export interface PlateGenerationJob {
 
 export async function generatePlate(
   placements: PlatePlacement[],
-  format: '3mf' | 'stl' | 'glb' = '3mf',
+  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+  printerConfigId?: string | null,
 ): Promise<PlateGenerationResult> {
   const r = await apiFetch('/api/plate/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ placements, format }),
+    body: JSON.stringify({ placements, format, printerConfigId }),
   });
   if (!r.ok) {
     const message = await r.text();
@@ -473,12 +474,13 @@ export async function generatePlate(
 
 export async function createPlateGenerationJob(
   placements: PlatePlacement[],
-  format: '3mf' | 'stl' | 'glb' = '3mf',
+  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+  printerConfigId?: string | null,
 ): Promise<PlateGenerationJob> {
   const r = await apiFetch('/api/plate/jobs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ placements, format }),
+    body: JSON.stringify({ placements, format, printerConfigId }),
   });
   if (!r.ok) {
     const message = await r.text();

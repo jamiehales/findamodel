@@ -32,6 +32,17 @@ public class PlateGenerationJobServiceTests
             TagGenerationEnabled = false,
             MinimumPreviewGenerationVersion = ModelPreviewService.CurrentPreviewGenerationVersion,
         });
+        db.PrinterConfigs.Add(new PrinterConfig
+        {
+            Id = Guid.NewGuid(),
+            Name = "Default test printer",
+            BedWidthMm = 228,
+            BedDepthMm = 128,
+            PixelWidth = 320,
+            PixelHeight = 180,
+            IsBuiltIn = true,
+            IsDefault = true,
+        });
         db.SaveChanges();
 
         return new InMemoryDbContextFactory(options);
@@ -87,15 +98,36 @@ public class PlateGenerationJobServiceTests
     private static Task WriteSimpleAsciiStlAsync(string path)
     {
         return File.WriteAllTextAsync(path, """
-            solid triangle
-              facet normal 0 0 1
+            solid tetrahedron
+              facet normal 0 0 -1
                 outer loop
                   vertex 0 0 0
                   vertex 10 0 0
-                  vertex 0 10 0
+                  vertex 5 0 10
                 endloop
               endfacet
-            endsolid triangle
+              facet normal 0.8944 0.4472 0
+                outer loop
+                  vertex 0 0 0
+                  vertex 5 10 5
+                  vertex 10 0 0
+                endloop
+              endfacet
+              facet normal -0.6667 0.3333 0.6667
+                outer loop
+                  vertex 10 0 0
+                  vertex 5 10 5
+                  vertex 5 0 10
+                endloop
+              endfacet
+              facet normal -0.6667 0.3333 -0.6667
+                outer loop
+                  vertex 5 0 10
+                  vertex 5 10 5
+                  vertex 0 0 0
+                endloop
+              endfacet
+            endsolid tetrahedron
             """);
     }
 
@@ -146,6 +178,12 @@ public class PlateGenerationJobServiceTests
                 CreateModelService(configuration, dbFactory),
                 new ModelLoaderService(NullLoggerFactory.Instance),
                 new ModelSaverService(),
+                new PlateSliceRasterService(
+                [
+                    new MeshIntersectionSliceBitmapGenerator(),
+                    new OrthographicProjectionSliceBitmapGenerator(),
+                ]),
+                new PrinterService(dbFactory),
                 configuration);
             var sut = new PlateGenerationJobService(plateExportService, NullLoggerFactory.Instance);
 
@@ -231,6 +269,12 @@ public class PlateGenerationJobServiceTests
                 CreateModelService(configuration, dbFactory),
                 new ModelLoaderService(NullLoggerFactory.Instance),
                 new ModelSaverService(),
+                new PlateSliceRasterService(
+                [
+                    new MeshIntersectionSliceBitmapGenerator(),
+                    new OrthographicProjectionSliceBitmapGenerator(),
+                ]),
+                new PrinterService(dbFactory),
                 configuration);
             var sut = new PlateGenerationJobService(plateExportService, NullLoggerFactory.Instance);
 
@@ -249,6 +293,111 @@ public class PlateGenerationJobServiceTests
             Assert.Equal("completed", completed!.Status);
             Assert.NotNull(completed.Warning);
             Assert.Contains("skipme.lys", completed.SkippedModels);
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("pngzip_mesh", "plate-slices-mesh.zip")]
+    [InlineData("pngzip_orthographic", "plate-slices-orthographic.zip")]
+    public async Task CreateJobAsync_CreatesPngSliceArchive(string format, string expectedFileName)
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-plate-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+        var dbFactory = CreateFactory($"{nameof(CreateJobAsync_CreatesPngSliceArchive)}-{format}");
+
+        try
+        {
+            var modelId = Guid.NewGuid();
+            await WriteSimpleAsciiStlAsync(Path.Combine(modelsRoot, "sliceable.stl"));
+
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "sliceable.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = "slice",
+                    FileSize = 1,
+                    FileModifiedAt = DateTime.UtcNow,
+                    CachedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var configuration = CreateConfiguration(modelsRoot);
+            var plateExportService = new PlateExportService(
+                CreateModelService(configuration, dbFactory),
+                new ModelLoaderService(NullLoggerFactory.Instance),
+                new ModelSaverService(),
+                new PlateSliceRasterService(
+                [
+                    new MeshIntersectionSliceBitmapGenerator(),
+                    new OrthographicProjectionSliceBitmapGenerator(),
+                ]),
+                new PrinterService(dbFactory),
+                configuration);
+            var sut = new PlateGenerationJobService(plateExportService, NullLoggerFactory.Instance);
+
+            var printer = await new PrinterService(dbFactory).GetDefaultAsync();
+            Assert.NotNull(printer);
+
+            var started = await sut.CreateJobAsync(
+                new GeneratePlateRequest(
+                [
+                    new PlacementDto(modelId.ToString(), 0, printer!.BedWidthMm / 2f, printer.BedDepthMm / 2f, 0),
+                ],
+                format));
+
+            await WaitForCompletionAsync(sut, started.JobId);
+
+            var completed = sut.GetJob(started.JobId);
+            Assert.NotNull(completed);
+            Assert.Equal("completed", completed!.Status);
+            Assert.Equal(expectedFileName, completed.FileName);
+
+            var file = sut.GetCompletedJobFile(started.JobId);
+            Assert.NotNull(file);
+            using var stream = File.OpenRead(file!.Value.Path);
+            using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+            Assert.NotNull(archive.GetEntry("manifest.json"));
+            var pngEntries = archive.Entries
+                .Where(e => e.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            Assert.NotEmpty(pngEntries);
+
+            var hasLitLayer = false;
+            foreach (var pngEntry in pngEntries)
+            {
+                using var pngStream = pngEntry.Open();
+                using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.L8>(pngStream);
+                var litPixels = 0;
+                image.ProcessPixelRows(accessor =>
+                {
+                    for (var y = 0; y < image.Height; y++)
+                    {
+                        foreach (var pixel in accessor.GetRowSpan(y))
+                        {
+                            if (pixel.PackedValue > 0)
+                                litPixels++;
+                        }
+                    }
+                });
+
+                if (litPixels > 0)
+                {
+                    hasLitLayer = true;
+                    break;
+                }
+            }
+
+            Assert.True(hasLitLayer, "Expected at least one lit pixel in the exported slice stack.");
         }
         finally
         {
