@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using findamodel.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -109,5 +110,38 @@ public class PlateSliceRasterServiceTests
 
             Assert.Equal(single.Pixels, batched[i].Pixels);
         }
+    }
+
+    [Fact]
+    public void OrthographicProjectionGpu_WhenAvailable_MatchesCpuRendering()
+    {
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        if (!gpuContext.IsAvailable)
+            return;
+
+        var triangles = CreateTetrahedron();
+        var cpu = new OrthographicProjectionSliceBitmapGenerator();
+        var gpu = new OrthographicProjectionSliceBitmapGenerator(gpuContext, NullLoggerFactory.Instance);
+
+        var expected = cpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 180, 180, 1f);
+        var actual = gpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 180, 180, 1f);
+
+        var intersection = 0;
+        var union = 0;
+        for (var i = 0; i < expected.Pixels.Length; i++)
+        {
+            var expectedOn = expected.Pixels[i] > 0;
+            var actualOn = actual.Pixels[i] > 0;
+            if (expectedOn && actualOn)
+                intersection++;
+            if (expectedOn || actualOn)
+                union++;
+        }
+
+        var iou = union == 0 ? 1f : intersection / (float)union;
+        var areaDelta = Math.Abs(expected.CountLitPixels() - actual.CountLitPixels()) / (float)Math.Max(1, expected.CountLitPixels());
+
+        Assert.True(iou >= 0.90f, $"Expected GPU/CPU IoU >= 0.90, actual {iou:F4}.");
+        Assert.True(areaDelta <= 0.12f, $"Expected GPU/CPU area delta <= 0.12, actual {areaDelta:F4}.");
     }
 }

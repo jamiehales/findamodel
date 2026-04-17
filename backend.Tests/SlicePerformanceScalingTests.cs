@@ -96,11 +96,46 @@ public class SlicePerformanceScalingTests(ITestOutputHelper output)
         var cpu = Measure(() => cpuGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm));
         var gpu = Measure(() => gpuGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm));
 
+        output.WriteLine($"slice orthographic backend={gpuContext.ActiveBackend}");
         output.WriteLine($"slice orthographic cpu ms={cpu.ElapsedMs:F2} litPixels={cpu.LitPixels}");
         output.WriteLine($"slice orthographic gpu ms={gpu.ElapsedMs:F2} litPixels={gpu.LitPixels}");
 
         Assert.True(cpu.LitPixels > 0);
         Assert.True(gpu.LitPixels > 0);
+    }
+
+    [Fact]
+    public void Benchmark_OrthographicProjection_BatchVsSingle_WhenAvailable()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_RUN_SLICE_GPU_BENCHMARKS"), "1", StringComparison.Ordinal))
+            return;
+
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        if (!gpuContext.IsAvailable)
+        {
+            output.WriteLine("slice gpu batch benchmark skipped: GL context unavailable");
+            return;
+        }
+
+        var triangles = new ProceduralCuboidGridMesh(1_000_000, footprintWidthMm: 18f, footprintDepthMm: 18f, heightMm: 10f);
+        var gpuGenerator = new OrthographicProjectionSliceBitmapGenerator(gpuContext, NullLoggerFactory.Instance);
+        var batchGenerator = Assert.IsAssignableFrom<IBatchPlateSliceBitmapGenerator>(gpuGenerator);
+        var sliceHeights = Enumerable.Range(0, 8).Select(i => 2f + (i * 0.5f)).ToArray();
+        var trianglesByLayer = sliceHeights.Select(_ => (IReadOnlyList<Triangle3D>)triangles).ToArray();
+
+        var singleSw = Stopwatch.StartNew();
+        foreach (var sliceHeight in sliceHeights)
+            gpuGenerator.RenderLayerBitmap(triangles, sliceHeight, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm);
+        singleSw.Stop();
+
+        var batchSw = Stopwatch.StartNew();
+        var batched = batchGenerator.RenderLayerBitmaps(trianglesByLayer, sliceHeights, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm);
+        batchSw.Stop();
+
+        output.WriteLine($"slice batch backend={gpuContext.ActiveBackend} singleMs={singleSw.Elapsed.TotalMilliseconds:F2} batchMs={batchSw.Elapsed.TotalMilliseconds:F2}");
+
+        Assert.Equal(sliceHeights.Length, batched.Count);
+        Assert.All(batched, bitmap => Assert.True(bitmap.CountLitPixels() > 0));
     }
 
     [Fact]
@@ -139,7 +174,7 @@ public class SlicePerformanceScalingTests(ITestOutputHelper output)
                 layerHeightMm: 0.5f);
             sw.Stop();
 
-            output.WriteLine($"archive method={method} elapsedMs={sw.Elapsed.TotalMilliseconds:F2} zipBytes={zip.Length}");
+            output.WriteLine($"archive backend={gpuContext.ActiveBackend} method={method} elapsedMs={sw.Elapsed.TotalMilliseconds:F2} zipBytes={zip.Length}");
             Assert.True(zip.Length > 0, $"Expected non-empty slice archive for {method}.");
         }
     }

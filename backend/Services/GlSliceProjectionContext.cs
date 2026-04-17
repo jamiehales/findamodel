@@ -15,6 +15,10 @@ public sealed class GlSliceProjectionContext : IDisposable
     private const int MaxGpuTriangleCount = 250_000;
     private const int DefaultRowGroupHeight = 8;
     private const int NvidiaRowGroupHeight = 16;
+    private const int DefaultGridColumnCount = 16;
+    private const int NvidiaGridColumnCount = 28;
+    private const int GenericComputeWorkgroupSize = 8;
+    private const int NvidiaComputeWorkgroupSize = 16;
 
     private const string VertSrc = """
         #version 330 core
@@ -36,6 +40,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         uniform int uRangeTexWidth;
         uniform int uRowGroupHeight;
         uniform int uRowGroupCount;
+        uniform int uGridColumnCount;
         uniform float uSliceHeight;
         uniform float uBedWidth;
         uniform float uBedDepth;
@@ -125,11 +130,13 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         void main() {
             float xMm = ((gl_FragCoord.x) / float(uResolutionX)) * uBedWidth - (uBedWidth * 0.5);
-            float zMm = (uBedDepth * 0.5) - ((gl_FragCoord.y) / float(uResolutionY)) * uBedDepth;
+            float zMm = (((gl_FragCoord.y) / float(uResolutionY)) * uBedDepth) - (uBedDepth * 0.5);
             vec3 origin = vec3(xMm - uRayOffset, uSliceHeight, zMm);
 
-            int rowGroup = clamp(int((gl_FragCoord.y - 1.0) / float(uRowGroupHeight)), 0, max(0, uRowGroupCount - 1));
-            ivec2 range = fetchRange(rowGroup);
+            int rowFromTop = (uResolutionY - 1) - int(gl_FragCoord.y - 0.5);
+            int rowGroup = clamp(rowFromTop / uRowGroupHeight, 0, max(0, uRowGroupCount - 1));
+            int xGroup = clamp(int((gl_FragCoord.x - 1.0) / float(uResolutionX) * float(uGridColumnCount)), 0, max(0, uGridColumnCount - 1));
+            ivec2 range = fetchRange((rowGroup * uGridColumnCount) + xGroup);
 
             float hits[kMaxHits];
             int uniqueHitCount = 0;
@@ -173,6 +180,164 @@ public sealed class GlSliceProjectionContext : IDisposable
         }
         """;
 
+    private string BuildComputeShaderSource() => $$"""
+        #version 430 core
+        layout(local_size_x = {{computeWorkgroupSize}}, local_size_y = {{computeWorkgroupSize}}, local_size_z = 1) in;
+
+        layout(r8, binding = 0) uniform writeonly image2D uOutput;
+        uniform sampler2D uTriangleTexture;
+        uniform sampler2D uBoundsTexture;
+        uniform isampler2D uIndexTexture;
+        uniform sampler2D uRangeTexture;
+        uniform int uTriangleTexWidth;
+        uniform int uBoundsTexWidth;
+        uniform int uIndexTexWidth;
+        uniform int uRangeTexWidth;
+        uniform int uRowGroupHeight;
+        uniform int uRowGroupCount;
+        uniform int uGridColumnCount;
+        uniform float uSliceHeight;
+        uniform float uBedWidth;
+        uniform float uBedDepth;
+        uniform float uRayOffset;
+        uniform int uResolutionX;
+        uniform int uResolutionY;
+
+        const float kEpsilon = 0.0001;
+        const float kDedupEpsilon = 0.0005;
+        const int kMaxHits = 32;
+
+        vec3 fetchVertex(int flatIndex) {
+            int tx = flatIndex % uTriangleTexWidth;
+            int ty = flatIndex / uTriangleTexWidth;
+            return texelFetch(uTriangleTexture, ivec2(tx, ty), 0).xyz;
+        }
+
+        vec4 fetchBounds(int triIndex) {
+            int tx = triIndex % uBoundsTexWidth;
+            int ty = triIndex / uBoundsTexWidth;
+            return texelFetch(uBoundsTexture, ivec2(tx, ty), 0);
+        }
+
+        int fetchTriangleIndex(int flatIndex) {
+            int tx = flatIndex % uIndexTexWidth;
+            int ty = flatIndex / uIndexTexWidth;
+            return texelFetch(uIndexTexture, ivec2(tx, ty), 0).x;
+        }
+
+        ivec2 fetchRange(int cellIndex) {
+            int tx = cellIndex % uRangeTexWidth;
+            int ty = cellIndex / uRangeTexWidth;
+            vec4 encoded = texelFetch(uRangeTexture, ivec2(tx, ty), 0);
+            return ivec2(int(encoded.x + 0.5), int(encoded.y + 0.5));
+        }
+
+        bool tryIntersectPositiveXRay(vec3 origin, vec3 v0, vec3 v1, vec3 v2, out float hitX) {
+            float maxX = max(v0.x, max(v1.x, v2.x));
+            if (maxX < origin.x + kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            float minZ = min(v0.z, min(v1.z, v2.z));
+            float maxZ = max(v0.z, max(v1.z, v2.z));
+            if (origin.z < minZ - kEpsilon || origin.z > maxZ + kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            vec3 direction = vec3(1.0, 0.0, 0.0);
+            vec3 edge1 = v1 - v0;
+            vec3 edge2 = v2 - v0;
+            vec3 h = cross(direction, edge2);
+            float a = dot(edge1, h);
+            if (abs(a) < kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            float invA = 1.0 / a;
+            vec3 s = origin - v0;
+            float u = invA * dot(s, h);
+            if (u < -kEpsilon || u > 1.0 + kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            vec3 q = cross(s, edge1);
+            float v = invA * dot(direction, q);
+            if (v < -kEpsilon || u + v > 1.0 + kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            float t = invA * dot(edge2, q);
+            if (t < kEpsilon) {
+                hitX = 0.0;
+                return false;
+            }
+
+            hitX = origin.x + t;
+            return true;
+        }
+
+        void main() {
+            ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+            if (pixel.x >= uResolutionX || pixel.y >= uResolutionY) {
+                return;
+            }
+
+            float xMm = ((float(pixel.x) + 0.5) / float(uResolutionX)) * uBedWidth - (uBedWidth * 0.5);
+            float zMm = ((((float(pixel.y) + 0.5) / float(uResolutionY)) * uBedDepth) - (uBedDepth * 0.5));
+            vec3 origin = vec3(xMm - uRayOffset, uSliceHeight, zMm);
+
+            int rowFromTop = (uResolutionY - 1) - pixel.y;
+            int rowGroup = clamp(rowFromTop / uRowGroupHeight, 0, max(0, uRowGroupCount - 1));
+            int xGroup = clamp((pixel.x * uGridColumnCount) / max(1, uResolutionX), 0, max(0, uGridColumnCount - 1));
+            ivec2 range = fetchRange((rowGroup * uGridColumnCount) + xGroup);
+
+            float hits[kMaxHits];
+            int uniqueHitCount = 0;
+
+            for (int offset = 0; offset < range.y; offset++) {
+                int triIndex = fetchTriangleIndex(range.x + offset);
+                vec4 bounds = fetchBounds(triIndex);
+
+                if (uSliceHeight < bounds.x - kEpsilon || uSliceHeight > bounds.y + kEpsilon) {
+                    continue;
+                }
+
+                if (origin.z < bounds.z - kEpsilon || origin.z > bounds.w + kEpsilon) {
+                    continue;
+                }
+
+                vec3 v0 = fetchVertex(triIndex * 3);
+                vec3 v1 = fetchVertex(triIndex * 3 + 1);
+                vec3 v2 = fetchVertex(triIndex * 3 + 2);
+
+                float hitX;
+                if (!tryIntersectPositiveXRay(origin, v0, v1, v2, hitX)) {
+                    continue;
+                }
+
+                bool duplicate = false;
+                for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
+                    if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+
+                if (!duplicate && uniqueHitCount < kMaxHits) {
+                    hits[uniqueHitCount++] = hitX;
+                }
+            }
+
+            float value = (uniqueHitCount % 2) == 1 ? 1.0 : 0.0;
+            imageStore(uOutput, pixel, vec4(value, 0.0, 0.0, 1.0));
+        }
+        """;
+
     private readonly ILogger logger;
     private readonly Channel<SliceRequest> channel = Channel.CreateBounded<SliceRequest>(new BoundedChannelOptions(16)
     {
@@ -184,10 +349,15 @@ public sealed class GlSliceProjectionContext : IDisposable
     private GL? gl;
     private bool failed;
     private string rendererName = "unknown";
+    private string renderBackend = "fragment";
     private bool useNvidiaFastPath;
+    private bool supportsComputeShaders;
     private int activeRowGroupHeight = DefaultRowGroupHeight;
+    private int activeGridColumnCount = DefaultGridColumnCount;
+    private int computeWorkgroupSize = GenericComputeWorkgroupSize;
 
     private uint program;
+    private uint computeProgram;
     private uint vao;
     private uint vbo;
     private uint fbo;
@@ -208,6 +378,7 @@ public sealed class GlSliceProjectionContext : IDisposable
     private ulong cachedGeometryHash;
     private int cachedGeometryTriangleCount = -1;
     private int cachedSpatialPixelHeight = -1;
+    private float cachedSpatialBedWidthMm = float.NaN;
     private float cachedSpatialBedDepthMm = float.NaN;
 
     private int uTriangleTextureLocation;
@@ -220,6 +391,7 @@ public sealed class GlSliceProjectionContext : IDisposable
     private int uRangeTexWidthLocation;
     private int uRowGroupHeightLocation;
     private int uRowGroupCountLocation;
+    private int uGridColumnCountLocation;
     private int uSliceHeightLocation;
     private int uBedWidthLocation;
     private int uBedDepthLocation;
@@ -248,6 +420,8 @@ public sealed class GlSliceProjectionContext : IDisposable
     }
 
     public Task WaitReadyAsync() => ready.Task;
+
+    public string ActiveBackend => renderBackend;
 
     public SliceBitmap? TryRender(
         IReadOnlyList<Triangle3D> triangles,
@@ -293,6 +467,16 @@ public sealed class GlSliceProjectionContext : IDisposable
         glThread.Join(5000);
     }
 
+    private static IWindow CreateHiddenWindow(int major, int minor)
+    {
+        var opts = WindowOptions.Default;
+        opts.IsVisible = false;
+        opts.Size = new Vector2D<int>(1, 1);
+        opts.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(major, minor));
+        opts.VSync = false;
+        return Window.Create(opts);
+    }
+
     private void GlThreadMain()
     {
         IWindow? window = null;
@@ -304,24 +488,31 @@ public sealed class GlSliceProjectionContext : IDisposable
 
             SdlWindowing.Use();
 
-            var opts = WindowOptions.Default;
-            opts.IsVisible = false;
-            opts.Size = new Vector2D<int>(1, 1);
-            opts.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
-            opts.VSync = false;
+            try
+            {
+                window = CreateHiddenWindow(4, 3);
+                window.Initialize();
+                gl = window.CreateOpenGL();
+            }
+            catch
+            {
+                window?.Dispose();
+                window = CreateHiddenWindow(3, 3);
+                window.Initialize();
+                gl = window.CreateOpenGL();
+            }
 
-            window = Window.Create(opts);
-            window.Initialize();
-            gl = window.CreateOpenGL();
             gl.GetInteger(GLEnum.MaxTextureSize, out maxTextureSize);
 
             rendererName = gl.GetStringS(StringName.Renderer) ?? "unknown";
             useNvidiaFastPath = rendererName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
             activeRowGroupHeight = useNvidiaFastPath ? NvidiaRowGroupHeight : DefaultRowGroupHeight;
+            activeGridColumnCount = useNvidiaFastPath ? NvidiaGridColumnCount : DefaultGridColumnCount;
+            computeWorkgroupSize = useNvidiaFastPath ? NvidiaComputeWorkgroupSize : GenericComputeWorkgroupSize;
 
             CompileShaders();
             SetupQuad();
-            logger.LogInformation("GL slice projection ready on {Renderer} using {FastPath} row grouping.", rendererName, useNvidiaFastPath ? "NVIDIA-tuned" : "generic");
+            logger.LogInformation("GL slice projection ready on {Renderer} using backend {Backend}.", rendererName, renderBackend);
             ready.TrySetResult();
         }
         catch (Exception ex)
@@ -366,6 +557,8 @@ public sealed class GlSliceProjectionContext : IDisposable
                 gl.DeleteTexture(rangeTexture);
             if (program != 0)
                 gl.DeleteProgram(program);
+            if (computeProgram != 0)
+                gl.DeleteProgram(computeProgram);
             if (vao != 0)
                 gl.DeleteVertexArray(vao);
             if (vbo != 0)
@@ -384,18 +577,40 @@ public sealed class GlSliceProjectionContext : IDisposable
         EnsureFramebuffer(request.PixelWidth, request.PixelHeight);
 
         var uploadSw = Stopwatch.StartNew();
-        EnsureGeometryResourcesUploaded(request.Triangles, request.BedDepthMm, request.PixelHeight);
+        EnsureGeometryResourcesUploaded(request.Triangles, request.BedWidthMm, request.BedDepthMm, request.PixelHeight);
         uploadSw.Stop();
 
         if (cachedTriangleTextureWidth <= 0 || cachedBoundsTextureWidth <= 0 || cachedIndexTextureWidth <= 0 || cachedRangeTextureWidth <= 0)
             return null;
 
-        var renderSw = Stopwatch.StartNew();
-        var results = new List<SliceBitmap>(request.SliceHeightsMm.Length);
-
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
         gl.Viewport(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight);
-        gl.UseProgram(program);
+
+        var renderSw = Stopwatch.StartNew();
+        var results = supportsComputeShaders
+            ? RenderWithCompute(request)
+            : RenderWithFragment(request);
+        renderSw.Stop();
+
+        gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
+        logger.LogDebug(
+            "GL slice batch on {Renderer} using {Backend}: triangles={TriangleCount} layers={LayerCount} uploadMs={UploadMs:F2} renderMs={RenderMs:F2}",
+            rendererName,
+            renderBackend,
+            request.Triangles.Count,
+            request.SliceHeightsMm.Length,
+            uploadSw.Elapsed.TotalMilliseconds,
+            renderSw.Elapsed.TotalMilliseconds);
+
+        return results;
+    }
+
+    private IReadOnlyList<SliceBitmap> RenderWithFragment(SliceRequest request)
+    {
+        var results = new List<SliceBitmap>(request.SliceHeightsMm.Length);
+
+        gl!.UseProgram(program);
         gl.BindVertexArray(vao);
 
         gl.ActiveTexture(TextureUnit.Texture0);
@@ -420,13 +635,13 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.Uniform1(uRangeTexWidthLocation, cachedRangeTextureWidth);
         gl.Uniform1(uRowGroupHeightLocation, activeRowGroupHeight);
         gl.Uniform1(uRowGroupCountLocation, cachedRowGroupCount);
+        gl.Uniform1(uGridColumnCountLocation, activeGridColumnCount);
         gl.Uniform1(uBedWidthLocation, request.BedWidthMm);
         gl.Uniform1(uBedDepthLocation, request.BedDepthMm);
         gl.Uniform1(uRayOffsetLocation, 0.0005f);
         gl.Uniform1(uResolutionXLocation, request.PixelWidth);
         gl.Uniform1(uResolutionYLocation, request.PixelHeight);
 
-        var readbackSw = Stopwatch.StartNew();
         foreach (var sliceHeightMm in request.SliceHeightsMm)
         {
             gl.ClearColor(0f, 0f, 0f, 1f);
@@ -438,31 +653,74 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
             results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
         }
-        readbackSw.Stop();
-        renderSw.Stop();
-
-        gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-
-        logger.LogDebug(
-            "GL slice batch on {Renderer}: triangles={TriangleCount} layers={LayerCount} uploadMs={UploadMs:F2} renderMs={RenderMs:F2} readbackMs={ReadbackMs:F2}",
-            rendererName,
-            request.Triangles.Count,
-            request.SliceHeightsMm.Length,
-            uploadSw.Elapsed.TotalMilliseconds,
-            renderSw.Elapsed.TotalMilliseconds,
-            readbackSw.Elapsed.TotalMilliseconds);
 
         return results;
     }
 
-    private void EnsureGeometryResourcesUploaded(IReadOnlyList<Triangle3D> triangles, float bedDepthMm, int pixelHeight)
+    private IReadOnlyList<SliceBitmap> RenderWithCompute(SliceRequest request)
+    {
+        var gl = this.gl!;
+        var results = new List<SliceBitmap>(request.SliceHeightsMm.Length);
+
+        gl.UseProgram(computeProgram);
+        gl.ActiveTexture(TextureUnit.Texture0);
+        gl.BindTexture(TextureTarget.Texture2D, triangleTexture);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uTriangleTexture"), 0);
+
+        gl.ActiveTexture(TextureUnit.Texture1);
+        gl.BindTexture(TextureTarget.Texture2D, boundsTexture);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBoundsTexture"), 1);
+
+        gl.ActiveTexture(TextureUnit.Texture2);
+        gl.BindTexture(TextureTarget.Texture2D, indexTexture);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uIndexTexture"), 2);
+
+        gl.ActiveTexture(TextureUnit.Texture3);
+        gl.BindTexture(TextureTarget.Texture2D, rangeTexture);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRangeTexture"), 3);
+
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uTriangleTexWidth"), cachedTriangleTextureWidth);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBoundsTexWidth"), cachedBoundsTextureWidth);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uIndexTexWidth"), cachedIndexTextureWidth);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRangeTexWidth"), cachedRangeTextureWidth);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRowGroupHeight"), activeRowGroupHeight);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRowGroupCount"), cachedRowGroupCount);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uGridColumnCount"), activeGridColumnCount);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBedWidth"), request.BedWidthMm);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBedDepth"), request.BedDepthMm);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRayOffset"), 0.0005f);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uResolutionX"), request.PixelWidth);
+        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uResolutionY"), request.PixelHeight);
+
+        var groupsX = (uint)((request.PixelWidth + computeWorkgroupSize - 1) / computeWorkgroupSize);
+        var groupsY = (uint)((request.PixelHeight + computeWorkgroupSize - 1) / computeWorkgroupSize);
+
+        foreach (var sliceHeightMm in request.SliceHeightsMm)
+        {
+            gl.Uniform1(gl.GetUniformLocation(computeProgram, "uSliceHeight"), sliceHeightMm);
+            gl.BindImageTexture(0, colorTexture, 0, false, 0, GLEnum.WriteOnly, GLEnum.R8);
+            gl.DispatchCompute(groupsX, groupsY, 1);
+            gl.MemoryBarrier(MemoryBarrierMask.ShaderImageAccessBarrierBit | MemoryBarrierMask.TextureFetchBarrierBit | MemoryBarrierMask.FramebufferBarrierBit);
+
+            var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
+            gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
+            results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
+        }
+
+        return results;
+    }
+
+    private void EnsureGeometryResourcesUploaded(IReadOnlyList<Triangle3D> triangles, float bedWidthMm, float bedDepthMm, int pixelHeight)
     {
         if (gl is null)
             return;
 
         var geometryHash = ComputeGeometryHash(triangles);
         var geometryChanged = geometryHash != cachedGeometryHash || triangles.Count != cachedGeometryTriangleCount;
-        var spatialChanged = geometryChanged || pixelHeight != cachedSpatialPixelHeight || MathF.Abs(bedDepthMm - cachedSpatialBedDepthMm) > 0.0001f;
+        var spatialChanged = geometryChanged
+            || pixelHeight != cachedSpatialPixelHeight
+            || MathF.Abs(bedWidthMm - cachedSpatialBedWidthMm) > 0.0001f
+            || MathF.Abs(bedDepthMm - cachedSpatialBedDepthMm) > 0.0001f;
 
         if (geometryChanged)
         {
@@ -474,11 +732,12 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         if (spatialChanged)
         {
-            var (indexWidth, rangeWidth, rowGroupCount) = UploadSpatialIndexTextures(triangles, bedDepthMm, pixelHeight);
+            var (indexWidth, rangeWidth, rowGroupCount) = UploadSpatialIndexTextures(triangles, bedWidthMm, bedDepthMm, pixelHeight);
             cachedIndexTextureWidth = indexWidth;
             cachedRangeTextureWidth = rangeWidth;
             cachedRowGroupCount = rowGroupCount;
             cachedSpatialPixelHeight = pixelHeight;
+            cachedSpatialBedWidthMm = bedWidthMm;
             cachedSpatialBedDepthMm = bedDepthMm;
         }
     }
@@ -559,7 +818,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         return width;
     }
 
-    private (int IndexWidth, int RangeWidth, int RowGroupCount) UploadSpatialIndexTextures(IReadOnlyList<Triangle3D> triangles, float bedDepthMm, int pixelHeight)
+    private (int IndexWidth, int RangeWidth, int RowGroupCount) UploadSpatialIndexTextures(IReadOnlyList<Triangle3D> triangles, float bedWidthMm, float bedDepthMm, int pixelHeight)
     {
         if (gl is null)
             return (0, 0, 0);
@@ -569,7 +828,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         while (localRowGroupHeight < pixelHeight)
         {
             var estimatedGroups = (pixelHeight + localRowGroupHeight - 1) / localRowGroupHeight;
-            if ((long)estimatedGroups * Math.Max(1, triangles.Count) <= maxTexels)
+            if ((long)estimatedGroups * Math.Max(1, triangles.Count) * activeGridColumnCount <= maxTexels)
                 break;
 
             localRowGroupHeight *= 2;
@@ -577,37 +836,45 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         activeRowGroupHeight = Math.Max(1, localRowGroupHeight);
         var rowGroupCount = Math.Max(1, (pixelHeight + activeRowGroupHeight - 1) / activeRowGroupHeight);
-        var groups = new List<int>[rowGroupCount];
+        var cellCount = rowGroupCount * activeGridColumnCount;
+        var groups = new List<int>[cellCount];
 
         for (var index = 0; index < triangles.Count; index++)
         {
             var triangle = triangles[index];
             var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
             var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
+            var maxX = MathF.Max(triangle.V0.X, MathF.Max(triangle.V1.X, triangle.V2.X));
+
             var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
             var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
-
             if (endRow < startRow)
                 (startRow, endRow) = (endRow, startRow);
 
             var startGroup = Math.Clamp(startRow / activeRowGroupHeight, 0, rowGroupCount - 1);
             var endGroup = Math.Clamp(endRow / activeRowGroupHeight, 0, rowGroupCount - 1);
+            var xEndGroup = Math.Clamp((int)MathF.Floor(((maxX + (bedWidthMm * 0.5f)) / bedWidthMm) * activeGridColumnCount), 0, activeGridColumnCount - 1);
+
             for (var groupIndex = startGroup; groupIndex <= endGroup; groupIndex++)
             {
-                groups[groupIndex] ??= [];
-                groups[groupIndex].Add(index);
+                for (var xGroup = 0; xGroup <= xEndGroup; xGroup++)
+                {
+                    var cellIndex = (groupIndex * activeGridColumnCount) + xGroup;
+                    groups[cellIndex] ??= [];
+                    groups[cellIndex].Add(index);
+                }
             }
         }
 
-        var flatIndexes = new List<int>(Math.Max(triangles.Count, rowGroupCount));
-        var ranges = new int[Math.Max(1, rowGroupCount * 2)];
-        for (var groupIndex = 0; groupIndex < rowGroupCount; groupIndex++)
+        var flatIndexes = new List<int>(Math.Max(triangles.Count, cellCount));
+        var ranges = new int[Math.Max(1, cellCount * 2)];
+        for (var cellIndex = 0; cellIndex < cellCount; cellIndex++)
         {
-            ranges[groupIndex * 2] = flatIndexes.Count;
-            var candidates = groups[groupIndex];
+            ranges[cellIndex * 2] = flatIndexes.Count;
+            var candidates = groups[cellIndex];
             if (candidates is not null)
                 flatIndexes.AddRange(candidates);
-            ranges[(groupIndex * 2) + 1] = candidates?.Count ?? 0;
+            ranges[(cellIndex * 2) + 1] = candidates?.Count ?? 0;
         }
 
         if (flatIndexes.Count == 0)
@@ -629,10 +896,10 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
         gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R32i, (uint)indexWidth, (uint)indexHeight, 0, PixelFormat.RedInteger, PixelType.Int, in indexData[0]);
 
-        var rangeWidth = Math.Min(maxTextureSize, Math.Max(1, rowGroupCount));
-        var rangeHeight = (int)Math.Ceiling(rowGroupCount / (double)rangeWidth);
+        var rangeWidth = Math.Min(maxTextureSize, Math.Max(1, cellCount));
+        var rangeHeight = (int)Math.Ceiling(cellCount / (double)rangeWidth);
         var rangeData = new float[Math.Max(1, rangeWidth * rangeHeight * 4)];
-        for (var i = 0; i < rowGroupCount; i++)
+        for (var i = 0; i < cellCount; i++)
         {
             rangeData[i * 4] = ranges[i * 2];
             rangeData[(i * 4) + 1] = ranges[(i * 2) + 1];
@@ -743,12 +1010,43 @@ public sealed class GlSliceProjectionContext : IDisposable
         uRangeTexWidthLocation = gl.GetUniformLocation(program, "uRangeTexWidth");
         uRowGroupHeightLocation = gl.GetUniformLocation(program, "uRowGroupHeight");
         uRowGroupCountLocation = gl.GetUniformLocation(program, "uRowGroupCount");
+        uGridColumnCountLocation = gl.GetUniformLocation(program, "uGridColumnCount");
         uSliceHeightLocation = gl.GetUniformLocation(program, "uSliceHeight");
         uBedWidthLocation = gl.GetUniformLocation(program, "uBedWidth");
         uBedDepthLocation = gl.GetUniformLocation(program, "uBedDepth");
         uRayOffsetLocation = gl.GetUniformLocation(program, "uRayOffset");
         uResolutionXLocation = gl.GetUniformLocation(program, "uResolutionX");
         uResolutionYLocation = gl.GetUniformLocation(program, "uResolutionY");
+
+        supportsComputeShaders = false;
+        renderBackend = useNvidiaFastPath ? "nvidia-fragment" : "fragment";
+
+        try
+        {
+            var compute = gl.CreateShader(ShaderType.ComputeShader);
+            gl.ShaderSource(compute, BuildComputeShaderSource());
+            gl.CompileShader(compute);
+            CheckShader(compute, "compute");
+
+            computeProgram = gl.CreateProgram();
+            gl.AttachShader(computeProgram, compute);
+            gl.LinkProgram(computeProgram);
+            CheckProgram(computeProgram);
+            gl.DeleteShader(compute);
+
+            supportsComputeShaders = true;
+            renderBackend = useNvidiaFastPath ? "nvidia-compute" : "compute";
+        }
+        catch (Exception ex)
+        {
+            if (computeProgram != 0)
+            {
+                gl.DeleteProgram(computeProgram);
+                computeProgram = 0;
+            }
+
+            logger.LogDebug(ex, "Compute shader slice backend unavailable; using fragment fallback.");
+        }
     }
 
     private void CheckShader(uint shader, string stage)

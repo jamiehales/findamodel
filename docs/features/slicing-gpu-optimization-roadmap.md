@@ -3,13 +3,14 @@
 ## Status update
 Implemented on 2026-04-16 and benchmarked in the companion report at [docs/features/slicing-gpu-optimization-benchmark-report.md](docs/features/slicing-gpu-optimization-benchmark-report.md).
 
-Completed items in the codebase now include:
+The roadmap items are now covered in the codebase through three implementation phases, including:
 - GPU-resident cached geometry uploads across batched layer work
-- Row-group GPU spatial indexing and tighter per-layer filtering
-- Batched multi-layer dispatch through the orthographic GPU path
+- GPU spatial indexing with both layer filtering and tiled X/Z candidate bins
+- A compute-shader execution backend with fragment fallback
+- Batched multi-layer processing through the orthographic GPU path
 - Reduced readback bandwidth with single-channel slice outputs
 - Overlapped PNG encoding and ZIP packaging
-- Packed GPU upload formats and vendor-tuned row grouping
+- Packed GPU upload formats and vendor-tuned NVIDIA fast-path parameters
 - Automated regression and throughput benchmarks
 
 ## Overview
