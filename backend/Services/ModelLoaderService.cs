@@ -247,22 +247,43 @@ public class ModelLoaderService(ILoggerFactory loggerFactory)
 
     private static async Task<List<Triangle3D>> ParseBinaryStlAsync(Stream stream, uint triCount)
     {
-        var triangles = new List<Triangle3D>((int)Math.Min(triCount, 5_000_000u));
-        var buf = new byte[50];
+        const int bytesPerTriangle = 50;
+        const int trianglesPerChunk = 8192;
 
-        for (uint i = 0; i < triCount; i++)
+        var triangles = new List<Triangle3D>((int)Math.Min(triCount, 5_000_000u));
+        var buffer = new byte[bytesPerTriangle * trianglesPerChunk];
+        uint remaining = triCount;
+
+        while (remaining > 0)
         {
-            await stream.ReadExactlyAsync(buf);
-            var normal = new Vec3(
-                BitConverter.ToSingle(buf, 0), BitConverter.ToSingle(buf, 4), BitConverter.ToSingle(buf, 8));
-            var v0 = new Vec3(
-                BitConverter.ToSingle(buf, 12), BitConverter.ToSingle(buf, 16), BitConverter.ToSingle(buf, 20));
-            var v1 = new Vec3(
-                BitConverter.ToSingle(buf, 24), BitConverter.ToSingle(buf, 28), BitConverter.ToSingle(buf, 32));
-            var v2 = new Vec3(
-                BitConverter.ToSingle(buf, 36), BitConverter.ToSingle(buf, 40), BitConverter.ToSingle(buf, 44));
-            // buf[48..49] = attribute word, already consumed
-            triangles.Add(new Triangle3D(v0, v1, v2, normal));
+            int trianglesInChunk = (int)Math.Min(remaining, (uint)trianglesPerChunk);
+            int bytesToRead = trianglesInChunk * bytesPerTriangle;
+            await stream.ReadExactlyAsync(buffer.AsMemory(0, bytesToRead));
+
+            for (int offset = 0; offset < bytesToRead; offset += bytesPerTriangle)
+            {
+                var triBuf = buffer.AsSpan(offset, bytesPerTriangle);
+                var normal = new Vec3(
+                    BitConverter.ToSingle(triBuf.Slice(0, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(4, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(8, 4)));
+                var v0 = new Vec3(
+                    BitConverter.ToSingle(triBuf.Slice(12, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(16, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(20, 4)));
+                var v1 = new Vec3(
+                    BitConverter.ToSingle(triBuf.Slice(24, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(28, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(32, 4)));
+                var v2 = new Vec3(
+                    BitConverter.ToSingle(triBuf.Slice(36, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(40, 4)),
+                    BitConverter.ToSingle(triBuf.Slice(44, 4)));
+
+                triangles.Add(new Triangle3D(v0, v1, v2, normal));
+            }
+
+            remaining -= (uint)trianglesInChunk;
         }
 
         return triangles;

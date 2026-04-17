@@ -25,8 +25,12 @@ public sealed class PlateExportService(
     ModelSaverService saverService,
     IConfiguration config)
 {
+    private const int MaxConcurrentModelLoads = 2;
+
     private static readonly HashSet<string> NonGeometryTypes =
         new(StringComparer.OrdinalIgnoreCase) { "lys", "lyt", "ctb" };
+
+    private readonly record struct ExportPlacement(Guid ModelId, double XMm, double YMm, double AngleRad);
 
     public static string NormalizeFormat(string? format)
     {
@@ -55,14 +59,8 @@ public sealed class PlateExportService(
 
         var format = NormalizeFormat(request.Format);
 
-        var exportPlacements = new List<PlacementDto>(request.Placements.Count);
-        var skippedModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var geometryByModelId = new Dictionary<Guid, LoadedGeometry>();
-        var objectIdByModelId = new Dictionary<Guid, int>();
-        var modelInfoById = new Dictionary<Guid, (string FileName, string Directory, string FileType)>();
-        var skippedModelIds = new HashSet<Guid>();
-        var nextObjectId = 1;
-
+        var requestedModelIds = new HashSet<Guid>();
+        var requestPlacements = new List<(PlacementDto Placement, Guid ModelId)>(request.Placements.Count);
         foreach (var placement in request.Placements)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -70,56 +68,81 @@ public sealed class PlateExportService(
             if (!Guid.TryParse(placement.ModelId, out var modelId))
                 throw new ArgumentException($"Invalid model ID: {placement.ModelId}");
 
-            if (!modelInfoById.TryGetValue(modelId, out var modelInfo))
-            {
-                var model = await modelService.GetModelAsync(modelId);
-                if (model == null)
-                    throw new KeyNotFoundException($"Model not found: {placement.ModelId}");
+            requestedModelIds.Add(modelId);
+            requestPlacements.Add((placement, modelId));
+        }
 
-                modelInfo = (model.FileName, model.Directory, model.FileType);
-                modelInfoById[modelId] = modelInfo;
-            }
+        var modelInfoById = await modelService.GetModelFileInfoByIdsAsync(requestedModelIds);
+        if (modelInfoById.Count != requestedModelIds.Count)
+        {
+            var missingModelId = requestedModelIds.First(id => !modelInfoById.ContainsKey(id));
+            throw new KeyNotFoundException($"Model not found: {missingModelId}");
+        }
 
-            progressReporter?.MarkCurrentEntry(modelInfo.FileName);
+        var exportPlacements = new List<ExportPlacement>(requestPlacements.Count);
+        var skippedModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var uniqueGeometryModelIds = new List<Guid>(requestedModelIds.Count);
+        var seenGeometryModelIds = new HashSet<Guid>();
 
-            if (skippedModelIds.Contains(modelId))
-            {
-                skippedModelNames.Add(modelInfo.FileName);
-                progressReporter?.MarkEntryCompleted();
-                continue;
-            }
-
-            if (geometryByModelId.ContainsKey(modelId))
-            {
-                exportPlacements.Add(placement);
-                progressReporter?.MarkEntryCompleted();
-                continue;
-            }
+        foreach (var (placement, modelId) in requestPlacements)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var modelInfo = modelInfoById[modelId];
 
             if (NonGeometryTypes.Contains(modelInfo.FileType))
             {
-                skippedModelIds.Add(modelId);
                 skippedModelNames.Add(modelInfo.FileName);
                 progressReporter?.MarkEntryCompleted();
                 continue;
             }
 
-            var fullPath = string.IsNullOrEmpty(modelInfo.Directory)
-                ? Path.Combine(modelsPath, modelInfo.FileName)
-                : Path.Combine(modelsPath, modelInfo.Directory, modelInfo.FileName);
+            exportPlacements.Add(new ExportPlacement(modelId, placement.XMm, placement.YMm, placement.AngleRad));
 
-            if (!File.Exists(fullPath))
-                throw new FileNotFoundException($"Model file not found on disk: {modelInfo.FileName}", fullPath);
+            if (!seenGeometryModelIds.Add(modelId))
+            {
+                progressReporter?.MarkEntryCompleted();
+                continue;
+            }
 
-            var geometry = await loaderService.LoadModelAsync(fullPath, modelInfo.FileType);
-            if (geometry == null)
-                throw new InvalidOperationException($"Failed to parse geometry for: {modelInfo.FileName}");
-
-            geometryByModelId[modelId] = geometry;
-            objectIdByModelId[modelId] = nextObjectId++;
-            exportPlacements.Add(placement);
-            progressReporter?.MarkEntryCompleted();
+            uniqueGeometryModelIds.Add(modelId);
         }
+
+        var objectIdByModelId = uniqueGeometryModelIds
+            .Select((modelId, index) => (modelId, objectId: index + 1))
+            .ToDictionary(x => x.modelId, x => x.objectId);
+
+        var maxConcurrentLoads = Math.Max(1, Math.Min(MaxConcurrentModelLoads, uniqueGeometryModelIds.Count));
+        using var loadGate = new SemaphoreSlim(maxConcurrentLoads, maxConcurrentLoads);
+
+        var geometryResults = await Task.WhenAll(uniqueGeometryModelIds.Select(async modelId =>
+        {
+            await loadGate.WaitAsync(cancellationToken);
+            try
+            {
+                var modelInfo = modelInfoById[modelId];
+                progressReporter?.MarkCurrentEntry(modelInfo.FileName);
+
+                var fullPath = string.IsNullOrEmpty(modelInfo.Directory)
+                    ? Path.Combine(modelsPath, modelInfo.FileName)
+                    : Path.Combine(modelsPath, modelInfo.Directory, modelInfo.FileName);
+
+                if (!File.Exists(fullPath))
+                    throw new FileNotFoundException($"Model file not found on disk: {modelInfo.FileName}", fullPath);
+
+                var geometry = await loaderService.LoadModelAsync(fullPath, modelInfo.FileType);
+                if (geometry == null)
+                    throw new InvalidOperationException($"Failed to parse geometry for: {modelInfo.FileName}");
+
+                progressReporter?.MarkEntryCompleted();
+                return (ModelId: modelId, Geometry: geometry);
+            }
+            finally
+            {
+                loadGate.Release();
+            }
+        }));
+
+        var geometryByModelId = geometryResults.ToDictionary(x => x.ModelId, x => x.Geometry);
 
         if (exportPlacements.Count == 0)
             throw new PlateExportUnprocessableException("No geometry-based models were included in the export request.");
@@ -155,7 +178,7 @@ public sealed class PlateExportService(
     }
 
     private byte[] Generate3mf(
-        IReadOnlyList<PlacementDto> placements,
+        IReadOnlyList<ExportPlacement> placements,
         Dictionary<Guid, LoadedGeometry> geometryByModelId,
         Dictionary<Guid, int> objectIdByModelId)
     {
@@ -167,26 +190,32 @@ public sealed class PlateExportService(
                 $"{cosA:G9} {-sinA:G9} 0 {sinA:G9} {cosA:G9} 0 0 0 1 {-xMm:G9} {yMm:G9} 0");
         }
 
-        var objects = new List<(int Id, IReadOnlyList<Triangle3D> Triangles)>();
+        var objects = new List<(int Id, IReadOnlyList<Triangle3D> Triangles)>(geometryByModelId.Count);
         foreach (var (modelId, geometry) in geometryByModelId)
         {
-            var zUpTriangles = geometry.Triangles
-                .Select(t => new Triangle3D(YUpToZUp(t.V0), YUpToZUp(t.V1), YUpToZUp(t.V2), YUpToZUp(t.Normal)))
-                .ToList();
+            var sourceTriangles = geometry.Triangles;
+            var zUpTriangles = new Triangle3D[sourceTriangles.Count];
+            for (int i = 0; i < sourceTriangles.Count; i++)
+            {
+                var t = sourceTriangles[i];
+                zUpTriangles[i] = new Triangle3D(
+                    YUpToZUp(t.V0),
+                    YUpToZUp(t.V1),
+                    YUpToZUp(t.V2),
+                    YUpToZUp(t.Normal));
+            }
+
             objects.Add((objectIdByModelId[modelId], zUpTriangles));
         }
 
-        var items = new List<(int ObjectId, string Transform)>();
+        var items = new List<(int ObjectId, string Transform)>(placements.Count);
         foreach (var placement in placements)
-        {
-            var modelId = Guid.Parse(placement.ModelId);
-            items.Add((objectIdByModelId[modelId], Compute3mfTransform(placement.AngleRad, placement.XMm, placement.YMm)));
-        }
+            items.Add((objectIdByModelId[placement.ModelId], Compute3mfTransform(placement.AngleRad, placement.XMm, placement.YMm)));
 
         return saverService.Save3mf(objects, items);
     }
 
-    private byte[] GenerateStl(IReadOnlyList<PlacementDto> placements, Dictionary<Guid, LoadedGeometry> geometryByModelId)
+    private byte[] GenerateStl(IReadOnlyList<ExportPlacement> placements, Dictionary<Guid, LoadedGeometry> geometryByModelId)
     {
         Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
             => new(v.X * cosA - v.Z * sinA + xMm, v.Y, v.X * sinA + v.Z * cosA + yMm);
@@ -194,28 +223,38 @@ public sealed class PlateExportService(
         Vec3 RotateY(Vec3 n, float sinA, float cosA)
             => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
-        var merged = new List<Triangle3D>();
-        foreach (var placement in placements)
+        int totalTriangleCount = 0;
+        checked
         {
-            var modelId = Guid.Parse(placement.ModelId);
-            var geometry = geometryByModelId[modelId];
-            float sinA = MathF.Sin((float)placement.AngleRad);
-            float cosA = MathF.Cos((float)placement.AngleRad);
-            foreach (var tri in geometry.Triangles)
+            foreach (var placement in placements)
             {
-                merged.Add(new Triangle3D(
-                    YUpToZUp(PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                    YUpToZUp(PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                    YUpToZUp(PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
-                    YUpToZUp(RotateY(tri.Normal, sinA, cosA))));
+                totalTriangleCount += geometryByModelId[placement.ModelId].Triangles.Count;
             }
         }
 
-        return saverService.SaveStl(merged, "findamodel plate");
+        IEnumerable<Triangle3D> EnumerateTriangles()
+        {
+            foreach (var placement in placements)
+            {
+                var geometry = geometryByModelId[placement.ModelId];
+                float sinA = MathF.Sin((float)placement.AngleRad);
+                float cosA = MathF.Cos((float)placement.AngleRad);
+                foreach (var tri in geometry.Triangles)
+                {
+                    yield return new Triangle3D(
+                        YUpToZUp(PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(PlaceVertex(tri.V1, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(PlaceVertex(tri.V2, sinA, cosA, (float)placement.XMm, (float)placement.YMm)),
+                        YUpToZUp(RotateY(tri.Normal, sinA, cosA)));
+                }
+            }
+        }
+
+        return saverService.SaveStl(totalTriangleCount, EnumerateTriangles(), "findamodel plate");
     }
 
     private byte[] GenerateGlb(
-        IReadOnlyList<PlacementDto> placements,
+        IReadOnlyList<ExportPlacement> placements,
         Dictionary<Guid, LoadedGeometry> geometryByModelId,
         Dictionary<Guid, int> objectIdByModelId)
     {
@@ -231,7 +270,7 @@ public sealed class PlateExportService(
             .ToList();
 
         var glbItems = placements
-            .Select(p => (objectIdByModelId[Guid.Parse(p.ModelId)], ComputeGlbTransform(p.AngleRad, p.XMm, p.YMm)))
+            .Select(p => (objectIdByModelId[p.ModelId], ComputeGlbTransform(p.AngleRad, p.XMm, p.YMm)))
             .ToList();
 
         return saverService.SaveGlb(glbObjects, glbItems);

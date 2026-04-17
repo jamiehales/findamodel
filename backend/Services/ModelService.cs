@@ -53,6 +53,25 @@ public class ModelService(
         return models.Select(m => m.ToModelDto()).ToList();
     }
 
+    public sealed record ModelFileInfo(Guid Id, string FileName, string? Directory, string FileType);
+
+    public async Task<Dictionary<Guid, ModelFileInfo>> GetModelFileInfoByIdsAsync(IReadOnlyCollection<Guid> ids)
+    {
+        if (ids.Count == 0)
+            return [];
+
+        var idSet = ids.ToHashSet();
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var models = await db.Models
+            .AsNoTracking()
+            .Where(m => idSet.Contains(m.Id))
+            .Select(m => new ModelFileInfo(m.Id, m.FileName, m.Directory, m.FileType))
+            .ToListAsync();
+
+        return models.ToDictionary(m => m.Id);
+    }
+
     public async Task<CachedModel?> GetModelAsync(Guid id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

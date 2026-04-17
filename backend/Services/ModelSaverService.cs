@@ -24,35 +24,55 @@ public class ModelSaverService
     /// <param name="triangles">Triangles to write. Each triangle must carry a pre-computed normal.</param>
     /// <param name="headerText">Optional ASCII text embedded in the 80-byte header (truncated at 79 chars).</param>
     public byte[] SaveStl(IReadOnlyList<Triangle3D> triangles, string? headerText = null)
-    {
-        // 80-byte header + 4-byte count + 50 bytes × N triangles
-        var buffer = new byte[84 + (long)triangles.Count * 50];
-        var span = buffer.AsSpan();
+        => SaveStl(triangles.Count, triangles, headerText);
 
-        // Header (80 bytes) - must not start with "solid" to avoid ASCII mis-detection
+    public byte[] SaveStl(int triangleCount, IEnumerable<Triangle3D> triangles, string? headerText = null)
+    {
+        using var ms = new MemoryStream();
+        SaveStl(ms, triangleCount, triangles, headerText);
+        return ms.ToArray();
+    }
+
+    public void SaveStl(Stream stream, int triangleCount, IEnumerable<Triangle3D> triangles, string? headerText = null)
+    {
+        Span<byte> header = stackalloc byte[84];
+        header.Clear();
+
         if (!string.IsNullOrEmpty(headerText))
         {
-            var encoded = System.Text.Encoding.ASCII.GetBytes(headerText);
-            int copyLen = Math.Min(encoded.Length, 79); // leave at least one null byte
-            encoded.AsSpan(0, copyLen).CopyTo(span.Slice(0, copyLen));
+            var encoded = Encoding.ASCII.GetBytes(headerText);
+            int copyLen = Math.Min(encoded.Length, 79);
+            encoded.AsSpan(0, copyLen).CopyTo(header.Slice(0, copyLen));
         }
 
-        // Triangle count (bytes 80-83, little-endian uint32)
-        BitConverter.TryWriteBytes(span.Slice(80, 4), (uint)triangles.Count);
+        BitConverter.TryWriteBytes(header.Slice(80, 4), (uint)triangleCount);
+        stream.Write(header);
 
-        int offset = 84;
+        var buffer = new byte[50 * 4096];
+        var bufferSpan = buffer.AsSpan();
+        int offset = 0;
+
         foreach (var tri in triangles)
         {
-            WriteVec3(span, ref offset, tri.Normal);
-            WriteVec3(span, ref offset, tri.V0);
-            WriteVec3(span, ref offset, tri.V1);
-            WriteVec3(span, ref offset, tri.V2);
-            span[offset] = 0; // attribute word (2 bytes, always 0)
-            span[offset + 1] = 0;
-            offset += 2;
+            if (offset + 50 > buffer.Length)
+            {
+                stream.Write(buffer, 0, offset);
+                offset = 0;
+            }
+
+            var triSpan = bufferSpan.Slice(offset, 50);
+            int triOffset = 0;
+            WriteVec3(triSpan, ref triOffset, tri.Normal);
+            WriteVec3(triSpan, ref triOffset, tri.V0);
+            WriteVec3(triSpan, ref triOffset, tri.V1);
+            WriteVec3(triSpan, ref triOffset, tri.V2);
+            triSpan[triOffset] = 0;
+            triSpan[triOffset + 1] = 0;
+            offset += 50;
         }
 
-        return buffer;
+        if (offset > 0)
+            stream.Write(buffer, 0, offset);
     }
 
     private static void WriteVec3(Span<byte> buf, ref int offset, Vec3 v)
