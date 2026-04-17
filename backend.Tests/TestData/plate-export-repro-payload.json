@@ -1,0 +1,153 @@
+{
+    "placements": [
+        {
+            "modelId": "0896ca56-4a5d-48e3-a53f-f0631a817ae7",
+            "instanceIndex": 0,
+            "xMm": 104.00238675716058,
+            "yMm": 123.05827481027782,
+            "angleRad": -0.0002492173090553841
+        },
+        {
+            "modelId": "f0a6e388-837e-4079-8732-d750fe36d528",
+            "instanceIndex": 0,
+            "xMm": 113.06280304287854,
+            "yMm": 99.62287372220983,
+            "angleRad": 0.8407895257147133
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 0,
+            "xMm": 139.0534595053442,
+            "yMm": 106.46577937333493,
+            "angleRad": 0.5347574095074102
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 1,
+            "xMm": 29.01203155752808,
+            "yMm": 120.31958878460554,
+            "angleRad": -1.6015740516362753
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 2,
+            "xMm": 156.35103388010722,
+            "yMm": 120.20109417897899,
+            "angleRad": 1.611823116248761
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 3,
+            "xMm": 213.90541273417654,
+            "yMm": 119.366087281522,
+            "angleRad": 3.134792084583938
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 4,
+            "xMm": 47.034302625906285,
+            "yMm": 118.92666801904382,
+            "angleRad": -0.015305094504600067
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 5,
+            "xMm": 146.47936526598676,
+            "yMm": 88.75678768480529,
+            "angleRad": 2.4252853050087224
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 6,
+            "xMm": 62.338571503969455,
+            "yMm": 108.94963565088523,
+            "angleRad": -0.41663401377055126
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 7,
+            "xMm": 9.170010786897704,
+            "yMm": 118.7444759674268,
+            "angleRad": -3.7457712444013906
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 8,
+            "xMm": 130.09451904211872,
+            "yMm": 75.71485075498066,
+            "angleRad": -0.3647704591272472
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 9,
+            "xMm": 18.145203341966408,
+            "yMm": 103.68464427168695,
+            "angleRad": 2.1935497131295305
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 10,
+            "xMm": 159.67583408211738,
+            "yMm": 102.41499554157159,
+            "angleRad": -0.7218681297594947
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 11,
+            "xMm": 176.02858621116744,
+            "yMm": 118.81698328356704,
+            "angleRad": -3.8125332548429385
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 12,
+            "xMm": 184.39369267960603,
+            "yMm": 103.42723853962758,
+            "angleRad": 2.084429112799398
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 13,
+            "xMm": 80.59452898898675,
+            "yMm": 106.92263640922697,
+            "angleRad": 0.1808191377451903
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 14,
+            "xMm": 158.67474084542565,
+            "yMm": 76.18900484891216,
+            "angleRad": 2.606212845684277
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 15,
+            "xMm": 196.93634861533496,
+            "yMm": 118.83563450025714,
+            "angleRad": 3.2493531337406805
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 16,
+            "xMm": 172.2631852258631,
+            "yMm": 89.12547272158096,
+            "angleRad": 0.8057572203170036
+        },
+        {
+            "modelId": "22ffa3d1-4874-4da3-a0db-912da1afe0ae",
+            "instanceIndex": 17,
+            "xMm": 89.60974741832649,
+            "yMm": 89.65519271488377,
+            "angleRad": 0.3623984830071435
+        },
+        {
+            "modelId": "70a980a5-c31d-4db3-b5ba-76426ad52894",
+            "instanceIndex": 0,
+            "xMm": 96.68382044567427,
+            "yMm": 48.32778769407609,
+            "angleRad": 0.043682080668774124
+        }
+    ],
+    "format": "pngzip_orthographic",
+    "printerConfigId": "8a04c3c1-f5e0-4d95-a7b8-2c9d1e3f4a5b"
+}

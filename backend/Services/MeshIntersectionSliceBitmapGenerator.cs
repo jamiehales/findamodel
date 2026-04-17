@@ -43,6 +43,7 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
             FillScanline(intersections, span, bedWidthMm, pixelWidth);
         }
 
+        bitmap.RemoveUnsupportedHorizontalPixels();
         return bitmap;
     }
 
@@ -61,8 +62,6 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
                 deltaSum += intersections[index].WindingDelta;
                 index++;
             }
-
-            deltaSum = Math.Sign(deltaSum);
 
             var previousWinding = winding;
             winding += deltaSum;
@@ -231,10 +230,18 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         if (MathF.Abs(startX - endX) <= Epsilon)
             return;
 
-        var start = Math.Clamp(MapXToColumn(startX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-        var end = Math.Clamp(MapXToColumn(endX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        var bedHalfWidth = bedWidthMm * 0.5f;
+        if ((startX < -bedHalfWidth - Epsilon && endX < -bedHalfWidth - Epsilon)
+            || (startX > bedHalfWidth + Epsilon && endX > bedHalfWidth + Epsilon))
+            return;
+
+        var minX = Math.Clamp(MathF.Min(startX, endX), -bedHalfWidth, bedHalfWidth);
+        var maxX = Math.Clamp(MathF.Max(startX, endX), -bedHalfWidth, bedHalfWidth);
+        var start = Math.Clamp((int)MathF.Floor(((minX + bedHalfWidth) / bedWidthMm) * pixelWidth), 0, pixelWidth - 1);
+        var endExclusive = Math.Clamp((int)MathF.Ceiling(((maxX + bedHalfWidth) / bedWidthMm) * pixelWidth), 0, pixelWidth);
+        var end = Math.Clamp(endExclusive - 1, 0, pixelWidth - 1);
         if (end < start)
-            (start, end) = (end, start);
+            return;
 
         span.Slice(start, (end - start) + 1).Fill((byte)255);
     }

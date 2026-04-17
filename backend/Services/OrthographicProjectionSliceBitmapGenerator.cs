@@ -5,6 +5,7 @@ namespace findamodel.Services;
 
 public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSliceBitmapGenerator
 {
+    private const bool EnableGpuSliceProjection = false;
     private const float Epsilon = 0.0001f;
     private const float RayOffsetMm = 0.0005f;
     private const float HitDedupEpsilon = 0.0005f;
@@ -46,7 +47,10 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             layerThicknessMm);
 
         if (gpuBitmap is { Count: > 0 })
+        {
+            gpuBitmap[0].RemoveUnsupportedHorizontalPixels();
             return gpuBitmap[0];
+        }
 
         return RenderLayerBitmapCpu(
             triangles,
@@ -83,7 +87,12 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             layerThicknessMm);
 
         if (gpuBitmaps is not null)
+        {
+            foreach (var bitmap in gpuBitmaps)
+                bitmap.RemoveUnsupportedHorizontalPixels();
+
             return gpuBitmaps;
+        }
 
         var bitmaps = new SliceBitmap[trianglesByLayer.Count];
         Parallel.For(0, trianglesByLayer.Count, index =>
@@ -110,7 +119,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         int pixelHeight,
         float layerThicknessMm)
     {
-        if (gpuContext is null || !gpuContext.IsAvailable)
+        if (!EnableGpuSliceProjection || gpuContext is null || !gpuContext.IsAvailable)
             return null;
 
         try
@@ -196,6 +205,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             FillProjectedRow(span, triangles, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
         });
 
+        bitmap.RemoveUnsupportedHorizontalPixels();
         return bitmap;
     }
 
@@ -248,8 +258,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
             var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
             var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
-            var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
-            var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
+            var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight) - 1, 0, pixelHeight - 1);
+            var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight) + 1, 0, pixelHeight - 1);
 
             if (endRow < startRow)
                 (startRow, endRow) = (endRow, startRow);
@@ -331,7 +341,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             if (MathF.Abs(hitXs[i] - candidate) > HitDedupEpsilon)
                 continue;
 
-            hitDeltas[i] = Math.Sign(hitDeltas[i] + delta);
+            hitDeltas[i] += delta;
             return true;
         }
 
@@ -345,7 +355,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             if (MathF.Abs(hits[i].X - candidate) > HitDedupEpsilon)
                 continue;
 
-            hits[i] = hits[i] with { Delta = Math.Sign(hits[i].Delta + delta) };
+            hits[i] = hits[i] with { Delta = hits[i].Delta + delta };
             return;
         }
 
@@ -440,10 +450,18 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         if (MathF.Abs(startX - endX) <= HitDedupEpsilon)
             return;
 
-        var start = Math.Clamp(MapXToColumn(startX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-        var end = Math.Clamp(MapXToColumn(endX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        var bedHalfWidth = bedWidthMm * 0.5f;
+        if ((startX < -bedHalfWidth - HitDedupEpsilon && endX < -bedHalfWidth - HitDedupEpsilon)
+            || (startX > bedHalfWidth + HitDedupEpsilon && endX > bedHalfWidth + HitDedupEpsilon))
+            return;
+
+        var minX = Math.Clamp(MathF.Min(startX, endX), -bedHalfWidth, bedHalfWidth);
+        var maxX = Math.Clamp(MathF.Max(startX, endX), -bedHalfWidth, bedHalfWidth);
+        var start = Math.Clamp((int)MathF.Floor(((minX + bedHalfWidth) / bedWidthMm) * pixelWidth), 0, pixelWidth - 1);
+        var endExclusive = Math.Clamp((int)MathF.Ceiling(((maxX + bedHalfWidth) / bedWidthMm) * pixelWidth), 0, pixelWidth);
+        var end = Math.Clamp(endExclusive - 1, 0, pixelWidth - 1);
         if (end < start)
-            (start, end) = (end, start);
+            return;
 
         span.Slice(start, (end - start) + 1).Fill((byte)255);
     }

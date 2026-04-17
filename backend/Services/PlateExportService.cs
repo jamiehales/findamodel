@@ -270,9 +270,9 @@ public sealed class PlateExportService(
                 p.AngleRad))
             .ToList();
 
-        var placedTriangles = GeneratePlacedTriangles(normalizedPlacements, geometryByModelId, convertToZUp: false);
+        var placedTriangleGroups = GeneratePlacedTriangleGroups(normalizedPlacements, geometryByModelId, convertToZUp: false);
         var content = sliceRasterService.GenerateSliceArchive(
-            placedTriangles,
+            placedTriangleGroups,
             printer.BedWidthMm,
             printer.BedDepthMm,
             printer.PixelWidth,
@@ -293,6 +293,14 @@ public sealed class PlateExportService(
         IReadOnlyList<ExportPlacement> placements,
         Dictionary<Guid, LoadedGeometry> geometryByModelId,
         bool convertToZUp)
+        => GeneratePlacedTriangleGroups(placements, geometryByModelId, convertToZUp)
+            .SelectMany(group => group)
+            .ToList();
+
+    private List<IReadOnlyList<Triangle3D>> GeneratePlacedTriangleGroups(
+        IReadOnlyList<ExportPlacement> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        bool convertToZUp)
     {
         Vec3 PlaceVertex(Vec3 v, float sinA, float cosA, float xMm, float yMm)
             => new(v.X * cosA - v.Z * sinA + xMm, v.Y, v.X * sinA + v.Z * cosA + yMm);
@@ -300,12 +308,13 @@ public sealed class PlateExportService(
         Vec3 RotateY(Vec3 n, float sinA, float cosA)
             => new(n.X * cosA - n.Z * sinA, n.Y, n.X * sinA + n.Z * cosA);
 
-        var merged = new List<Triangle3D>();
+        var groups = new List<IReadOnlyList<Triangle3D>>();
         foreach (var placement in placements)
         {
             var geometry = geometryByModelId[placement.ModelId];
             float sinA = MathF.Sin((float)placement.AngleRad);
             float cosA = MathF.Cos((float)placement.AngleRad);
+            var placed = new List<Triangle3D>(geometry.Triangles.Count);
             foreach (var tri in geometry.Triangles)
             {
                 var v0 = PlaceVertex(tri.V0, sinA, cosA, (float)placement.XMm, (float)placement.YMm);
@@ -315,7 +324,7 @@ public sealed class PlateExportService(
 
                 if (convertToZUp)
                 {
-                    merged.Add(new Triangle3D(
+                    placed.Add(new Triangle3D(
                         YUpToZUp(v0),
                         YUpToZUp(v1),
                         YUpToZUp(v2),
@@ -323,12 +332,15 @@ public sealed class PlateExportService(
                 }
                 else
                 {
-                    merged.Add(new Triangle3D(v0, v1, v2, normal));
+                    placed.Add(new Triangle3D(v0, v1, v2, normal));
                 }
             }
+
+            if (placed.Count > 0)
+                groups.Add(placed);
         }
 
-        return merged;
+        return groups;
     }
 
     private byte[] GenerateGlb(

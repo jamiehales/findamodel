@@ -427,6 +427,10 @@ public sealed class AutoSupportGenerationService
                 var boundaryPoints = new List<(float X, float Z)>();
                 var sumX = 0f;
                 var sumZ = 0f;
+                var minColumn = column;
+                var maxColumn = column;
+                var minRow = row;
+                var maxRow = row;
 
                 visited[index] = true;
                 queue.Enqueue((column, row));
@@ -435,6 +439,10 @@ public sealed class AutoSupportGenerationService
                 {
                     var current = queue.Dequeue();
                     pixels.Add(current);
+                    minColumn = Math.Min(minColumn, current.X);
+                    maxColumn = Math.Max(maxColumn, current.X);
+                    minRow = Math.Min(minRow, current.Y);
+                    maxRow = Math.Max(maxRow, current.Y);
                     var xMm = ColumnToX(current.X, bedWidthMm, bitmap.Width);
                     var zMm = RowToZ(current.Y, bedDepthMm, bitmap.Height);
                     sumX += xMm;
@@ -469,9 +477,13 @@ public sealed class AutoSupportGenerationService
 
                 var centroidX = sumX / pixels.Count;
                 var centroidZ = sumZ / pixels.Count;
-                var pixelAreaMm2 = (bedWidthMm / bitmap.Width) * (bedDepthMm / bitmap.Height);
+                var pixelWidthMm = bedWidthMm / bitmap.Width;
+                var pixelDepthMm = bedDepthMm / bitmap.Height;
+                var pixelAreaMm2 = pixelWidthMm * pixelDepthMm;
                 var islandAreaMm2 = pixels.Count * pixelAreaMm2;
-                if (islandAreaMm2 < minIslandAreaMm2)
+                var footprintAreaMm2 = (maxColumn - minColumn + 2) * pixelWidthMm * (maxRow - minRow + 2) * pixelDepthMm;
+                var effectiveAreaMm2 = MathF.Max(islandAreaMm2, footprintAreaMm2);
+                if (effectiveAreaMm2 < minIslandAreaMm2)
                     continue;
 
                 var maxRadiusMm = 0f;

@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text.Json;
 using findamodel.Data;
 using findamodel.Data.Entities;
 using findamodel.Models;
@@ -5,6 +7,8 @@ using findamodel.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace findamodel.Tests;
@@ -156,6 +160,158 @@ public class PlateGenerationJobServiceTests
 
         sb.AppendLine("endsolid repeated");
         return File.WriteAllTextAsync(path, sb.ToString());
+    }
+
+    private static IReadOnlyList<IReadOnlyList<Triangle3D>> BuildPlacedGroups(
+        IReadOnlyList<Triangle3D> triangles,
+        IReadOnlyList<PlacementDto> placements,
+        PrinterConfigDto printer)
+    {
+        var groups = new List<IReadOnlyList<Triangle3D>>(placements.Count);
+        foreach (var placement in placements)
+        {
+            var offsetX = (float)(placement.XMm - (printer.BedWidthMm * 0.5f));
+            var offsetZ = (float)((printer.BedDepthMm * 0.5f) - placement.YMm);
+            var sinA = MathF.Sin((float)placement.AngleRad);
+            var cosA = MathF.Cos((float)placement.AngleRad);
+
+            static Vec3 Rotate(Vec3 v, float sin, float cos)
+                => new(v.X * cos - v.Z * sin, v.Y, v.X * sin + v.Z * cos);
+
+            groups.Add(triangles
+                .Select(triangle =>
+                {
+                    var v0 = Rotate(triangle.V0, sinA, cosA);
+                    var v1 = Rotate(triangle.V1, sinA, cosA);
+                    var v2 = Rotate(triangle.V2, sinA, cosA);
+                    var normal = Rotate(triangle.Normal, sinA, cosA);
+                    return new Triangle3D(
+                        new Vec3(v0.X + offsetX, v0.Y, v0.Z + offsetZ),
+                        new Vec3(v1.X + offsetX, v1.Y, v1.Z + offsetZ),
+                        new Vec3(v2.X + offsetX, v2.Y, v2.Z + offsetZ),
+                        normal);
+                })
+                .ToArray());
+        }
+
+        return groups;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<Triangle3D>> BuildPlacedGroups(
+        IReadOnlyDictionary<Guid, LoadedGeometry> geometryByModelId,
+        IReadOnlyList<PlacementDto> placements,
+        PrinterConfigDto printer)
+    {
+        var groups = new List<IReadOnlyList<Triangle3D>>(placements.Count);
+        foreach (var placement in placements)
+        {
+            Assert.True(Guid.TryParse(placement.ModelId, out var modelId));
+            Assert.True(geometryByModelId.TryGetValue(modelId, out var geometry));
+            groups.AddRange(BuildPlacedGroups(geometry!.Triangles, [placement], printer));
+        }
+
+        return groups;
+    }
+
+    private static void AssertZipPngStacksEqual(byte[] expectedZip, byte[] actualZip)
+    {
+        using var expectedStream = new MemoryStream(expectedZip);
+        using var actualStream = new MemoryStream(actualZip);
+        using var expectedArchive = new ZipArchive(expectedStream, ZipArchiveMode.Read);
+        using var actualArchive = new ZipArchive(actualStream, ZipArchiveMode.Read);
+
+        var expectedPngs = expectedArchive.Entries
+            .Where(entry => entry.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var actualPngs = actualArchive.Entries
+            .Where(entry => entry.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.Equal(expectedPngs.Length, actualPngs.Length);
+
+        for (var i = 0; i < expectedPngs.Length; i++)
+        {
+            Assert.Equal(expectedPngs[i].FullName, actualPngs[i].FullName);
+            using var expectedPngStream = expectedPngs[i].Open();
+            using var actualPngStream = actualPngs[i].Open();
+            using var expectedImage = Image.Load<L8>(expectedPngStream);
+            using var actualImage = Image.Load<L8>(actualPngStream);
+            Assert.Equal(expectedImage.Width, actualImage.Width);
+            Assert.Equal(expectedImage.Height, actualImage.Height);
+
+            var expectedPixels = new byte[expectedImage.Width * expectedImage.Height];
+            var actualPixels = new byte[actualImage.Width * actualImage.Height];
+
+            expectedImage.ProcessPixelRows(accessor =>
+            {
+                for (var y = 0; y < expectedImage.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (var x = 0; x < row.Length; x++)
+                        expectedPixels[(y * expectedImage.Width) + x] = row[x].PackedValue;
+                }
+            });
+
+            actualImage.ProcessPixelRows(accessor =>
+            {
+                for (var y = 0; y < actualImage.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (var x = 0; x < row.Length; x++)
+                        actualPixels[(y * actualImage.Width) + x] = row[x].PackedValue;
+                }
+            });
+
+            Assert.Equal(expectedPixels, actualPixels);
+        }
+    }
+
+    private static void AssertZipLayersMatchRenderedBitmaps(
+        byte[] actualZip,
+        PlateSliceRasterService sliceRasterService,
+        IReadOnlyList<IReadOnlyList<Triangle3D>> groups,
+        PrinterConfigDto printer,
+        PngSliceExportMethod method,
+        IEnumerable<int> layerIndexes)
+    {
+        using var actualStream = new MemoryStream(actualZip);
+        using var actualArchive = new ZipArchive(actualStream, ZipArchiveMode.Read);
+
+        foreach (var layerIndex in layerIndexes)
+        {
+            var entry = actualArchive.GetEntry($"slices/layer_{layerIndex:D5}.png")
+                ?? actualArchive.GetEntry($"layer_{layerIndex:D5}.png");
+            Assert.NotNull(entry);
+
+            using var pngStream = entry!.Open();
+            using var image = Image.Load<L8>(pngStream);
+            var actualPixels = new byte[image.Width * image.Height];
+            image.ProcessPixelRows(accessor =>
+            {
+                for (var y = 0; y < image.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (var x = 0; x < row.Length; x++)
+                        actualPixels[(y * image.Width) + x] = row[x].PackedValue;
+                }
+            });
+
+            var layerHeightMm = PlateSliceRasterService.DefaultLayerHeightMm;
+            var sliceHeightMm = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
+            var expectedBitmap = sliceRasterService.RenderLayerBitmap(
+                groups,
+                sliceHeightMm,
+                printer.BedWidthMm,
+                printer.BedDepthMm,
+                printer.PixelWidth,
+                printer.PixelHeight,
+                method,
+                layerHeightMm);
+
+            Assert.Equal(expectedBitmap.Pixels, actualPixels);
+        }
     }
 
     [Fact]
@@ -433,6 +589,203 @@ public class PlateGenerationJobServiceTests
             if (Directory.Exists(modelsRoot))
                 Directory.Delete(modelsRoot, recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData("pngzip_mesh", PngSliceExportMethod.MeshIntersection)]
+    [InlineData("pngzip_orthographic", PngSliceExportMethod.OrthographicProjection)]
+    public async Task GeneratePlateAsync_PngSliceExport_MatchesGroupedPlacementComposition(string format, PngSliceExportMethod method)
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-plate-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+        var dbFactory = CreateFactory($"{nameof(GeneratePlateAsync_PngSliceExport_MatchesGroupedPlacementComposition)}-{format}");
+
+        try
+        {
+            var modelId = Guid.NewGuid();
+            var stlPath = Path.Combine(modelsRoot, "sliceable.stl");
+            await WriteSimpleAsciiStlAsync(stlPath);
+
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "sliceable.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = "slice",
+                    FileSize = 1,
+                    FileModifiedAt = DateTime.UtcNow,
+                    CachedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var configuration = CreateConfiguration(modelsRoot);
+            var sliceRasterService = new PlateSliceRasterService(
+            [
+                new MeshIntersectionSliceBitmapGenerator(),
+                new OrthographicProjectionSliceBitmapGenerator(),
+            ]);
+            var printerService = new PrinterService(dbFactory);
+            var plateExportService = new PlateExportService(
+                CreateModelService(configuration, dbFactory),
+                new ModelLoaderService(NullLoggerFactory.Instance),
+                new ModelSaverService(),
+                sliceRasterService,
+                printerService,
+                configuration);
+
+            var printer = await printerService.GetDefaultAsync();
+            Assert.NotNull(printer);
+
+            var request = new GeneratePlateRequest(
+            [
+                new PlacementDto(modelId.ToString(), 0, printer!.BedWidthMm * 0.35f, printer.BedDepthMm * 0.35f, 0.31),
+                new PlacementDto(modelId.ToString(), 1, printer.BedWidthMm * 0.67f, printer.BedDepthMm * 0.56f, -0.44),
+            ],
+            format,
+            printer!.Id);
+
+            var result = await plateExportService.GeneratePlateAsync(request);
+            Assert.NotEmpty(result.Content);
+
+            var geometry = await new ModelLoaderService(NullLoggerFactory.Instance).LoadModelAsync(stlPath, "stl");
+            Assert.NotNull(geometry);
+
+            var expectedGroups = BuildPlacedGroups(geometry!.Triangles, request.Placements, printer);
+            var expected = sliceRasterService.GenerateSliceArchive(
+                expectedGroups,
+                printer.BedWidthMm,
+                printer.BedDepthMm,
+                printer.PixelWidth,
+                printer.PixelHeight,
+                method);
+
+            AssertZipPngStacksEqual(expected, result.Content);
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("pngzip_mesh", PngSliceExportMethod.MeshIntersection)]
+    [InlineData("pngzip_orthographic", PngSliceExportMethod.OrthographicProjection)]
+    public async Task GeneratePlateAsync_PngSliceExport_WithLocalPayload_MatchesGroupedPlacementComposition(string format, PngSliceExportMethod method)
+    {
+        var payloadPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "backend.Tests", "TestData", "plate-export-repro-payload.json"));
+        var dbPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "debug", "data", "findamodel.db"));
+        if (!File.Exists(payloadPath) || !File.Exists(dbPath))
+            return;
+
+        var payload = JsonSerializer.Deserialize<GeneratePlateRequest>(await File.ReadAllTextAsync(payloadPath), new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+        });
+
+        Assert.NotNull(payload);
+        Assert.NotEmpty(payload!.Placements);
+
+        var sourceOptions = new DbContextOptionsBuilder<ModelCacheContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        await using var sourceDb = new ModelCacheContext(sourceOptions);
+        var modelsRoot = await sourceDb.AppConfigs.Select(config => config.ModelsDirectoryPath).FirstOrDefaultAsync();
+        Assert.True(!string.IsNullOrWhiteSpace(modelsRoot) && Directory.Exists(modelsRoot), "Expected configured local model data for the payload export regression.");
+
+        var modelIds = payload.Placements
+            .Select(placement => Guid.Parse(placement.ModelId))
+            .Distinct()
+            .ToArray();
+        var sourceModels = await sourceDb.Models
+            .Where(model => modelIds.Contains(model.Id))
+            .ToListAsync();
+        Assert.Equal(modelIds.Length, sourceModels.Count);
+
+        var sourcePrinter = payload.PrinterConfigId.HasValue
+            ? await sourceDb.PrinterConfigs.FirstOrDefaultAsync(printer => printer.Id == payload.PrinterConfigId.Value)
+            : await sourceDb.PrinterConfigs.OrderByDescending(printer => printer.IsDefault).FirstOrDefaultAsync();
+        Assert.NotNull(sourcePrinter);
+
+        var dbFactory = CreateFactory($"{nameof(GeneratePlateAsync_PngSliceExport_WithLocalPayload_MatchesGroupedPlacementComposition)}-{format}");
+        var payloadPrinterId = Guid.NewGuid();
+        await using (var targetDb = await dbFactory.CreateDbContextAsync())
+        {
+            targetDb.Models.AddRange(sourceModels.Select(model => new CachedModel
+            {
+                Id = model.Id,
+                FileName = model.FileName,
+                Directory = model.Directory,
+                FileType = model.FileType,
+                Checksum = model.Checksum,
+                FileSize = model.FileSize,
+                FileModifiedAt = model.FileModifiedAt,
+                CachedAt = model.CachedAt,
+            }));
+
+            targetDb.PrinterConfigs.Add(new PrinterConfig
+            {
+                Id = payloadPrinterId,
+                Name = $"Payload regression printer {format}",
+                BedWidthMm = sourcePrinter!.BedWidthMm,
+                BedDepthMm = sourcePrinter.BedDepthMm,
+                PixelWidth = 960,
+                PixelHeight = 540,
+                IsBuiltIn = false,
+                IsDefault = false,
+            });
+
+            await targetDb.SaveChangesAsync();
+        }
+
+        var configuration = CreateConfiguration(modelsRoot!);
+        var sliceRasterService = new PlateSliceRasterService(
+        [
+            new MeshIntersectionSliceBitmapGenerator(),
+            new OrthographicProjectionSliceBitmapGenerator(),
+        ]);
+        var printerService = new PrinterService(dbFactory);
+        var plateExportService = new PlateExportService(
+            CreateModelService(configuration, dbFactory),
+            new ModelLoaderService(NullLoggerFactory.Instance),
+            new ModelSaverService(),
+            sliceRasterService,
+            printerService,
+            configuration);
+
+        var printer = await printerService.GetByIdAsync(payloadPrinterId);
+        Assert.NotNull(printer);
+
+        var request = payload with { Format = format, PrinterConfigId = payloadPrinterId };
+        var result = await plateExportService.GeneratePlateAsync(request);
+        Assert.NotEmpty(result.Content);
+
+        var geometryByModelId = new Dictionary<Guid, LoadedGeometry>();
+        var loader = new ModelLoaderService(NullLoggerFactory.Instance);
+        foreach (var model in sourceModels)
+        {
+            var relativeDirectory = model.Directory.Replace('/', Path.DirectorySeparatorChar);
+            var modelPath = Path.Combine(modelsRoot!, relativeDirectory, model.FileName);
+            Assert.True(File.Exists(modelPath), $"Expected local payload model file '{model.FileName}' to exist.");
+
+            var geometry = await loader.LoadModelAsync(modelPath, model.FileType);
+            Assert.NotNull(geometry);
+            geometryByModelId[model.Id] = geometry!;
+        }
+
+        var expectedGroups = BuildPlacedGroups(geometryByModelId, request.Placements, printer!);
+        AssertZipLayersMatchRenderedBitmaps(
+            result.Content,
+            sliceRasterService,
+            expectedGroups,
+            printer,
+            method,
+            Enumerable.Range(0, 11));
     }
 
     [Fact]

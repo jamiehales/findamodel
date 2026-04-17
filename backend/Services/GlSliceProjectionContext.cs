@@ -52,7 +52,7 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         const float kEpsilon = 0.0001;
         const float kDedupEpsilon = 0.0005;
-        const int kMaxHits = 32;
+        const int kMaxHits = 128;
 
         vec3 fetchVertex(int flatIndex) {
             int tx = flatIndex % uTriangleTexWidth;
@@ -167,7 +167,7 @@ public sealed class GlSliceProjectionContext : IDisposable
                 bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        hitDeltas[hitIndex] = clamp(hitDeltas[hitIndex] + hitDelta, -1, 1);
+                        hitDeltas[hitIndex] += hitDelta;
                         accumulated = true;
                         break;
                     }
@@ -215,7 +215,7 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         const float kEpsilon = 0.0001;
         const float kDedupEpsilon = 0.0005;
-        const int kMaxHits = 32;
+        const int kMaxHits = 128;
 
         vec3 fetchVertex(int flatIndex) {
             int tx = flatIndex % uTriangleTexWidth;
@@ -335,7 +335,7 @@ public sealed class GlSliceProjectionContext : IDisposable
                 bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        hitDeltas[hitIndex] = clamp(hitDeltas[hitIndex] + hitDelta, -1, 1);
+                        hitDeltas[hitIndex] += hitDelta;
                         accumulated = true;
                         break;
                     }
@@ -775,7 +775,7 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         var width = Math.Min(maxTextureSize, Math.Max(1, totalTexels));
         var height = (int)Math.Ceiling(totalTexels / (double)width);
-        var data = new Half[width * height * 4];
+        var data = new float[width * height * 4];
 
         var offset = 0;
         for (var i = 0; i < triangles.Count; i++)
@@ -794,7 +794,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
-        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba16f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.HalfFloat, in data[0]);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba32f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.Float, in data[0]);
 
         return width;
     }
@@ -810,7 +810,7 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         var width = Math.Min(maxTextureSize, Math.Max(1, totalTexels));
         var height = (int)Math.Ceiling(totalTexels / (double)width);
-        var data = new Half[width * height * 4];
+        var data = new float[width * height * 4];
 
         var offset = 0;
         for (var i = 0; i < triangles.Count; i++)
@@ -821,10 +821,10 @@ public sealed class GlSliceProjectionContext : IDisposable
             var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
             var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
 
-            data[offset++] = (Half)minY;
-            data[offset++] = (Half)maxY;
-            data[offset++] = (Half)minZ;
-            data[offset++] = (Half)maxZ;
+            data[offset++] = minY;
+            data[offset++] = maxY;
+            data[offset++] = minZ;
+            data[offset++] = maxZ;
         }
 
         if (boundsTexture == 0)
@@ -835,7 +835,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
-        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba16f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.HalfFloat, in data[0]);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba32f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.Float, in data[0]);
 
         return width;
     }
@@ -868,14 +868,14 @@ public sealed class GlSliceProjectionContext : IDisposable
             var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
             var maxX = MathF.Max(triangle.V0.X, MathF.Max(triangle.V1.X, triangle.V2.X));
 
-            var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
-            var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
+            var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight) - 1, 0, pixelHeight - 1);
+            var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight) + 1, 0, pixelHeight - 1);
             if (endRow < startRow)
                 (startRow, endRow) = (endRow, startRow);
 
             var startGroup = Math.Clamp(startRow / activeRowGroupHeight, 0, rowGroupCount - 1);
             var endGroup = Math.Clamp(endRow / activeRowGroupHeight, 0, rowGroupCount - 1);
-            var xEndGroup = Math.Clamp((int)MathF.Floor(((maxX + (bedWidthMm * 0.5f)) / bedWidthMm) * activeGridColumnCount), 0, activeGridColumnCount - 1);
+            var xEndGroup = Math.Clamp((int)MathF.Ceiling(((maxX + (bedWidthMm * 0.5f)) / bedWidthMm) * activeGridColumnCount), 0, activeGridColumnCount - 1);
 
             for (var groupIndex = startGroup; groupIndex <= endGroup; groupIndex++)
             {
@@ -1055,9 +1055,6 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.LinkProgram(computeProgram);
             CheckProgram(computeProgram);
             gl.DeleteShader(compute);
-
-            supportsComputeShaders = true;
-            renderBackend = useNvidiaFastPath ? "nvidia-compute" : "compute";
         }
         catch (Exception ex)
         {
@@ -1162,12 +1159,12 @@ public sealed class GlSliceProjectionContext : IDisposable
         }
     }
 
-    private static void WriteVertex(Half[] data, ref int offset, Vec3 vertex)
+    private static void WriteVertex(float[] data, ref int offset, Vec3 vertex)
     {
-        data[offset++] = (Half)vertex.X;
-        data[offset++] = (Half)vertex.Y;
-        data[offset++] = (Half)vertex.Z;
-        data[offset++] = (Half)1f;
+        data[offset++] = vertex.X;
+        data[offset++] = vertex.Y;
+        data[offset++] = vertex.Z;
+        data[offset++] = 1f;
     }
 
     private static int MapZToRow(float zMm, float bedDepthMm, int height)

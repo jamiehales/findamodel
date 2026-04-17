@@ -193,6 +193,32 @@ public class SliceBitmapHarnessTests
         Assert.Equal(2, CountConnectedComponents(actual));
     }
 
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void FlippedTriangleSeam_DoesNotCreateBridgeArtifact(PngSliceExportMethod method)
+    {
+        var generator = CreateGenerator(method);
+        var left = CreateOffsetBox(widthMm: 4f, depthMm: 4f, heightMm: 4f, centerX: -4f, centerZ: 0f);
+        var right = CreateOffsetBox(widthMm: 4f, depthMm: 4f, heightMm: 4f, centerX: 4f, centerZ: 0f);
+
+        var flipped = left[8];
+        left[8] = new Triangle3D(flipped.V0, flipped.V2, flipped.V1, flipped.Normal);
+
+        var triangles = new List<Triangle3D>(left.Count + right.Count);
+        triangles.AddRange(left);
+        triangles.AddRange(right);
+
+        var actual = generator.RenderLayerBitmap(
+            triangles,
+            sliceHeightMm: 2f,
+            bedWidthMm: 20f,
+            bedDepthMm: 12f,
+            pixelWidth: 120,
+            pixelHeight: 48);
+
+        Assert.Equal(2, CountConnectedComponents(actual));
+    }
+
     private static IPlateSliceBitmapGenerator CreateGenerator(PngSliceExportMethod method) => method switch
     {
         PngSliceExportMethod.MeshIntersection => new MeshIntersectionSliceBitmapGenerator(),
