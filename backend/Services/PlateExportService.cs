@@ -6,6 +6,7 @@ namespace findamodel.Services;
 
 public interface IPlateGenerationProgressReporter
 {
+    void StartStage(int totalEntries, string? entryName = null);
     void MarkCurrentEntry(string entryName);
     void MarkEntryCompleted();
 }
@@ -190,6 +191,7 @@ public sealed class PlateExportService(
                 geometryByModelId,
                 warning,
                 skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(),
+                progressReporter,
                 cancellationToken),
             _ => throw new NotImplementedException($"Unhandled format '{format}'"),
         };
@@ -248,6 +250,7 @@ public sealed class PlateExportService(
         Dictionary<Guid, LoadedGeometry> geometryByModelId,
         string? warning,
         IReadOnlyList<string> skippedModels,
+        IPlateGenerationProgressReporter? progressReporter,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -274,7 +277,9 @@ public sealed class PlateExportService(
             printer.BedDepthMm,
             printer.PixelWidth,
             printer.PixelHeight,
-            ResolvePngSliceMethod(format));
+            ResolvePngSliceMethod(format),
+            progressReporter: progressReporter,
+            cancellationToken: cancellationToken);
 
         return new PlateExportFileResult(
             content,

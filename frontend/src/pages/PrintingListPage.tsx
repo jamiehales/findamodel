@@ -83,6 +83,7 @@ function PrintingListPage() {
   const plateInProgress =
     plateJob != null && plateJob.status !== 'failed' && plateJob.status !== 'completed';
   const plateBusy = savingPlate || plateInProgress || plateDownloading;
+  const plateIsSliceJob = plateJob?.format?.startsWith('pngzip') ?? false;
 
   useEffect(() => {
     if (!archiveJob || (archiveJob.status !== 'queued' && archiveJob.status !== 'running')) return;
@@ -358,15 +359,25 @@ function PrintingListPage() {
           : null;
   const plateCurrentFile = plateJob?.currentEntryName?.split('/').pop() ?? null;
   const plateStatusText = plateDownloading
-    ? 'Downloading plate…'
+    ? plateIsSliceJob
+      ? 'Downloading slice archive…'
+      : 'Downloading plate…'
     : plateJob?.status === 'queued'
-      ? 'Queueing plate export…'
+      ? plateIsSliceJob
+        ? 'Queueing slice export…'
+        : 'Queueing plate export…'
       : plateJob?.status === 'running'
         ? plateJob.totalEntries > 0
-          ? `Preparing plate ${plateJob.completedEntries} of ${plateJob.totalEntries} models…`
-          : 'Preparing plate…'
+          ? plateIsSliceJob
+            ? `Generating slices ${plateJob.completedEntries} of ${plateJob.totalEntries}…`
+            : `Preparing plate ${plateJob.completedEntries} of ${plateJob.totalEntries} models…`
+          : plateIsSliceJob
+            ? 'Preparing slice export…'
+            : 'Preparing plate…'
         : plateJob?.status === 'completed'
-          ? 'Plate ready. Starting download…'
+          ? plateIsSliceJob
+            ? 'Slice archive ready. Starting download…'
+            : 'Plate ready. Starting download…'
           : null;
 
   return (
@@ -520,7 +531,7 @@ function PrintingListPage() {
               )}
               {plateCurrentFile && (
                 <Typography className={styles.archiveStatusMeta}>
-                  Current model: {plateCurrentFile}
+                  {plateIsSliceJob ? 'Current step' : 'Current model'}: {plateCurrentFile}
                 </Typography>
               )}
             </Stack>

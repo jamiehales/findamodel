@@ -1,17 +1,31 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using findamodel.Models;
 
 namespace findamodel.Services;
 
-public sealed class PlateGenerationJobService(
-    PlateExportService plateExportService,
-    ILoggerFactory loggerFactory)
+public sealed class PlateGenerationJobService
 {
-    private readonly ILogger logger = loggerFactory.CreateLogger(LogChannels.PrintingList);
+    private readonly PlateExportService plateExportService;
+    private readonly ILogger logger;
     private static readonly TimeSpan JobRetention = TimeSpan.FromHours(1);
     private readonly ConcurrentDictionary<Guid, PlateJobState> jobs = new();
+    private readonly Channel<QueuedPlateJob> jobQueue = Channel.CreateUnbounded<QueuedPlateJob>(new UnboundedChannelOptions
+    {
+        SingleReader = true,
+        SingleWriter = false,
+    });
 
-    public Task<PlateGenerationJobDto> CreateJobAsync(
+    public PlateGenerationJobService(
+        PlateExportService plateExportService,
+        ILoggerFactory loggerFactory)
+    {
+        this.plateExportService = plateExportService;
+        logger = loggerFactory.CreateLogger(LogChannels.PrintingList);
+        _ = Task.Run(ProcessQueueAsync);
+    }
+
+    public async Task<PlateGenerationJobDto> CreateJobAsync(
         GeneratePlateRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -22,17 +36,32 @@ public sealed class PlateGenerationJobService(
         var tempDirectory = Path.Combine(Path.GetTempPath(), "findamodel", "plate-exports");
         Directory.CreateDirectory(tempDirectory);
 
+        var initialTotalEntries = format.StartsWith("pngzip", StringComparison.Ordinal)
+            ? 0
+            : request.Placements.Count;
+
         var job = new PlateJobState(
             Guid.NewGuid(),
             PlateExportService.GetFileName(format),
             format,
             Path.Combine(tempDirectory, $"{Guid.NewGuid():N}.{format}"),
-            request.Placements.Count);
+            initialTotalEntries);
 
         jobs[job.JobId] = job;
-        _ = Task.Run(() => RunJobAsync(job, request), CancellationToken.None);
+        await jobQueue.Writer.WriteAsync(new QueuedPlateJob(job, request), cancellationToken);
 
-        return Task.FromResult(job.ToDto());
+        return job.ToDto();
+    }
+
+    private async Task ProcessQueueAsync()
+    {
+        await foreach (var queuedJob in jobQueue.Reader.ReadAllAsync())
+        {
+            if (!jobs.ContainsKey(queuedJob.Job.JobId))
+                continue;
+
+            await RunJobAsync(queuedJob.Job, queuedJob.Request);
+        }
     }
 
     public PlateGenerationJobDto? GetJob(Guid jobId)
@@ -97,15 +126,18 @@ public sealed class PlateGenerationJobService(
         catch { }
     }
 
+    private sealed record QueuedPlateJob(PlateJobState Job, GeneratePlateRequest Request);
+
     private sealed class PlateJobState(
         Guid jobId,
         string fileName,
         string format,
         string tempFilePath,
-        int totalEntries) : IPlateGenerationProgressReporter
+        int initialTotalEntries) : IPlateGenerationProgressReporter
     {
         private readonly object gate = new();
         private string status = "queued";
+        private int totalEntries = Math.Max(0, initialTotalEntries);
         private int completedEntries;
         private string? currentEntryName;
         private string? errorMessage;
@@ -117,7 +149,14 @@ public sealed class PlateGenerationJobService(
         public string FileName { get; } = fileName;
         public string Format { get; } = format;
         public string TempFilePath { get; } = tempFilePath;
-        public int TotalEntries { get; } = totalEntries;
+        public int TotalEntries
+        {
+            get
+            {
+                lock (gate)
+                    return totalEntries;
+            }
+        }
 
         public string? Warning
         {
@@ -155,6 +194,17 @@ public sealed class PlateGenerationJobService(
             }
         }
 
+        public void StartStage(int totalEntryCount, string? entryName = null)
+        {
+            lock (gate)
+            {
+                totalEntries = Math.Max(0, totalEntryCount);
+                completedEntries = 0;
+                currentEntryName = entryName;
+                updatedAtUtc = DateTime.UtcNow;
+            }
+        }
+
         public void MarkCurrentEntry(string entryName)
         {
             lock (gate)
@@ -177,7 +227,7 @@ public sealed class PlateGenerationJobService(
         {
             lock (gate)
             {
-                completedEntries = TotalEntries;
+                completedEntries = totalEntries;
                 currentEntryName = null;
                 warning = nextWarning;
                 skippedModels = nextSkippedModels;
@@ -207,16 +257,16 @@ public sealed class PlateGenerationJobService(
         {
             lock (gate)
             {
-                var progressPercent = TotalEntries <= 0
+                var progressPercent = totalEntries <= 0
                     ? (status == "completed" ? 100 : 0)
-                    : (int)Math.Round(completedEntries * 100d / TotalEntries, MidpointRounding.AwayFromZero);
+                    : (int)Math.Round(completedEntries * 100d / totalEntries, MidpointRounding.AwayFromZero);
 
                 return new PlateGenerationJobDto(
                     JobId,
                     FileName,
                     Format,
                     status,
-                    TotalEntries,
+                    totalEntries,
                     completedEntries,
                     Math.Clamp(progressPercent, 0, 100),
                     currentEntryName,

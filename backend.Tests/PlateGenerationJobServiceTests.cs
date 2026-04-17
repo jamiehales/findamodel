@@ -131,6 +131,33 @@ public class PlateGenerationJobServiceTests
             """);
     }
 
+    private static Task WriteRepeatedAsciiStlAsync(string path, int repeatCount)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("solid repeated");
+        for (var i = 0; i < repeatCount; i++)
+        {
+            sb.AppendLine("  facet normal 0 0 -1");
+            sb.AppendLine("    outer loop");
+            sb.AppendLine($"      vertex {i % 25} 0 0");
+            sb.AppendLine($"      vertex {(i % 25) + 1} 0 0");
+            sb.AppendLine($"      vertex {(i % 25) + 0.5} 0 10");
+            sb.AppendLine("    endloop");
+            sb.AppendLine("  endfacet");
+
+            sb.AppendLine("  facet normal 0.8944 0.4472 0");
+            sb.AppendLine("    outer loop");
+            sb.AppendLine($"      vertex {i % 25} 0 0");
+            sb.AppendLine($"      vertex {(i % 25) + 0.5} 10 5");
+            sb.AppendLine($"      vertex {(i % 25) + 1} 0 0");
+            sb.AppendLine("    endloop");
+            sb.AppendLine("  endfacet");
+        }
+
+        sb.AppendLine("endsolid repeated");
+        return File.WriteAllTextAsync(path, sb.ToString());
+    }
+
     [Fact]
     public async Task CreateJobAsync_ReportsProgressAndProducesPlateFile()
     {
@@ -361,6 +388,8 @@ public class PlateGenerationJobServiceTests
             Assert.NotNull(completed);
             Assert.Equal("completed", completed!.Status);
             Assert.Equal(expectedFileName, completed.FileName);
+            Assert.True(completed.TotalEntries > 1, "Expected PNG slice export to report multi-step slice progress.");
+            Assert.Equal(completed.TotalEntries, completed.CompletedEntries);
 
             var file = sut.GetCompletedJobFile(started.JobId);
             Assert.NotNull(file);
@@ -398,6 +427,98 @@ public class PlateGenerationJobServiceTests
             }
 
             Assert.True(hasLitLayer, "Expected at least one lit pixel in the exported slice stack.");
+        }
+        finally
+        {
+            if (Directory.Exists(modelsRoot))
+                Directory.Delete(modelsRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_QueuesLaterJobsWhileSliceExportIsRunning()
+    {
+        var modelsRoot = Path.Combine(Path.GetTempPath(), $"findamodel-plate-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelsRoot);
+        var dbFactory = CreateFactory(nameof(CreateJobAsync_QueuesLaterJobsWhileSliceExportIsRunning));
+
+        try
+        {
+            var modelId = Guid.NewGuid();
+            await WriteRepeatedAsciiStlAsync(Path.Combine(modelsRoot, "slow.stl"), repeatCount: 3000);
+
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                db.Models.Add(new CachedModel
+                {
+                    Id = modelId,
+                    FileName = "slow.stl",
+                    Directory = "",
+                    FileType = "stl",
+                    Checksum = "queue",
+                    FileSize = 1,
+                    FileModifiedAt = DateTime.UtcNow,
+                    CachedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var configuration = CreateConfiguration(modelsRoot);
+            var plateExportService = new PlateExportService(
+                CreateModelService(configuration, dbFactory),
+                new ModelLoaderService(NullLoggerFactory.Instance),
+                new ModelSaverService(),
+                new PlateSliceRasterService(
+                [
+                    new MeshIntersectionSliceBitmapGenerator(),
+                    new OrthographicProjectionSliceBitmapGenerator(),
+                ]),
+                new PrinterService(dbFactory),
+                configuration);
+            var sut = new PlateGenerationJobService(plateExportService, NullLoggerFactory.Instance);
+
+            var printer = await new PrinterService(dbFactory).GetDefaultAsync();
+            Assert.NotNull(printer);
+
+            var first = await sut.CreateJobAsync(
+                new GeneratePlateRequest(
+                [
+                    new PlacementDto(modelId.ToString(), 0, printer!.BedWidthMm / 2f, printer.BedDepthMm / 2f, 0),
+                ],
+                "pngzip_mesh"));
+
+            var second = await sut.CreateJobAsync(
+                new GeneratePlateRequest(
+                [
+                    new PlacementDto(modelId.ToString(), 1, printer.BedWidthMm / 2f, printer.BedDepthMm / 2f, 0),
+                ],
+                "pngzip_mesh"));
+
+            var observedFirstRunning = false;
+            for (var i = 0; i < 200; i++)
+            {
+                var firstState = sut.GetJob(first.JobId);
+                var secondState = sut.GetJob(second.JobId);
+                Assert.NotNull(firstState);
+                Assert.NotNull(secondState);
+
+                if (firstState!.Status == "running")
+                {
+                    observedFirstRunning = true;
+                    Assert.Equal("queued", secondState!.Status);
+                    break;
+                }
+
+                if (firstState.Status == "completed")
+                    break;
+
+                await Task.Delay(10);
+            }
+
+            Assert.True(observedFirstRunning, "Expected the first slice job to enter the running state.");
+
+            await WaitForCompletionAsync(sut, first.JobId);
+            await WaitForCompletionAsync(sut, second.JobId);
         }
         finally
         {

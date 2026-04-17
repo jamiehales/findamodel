@@ -41,7 +41,9 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         int resolutionX,
         int resolutionY,
         PngSliceExportMethod? method = null,
-        float layerHeightMm = DefaultLayerHeightMm)
+        float layerHeightMm = DefaultLayerHeightMm,
+        IPlateGenerationProgressReporter? progressReporter = null,
+        CancellationToken cancellationToken = default)
     {
         ValidateInputs(bedWidthMm, bedDepthMm, resolutionX, resolutionY, layerHeightMm);
 
@@ -51,6 +53,9 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
             : triangles.Max(t => MathF.Max(t.V0.Y, MathF.Max(t.V1.Y, t.V2.Y)));
 
         var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(0f, maxY) / layerHeightMm));
+        var trianglesByLayer = BuildLayerBuckets(triangles, layerHeightMm, layerCount);
+
+        progressReporter?.StartStage(layerCount, "Preparing slices");
 
         using var ms = new MemoryStream();
         using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
@@ -59,9 +64,12 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
 
             for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                progressReporter?.MarkCurrentEntry($"Slice layer {layerIndex + 1} of {layerCount}");
+
                 var sliceHeight = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
                 var bitmap = RenderLayerBitmap(
-                    triangles,
+                    trianglesByLayer[layerIndex],
                     sliceHeight,
                     bedWidthMm,
                     bedDepthMm,
@@ -73,10 +81,40 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                 var entry = archive.CreateEntry($"slices/layer_{layerIndex:D5}.png", CompressionLevel.Optimal);
                 using var entryStream = entry.Open();
                 WritePng(bitmap, entryStream);
+                progressReporter?.MarkEntryCompleted();
             }
         }
 
         return ms.ToArray();
+    }
+
+    private static IReadOnlyList<Triangle3D>[] BuildLayerBuckets(
+        IReadOnlyList<Triangle3D> triangles,
+        float layerHeightMm,
+        int layerCount)
+    {
+        var byLayer = new List<Triangle3D>?[layerCount];
+
+        foreach (var triangle in triangles)
+        {
+            var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
+            var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
+            if (maxY < 0f)
+                continue;
+
+            var startLayer = Math.Clamp((int)MathF.Floor(MathF.Max(0f, minY) / layerHeightMm), 0, layerCount - 1);
+            var endLayer = Math.Clamp((int)MathF.Ceiling(MathF.Max(0f, maxY) / layerHeightMm) - 1, 0, layerCount - 1);
+            if (endLayer < startLayer)
+                continue;
+
+            for (var layerIndex = startLayer; layerIndex <= endLayer; layerIndex++)
+            {
+                byLayer[layerIndex] ??= [];
+                byLayer[layerIndex]!.Add(triangle);
+            }
+        }
+
+        return byLayer.Select(layer => (IReadOnlyList<Triangle3D>)(layer ?? [])).ToArray();
     }
 
     private IPlateSliceBitmapGenerator GetGenerator(PngSliceExportMethod method)
