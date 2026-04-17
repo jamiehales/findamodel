@@ -14,6 +14,7 @@ public class ModelsController(
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
     SupportSeparationService supportSeparation,
+    AutoSupportJobService autoSupportJobService,
     IConfiguration config) : ControllerBase
 {
     [HttpGet]
@@ -256,6 +257,36 @@ public class ModelsController(
         BinaryPrimitives.WriteUInt32LittleEndian(span[afterBody..(afterBody + 4)], (uint)supportPayload.Length);
         supportPayload.CopyTo(span[(afterBody + 4)..]);
 
+        return File(envelope, MeshTransferService.ContentTypeSplit);
+    }
+
+    [HttpPost("{id:guid}/auto-support/jobs")]
+    public async Task<IActionResult> CreateAutoSupportJob(Guid id, CancellationToken ct)
+    {
+        var model = await modelService.GetModelAsync(id);
+        if (model == null) return NotFound();
+
+        var job = await autoSupportJobService.CreateJobAsync(id, ct);
+        if (job == null) return NotFound();
+
+        return Accepted(job);
+    }
+
+    [HttpGet("{id:guid}/auto-support/jobs/{jobId:guid}")]
+    public IActionResult GetAutoSupportJob(Guid id, Guid jobId)
+    {
+        var job = autoSupportJobService.GetJob(id, jobId);
+        if (job == null) return NotFound();
+        return Ok(job);
+    }
+
+    [HttpGet("{id:guid}/auto-support/jobs/{jobId:guid}/geometry")]
+    public IActionResult GetAutoSupportGeometry(Guid id, Guid jobId)
+    {
+        var envelope = autoSupportJobService.GetCompletedEnvelope(id, jobId);
+        if (envelope == null) return NotFound();
+
+        Response.Headers.CacheControl = "no-store";
         return File(envelope, MeshTransferService.ContentTypeSplit);
     }
 

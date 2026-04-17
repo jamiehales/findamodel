@@ -292,6 +292,15 @@ export default function SettingsPage() {
   const [tagGenerationPromptOverride, setTagGenerationPromptOverride] = useState('');
   const [descriptionGenerationPromptOverride, setDescriptionGenerationPromptOverride] =
     useState('');
+  const [autoSupportBedMarginMm, setAutoSupportBedMarginMm] = useState('2');
+  const [autoSupportMinVoxelSizeMm, setAutoSupportMinVoxelSizeMm] = useState('0.8');
+  const [autoSupportMaxVoxelSizeMm, setAutoSupportMaxVoxelSizeMm] = useState('2');
+  const [autoSupportMinLayerHeightMm, setAutoSupportMinLayerHeightMm] = useState('0.75');
+  const [autoSupportMaxLayerHeightMm, setAutoSupportMaxLayerHeightMm] = useState('1.5');
+  const [autoSupportMergeDistanceMm, setAutoSupportMergeDistanceMm] = useState('2.5');
+  const [autoSupportPullForceThreshold, setAutoSupportPullForceThreshold] = useState('3');
+  const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
+  const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -344,6 +353,15 @@ export default function SettingsPage() {
       setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
       setTagGenerationPromptOverride(appConfig.tagGenerationPromptTemplateOverride);
       setDescriptionGenerationPromptOverride(appConfig.descriptionGenerationPromptTemplateOverride);
+      setAutoSupportBedMarginMm(String(appConfig.autoSupportBedMarginMm));
+      setAutoSupportMinVoxelSizeMm(String(appConfig.autoSupportMinVoxelSizeMm));
+      setAutoSupportMaxVoxelSizeMm(String(appConfig.autoSupportMaxVoxelSizeMm));
+      setAutoSupportMinLayerHeightMm(String(appConfig.autoSupportMinLayerHeightMm));
+      setAutoSupportMaxLayerHeightMm(String(appConfig.autoSupportMaxLayerHeightMm));
+      setAutoSupportMergeDistanceMm(String(appConfig.autoSupportMergeDistanceMm));
+      setAutoSupportPullForceThreshold(String(appConfig.autoSupportPullForceThreshold));
+      setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
+      setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
     }
   }, [appConfig]);
 
@@ -377,6 +395,15 @@ export default function SettingsPage() {
   const timeoutValue = Number(tagGenerationTimeoutMs);
   const maxTagsValue = Number(tagGenerationMaxTags);
   const minConfidenceValue = Number(tagGenerationMinConfidence);
+  const autoSupportBedMarginValue = Number(autoSupportBedMarginMm);
+  const autoSupportMinVoxelSizeValue = Number(autoSupportMinVoxelSizeMm);
+  const autoSupportMaxVoxelSizeValue = Number(autoSupportMaxVoxelSizeMm);
+  const autoSupportMinLayerHeightValue = Number(autoSupportMinLayerHeightMm);
+  const autoSupportMaxLayerHeightValue = Number(autoSupportMaxLayerHeightMm);
+  const autoSupportMergeDistanceValue = Number(autoSupportMergeDistanceMm);
+  const autoSupportPullForceThresholdValue = Number(autoSupportPullForceThreshold);
+  const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
+  const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
@@ -396,7 +423,27 @@ export default function SettingsPage() {
     maxTagsValue <= 64 &&
     Number.isFinite(minConfidenceValue) &&
     minConfidenceValue >= 0 &&
-    minConfidenceValue <= 1;
+    minConfidenceValue <= 1 &&
+    Number.isFinite(autoSupportBedMarginValue) &&
+    autoSupportBedMarginValue >= 0 &&
+    autoSupportBedMarginValue <= 20 &&
+    Number.isFinite(autoSupportMinVoxelSizeValue) &&
+    Number.isFinite(autoSupportMaxVoxelSizeValue) &&
+    autoSupportMinVoxelSizeValue >= 0.1 &&
+    autoSupportMaxVoxelSizeValue >= autoSupportMinVoxelSizeValue &&
+    Number.isFinite(autoSupportMinLayerHeightValue) &&
+    Number.isFinite(autoSupportMaxLayerHeightValue) &&
+    autoSupportMinLayerHeightValue >= 0.05 &&
+    autoSupportMaxLayerHeightValue >= autoSupportMinLayerHeightValue &&
+    Number.isFinite(autoSupportMergeDistanceValue) &&
+    autoSupportMergeDistanceValue >= 0.1 &&
+    Number.isFinite(autoSupportPullForceThresholdValue) &&
+    autoSupportPullForceThresholdValue >= 0.1 &&
+    Number.isFinite(autoSupportSphereRadiusValue) &&
+    autoSupportSphereRadiusValue >= 0.1 &&
+    Number.isInteger(autoSupportMaxSupportsPerIslandValue) &&
+    autoSupportMaxSupportsPerIslandValue >= 1 &&
+    autoSupportMaxSupportsPerIslandValue <= 64;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -437,6 +484,15 @@ export default function SettingsPage() {
       tagGenerationMinConfidence: minConfidenceValue,
       tagGenerationPromptTemplate: tagGenerationPromptOverride.trim(),
       descriptionGenerationPromptTemplate: descriptionGenerationPromptOverride.trim(),
+      autoSupportBedMarginMm: autoSupportBedMarginValue,
+      autoSupportMinVoxelSizeMm: autoSupportMinVoxelSizeValue,
+      autoSupportMaxVoxelSizeMm: autoSupportMaxVoxelSizeValue,
+      autoSupportMinLayerHeightMm: autoSupportMinLayerHeightValue,
+      autoSupportMaxLayerHeightMm: autoSupportMaxLayerHeightValue,
+      autoSupportMergeDistanceMm: autoSupportMergeDistanceValue,
+      autoSupportPullForceThreshold: autoSupportPullForceThresholdValue,
+      autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
+      autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -529,6 +585,92 @@ export default function SettingsPage() {
                         ? 'Set the minimum cached preview version accepted during indexing.'
                         : `Must be an integer between 0 and ${previewGenerationVersionLimit}. Existing previews below this version will be regenerated on scan.`
                     }
+                  />
+                </Stack>
+                <Typography variant="h6">Auto support preview tuning</Typography>
+                <Typography color="text.secondary">
+                  These values control how aggressively support-point spheres are generated for
+                  unsupported models.
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Bed margin (mm)"
+                    value={autoSupportBedMarginMm}
+                    onChange={(e) => setAutoSupportBedMarginMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min voxel size (mm)"
+                    value={autoSupportMinVoxelSizeMm}
+                    onChange={(e) => setAutoSupportMinVoxelSizeMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max voxel size (mm)"
+                    value={autoSupportMaxVoxelSizeMm}
+                    onChange={(e) => setAutoSupportMaxVoxelSizeMm(e.target.value)}
+                  />
+                </Stack>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min layer height (mm)"
+                    value={autoSupportMinLayerHeightMm}
+                    onChange={(e) => setAutoSupportMinLayerHeightMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max layer height (mm)"
+                    value={autoSupportMaxLayerHeightMm}
+                    onChange={(e) => setAutoSupportMaxLayerHeightMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Merge distance (mm)"
+                    value={autoSupportMergeDistanceMm}
+                    onChange={(e) => setAutoSupportMergeDistanceMm(e.target.value)}
+                  />
+                </Stack>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Pull-force threshold"
+                    value={autoSupportPullForceThreshold}
+                    onChange={(e) => setAutoSupportPullForceThreshold(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Marker sphere radius (mm)"
+                    value={autoSupportSphereRadiusMm}
+                    onChange={(e) => setAutoSupportSphereRadiusMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max supports per island"
+                    value={autoSupportMaxSupportsPerIsland}
+                    onChange={(e) => setAutoSupportMaxSupportsPerIsland(e.target.value)}
                   />
                 </Stack>
                 <Stack direction="row" spacing={1}>

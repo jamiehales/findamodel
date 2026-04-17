@@ -2,157 +2,447 @@ using Microsoft.Extensions.Logging;
 
 namespace findamodel.Services;
 
-public sealed class AutoSupportGenerationService(ILoggerFactory loggerFactory)
+public sealed class AutoSupportGenerationService
 {
-    private const float MinUpwardNormalY = 0.5f;
-    private const float SupportColumnRadiusMm = 0.35f;
-    private const float MaxUnsupportedSpanMm = 12f;
-    private readonly ILogger logger = loggerFactory.CreateLogger<AutoSupportGenerationService>();
+    private readonly ILogger logger;
+    private readonly OrthographicProjectionSliceBitmapGenerator slicer = new();
+    private readonly AppConfigService? appConfigService;
+
+    public AutoSupportGenerationService(ILoggerFactory loggerFactory)
+        : this(null, loggerFactory)
+    {
+    }
+
+    public AutoSupportGenerationService(AppConfigService? appConfigService, ILoggerFactory loggerFactory)
+    {
+        this.appConfigService = appConfigService;
+        logger = loggerFactory.CreateLogger<AutoSupportGenerationService>();
+    }
 
     public SupportPreviewResult GenerateSupportPreview(LoadedGeometry geometry)
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
-        var islands = BuildTopSurfaceIslands(geometry.Triangles);
-        if (islands.Count == 0)
+        if (geometry.Triangles.Count == 0)
+            return new SupportPreviewResult([], CloneGeometry(geometry, []));
+
+        var tuning = ResolveTuning();
+        var bedWidthMm = MathF.Max(geometry.DimensionXMm + (tuning.BedMarginMm * 2f), 10f);
+        var bedDepthMm = MathF.Max(geometry.DimensionZMm + (tuning.BedMarginMm * 2f), 10f);
+        var voxelSizeMm = Math.Clamp(
+            MathF.Max(geometry.DimensionXMm, geometry.DimensionZMm) / 48f,
+            tuning.MinVoxelSizeMm,
+            tuning.MaxVoxelSizeMm);
+        var layerHeightMm = Math.Clamp(geometry.DimensionYMm / 48f, tuning.MinLayerHeightMm, tuning.MaxLayerHeightMm);
+        var pixelWidth = Math.Max(24, (int)Math.Ceiling(bedWidthMm / voxelSizeMm));
+        var pixelHeight = Math.Max(24, (int)Math.Ceiling(bedDepthMm / voxelSizeMm));
+        var supportPoints = new List<SupportPoint>();
+
+        var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(geometry.DimensionYMm, layerHeightMm) / layerHeightMm));
+        for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
         {
-            islands.Add(new TopSurfaceIsland(
-                MinX: -geometry.DimensionXMm * 0.5f,
-                MaxX: geometry.DimensionXMm * 0.5f,
-                MinZ: -geometry.DimensionZMm * 0.5f,
-                MaxZ: geometry.DimensionZMm * 0.5f,
-                SurfaceY: geometry.DimensionYMm));
+            var sliceHeightMm = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
+            var bitmap = slicer.RenderLayerBitmap(
+                geometry.Triangles,
+                sliceHeightMm,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight,
+                layerHeightMm);
+
+            if (bitmap.CountLitPixels() == 0)
+                continue;
+
+            foreach (var island in FindIslands(bitmap, bedWidthMm, bedDepthMm, sliceHeightMm, tuning.SupportMergeDistanceMm))
+            {
+                EnsureInitialSupport(island, supportPoints, tuning);
+                ReinforceIslandIfNeeded(island, supportPoints, tuning);
+            }
         }
 
-        var supportPoints = new List<SupportPoint>();
-        foreach (var island in islands)
-            AddSupportGrid(supportPoints, island);
-
-        var supportTriangles = new List<Triangle3D>(supportPoints.Count * 12);
-        foreach (var point in supportPoints)
-            AppendColumn(supportTriangles, point.Position);
-
-        logger.LogDebug("Generated {SupportCount} support preview points across {IslandCount} top-surface islands.", supportPoints.Count, islands.Count);
+        var supportTriangles = BuildSupportSphereMesh(supportPoints);
+        logger.LogInformation(
+            "Generated {SupportCount} auto-support markers for model footprint {X:F1}x{Z:F1} mm",
+            supportPoints.Count,
+            geometry.DimensionXMm,
+            geometry.DimensionZMm);
 
         return new SupportPreviewResult(
             supportPoints,
-            new LoadedGeometry
-            {
-                Triangles = supportTriangles,
-                DimensionXMm = geometry.DimensionXMm,
-                DimensionYMm = geometry.DimensionYMm,
-                DimensionZMm = geometry.DimensionZMm,
-                SphereCentre = geometry.SphereCentre,
-                SphereRadius = geometry.SphereRadius,
-            });
+            CloneGeometry(geometry, supportTriangles));
     }
 
-    private static List<TopSurfaceIsland> BuildTopSurfaceIslands(IReadOnlyList<Triangle3D> triangles)
+    private static LoadedGeometry CloneGeometry(LoadedGeometry geometry, List<Triangle3D> triangles) => new()
     {
-        var islands = new List<TopSurfaceIsland>();
+        Triangles = triangles,
+        DimensionXMm = geometry.DimensionXMm,
+        DimensionYMm = geometry.DimensionYMm,
+        DimensionZMm = geometry.DimensionZMm,
+        SphereCentre = geometry.SphereCentre,
+        SphereRadius = geometry.SphereRadius,
+    };
 
-        foreach (var triangle in triangles)
+    private static void EnsureInitialSupport(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning)
+    {
+        if (FindNearestSupportIndex(island.CentroidX, island.CentroidZ, supportPoints, tuning.SupportMergeDistanceMm) >= 0)
+            return;
+
+        supportPoints.Add(new SupportPoint(
+            new Vec3(island.CentroidX, island.SliceHeightMm, island.CentroidZ),
+            tuning.SupportSphereRadiusMm,
+            new Vec3(0f, 0f, 0f)));
+    }
+
+    private static void ReinforceIslandIfNeeded(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning)
+    {
+        for (var iteration = 0; iteration < tuning.MaxSupportsPerIsland; iteration++)
         {
-            if (triangle.Normal.Y < MinUpwardNormalY)
-                continue;
-
-            var minX = MathF.Min(triangle.V0.X, MathF.Min(triangle.V1.X, triangle.V2.X));
-            var maxX = MathF.Max(triangle.V0.X, MathF.Max(triangle.V1.X, triangle.V2.X));
-            var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
-            var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
-            var surfaceY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
-
-            var merged = false;
-            for (var i = 0; i < islands.Count; i++)
+            var islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
+            if (islandSupportIndices.Count == 0)
             {
-                if (!Overlaps(islands[i], minX, maxX, minZ, maxZ, surfaceY))
-                    continue;
-
-                islands[i] = islands[i] with
-                {
-                    MinX = MathF.Min(islands[i].MinX, minX),
-                    MaxX = MathF.Max(islands[i].MaxX, maxX),
-                    MinZ = MathF.Min(islands[i].MinZ, minZ),
-                    MaxZ = MathF.Max(islands[i].MaxZ, maxZ),
-                    SurfaceY = MathF.Max(islands[i].SurfaceY, surfaceY),
-                };
-                merged = true;
-                break;
+                EnsureInitialSupport(island, supportPoints, tuning);
+                continue;
             }
 
-            if (!merged)
-                islands.Add(new TopSurfaceIsland(minX, maxX, minZ, maxZ, surfaceY));
+            var strongestPull = EvaluatePullForces(island, islandSupportIndices, supportPoints);
+            if (strongestPull.Score <= tuning.PullForceThreshold)
+                return;
+
+            var candidatePoint = FindBestAdditionalSupportPoint(island, supportPoints);
+            if (candidatePoint is null)
+                return;
+
+            if (FindNearestSupportIndex(candidatePoint.Value.X, candidatePoint.Value.Z, supportPoints, tuning.SupportMergeDistanceMm) >= 0)
+                return;
+
+            supportPoints.Add(new SupportPoint(
+                new Vec3(candidatePoint.Value.X, island.SliceHeightMm, candidatePoint.Value.Z),
+                tuning.SupportSphereRadiusMm,
+                strongestPull.Vector));
+        }
+    }
+
+    private static PullForceEstimate EvaluatePullForces(
+        SliceIsland island,
+        List<int> islandSupportIndices,
+        List<SupportPoint> supportPoints)
+    {
+        var pixelAreaMm2 = island.PixelAreaMm2;
+        var supportAssignments = islandSupportIndices.ToDictionary(index => index, _ => new SupportAccumulator());
+
+        foreach (var pixel in island.Pixels)
+        {
+            var nearestIndex = islandSupportIndices[0];
+            var nearestDistanceSq = float.MaxValue;
+            foreach (var supportIndex in islandSupportIndices)
+            {
+                var support = supportPoints[supportIndex];
+                var dx = pixel.XMm - support.Position.X;
+                var dz = pixel.ZMm - support.Position.Z;
+                var distanceSq = (dx * dx) + (dz * dz);
+                if (distanceSq < nearestDistanceSq)
+                {
+                    nearestDistanceSq = distanceSq;
+                    nearestIndex = supportIndex;
+                }
+            }
+
+            var accumulator = supportAssignments[nearestIndex];
+            accumulator.Count++;
+            accumulator.SumX += pixel.XMm;
+            accumulator.SumZ += pixel.ZMm;
+            accumulator.SumDistance += MathF.Sqrt(nearestDistanceSq);
+        }
+
+        var best = new PullForceEstimate(-1, 0f, new Vec3(0f, 0f, 0f));
+        foreach (var pair in supportAssignments)
+        {
+            var supportIndex = pair.Key;
+            var accumulator = pair.Value;
+            if (accumulator.Count == 0)
+                continue;
+
+            var support = supportPoints[supportIndex];
+            var centroidX = accumulator.SumX / accumulator.Count;
+            var centroidZ = accumulator.SumZ / accumulator.Count;
+            var averageDistanceMm = accumulator.SumDistance / accumulator.Count;
+            var supportedAreaMm2 = accumulator.Count * pixelAreaMm2;
+            var verticalComponent = MathF.Sqrt(MathF.Max(supportedAreaMm2, 0.01f));
+            var lateralX = (centroidX - support.Position.X) * 0.35f * verticalComponent;
+            var lateralZ = (centroidZ - support.Position.Z) * 0.35f * verticalComponent;
+            var vector = new Vec3(lateralX, verticalComponent, lateralZ);
+            var score = vector.Length + (averageDistanceMm * 1.5f);
+
+            supportPoints[supportIndex] = support with { PullForce = vector };
+            if (score > best.Score)
+                best = new PullForceEstimate(supportIndex, score, vector);
+        }
+
+        return best;
+    }
+
+    private static (float X, float Z)? FindBestAdditionalSupportPoint(SliceIsland island, List<SupportPoint> supportPoints)
+    {
+        (float X, float Z)? bestPoint = null;
+        var bestDistanceSq = 0f;
+
+        foreach (var point in island.BoundaryPoints)
+        {
+            var nearestDistanceSq = float.MaxValue;
+            foreach (var support in supportPoints)
+            {
+                var dx = point.X - support.Position.X;
+                var dz = point.Z - support.Position.Z;
+                var distanceSq = (dx * dx) + (dz * dz);
+                if (distanceSq < nearestDistanceSq)
+                    nearestDistanceSq = distanceSq;
+            }
+
+            if (nearestDistanceSq > bestDistanceSq)
+            {
+                bestDistanceSq = nearestDistanceSq;
+                bestPoint = point;
+            }
+        }
+
+        return bestPoint;
+    }
+
+    private static List<int> FindSupportsInsideIsland(SliceIsland island, List<SupportPoint> supportPoints)
+    {
+        var result = new List<int>();
+        var limitSq = island.IslandRadiusMm * island.IslandRadiusMm;
+
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            var support = supportPoints[i];
+            var dx = support.Position.X - island.CentroidX;
+            var dz = support.Position.Z - island.CentroidZ;
+            var distanceSq = (dx * dx) + (dz * dz);
+            if (distanceSq <= limitSq)
+                result.Add(i);
+        }
+
+        return result;
+    }
+
+    private static int FindNearestSupportIndex(float xMm, float zMm, List<SupportPoint> supportPoints, float maxDistanceMm)
+    {
+        var maxDistanceSq = maxDistanceMm * maxDistanceMm;
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            var dx = supportPoints[i].Position.X - xMm;
+            var dz = supportPoints[i].Position.Z - zMm;
+            var distanceSq = (dx * dx) + (dz * dz);
+            if (distanceSq <= maxDistanceSq)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static List<SliceIsland> FindIslands(
+        SliceBitmap bitmap,
+        float bedWidthMm,
+        float bedDepthMm,
+        float sliceHeightMm,
+        float supportMergeDistanceMm)
+    {
+        var visited = new bool[bitmap.Pixels.Length];
+        var islands = new List<SliceIsland>();
+
+        for (var row = 0; row < bitmap.Height; row++)
+        {
+            for (var column = 0; column < bitmap.Width; column++)
+            {
+                var index = (row * bitmap.Width) + column;
+                if (visited[index] || bitmap.Pixels[index] == 0)
+                    continue;
+
+                var queue = new Queue<(int X, int Y)>();
+                var pixels = new List<(int X, int Y)>();
+                var boundaryPoints = new List<(float X, float Z)>();
+                var sumX = 0f;
+                var sumZ = 0f;
+
+                visited[index] = true;
+                queue.Enqueue((column, row));
+
+                while (queue.Count > 0)
+                {
+                    var current = queue.Dequeue();
+                    pixels.Add(current);
+                    var xMm = ColumnToX(current.X, bedWidthMm, bitmap.Width);
+                    var zMm = RowToZ(current.Y, bedDepthMm, bitmap.Height);
+                    sumX += xMm;
+                    sumZ += zMm;
+
+                    var isBoundary = false;
+                    foreach (var (nx, ny) in EnumerateNeighbors(current.X, current.Y))
+                    {
+                        if (nx < 0 || ny < 0 || nx >= bitmap.Width || ny >= bitmap.Height)
+                        {
+                            isBoundary = true;
+                            continue;
+                        }
+
+                        var neighborIndex = (ny * bitmap.Width) + nx;
+                        if (bitmap.Pixels[neighborIndex] == 0)
+                        {
+                            isBoundary = true;
+                            continue;
+                        }
+
+                        if (visited[neighborIndex])
+                            continue;
+
+                        visited[neighborIndex] = true;
+                        queue.Enqueue((nx, ny));
+                    }
+
+                    if (isBoundary)
+                        boundaryPoints.Add((xMm, zMm));
+                }
+
+                var centroidX = sumX / pixels.Count;
+                var centroidZ = sumZ / pixels.Count;
+                var pixelAreaMm2 = (bedWidthMm / bitmap.Width) * (bedDepthMm / bitmap.Height);
+                var maxRadiusMm = 0f;
+                var mappedPixels = new List<SlicePixel>(pixels.Count);
+                foreach (var pixel in pixels)
+                {
+                    var xMm = ColumnToX(pixel.X, bedWidthMm, bitmap.Width);
+                    var zMm = RowToZ(pixel.Y, bedDepthMm, bitmap.Height);
+                    mappedPixels.Add(new SlicePixel(xMm, zMm));
+                    var dx = xMm - centroidX;
+                    var dz = zMm - centroidZ;
+                    maxRadiusMm = MathF.Max(maxRadiusMm, MathF.Sqrt((dx * dx) + (dz * dz)) + supportMergeDistanceMm);
+                }
+
+                islands.Add(new SliceIsland(
+                    mappedPixels,
+                    boundaryPoints,
+                    centroidX,
+                    centroidZ,
+                    sliceHeightMm,
+                    pixelAreaMm2,
+                    maxRadiusMm));
+            }
         }
 
         return islands;
     }
 
-    private static bool Overlaps(TopSurfaceIsland island, float minX, float maxX, float minZ, float maxZ, float surfaceY)
+    private static IEnumerable<(int X, int Y)> EnumerateNeighbors(int x, int y)
     {
-        const float epsilon = 0.01f;
-        return MathF.Abs(island.SurfaceY - surfaceY) <= 0.5f
-            && minX <= island.MaxX + epsilon
-            && maxX >= island.MinX - epsilon
-            && minZ <= island.MaxZ + epsilon
-            && maxZ >= island.MinZ - epsilon;
+        yield return (x - 1, y);
+        yield return (x + 1, y);
+        yield return (x, y - 1);
+        yield return (x, y + 1);
     }
 
-    private static void AddSupportGrid(List<SupportPoint> supportPoints, TopSurfaceIsland island)
+    private static float ColumnToX(int column, float bedWidthMm, int width)
+        => (((column + 0.5f) / width) * bedWidthMm) - (bedWidthMm * 0.5f);
+
+    private static float RowToZ(int row, float bedDepthMm, int height)
+        => (bedDepthMm * 0.5f) - (((row + 0.5f) / height) * bedDepthMm);
+
+    private static List<Triangle3D> BuildSupportSphereMesh(IReadOnlyList<SupportPoint> supportPoints)
     {
-        var spanX = MathF.Max(0.5f, island.MaxX - island.MinX);
-        var spanZ = MathF.Max(0.5f, island.MaxZ - island.MinZ);
-        var columns = Math.Max(1, (int)MathF.Ceiling(spanX / MaxUnsupportedSpanMm));
-        var rows = Math.Max(1, (int)MathF.Ceiling(spanZ / MaxUnsupportedSpanMm));
+        var triangles = new List<Triangle3D>(supportPoints.Count * 144);
+        foreach (var support in supportPoints)
+            AppendSphere(triangles, support.Position, support.RadiusMm, latSegments: 8, lonSegments: 12);
+        return triangles;
+    }
 
-        for (var row = 0; row < rows; row++)
+    private static void AppendSphere(List<Triangle3D> triangles, Vec3 centre, float radiusMm, int latSegments, int lonSegments)
+    {
+        for (var lat = 0; lat < latSegments; lat++)
         {
-            var z = rows == 1
-                ? (island.MinZ + island.MaxZ) * 0.5f
-                : island.MinZ + (spanZ * row / (rows - 1));
+            var theta0 = MathF.PI * lat / latSegments;
+            var theta1 = MathF.PI * (lat + 1) / latSegments;
 
-            for (var column = 0; column < columns; column++)
+            for (var lon = 0; lon < lonSegments; lon++)
             {
-                var x = columns == 1
-                    ? (island.MinX + island.MaxX) * 0.5f
-                    : island.MinX + (spanX * column / (columns - 1));
+                var phi0 = MathF.PI * 2f * lon / lonSegments;
+                var phi1 = MathF.PI * 2f * (lon + 1) / lonSegments;
 
-                supportPoints.Add(new SupportPoint(new Vec3(x, island.SurfaceY, z)));
+                var p00 = SpherePoint(centre, radiusMm, theta0, phi0);
+                var p01 = SpherePoint(centre, radiusMm, theta0, phi1);
+                var p10 = SpherePoint(centre, radiusMm, theta1, phi0);
+                var p11 = SpherePoint(centre, radiusMm, theta1, phi1);
+
+                if (lat > 0)
+                    triangles.Add(new Triangle3D(p00, p10, p01, ComputeNormal(p00, p10, p01)));
+
+                if (lat < latSegments - 1)
+                    triangles.Add(new Triangle3D(p01, p10, p11, ComputeNormal(p01, p10, p11)));
             }
         }
     }
 
-    private static void AppendColumn(List<Triangle3D> triangles, Vec3 top)
+    private static Vec3 SpherePoint(Vec3 centre, float radiusMm, float theta, float phi)
     {
-        var min = new Vec3(top.X - SupportColumnRadiusMm, 0f, top.Z - SupportColumnRadiusMm);
-        var max = new Vec3(top.X + SupportColumnRadiusMm, top.Y, top.Z + SupportColumnRadiusMm);
-
-        var p000 = new Vec3(min.X, min.Y, min.Z);
-        var p001 = new Vec3(min.X, min.Y, max.Z);
-        var p010 = new Vec3(min.X, max.Y, min.Z);
-        var p011 = new Vec3(min.X, max.Y, max.Z);
-        var p100 = new Vec3(max.X, min.Y, min.Z);
-        var p101 = new Vec3(max.X, min.Y, max.Z);
-        var p110 = new Vec3(max.X, max.Y, min.Z);
-        var p111 = new Vec3(max.X, max.Y, max.Z);
-
-        triangles.Add(new Triangle3D(p000, p001, p101, new Vec3(0f, -1f, 0f)));
-        triangles.Add(new Triangle3D(p000, p101, p100, new Vec3(0f, -1f, 0f)));
-        triangles.Add(new Triangle3D(p010, p110, p111, new Vec3(0f, 1f, 0f)));
-        triangles.Add(new Triangle3D(p010, p111, p011, new Vec3(0f, 1f, 0f)));
-        triangles.Add(new Triangle3D(p000, p100, p110, new Vec3(0f, 0f, -1f)));
-        triangles.Add(new Triangle3D(p000, p110, p010, new Vec3(0f, 0f, -1f)));
-        triangles.Add(new Triangle3D(p001, p011, p111, new Vec3(0f, 0f, 1f)));
-        triangles.Add(new Triangle3D(p001, p111, p101, new Vec3(0f, 0f, 1f)));
-        triangles.Add(new Triangle3D(p000, p010, p011, new Vec3(-1f, 0f, 0f)));
-        triangles.Add(new Triangle3D(p000, p011, p001, new Vec3(-1f, 0f, 0f)));
-        triangles.Add(new Triangle3D(p100, p101, p111, new Vec3(1f, 0f, 0f)));
-        triangles.Add(new Triangle3D(p100, p111, p110, new Vec3(1f, 0f, 0f)));
+        var sinTheta = MathF.Sin(theta);
+        return new Vec3(
+            centre.X + (radiusMm * sinTheta * MathF.Cos(phi)),
+            centre.Y + (radiusMm * MathF.Cos(theta)),
+            centre.Z + (radiusMm * sinTheta * MathF.Sin(phi)));
     }
 
-    private sealed record TopSurfaceIsland(float MinX, float MaxX, float MinZ, float MaxZ, float SurfaceY);
+    private static Vec3 ComputeNormal(Vec3 a, Vec3 b, Vec3 c)
+        => (b - a).Cross(c - a).Normalized;
+
+    private AutoSupportTuning ResolveTuning()
+    {
+        var config = appConfigService?.GetAsync().GetAwaiter().GetResult();
+        return new AutoSupportTuning(
+            BedMarginMm: config?.AutoSupportBedMarginMm ?? AppConfigService.DefaultAutoSupportBedMarginMm,
+            MinVoxelSizeMm: config?.AutoSupportMinVoxelSizeMm ?? AppConfigService.DefaultAutoSupportMinVoxelSizeMm,
+            MaxVoxelSizeMm: config?.AutoSupportMaxVoxelSizeMm ?? AppConfigService.DefaultAutoSupportMaxVoxelSizeMm,
+            MinLayerHeightMm: config?.AutoSupportMinLayerHeightMm ?? AppConfigService.DefaultAutoSupportMinLayerHeightMm,
+            MaxLayerHeightMm: config?.AutoSupportMaxLayerHeightMm ?? AppConfigService.DefaultAutoSupportMaxLayerHeightMm,
+            SupportMergeDistanceMm: config?.AutoSupportMergeDistanceMm ?? AppConfigService.DefaultAutoSupportMergeDistanceMm,
+            PullForceThreshold: config?.AutoSupportPullForceThreshold ?? AppConfigService.DefaultAutoSupportPullForceThreshold,
+            SupportSphereRadiusMm: config?.AutoSupportSphereRadiusMm ?? AppConfigService.DefaultAutoSupportSphereRadiusMm,
+            MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland);
+    }
+
+    private sealed record AutoSupportTuning(
+        float BedMarginMm,
+        float MinVoxelSizeMm,
+        float MaxVoxelSizeMm,
+        float MinLayerHeightMm,
+        float MaxLayerHeightMm,
+        float SupportMergeDistanceMm,
+        float PullForceThreshold,
+        float SupportSphereRadiusMm,
+        int MaxSupportsPerIsland);
+
+    private sealed record SlicePixel(float XMm, float ZMm);
+
+    private sealed record SliceIsland(
+        List<SlicePixel> Pixels,
+        List<(float X, float Z)> BoundaryPoints,
+        float CentroidX,
+        float CentroidZ,
+        float SliceHeightMm,
+        float PixelAreaMm2,
+        float IslandRadiusMm);
+
+    private sealed class SupportAccumulator
+    {
+        public int Count { get; set; }
+        public float SumX { get; set; }
+        public float SumZ { get; set; }
+        public float SumDistance { get; set; }
+    }
+
+    private sealed record PullForceEstimate(int SupportIndex, float Score, Vec3 Vector);
 }
 
-public sealed record SupportPoint(Vec3 Position);
+public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce);
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,

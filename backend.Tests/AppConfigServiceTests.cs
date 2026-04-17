@@ -71,6 +71,15 @@ public class AppConfigServiceTests
         Assert.False(dto.AiDescriptionEnabled);
         Assert.Equal("internal", dto.TagGenerationProvider);
         Assert.Equal(AppConfigService.DefaultTagGenerationModel, dto.TagGenerationModel);
+        Assert.Equal(2f, dto.AutoSupportBedMarginMm);
+        Assert.Equal(0.8f, dto.AutoSupportMinVoxelSizeMm);
+        Assert.Equal(2.0f, dto.AutoSupportMaxVoxelSizeMm);
+        Assert.Equal(0.75f, dto.AutoSupportMinLayerHeightMm);
+        Assert.Equal(1.5f, dto.AutoSupportMaxLayerHeightMm);
+        Assert.Equal(2.5f, dto.AutoSupportMergeDistanceMm);
+        Assert.Equal(3f, dto.AutoSupportPullForceThreshold);
+        Assert.Equal(1.2f, dto.AutoSupportSphereRadiusMm);
+        Assert.Equal(6, dto.AutoSupportMaxSupportsPerIsland);
     }
 
     [Fact]
@@ -241,6 +250,54 @@ public class AppConfigServiceTests
         var stored = await db.AppConfigs.SingleAsync();
         Assert.Equal(5, stored.MinimumPreviewGenerationVersion);
         Assert.Null(stored.TagGenerationModel);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsAutoSupportSettings()
+    {
+        var factory = CreateFactory(nameof(UpdateAsync_PersistsAutoSupportSettings));
+        var sut = new AppConfigService(factory, CreateConfiguration());
+
+        var updated = await sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: 5,
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}",
+            AutoSupportBedMarginMm: 4f,
+            AutoSupportMinVoxelSizeMm: 1.1f,
+            AutoSupportMaxVoxelSizeMm: 2.4f,
+            AutoSupportMinLayerHeightMm: 0.6f,
+            AutoSupportMaxLayerHeightMm: 1.8f,
+            AutoSupportMergeDistanceMm: 3.5f,
+            AutoSupportPullForceThreshold: 5.5f,
+            AutoSupportSphereRadiusMm: 1.6f,
+            AutoSupportMaxSupportsPerIsland: 9));
+
+        Assert.Equal(4f, updated.AutoSupportBedMarginMm);
+        Assert.Equal(1.1f, updated.AutoSupportMinVoxelSizeMm);
+        Assert.Equal(2.4f, updated.AutoSupportMaxVoxelSizeMm);
+        Assert.Equal(0.6f, updated.AutoSupportMinLayerHeightMm);
+        Assert.Equal(1.8f, updated.AutoSupportMaxLayerHeightMm);
+        Assert.Equal(3.5f, updated.AutoSupportMergeDistanceMm);
+        Assert.Equal(5.5f, updated.AutoSupportPullForceThreshold);
+        Assert.Equal(1.6f, updated.AutoSupportSphereRadiusMm);
+        Assert.Equal(9, updated.AutoSupportMaxSupportsPerIsland);
+
+        await using var db = factory.CreateDbContext();
+        var stored = await db.AppConfigs.SingleAsync();
+        Assert.Equal(4f, stored.AutoSupportBedMarginMm);
+        Assert.Equal(5.5f, stored.AutoSupportPullForceThreshold);
+        Assert.Equal(9, stored.AutoSupportMaxSupportsPerIsland);
     }
 
     [Fact]

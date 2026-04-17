@@ -19,6 +19,16 @@ public class AppConfig
     public string TagGenerationPromptTemplate { get; set; } = "";
     public string DescriptionGenerationPromptTemplate { get; set; } = "";
 
+    public float AutoSupportBedMarginMm { get; set; } = 2f;
+    public float AutoSupportMinVoxelSizeMm { get; set; } = 0.8f;
+    public float AutoSupportMaxVoxelSizeMm { get; set; } = 2f;
+    public float AutoSupportMinLayerHeightMm { get; set; } = 0.75f;
+    public float AutoSupportMaxLayerHeightMm { get; set; } = 1.5f;
+    public float AutoSupportMergeDistanceMm { get; set; } = 2.5f;
+    public float AutoSupportPullForceThreshold { get; set; } = 3f;
+    public float AutoSupportSphereRadiusMm { get; set; } = 1.2f;
+    public int AutoSupportMaxSupportsPerIsland { get; set; } = 6;
+
     // Initial setup tracking
     public bool SetupCompleted { get; set; } = false;
     public string? ModelsDirectoryPath { get; set; }

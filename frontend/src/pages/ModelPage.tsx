@@ -13,6 +13,9 @@ import {
   useModelOtherParts,
   useActivePrintingList,
   useUpsertPrintingListItem,
+  useGenerateAutoSupportJob,
+  useAutoSupportJob,
+  useAutoSupportGeometry,
 } from '../lib/queries';
 import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import ModelViewer from '../components/ModelViewer';
@@ -35,9 +38,11 @@ function ModelPage() {
 
   const decodedId = decodeURIComponent(id ?? '');
   const [metadataOpen, setMetadataOpen] = React.useState(false);
+  const [autoSupportJobId, setAutoSupportJobId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    setAutoSupportJobId(null);
   }, [decodedId]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
@@ -50,6 +55,22 @@ function ModelPage() {
   const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '');
   const indexingStatus = useIsModelIndexing(model?.relativePath ?? '');
   const isReindexing = indexingStatus === 'running';
+  const { mutate: generateAutoSupport, isPending: isGeneratingAutoSupportRequest } =
+    useGenerateAutoSupportJob(decodedId);
+  const { data: autoSupportJob } = useAutoSupportJob(
+    decodedId,
+    autoSupportJobId,
+    !!autoSupportJobId,
+  );
+  const { data: autoSupportGeometry } = useAutoSupportGeometry(
+    decodedId,
+    autoSupportJobId,
+    autoSupportJob?.status === 'completed',
+  );
+  const isGeneratingAutoSupport =
+    isGeneratingAutoSupportRequest ||
+    autoSupportJob?.status === 'queued' ||
+    autoSupportJob?.status === 'running';
 
   const backButton = (
     <Button variant="back" onClick={() => navigate('/')}>
@@ -144,6 +165,23 @@ function ModelPage() {
                   Edit metadata
                 </Button>
 
+                {model.supported !== true && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={isGeneratingAutoSupport}
+                    onClick={() =>
+                      generateAutoSupport(undefined, {
+                        onSuccess: (job) => setAutoSupportJobId(job.jobId),
+                      })
+                    }
+                  >
+                    {isGeneratingAutoSupport
+                      ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
+                      : 'Generate supports'}
+                  </Button>
+                )}
+
                 <IconButton
                   component="a"
                   href={model.fileUrl}
@@ -219,6 +257,54 @@ function ModelPage() {
             />
           </Box>
         </Box>
+
+        {model.supported !== true && (
+          <Box className={styles.viewerSection}>
+            <Box className={styles.autoSupportHeader}>
+              <Typography variant="h6">Auto support preview</Typography>
+              <Typography className={styles.autoSupportHint}>
+                Suggested support points are shown as sphere markers.
+              </Typography>
+              <Box className={styles.autoSupportActions}>
+                <Button
+                  variant="contained"
+                  disabled={isGeneratingAutoSupport}
+                  onClick={() =>
+                    generateAutoSupport(undefined, {
+                      onSuccess: (job) => setAutoSupportJobId(job.jobId),
+                    })
+                  }
+                >
+                  {isGeneratingAutoSupport
+                    ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
+                    : 'Generate supports'}
+                </Button>
+              </Box>
+            </Box>
+            <Box className={styles.viewerBox}>
+              {autoSupportGeometry ? (
+                <ModelViewer
+                  modelId={model.id}
+                  convexHull={model.convexHull}
+                  concaveHull={model.concaveHull}
+                  convexSansRaftHull={model.convexSansRaftHull}
+                  supported
+                  splitGeometryOverride={autoSupportGeometry}
+                />
+              ) : (
+                <Box className={styles.autoSupportPlaceholder}>
+                  <Typography>
+                    {autoSupportJob?.status === 'failed'
+                      ? (autoSupportJob.errorMessage ?? 'Support generation failed.')
+                      : isGeneratingAutoSupport
+                        ? 'Generating supported preview...'
+                        : 'Generate supports to preview recommended contact points for this unsupported model.'}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
 
         {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
           <Box className={styles.hullSection}>

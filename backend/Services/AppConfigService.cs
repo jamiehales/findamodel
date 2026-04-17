@@ -21,6 +21,15 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     private const int DefaultTagGenerationTimeoutMs = 60000;
     private const int DefaultTagGenerationMaxTags = 12;
     private const float DefaultTagGenerationMinConfidence = 0.45f;
+    public const float DefaultAutoSupportBedMarginMm = 2f;
+    public const float DefaultAutoSupportMinVoxelSizeMm = 0.8f;
+    public const float DefaultAutoSupportMaxVoxelSizeMm = 2f;
+    public const float DefaultAutoSupportMinLayerHeightMm = 0.75f;
+    public const float DefaultAutoSupportMaxLayerHeightMm = 1.5f;
+    public const float DefaultAutoSupportMergeDistanceMm = 2.5f;
+    public const float DefaultAutoSupportPullForceThreshold = 3f;
+    public const float DefaultAutoSupportSphereRadiusMm = 1.2f;
+    public const int DefaultAutoSupportMaxSupportsPerIsland = 6;
     public const string DefaultTagGenerationPromptTemplate =
         "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
     public const string DefaultDescriptionGenerationPromptTemplate =
@@ -75,6 +84,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (!float.IsFinite(request.TagGenerationMinConfidence) || request.TagGenerationMinConfidence < 0f || request.TagGenerationMinConfidence > 1f)
             throw new ArgumentException("Tag generation minimum confidence must be a finite number between 0 and 1.", nameof(request.TagGenerationMinConfidence));
 
+        ValidateAutoSupportSettings(request);
+
         await using var db = await dbFactory.CreateDbContextAsync();
         var config = await EnsureConfigAsync(db);
         config.DefaultRaftHeightMm = request.DefaultRaftHeightMm;
@@ -97,6 +108,15 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.DescriptionGenerationPromptTemplate = NormalizePromptOverride(
             request.DescriptionGenerationPromptTemplate,
             ResolveConfiguredDescriptionGenerationPromptTemplate());
+        config.AutoSupportBedMarginMm = request.AutoSupportBedMarginMm;
+        config.AutoSupportMinVoxelSizeMm = request.AutoSupportMinVoxelSizeMm;
+        config.AutoSupportMaxVoxelSizeMm = request.AutoSupportMaxVoxelSizeMm;
+        config.AutoSupportMinLayerHeightMm = request.AutoSupportMinLayerHeightMm;
+        config.AutoSupportMaxLayerHeightMm = request.AutoSupportMaxLayerHeightMm;
+        config.AutoSupportMergeDistanceMm = request.AutoSupportMergeDistanceMm;
+        config.AutoSupportPullForceThreshold = request.AutoSupportPullForceThreshold;
+        config.AutoSupportSphereRadiusMm = request.AutoSupportSphereRadiusMm;
+        config.AutoSupportMaxSupportsPerIsland = request.AutoSupportMaxSupportsPerIsland;
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return ToDto(config);
@@ -233,7 +253,16 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.TagGenerationPromptTemplate.Trim(),
             config.DescriptionGenerationPromptTemplate.Trim(),
             config.SetupCompleted,
-            config.ModelsDirectoryPath);
+            config.ModelsDirectoryPath,
+            config.AutoSupportBedMarginMm,
+            config.AutoSupportMinVoxelSizeMm,
+            config.AutoSupportMaxVoxelSizeMm,
+            config.AutoSupportMinLayerHeightMm,
+            config.AutoSupportMaxLayerHeightMm,
+            config.AutoSupportMergeDistanceMm,
+            config.AutoSupportPullForceThreshold,
+            config.AutoSupportSphereRadiusMm,
+            config.AutoSupportMaxSupportsPerIsland);
     }
 
     private async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
@@ -264,6 +293,15 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             TagGenerationMinConfidence = configuration.GetValue<float?>("AppConfig:TagGenerationMinConfidence") ?? DefaultTagGenerationMinConfidence,
             TagGenerationPromptTemplate = string.Empty,
             DescriptionGenerationPromptTemplate = string.Empty,
+            AutoSupportBedMarginMm = configuration.GetValue<float?>("AppConfig:AutoSupportBedMarginMm") ?? DefaultAutoSupportBedMarginMm,
+            AutoSupportMinVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportMinVoxelSizeMm") ?? DefaultAutoSupportMinVoxelSizeMm,
+            AutoSupportMaxVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportMaxVoxelSizeMm") ?? DefaultAutoSupportMaxVoxelSizeMm,
+            AutoSupportMinLayerHeightMm = configuration.GetValue<float?>("AppConfig:AutoSupportMinLayerHeightMm") ?? DefaultAutoSupportMinLayerHeightMm,
+            AutoSupportMaxLayerHeightMm = configuration.GetValue<float?>("AppConfig:AutoSupportMaxLayerHeightMm") ?? DefaultAutoSupportMaxLayerHeightMm,
+            AutoSupportMergeDistanceMm = configuration.GetValue<float?>("AppConfig:AutoSupportMergeDistanceMm") ?? DefaultAutoSupportMergeDistanceMm,
+            AutoSupportPullForceThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportPullForceThreshold") ?? DefaultAutoSupportPullForceThreshold,
+            AutoSupportSphereRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportSphereRadiusMm") ?? DefaultAutoSupportSphereRadiusMm,
+            AutoSupportMaxSupportsPerIsland = configuration.GetValue<int?>("AppConfig:AutoSupportMaxSupportsPerIsland") ?? DefaultAutoSupportMaxSupportsPerIsland,
             SetupCompleted = !string.IsNullOrWhiteSpace(normalizedConfiguredModelsPath),
             ModelsDirectoryPath = normalizedConfiguredModelsPath,
             UpdatedAt = DateTime.UtcNow,
@@ -288,6 +326,27 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             throw new ArgumentException(
                 $"Minimum preview version must be between 0 and {ModelPreviewService.CurrentPreviewGenerationVersion}.",
                 paramName);
+    }
+
+    private static void ValidateAutoSupportSettings(UpdateAppConfigRequest request)
+    {
+        ValidateFiniteRange(request.AutoSupportBedMarginMm, 0f, 20f, nameof(request.AutoSupportBedMarginMm));
+        ValidateFiniteRange(request.AutoSupportMinVoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportMinVoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportMaxVoxelSizeMm, request.AutoSupportMinVoxelSizeMm, 10f, nameof(request.AutoSupportMaxVoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportMinLayerHeightMm, 0.05f, 10f, nameof(request.AutoSupportMinLayerHeightMm));
+        ValidateFiniteRange(request.AutoSupportMaxLayerHeightMm, request.AutoSupportMinLayerHeightMm, 10f, nameof(request.AutoSupportMaxLayerHeightMm));
+        ValidateFiniteRange(request.AutoSupportMergeDistanceMm, 0.1f, 25f, nameof(request.AutoSupportMergeDistanceMm));
+        ValidateFiniteRange(request.AutoSupportPullForceThreshold, 0.1f, 100f, nameof(request.AutoSupportPullForceThreshold));
+        ValidateFiniteRange(request.AutoSupportSphereRadiusMm, 0.1f, 10f, nameof(request.AutoSupportSphereRadiusMm));
+
+        if (request.AutoSupportMaxSupportsPerIsland < 1 || request.AutoSupportMaxSupportsPerIsland > 64)
+            throw new ArgumentException("Auto support max supports per island must be between 1 and 64.", nameof(request.AutoSupportMaxSupportsPerIsland));
+    }
+
+    private static void ValidateFiniteRange(float value, float min, float max, string paramName)
+    {
+        if (!float.IsFinite(value) || value < min || value > max)
+            throw new ArgumentException($"{paramName} must be a finite number between {min} and {max}.", paramName);
     }
 
     private static int NormalizeMinimumPreviewGenerationVersion(int minimumPreviewGenerationVersion) =>

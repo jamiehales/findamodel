@@ -68,6 +68,10 @@ var cacheRendersPath = Path.Combine(resolvedDataPath, "cache", "renders");
 Directory.CreateDirectory(cacheRendersPath);
 builder.Configuration["Cache:RendersPath"] = cacheRendersPath;
 
+var cacheAutoSupportsPath = Path.Combine(resolvedDataPath, "cache", "auto-support");
+Directory.CreateDirectory(cacheAutoSupportsPath);
+builder.Configuration["Cache:AutoSupportsPath"] = cacheAutoSupportsPath;
+
 builder.Services.AddSingleton<findamodel.Services.UserService>();
 builder.Services.AddAuthentication("AutoAdmin")
     .AddScheme<AuthenticationSchemeOptions, AutoAdminAuthHandler>("AutoAdmin", null);
@@ -76,6 +80,8 @@ builder.Services.AddSingleton<findamodel.Services.DirectoryConfigReader>();
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.MeshTransferService>();
 builder.Services.AddSingleton<findamodel.Services.SupportSeparationService>();
+builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationService>();
+builder.Services.AddSingleton<findamodel.Services.AutoSupportJobService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
 builder.Services.AddSingleton<findamodel.Services.GlSliceProjectionContext>();
 builder.Services.AddSingleton<findamodel.Services.IPlateSliceBitmapGenerator, findamodel.Services.MeshIntersectionSliceBitmapGenerator>();

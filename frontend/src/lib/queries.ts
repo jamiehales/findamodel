@@ -7,6 +7,9 @@ import {
   updateModelMetadata,
   fetchGeometry,
   fetchSplitGeometry,
+  createAutoSupportJob,
+  fetchAutoSupportJob,
+  fetchAutoSupportGeometry,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -71,6 +74,8 @@ export const queryKeys = {
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
   splitGeometry: (id: string) => ['split-geometry', id] as const,
+  autoSupportJob: (id: string, jobId: string) => ['auto-support-job', id, jobId] as const,
+  autoSupportGeometry: (id: string, jobId: string) => ['auto-support-geometry', id, jobId] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
@@ -177,6 +182,36 @@ export function useSplitGeometry(id: string, enabled: boolean = true) {
     queryKey: queryKeys.splitGeometry(id),
     queryFn: () => fetchSplitGeometry(id),
     enabled: !!id && enabled,
+  });
+}
+
+export function useGenerateAutoSupportJob(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => createAutoSupportJob(id),
+    onSuccess: (job) => {
+      queryClient.setQueryData(queryKeys.autoSupportJob(id, job.jobId), job);
+    },
+  });
+}
+
+export function useAutoSupportJob(id: string, jobId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: queryKeys.autoSupportJob(id, jobId ?? 'pending'),
+    queryFn: () => fetchAutoSupportJob(id, jobId!),
+    enabled: !!id && !!jobId && enabled,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'completed' || status === 'failed' ? false : 1000;
+    },
+  });
+}
+
+export function useAutoSupportGeometry(id: string, jobId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: queryKeys.autoSupportGeometry(id, jobId ?? 'pending'),
+    queryFn: () => fetchAutoSupportGeometry(id, jobId!),
+    enabled: !!id && !!jobId && enabled,
   });
 }
 

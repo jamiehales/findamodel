@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using findamodel.Data;
 
@@ -10,9 +11,11 @@ using findamodel.Data;
 namespace findamodel.Migrations
 {
     [DbContext(typeof(ModelCacheContext))]
-    partial class ModelCacheContextModelSnapshot : ModelSnapshot
+    [Migration("20260417031834_AddAutoSupportConfigSettings")]
+    partial class AddAutoSupportConfigSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.15");
@@ -29,49 +32,31 @@ namespace findamodel.Migrations
                         .HasDefaultValue(false);
 
                     b.Property<float>("AutoSupportBedMarginMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(2f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportMaxLayerHeightMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(1.5f);
+                        .HasColumnType("REAL");
 
                     b.Property<int>("AutoSupportMaxSupportsPerIsland")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(6);
+                        .HasColumnType("INTEGER");
 
                     b.Property<float>("AutoSupportMaxVoxelSizeMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(2f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportMergeDistanceMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(2.5f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportMinLayerHeightMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(0.75f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportMinVoxelSizeMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(0.8f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportPullForceThreshold")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(3f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportSphereRadiusMm")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("REAL")
-                        .HasDefaultValue(1.2f);
+                        .HasColumnType("REAL");
 
                     b.Property<float>("DefaultRaftHeightMm")
                         .ValueGeneratedOnAdd()

@@ -22,7 +22,16 @@ public record AppConfigDto(
     string TagGenerationPromptTemplateOverride,
     string DescriptionGenerationPromptTemplateOverride,
     bool SetupCompleted,
-    string? ModelsDirectoryPath);
+    string? ModelsDirectoryPath,
+    float AutoSupportBedMarginMm = 2f,
+    float AutoSupportMinVoxelSizeMm = 0.8f,
+    float AutoSupportMaxVoxelSizeMm = 2f,
+    float AutoSupportMinLayerHeightMm = 0.75f,
+    float AutoSupportMaxLayerHeightMm = 1.5f,
+    float AutoSupportMergeDistanceMm = 2.5f,
+    float AutoSupportPullForceThreshold = 3f,
+    float AutoSupportSphereRadiusMm = 1.2f,
+    int AutoSupportMaxSupportsPerIsland = 6);
 
 public record UpdateAppConfigRequest(
     float DefaultRaftHeightMm,
@@ -38,7 +47,16 @@ public record UpdateAppConfigRequest(
     int TagGenerationMaxTags,
     float TagGenerationMinConfidence,
     string TagGenerationPromptTemplate,
-    string DescriptionGenerationPromptTemplate);
+    string DescriptionGenerationPromptTemplate,
+    float AutoSupportBedMarginMm = 2f,
+    float AutoSupportMinVoxelSizeMm = 0.8f,
+    float AutoSupportMaxVoxelSizeMm = 2f,
+    float AutoSupportMinLayerHeightMm = 0.75f,
+    float AutoSupportMaxLayerHeightMm = 1.5f,
+    float AutoSupportMergeDistanceMm = 2.5f,
+    float AutoSupportPullForceThreshold = 3f,
+    float AutoSupportSphereRadiusMm = 1.2f,
+    int AutoSupportMaxSupportsPerIsland = 6);
 
 public record InitialSetupRequest(
     string ModelsDirectoryPath,

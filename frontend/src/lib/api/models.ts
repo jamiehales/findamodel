@@ -329,12 +329,61 @@ export interface SplitGeometryResponse {
   supports: GeometryResponse | null;
 }
 
+export interface AutoSupportJob {
+  jobId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  progressPercent: number;
+  supportCount: number;
+  errorMessage: string | null;
+}
+
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {
   const r = await apiFetch(`/api/models/${id}/geometry/split`, {
     headers: { Accept: 'application/vnd.findamodel.mesh-split' },
   });
   if (r.status === 204) return null;
   if (!r.ok) throw new Error('Failed to fetch split geometry');
+
+  const buf = await r.arrayBuffer();
+  const view = new DataView(buf);
+  let offset = 0;
+
+  const bodyLength = view.getUint32(offset, true);
+  offset += 4;
+  const body = decodeBinaryGeometry(buf.slice(offset, offset + bodyLength));
+  offset += bodyLength;
+
+  const supportLength = view.getUint32(offset, true);
+  offset += 4;
+  const supports =
+    supportLength > 0 ? decodeBinaryGeometry(buf.slice(offset, offset + supportLength)) : null;
+
+  return { body, supports };
+}
+
+export async function createAutoSupportJob(id: string): Promise<AutoSupportJob> {
+  const r = await apiFetch(`/api/models/${id}/auto-support/jobs`, {
+    method: 'POST',
+  });
+  if (!r.ok) throw new Error('Failed to start support generation');
+  return r.json();
+}
+
+export async function fetchAutoSupportJob(id: string, jobId: string): Promise<AutoSupportJob> {
+  const r = await apiFetch(`/api/models/${id}/auto-support/jobs/${jobId}`);
+  if (!r.ok) throw new Error('Failed to fetch support generation status');
+  return r.json();
+}
+
+export async function fetchAutoSupportGeometry(
+  id: string,
+  jobId: string,
+): Promise<SplitGeometryResponse | null> {
+  const r = await apiFetch(`/api/models/${id}/auto-support/jobs/${jobId}/geometry`, {
+    headers: { Accept: 'application/vnd.findamodel.mesh-split' },
+  });
+  if (r.status === 204 || r.status === 404) return null;
+  if (!r.ok) throw new Error('Failed to fetch generated support geometry');
 
   const buf = await r.arrayBuffer();
   const view = new DataView(buf);

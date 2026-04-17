@@ -115,6 +115,15 @@ export interface AppConfig {
   descriptionGenerationPromptTemplateOverride: string;
   setupCompleted: boolean;
   modelsDirectoryPath: string | null;
+  autoSupportBedMarginMm: number;
+  autoSupportMinVoxelSizeMm: number;
+  autoSupportMaxVoxelSizeMm: number;
+  autoSupportMinLayerHeightMm: number;
+  autoSupportMaxLayerHeightMm: number;
+  autoSupportMergeDistanceMm: number;
+  autoSupportPullForceThreshold: number;
+  autoSupportSphereRadiusMm: number;
+  autoSupportMaxSupportsPerIsland: number;
 }
 
 export interface SetupStatus {
@@ -152,6 +161,15 @@ export interface UpdateAppConfigRequest {
   tagGenerationMinConfidence: number;
   tagGenerationPromptTemplate: string;
   descriptionGenerationPromptTemplate: string;
+  autoSupportBedMarginMm: number;
+  autoSupportMinVoxelSizeMm: number;
+  autoSupportMaxVoxelSizeMm: number;
+  autoSupportMinLayerHeightMm: number;
+  autoSupportMaxLayerHeightMm: number;
+  autoSupportMergeDistanceMm: number;
+  autoSupportPullForceThreshold: number;
+  autoSupportSphereRadiusMm: number;
+  autoSupportMaxSupportsPerIsland: number;
 }
 
 export interface InitialSetupRequest {

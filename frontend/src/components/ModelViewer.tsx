@@ -278,6 +278,7 @@ interface ModelViewerProps {
   concaveHull?: string | null;
   convexSansRaftHull?: string | null;
   supported?: boolean | null;
+  splitGeometryOverride?: import('../lib/api').SplitGeometryResponse | null;
 }
 
 export default function ModelViewer({
@@ -286,19 +287,26 @@ export default function ModelViewer({
   concaveHull,
   convexSansRaftHull,
   supported,
+  splitGeometryOverride,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
   const { showSupports, setSupportsToggleAvailable } = useRenderControls();
-  const isSupportModel = supported === true;
-  const { data: splitData, isPending: isSplitPending } = useSplitGeometry(modelId, isSupportModel);
-  const shouldFetchFullGeometry = !isSupportModel || splitData === null;
+  const hasSplitOverride = splitGeometryOverride !== undefined;
+  const shouldFetchStoredSplitGeometry = supported === true && !hasSplitOverride;
+  const { data: splitData, isPending: isSplitPending } = useSplitGeometry(
+    modelId,
+    shouldFetchStoredSplitGeometry,
+  );
+  const activeSplitData = hasSplitOverride ? (splitGeometryOverride ?? null) : splitData;
+  const shouldFetchFullGeometry =
+    !hasSplitOverride && (supported !== true || activeSplitData === null);
   const { data: fullData, isPending: isFullGeometryPending } = useGeometry(
     modelId,
     shouldFetchFullGeometry,
   );
   const color = MODEL_COLOR;
   const theme = useTheme();
-  const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
+  const geometryData = activeSplitData != null ? activeSplitData.body : fullData;
   const orbitTarget = useMemo<[number, number, number]>(
     () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
     [model?.sphereCentreX, model?.sphereCentreY, model?.sphereCentreZ],
@@ -313,16 +321,18 @@ export default function ModelViewer({
     [model?.dimensionXMm, model?.dimensionYMm, model?.dimensionZMm],
   );
 
-  const hasSupportMesh = isSupportModel && splitData?.supports != null;
+  const hasSupportMesh = activeSplitData?.supports != null;
 
   useEffect(() => {
     setSupportsToggleAvailable(hasSupportMesh);
     return () => setSupportsToggleAvailable(false);
   }, [hasSupportMesh, setSupportsToggleAvailable]);
 
-  const isGeometryPending = isSupportModel
-    ? isSplitPending || (splitData === null && isFullGeometryPending)
-    : isFullGeometryPending;
+  const isGeometryPending = hasSplitOverride
+    ? false
+    : supported === true
+      ? isSplitPending || (activeSplitData === null && isFullGeometryPending)
+      : isFullGeometryPending;
 
   const errorFallback = (
     <div style={containerStyle}>
@@ -379,8 +389,11 @@ export default function ModelViewer({
             convexSansRaftHull={convexSansRaftHull ?? null}
             raftHeightMm={model.raftHeightMm}
           />
-          {isSupportModel && (
-            <SupportGeometryMesh geometry={splitData?.supports ?? null} visible={showSupports} />
+          {hasSupportMesh && (
+            <SupportGeometryMesh
+              geometry={activeSplitData?.supports ?? null}
+              visible={showSupports}
+            />
           )}
           <OrbitControls
             target={orbitTarget}

@@ -163,9 +163,10 @@ The dev server will start at `http://localhost:5173` and proxy API calls to the 
 ## First run
 
 1. Open the app in your browser.
-2. The **Settings** page shows the configured models root path.
-3. Click **Index** on the Explore page (or via the indexer button) to scan your model files.
-4. FindAModel will walk your directory tree, read any `findamodel.yaml` files it finds, and populate the model library.
+2. The **Settings** page shows the configured models root path and global tuning values.
+3. Optional: adjust the auto-support preview tuning in **Settings** if you want more or fewer suggested support markers for unsupported models.
+4. Click **Index** on the Explore page (or via the indexer button) to scan your model files.
+5. FindAModel will walk your directory tree, read any `findamodel.yaml` files it finds, and populate the model library.
 
 ---
 

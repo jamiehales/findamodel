@@ -97,6 +97,42 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .Property(c => c.TagGenerationMinConfidence)
             .HasDefaultValue(0.45f);
 
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportBedMarginMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportBedMarginMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMinVoxelSizeMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMinVoxelSizeMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMaxVoxelSizeMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxVoxelSizeMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMinLayerHeightMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMinLayerHeightMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMaxLayerHeightMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxLayerHeightMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMergeDistanceMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMergeDistanceMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportPullForceThreshold)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportPullForceThreshold);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportSphereRadiusMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportSphereRadiusMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMaxSupportsPerIsland)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxSupportsPerIsland);
+
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();
