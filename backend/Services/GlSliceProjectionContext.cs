@@ -167,7 +167,7 @@ public sealed class GlSliceProjectionContext : IDisposable
                 bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        hitDeltas[hitIndex] += hitDelta;
+                        hitDeltas[hitIndex] = clamp(hitDeltas[hitIndex] + hitDelta, -1, 1);
                         accumulated = true;
                         break;
                     }
@@ -335,7 +335,7 @@ public sealed class GlSliceProjectionContext : IDisposable
                 bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        hitDeltas[hitIndex] += hitDelta;
+                        hitDeltas[hitIndex] = clamp(hitDeltas[hitIndex] + hitDelta, -1, 1);
                         accumulated = true;
                         break;
                     }

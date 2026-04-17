@@ -331,7 +331,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             if (MathF.Abs(hitXs[i] - candidate) > HitDedupEpsilon)
                 continue;
 
-            hitDeltas[i] += delta;
+            hitDeltas[i] = Math.Sign(hitDeltas[i] + delta);
             return true;
         }
 
@@ -345,7 +345,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             if (MathF.Abs(hits[i].X - candidate) > HitDedupEpsilon)
                 continue;
 
-            hits[i] = hits[i] with { Delta = hits[i].Delta + delta };
+            hits[i] = hits[i] with { Delta = Math.Sign(hits[i].Delta + delta) };
             return;
         }
 

@@ -138,6 +138,61 @@ public class SliceBitmapHarnessTests
         AssertBitmapsMatch(expected, actual, minIou: 0.96f, maxAreaErrorRatio: 0.06f);
     }
 
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void SeparatedCubesSlice_DoesNotCreateHorizontalBridgeRows(PngSliceExportMethod method)
+    {
+        const float sideMm = 5f;
+        const float sliceHeightMm = 2.5f;
+        var generator = CreateGenerator(method);
+
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetCube(sideMm, centerX: -5f, centerZ: 0f));
+        triangles.AddRange(CreateOffsetCube(sideMm, centerX: 5f, centerZ: 0f));
+
+        var actual = generator.RenderLayerBitmap(
+            triangles,
+            sliceHeightMm,
+            bedWidthMm: 24f,
+            bedDepthMm: 10f,
+            pixelWidth: 96,
+            pixelHeight: 20);
+
+        var rowsWithPixels = 0;
+        for (var row = 0; row < actual.Height; row++)
+        {
+            var runs = CountLitRuns(actual.GetRowSpan(row));
+            if (runs.Count == 0)
+                continue;
+
+            rowsWithPixels++;
+            Assert.Equal(2, runs.Count);
+            Assert.All(runs, run => Assert.InRange(run, 16, 24));
+        }
+
+        Assert.True(rowsWithPixels > 0);
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void NarrowSeparatedBoxesSlice_PreservesDistinctConnectedIslands(PngSliceExportMethod method)
+    {
+        var generator = CreateGenerator(method);
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetBox(widthMm: 1.2f, depthMm: 2f, heightMm: 4f, centerX: -2.5f, centerZ: 0f));
+        triangles.AddRange(CreateOffsetBox(widthMm: 1.2f, depthMm: 2f, heightMm: 4f, centerX: 2.5f, centerZ: 0f));
+
+        var actual = generator.RenderLayerBitmap(
+            triangles,
+            sliceHeightMm: 1.25f,
+            bedWidthMm: 60f,
+            bedDepthMm: 40f,
+            pixelWidth: 72,
+            pixelHeight: 48);
+
+        Assert.Equal(2, CountConnectedComponents(actual));
+    }
+
     private static IPlateSliceBitmapGenerator CreateGenerator(PngSliceExportMethod method) => method switch
     {
         PngSliceExportMethod.MeshIntersection => new MeshIntersectionSliceBitmapGenerator(),
@@ -201,16 +256,20 @@ public class SliceBitmapHarnessTests
         => CreateOffsetCube(sideMm, centerX: 0f, centerZ: 0f);
 
     private static List<Triangle3D> CreateOffsetCube(float sideMm, float centerX, float centerZ)
+        => CreateOffsetBox(sideMm, sideMm, sideMm, centerX, centerZ);
+
+    private static List<Triangle3D> CreateOffsetBox(float widthMm, float depthMm, float heightMm, float centerX, float centerZ)
     {
-        var half = sideMm * 0.5f;
-        var p000 = new Vec3(centerX - half, 0f, centerZ - half);
-        var p001 = new Vec3(centerX - half, 0f, centerZ + half);
-        var p010 = new Vec3(centerX - half, sideMm, centerZ - half);
-        var p011 = new Vec3(centerX - half, sideMm, centerZ + half);
-        var p100 = new Vec3(centerX + half, 0f, centerZ - half);
-        var p101 = new Vec3(centerX + half, 0f, centerZ + half);
-        var p110 = new Vec3(centerX + half, sideMm, centerZ - half);
-        var p111 = new Vec3(centerX + half, sideMm, centerZ + half);
+        var halfWidth = widthMm * 0.5f;
+        var halfDepth = depthMm * 0.5f;
+        var p000 = new Vec3(centerX - halfWidth, 0f, centerZ - halfDepth);
+        var p001 = new Vec3(centerX - halfWidth, 0f, centerZ + halfDepth);
+        var p010 = new Vec3(centerX - halfWidth, heightMm, centerZ - halfDepth);
+        var p011 = new Vec3(centerX - halfWidth, heightMm, centerZ + halfDepth);
+        var p100 = new Vec3(centerX + halfWidth, 0f, centerZ - halfDepth);
+        var p101 = new Vec3(centerX + halfWidth, 0f, centerZ + halfDepth);
+        var p110 = new Vec3(centerX + halfWidth, heightMm, centerZ - halfDepth);
+        var p111 = new Vec3(centerX + halfWidth, heightMm, centerZ + halfDepth);
 
         return
         [
@@ -335,6 +394,73 @@ public class SliceBitmapHarnessTests
         var hasNegative = d1 < 0 || d2 < 0 || d3 < 0;
         var hasPositive = d1 > 0 || d2 > 0 || d3 > 0;
         return !(hasNegative && hasPositive);
+    }
+
+    private static List<int> CountLitRuns(ReadOnlySpan<byte> span)
+    {
+        var runs = new List<int>();
+        var index = 0;
+
+        while (index < span.Length)
+        {
+            while (index < span.Length && span[index] == 0)
+                index++;
+
+            var start = index;
+            while (index < span.Length && span[index] > 0)
+                index++;
+
+            if (start < index)
+                runs.Add(index - start);
+        }
+
+        return runs;
+    }
+
+    private static int CountConnectedComponents(SliceBitmap bitmap)
+    {
+        var visited = new bool[bitmap.Pixels.Length];
+        var components = 0;
+
+        for (var row = 0; row < bitmap.Height; row++)
+        {
+            for (var column = 0; column < bitmap.Width; column++)
+            {
+                var index = (row * bitmap.Width) + column;
+                if (visited[index] || bitmap.Pixels[index] == 0)
+                    continue;
+
+                components++;
+                var queue = new Queue<(int X, int Y)>();
+                visited[index] = true;
+                queue.Enqueue((column, row));
+
+                while (queue.Count > 0)
+                {
+                    var current = queue.Dequeue();
+                    foreach (var (nextX, nextY) in new[]
+                             {
+                                 (current.X - 1, current.Y),
+                                 (current.X + 1, current.Y),
+                                 (current.X, current.Y - 1),
+                                 (current.X, current.Y + 1),
+                             })
+                    {
+                        if (nextX < 0 || nextY < 0 || nextX >= bitmap.Width || nextY >= bitmap.Height)
+                            continue;
+
+                        var nextIndex = (nextY * bitmap.Width) + nextX;
+                        if (visited[nextIndex] || bitmap.Pixels[nextIndex] == 0)
+                            continue;
+
+                        visited[nextIndex] = true;
+                        queue.Enqueue((nextX, nextY));
+                    }
+                }
+            }
+        }
+
+        return components;
     }
 
     private static bool PointInAxisAlignedSquare(float x, float z, float centerX, float centerZ, float half)

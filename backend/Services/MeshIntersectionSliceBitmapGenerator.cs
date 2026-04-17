@@ -62,6 +62,8 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
                 index++;
             }
 
+            deltaSum = Math.Sign(deltaSum);
+
             var previousWinding = winding;
             winding += deltaSum;
 
