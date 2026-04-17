@@ -103,7 +103,14 @@ public sealed class AutoSupportJobService(
             var envelope = BuildEnvelope(bodyPayload, supportPayload);
             await File.WriteAllBytesAsync(job.CacheFilePath, envelope, CancellationToken.None);
 
-            job.MarkCompleted(preview.SupportPoints.Count);
+            job.MarkCompleted(
+                preview.SupportPoints.Count,
+                [.. preview.SupportPoints.Select(point => new AutoSupportPointDto(
+                    point.Position.X,
+                    point.Position.Y,
+                    point.Position.Z,
+                    point.RadiusMm,
+                    new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z)))]);
         }
         catch (Exception ex)
         {
@@ -160,6 +167,7 @@ public sealed class AutoSupportJobService(
         private int progressPercent;
         private int supportCount;
         private string? errorMessage;
+        private IReadOnlyList<AutoSupportPointDto> supportPoints = [];
         private DateTime updatedAtUtc = DateTime.UtcNow;
 
         public Guid JobId { get; } = jobId;
@@ -186,13 +194,14 @@ public sealed class AutoSupportJobService(
             }
         }
 
-        public void MarkCompleted(int generatedSupportCount)
+        public void MarkCompleted(int generatedSupportCount, IReadOnlyList<AutoSupportPointDto> generatedSupportPoints)
         {
             lock (gate)
             {
                 status = "completed";
                 progressPercent = 100;
                 supportCount = generatedSupportCount;
+                supportPoints = generatedSupportPoints;
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -204,6 +213,7 @@ public sealed class AutoSupportJobService(
                 status = "failed";
                 progressPercent = 100;
                 errorMessage = message;
+                supportPoints = [];
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -217,7 +227,7 @@ public sealed class AutoSupportJobService(
         public AutoSupportJobDto ToDto()
         {
             lock (gate)
-                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage);
+                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage, supportPoints);
         }
     }
 }

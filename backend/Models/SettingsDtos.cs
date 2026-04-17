@@ -31,7 +31,9 @@ public record AppConfigDto(
     float AutoSupportMergeDistanceMm = 2.5f,
     float AutoSupportPullForceThreshold = 3f,
     float AutoSupportSphereRadiusMm = 1.2f,
-    int AutoSupportMaxSupportsPerIsland = 6);
+    int AutoSupportMaxSupportsPerIsland = 6,
+    float AutoSupportMinIslandAreaMm2 = 4f,
+    float AutoSupportMaxSupportDistanceMm = 10f);
 
 public record UpdateAppConfigRequest(
     float DefaultRaftHeightMm,
@@ -56,7 +58,9 @@ public record UpdateAppConfigRequest(
     float AutoSupportMergeDistanceMm = 2.5f,
     float AutoSupportPullForceThreshold = 3f,
     float AutoSupportSphereRadiusMm = 1.2f,
-    int AutoSupportMaxSupportsPerIsland = 6);
+    int AutoSupportMaxSupportsPerIsland = 6,
+    float AutoSupportMinIslandAreaMm2 = 4f,
+    float AutoSupportMaxSupportDistanceMm = 10f);
 
 public record InitialSetupRequest(
     string ModelsDirectoryPath,

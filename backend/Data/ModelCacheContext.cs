@@ -122,6 +122,14 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue(AppConfigService.DefaultAutoSupportMergeDistanceMm);
 
         modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMinIslandAreaMm2)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMinIslandAreaMm2);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMaxSupportDistanceMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxSupportDistanceMm);
+
+        modelBuilder.Entity<AppConfig>()
             .Property(c => c.AutoSupportPullForceThreshold)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportPullForceThreshold);
 

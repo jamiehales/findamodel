@@ -77,6 +77,8 @@ public class AppConfigServiceTests
         Assert.Equal(0.75f, dto.AutoSupportMinLayerHeightMm);
         Assert.Equal(1.5f, dto.AutoSupportMaxLayerHeightMm);
         Assert.Equal(2.5f, dto.AutoSupportMergeDistanceMm);
+        Assert.Equal(4f, dto.AutoSupportMinIslandAreaMm2);
+        Assert.Equal(10f, dto.AutoSupportMaxSupportDistanceMm);
         Assert.Equal(3f, dto.AutoSupportPullForceThreshold);
         Assert.Equal(1.2f, dto.AutoSupportSphereRadiusMm);
         Assert.Equal(6, dto.AutoSupportMaxSupportsPerIsland);
@@ -279,6 +281,8 @@ public class AppConfigServiceTests
             AutoSupportMinLayerHeightMm: 0.6f,
             AutoSupportMaxLayerHeightMm: 1.8f,
             AutoSupportMergeDistanceMm: 3.5f,
+            AutoSupportMinIslandAreaMm2: 12f,
+            AutoSupportMaxSupportDistanceMm: 11f,
             AutoSupportPullForceThreshold: 5.5f,
             AutoSupportSphereRadiusMm: 1.6f,
             AutoSupportMaxSupportsPerIsland: 9));
@@ -289,6 +293,8 @@ public class AppConfigServiceTests
         Assert.Equal(0.6f, updated.AutoSupportMinLayerHeightMm);
         Assert.Equal(1.8f, updated.AutoSupportMaxLayerHeightMm);
         Assert.Equal(3.5f, updated.AutoSupportMergeDistanceMm);
+        Assert.Equal(12f, updated.AutoSupportMinIslandAreaMm2);
+        Assert.Equal(11f, updated.AutoSupportMaxSupportDistanceMm);
         Assert.Equal(5.5f, updated.AutoSupportPullForceThreshold);
         Assert.Equal(1.6f, updated.AutoSupportSphereRadiusMm);
         Assert.Equal(9, updated.AutoSupportMaxSupportsPerIsland);
@@ -296,6 +302,8 @@ public class AppConfigServiceTests
         await using var db = factory.CreateDbContext();
         var stored = await db.AppConfigs.SingleAsync();
         Assert.Equal(4f, stored.AutoSupportBedMarginMm);
+        Assert.Equal(12f, stored.AutoSupportMinIslandAreaMm2);
+        Assert.Equal(11f, stored.AutoSupportMaxSupportDistanceMm);
         Assert.Equal(5.5f, stored.AutoSupportPullForceThreshold);
         Assert.Equal(9, stored.AutoSupportMaxSupportsPerIsland);
     }

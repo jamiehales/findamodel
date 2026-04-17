@@ -329,12 +329,27 @@ export interface SplitGeometryResponse {
   supports: GeometryResponse | null;
 }
 
+export interface AutoSupportVector {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface AutoSupportPoint {
+  x: number;
+  y: number;
+  z: number;
+  radiusMm: number;
+  pullForce: AutoSupportVector;
+}
+
 export interface AutoSupportJob {
   jobId: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   progressPercent: number;
   supportCount: number;
   errorMessage: string | null;
+  supportPoints: AutoSupportPoint[] | null;
 }
 
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {

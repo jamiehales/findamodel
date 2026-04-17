@@ -25,6 +25,8 @@ public class AppConfig
     public float AutoSupportMinLayerHeightMm { get; set; } = 0.75f;
     public float AutoSupportMaxLayerHeightMm { get; set; } = 1.5f;
     public float AutoSupportMergeDistanceMm { get; set; } = 2.5f;
+    public float AutoSupportMinIslandAreaMm2 { get; set; } = 4f;
+    public float AutoSupportMaxSupportDistanceMm { get; set; } = 10f;
     public float AutoSupportPullForceThreshold { get; set; } = 3f;
     public float AutoSupportSphereRadiusMm { get; set; } = 1.2f;
     public int AutoSupportMaxSupportsPerIsland { get; set; } = 6;

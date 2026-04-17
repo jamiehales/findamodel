@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Line, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
 import { useRenderControls } from './RenderControlsContext';
@@ -219,6 +219,83 @@ function GeometryModel({
   );
 }
 
+interface SupportForceArrowsProps {
+  points: import('../lib/api').AutoSupportPoint[] | null;
+  visible: boolean;
+}
+
+function SupportForceArrow({
+  point,
+  maxMagnitude,
+}: {
+  point: import('../lib/api').AutoSupportPoint;
+  maxMagnitude: number;
+}) {
+  const arrowData = useMemo(() => {
+    const force = new THREE.Vector3(point.pullForce.x, point.pullForce.y, point.pullForce.z);
+    const magnitude = force.length();
+    if (magnitude < 0.001) return null;
+
+    const start = new THREE.Vector3(point.x, point.y + point.radiusMm * 0.25, point.z);
+    const direction = force.normalize();
+    const length = Math.max(point.radiusMm * 2.2, Math.min(magnitude * 1.2, 18));
+    const headLength = Math.max(point.radiusMm * 1.4, Math.min(length * 0.28, 3));
+    const shaftEnd = start
+      .clone()
+      .addScaledVector(direction, Math.max(length - headLength, point.radiusMm));
+    const coneCenter = shaftEnd.clone().addScaledVector(direction, headLength * 0.5);
+    const coneQuaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      direction,
+    );
+    const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
+    const color = new THREE.Color().lerpColors(
+      new THREE.Color('#fbbf24'),
+      new THREE.Color('#ef4444'),
+      normalizedMagnitude,
+    );
+    return { coneCenter, coneQuaternion, color, headLength, linePoints: [start, shaftEnd] };
+  }, [maxMagnitude, point]);
+
+  if (!arrowData) return null;
+
+  return (
+    <group>
+      <Line points={arrowData.linePoints} color={arrowData.color} lineWidth={1.5} />
+      <mesh position={arrowData.coneCenter} quaternion={arrowData.coneQuaternion}>
+        <coneGeometry args={[Math.max(point.radiusMm * 0.55, 0.25), arrowData.headLength, 10]} />
+        <meshBasicMaterial color={arrowData.color} />
+      </mesh>
+    </group>
+  );
+}
+
+function SupportForceArrows({ points, visible }: SupportForceArrowsProps) {
+  const maxMagnitude = useMemo(
+    () =>
+      points?.reduce(
+        (max, point) =>
+          Math.max(max, Math.hypot(point.pullForce.x, point.pullForce.y, point.pullForce.z)),
+        0,
+      ) ?? 0,
+    [points],
+  );
+
+  if (!visible || !points || points.length === 0) return null;
+
+  return (
+    <group>
+      {points.map((point, index) => (
+        <SupportForceArrow
+          key={`${point.x}-${point.y}-${point.z}-${index}`}
+          point={point}
+          maxMagnitude={maxMagnitude}
+        />
+      ))}
+    </group>
+  );
+}
+
 interface ErrorBoundaryState {
   hasError: boolean;
 }
@@ -279,6 +356,7 @@ interface ModelViewerProps {
   convexSansRaftHull?: string | null;
   supported?: boolean | null;
   splitGeometryOverride?: import('../lib/api').SplitGeometryResponse | null;
+  supportPointsOverride?: import('../lib/api').AutoSupportPoint[] | null;
 }
 
 export default function ModelViewer({
@@ -288,6 +366,7 @@ export default function ModelViewer({
   convexSansRaftHull,
   supported,
   splitGeometryOverride,
+  supportPointsOverride,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
   const { showSupports, setSupportsToggleAvailable } = useRenderControls();
@@ -395,6 +474,7 @@ export default function ModelViewer({
               visible={showSupports}
             />
           )}
+          <SupportForceArrows points={supportPointsOverride ?? null} visible={showSupports} />
           <OrbitControls
             target={orbitTarget}
             enableDamping

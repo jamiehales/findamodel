@@ -263,7 +263,7 @@ function ModelPage() {
             <Box className={styles.autoSupportHeader}>
               <Typography variant="h6">Auto support preview</Typography>
               <Typography className={styles.autoSupportHint}>
-                Suggested support points are shown as sphere markers.
+                Suggested support points are shown with pull-force arrows sized by magnitude.
               </Typography>
               <Box className={styles.autoSupportActions}>
                 <Button
@@ -290,6 +290,7 @@ function ModelPage() {
                   convexSansRaftHull={model.convexSansRaftHull}
                   supported
                   splitGeometryOverride={autoSupportGeometry}
+                  supportPointsOverride={autoSupportJob?.supportPoints ?? null}
                 />
               ) : (
                 <Box className={styles.autoSupportPlaceholder}>

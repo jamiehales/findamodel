@@ -298,6 +298,8 @@ export default function SettingsPage() {
   const [autoSupportMinLayerHeightMm, setAutoSupportMinLayerHeightMm] = useState('0.75');
   const [autoSupportMaxLayerHeightMm, setAutoSupportMaxLayerHeightMm] = useState('1.5');
   const [autoSupportMergeDistanceMm, setAutoSupportMergeDistanceMm] = useState('2.5');
+  const [autoSupportMinIslandAreaMm2, setAutoSupportMinIslandAreaMm2] = useState('4');
+  const [autoSupportMaxSupportDistanceMm, setAutoSupportMaxSupportDistanceMm] = useState('10');
   const [autoSupportPullForceThreshold, setAutoSupportPullForceThreshold] = useState('3');
   const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
   const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
@@ -359,6 +361,8 @@ export default function SettingsPage() {
       setAutoSupportMinLayerHeightMm(String(appConfig.autoSupportMinLayerHeightMm));
       setAutoSupportMaxLayerHeightMm(String(appConfig.autoSupportMaxLayerHeightMm));
       setAutoSupportMergeDistanceMm(String(appConfig.autoSupportMergeDistanceMm));
+      setAutoSupportMinIslandAreaMm2(String(appConfig.autoSupportMinIslandAreaMm2));
+      setAutoSupportMaxSupportDistanceMm(String(appConfig.autoSupportMaxSupportDistanceMm));
       setAutoSupportPullForceThreshold(String(appConfig.autoSupportPullForceThreshold));
       setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
       setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
@@ -401,6 +405,8 @@ export default function SettingsPage() {
   const autoSupportMinLayerHeightValue = Number(autoSupportMinLayerHeightMm);
   const autoSupportMaxLayerHeightValue = Number(autoSupportMaxLayerHeightMm);
   const autoSupportMergeDistanceValue = Number(autoSupportMergeDistanceMm);
+  const autoSupportMinIslandAreaValue = Number(autoSupportMinIslandAreaMm2);
+  const autoSupportMaxSupportDistanceValue = Number(autoSupportMaxSupportDistanceMm);
   const autoSupportPullForceThresholdValue = Number(autoSupportPullForceThreshold);
   const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
   const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
@@ -437,6 +443,10 @@ export default function SettingsPage() {
     autoSupportMaxLayerHeightValue >= autoSupportMinLayerHeightValue &&
     Number.isFinite(autoSupportMergeDistanceValue) &&
     autoSupportMergeDistanceValue >= 0.1 &&
+    Number.isFinite(autoSupportMinIslandAreaValue) &&
+    autoSupportMinIslandAreaValue >= 0 &&
+    Number.isFinite(autoSupportMaxSupportDistanceValue) &&
+    autoSupportMaxSupportDistanceValue >= autoSupportMergeDistanceValue &&
     Number.isFinite(autoSupportPullForceThresholdValue) &&
     autoSupportPullForceThresholdValue >= 0.1 &&
     Number.isFinite(autoSupportSphereRadiusValue) &&
@@ -490,6 +500,8 @@ export default function SettingsPage() {
       autoSupportMinLayerHeightMm: autoSupportMinLayerHeightValue,
       autoSupportMaxLayerHeightMm: autoSupportMaxLayerHeightValue,
       autoSupportMergeDistanceMm: autoSupportMergeDistanceValue,
+      autoSupportMinIslandAreaMm2: autoSupportMinIslandAreaValue,
+      autoSupportMaxSupportDistanceMm: autoSupportMaxSupportDistanceValue,
       autoSupportPullForceThreshold: autoSupportPullForceThresholdValue,
       autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
       autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
@@ -641,9 +653,16 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
-                    label="Merge distance (mm)"
+                    label="Min support distance (mm)"
                     value={autoSupportMergeDistanceMm}
                     onChange={(e) => setAutoSupportMergeDistanceMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min island area (mm²)"
+                    value={autoSupportMinIslandAreaMm2}
+                    onChange={(e) => setAutoSupportMinIslandAreaMm2(e.target.value)}
                   />
                 </Stack>
                 <Stack
@@ -651,6 +670,13 @@ export default function SettingsPage() {
                   spacing={1}
                   className={styles.addRow}
                 >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max support distance (mm)"
+                    value={autoSupportMaxSupportDistanceMm}
+                    onChange={(e) => setAutoSupportMaxSupportDistanceMm(e.target.value)}
+                  />
                   <TextField
                     size="small"
                     type="number"

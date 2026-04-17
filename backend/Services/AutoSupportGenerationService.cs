@@ -54,7 +54,13 @@ public sealed class AutoSupportGenerationService
             if (bitmap.CountLitPixels() == 0)
                 continue;
 
-            foreach (var island in FindIslands(bitmap, bedWidthMm, bedDepthMm, sliceHeightMm, tuning.SupportMergeDistanceMm))
+            foreach (var island in FindIslands(
+                         bitmap,
+                         bedWidthMm,
+                         bedDepthMm,
+                         sliceHeightMm,
+                         tuning.SupportMergeDistanceMm,
+                         tuning.MinIslandAreaMm2))
             {
                 EnsureInitialSupport(island, supportPoints, tuning);
                 ReinforceIslandIfNeeded(island, supportPoints, tuning);
@@ -85,7 +91,7 @@ public sealed class AutoSupportGenerationService
 
     private static void EnsureInitialSupport(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning)
     {
-        if (FindNearestSupportIndex(island.CentroidX, island.CentroidZ, supportPoints, tuning.SupportMergeDistanceMm) >= 0)
+        if (FindSupportsInsideIsland(island, supportPoints).Count > 0)
             return;
 
         supportPoints.Add(new SupportPoint(
@@ -102,22 +108,43 @@ public sealed class AutoSupportGenerationService
             if (islandSupportIndices.Count == 0)
             {
                 EnsureInitialSupport(island, supportPoints, tuning);
-                continue;
+                islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
+                if (islandSupportIndices.Count == 0)
+                    return;
             }
 
             var strongestPull = EvaluatePullForces(island, islandSupportIndices, supportPoints);
-            if (strongestPull.Score <= tuning.PullForceThreshold)
+            var uncoveredPixels = FindPixelsBeyondMaxDistance(
+                island,
+                islandSupportIndices,
+                supportPoints,
+                tuning.MaxSupportDistanceMm);
+            var needsAdditionalCoverage = uncoveredPixels.Count > 0;
+            if (!needsAdditionalCoverage && strongestPull.Score <= tuning.PullForceThreshold)
                 return;
 
-            var candidatePoint = FindBestAdditionalSupportPoint(island, supportPoints);
+            var candidatePoint = FindBestAdditionalSupportPoint(island, islandSupportIndices, supportPoints, tuning);
             if (candidatePoint is null)
                 return;
 
-            if (FindNearestSupportIndex(candidatePoint.Value.X, candidatePoint.Value.Z, supportPoints, tuning.SupportMergeDistanceMm) >= 0)
+            var respectsMinDistance = candidatePoint.DistanceMm >= tuning.SupportMergeDistanceMm;
+            if (respectsMinDistance)
+            {
+                supportPoints.Add(new SupportPoint(
+                    new Vec3(candidatePoint.X, island.SliceHeightMm, candidatePoint.Z),
+                    tuning.SupportSphereRadiusMm,
+                    strongestPull.Vector));
+                continue;
+            }
+
+            if (TryRepositionSupport(island, islandSupportIndices, supportPoints, tuning, candidatePoint, strongestPull.Vector))
+                continue;
+
+            if (!needsAdditionalCoverage)
                 return;
 
             supportPoints.Add(new SupportPoint(
-                new Vec3(candidatePoint.Value.X, island.SliceHeightMm, candidatePoint.Value.Z),
+                new Vec3(candidatePoint.X, island.SliceHeightMm, candidatePoint.Z),
                 tuning.SupportSphereRadiusMm,
                 strongestPull.Vector));
         }
@@ -182,31 +209,147 @@ public sealed class AutoSupportGenerationService
         return best;
     }
 
-    private static (float X, float Z)? FindBestAdditionalSupportPoint(SliceIsland island, List<SupportPoint> supportPoints)
+    private static AdditionalSupportCandidate? FindBestAdditionalSupportPoint(
+        SliceIsland island,
+        IReadOnlyList<int> islandSupportIndices,
+        List<SupportPoint> supportPoints,
+        AutoSupportTuning tuning)
     {
-        (float X, float Z)? bestPoint = null;
-        var bestDistanceSq = 0f;
+        var uncoveredPixels = FindPixelsBeyondMaxDistance(island, islandSupportIndices, supportPoints, tuning.MaxSupportDistanceMm);
+        var focusPixels = uncoveredPixels.Count > 0 ? uncoveredPixels : island.Pixels;
+        var boundaryStep = Math.Max(1, island.BoundaryPoints.Count / 48);
+        var pixelStep = Math.Max(1, focusPixels.Count / 64);
+        AdditionalSupportCandidate? bestPoint = null;
+        var bestScore = float.MinValue;
 
-        foreach (var point in island.BoundaryPoints)
+        void EvaluateCandidate(float xMm, float zMm)
         {
-            var nearestDistanceSq = float.MaxValue;
-            foreach (var support in supportPoints)
+            var nearestDistanceMm = FindNearestSupportDistance(xMm, zMm, supportPoints);
+            if (nearestDistanceMm < 0.05f)
+                return;
+
+            var newlyCoveredPixels = 0;
+            var totalCoveredPixels = 0;
+            var improvementScore = 0f;
+            foreach (var pixel in island.Pixels)
             {
-                var dx = point.X - support.Position.X;
-                var dz = point.Z - support.Position.Z;
-                var distanceSq = (dx * dx) + (dz * dz);
-                if (distanceSq < nearestDistanceSq)
-                    nearestDistanceSq = distanceSq;
+                var currentDistanceMm = FindNearestPixelDistance(pixel, islandSupportIndices, supportPoints);
+                var dx = pixel.XMm - xMm;
+                var dz = pixel.ZMm - zMm;
+                var candidateDistanceMm = MathF.Sqrt((dx * dx) + (dz * dz));
+                if (candidateDistanceMm <= tuning.MaxSupportDistanceMm)
+                {
+                    totalCoveredPixels++;
+                    if (currentDistanceMm > tuning.MaxSupportDistanceMm)
+                        newlyCoveredPixels++;
+                }
+
+                improvementScore += MathF.Max(0f, currentDistanceMm - candidateDistanceMm);
             }
 
-            if (nearestDistanceSq > bestDistanceSq)
-            {
-                bestDistanceSq = nearestDistanceSq;
-                bestPoint = point;
-            }
+            if (newlyCoveredPixels == 0 && improvementScore < 1f)
+                return;
+
+            var spacingPenalty = nearestDistanceMm < tuning.SupportMergeDistanceMm
+                ? (tuning.SupportMergeDistanceMm - nearestDistanceMm) * 250f
+                : 0f;
+            var score = (newlyCoveredPixels * 1000f) + (totalCoveredPixels * 5f) + improvementScore - spacingPenalty;
+            if (score <= bestScore)
+                return;
+
+            bestScore = score;
+            bestPoint = new AdditionalSupportCandidate(xMm, zMm, nearestDistanceMm);
+        }
+
+        EvaluateCandidate(island.CentroidX, island.CentroidZ);
+
+        for (var i = 0; i < island.BoundaryPoints.Count; i += boundaryStep)
+        {
+            var point = island.BoundaryPoints[i];
+            EvaluateCandidate(point.X, point.Z);
+        }
+
+        for (var i = 0; i < focusPixels.Count; i += pixelStep)
+        {
+            var pixel = focusPixels[i];
+            EvaluateCandidate(pixel.XMm, pixel.ZMm);
         }
 
         return bestPoint;
+    }
+
+    private static bool TryRepositionSupport(
+        SliceIsland island,
+        IReadOnlyList<int> islandSupportIndices,
+        List<SupportPoint> supportPoints,
+        AutoSupportTuning tuning,
+        AdditionalSupportCandidate candidate,
+        Vec3 pullForce)
+    {
+        foreach (var supportIndex in islandSupportIndices)
+        {
+            if (FindNearestSupportDistance(candidate.X, candidate.Z, supportPoints, supportIndex) < tuning.SupportMergeDistanceMm)
+                continue;
+
+            var existing = supportPoints[supportIndex];
+            supportPoints[supportIndex] = existing with
+            {
+                Position = new Vec3(candidate.X, island.SliceHeightMm, candidate.Z),
+                PullForce = pullForce,
+            };
+
+            var updatedIndices = FindSupportsInsideIsland(island, supportPoints);
+            var uncoveredPixels = FindPixelsBeyondMaxDistance(
+                island,
+                updatedIndices,
+                supportPoints,
+                tuning.MaxSupportDistanceMm);
+            if (uncoveredPixels.Count == 0)
+                return true;
+
+            supportPoints[supportIndex] = existing;
+        }
+
+        return false;
+    }
+
+    private static List<SlicePixel> FindPixelsBeyondMaxDistance(
+        SliceIsland island,
+        IReadOnlyList<int> islandSupportIndices,
+        List<SupportPoint> supportPoints,
+        float maxSupportDistanceMm)
+    {
+        var result = new List<SlicePixel>();
+        foreach (var pixel in island.Pixels)
+        {
+            var nearestDistanceMm = FindNearestPixelDistance(pixel, islandSupportIndices, supportPoints);
+            if (nearestDistanceMm > maxSupportDistanceMm)
+                result.Add(pixel);
+        }
+
+        return result;
+    }
+
+    private static float FindNearestPixelDistance(
+        SlicePixel pixel,
+        IReadOnlyList<int> islandSupportIndices,
+        List<SupportPoint> supportPoints)
+    {
+        if (islandSupportIndices.Count == 0)
+            return float.MaxValue;
+
+        var nearestDistanceSq = float.MaxValue;
+        foreach (var supportIndex in islandSupportIndices)
+        {
+            var support = supportPoints[supportIndex];
+            var dx = pixel.XMm - support.Position.X;
+            var dz = pixel.ZMm - support.Position.Z;
+            var distanceSq = (dx * dx) + (dz * dz);
+            if (distanceSq < nearestDistanceSq)
+                nearestDistanceSq = distanceSq;
+        }
+
+        return MathF.Sqrt(nearestDistanceSq);
     }
 
     private static List<int> FindSupportsInsideIsland(SliceIsland island, List<SupportPoint> supportPoints)
@@ -242,12 +385,31 @@ public sealed class AutoSupportGenerationService
         return -1;
     }
 
+    private static float FindNearestSupportDistance(float xMm, float zMm, List<SupportPoint> supportPoints, int excludedSupportIndex = -1)
+    {
+        var nearestDistanceSq = float.MaxValue;
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            if (i == excludedSupportIndex)
+                continue;
+
+            var dx = supportPoints[i].Position.X - xMm;
+            var dz = supportPoints[i].Position.Z - zMm;
+            var distanceSq = (dx * dx) + (dz * dz);
+            if (distanceSq < nearestDistanceSq)
+                nearestDistanceSq = distanceSq;
+        }
+
+        return nearestDistanceSq == float.MaxValue ? float.MaxValue : MathF.Sqrt(nearestDistanceSq);
+    }
+
     private static List<SliceIsland> FindIslands(
         SliceBitmap bitmap,
         float bedWidthMm,
         float bedDepthMm,
         float sliceHeightMm,
-        float supportMergeDistanceMm)
+        float supportMergeDistanceMm,
+        float minIslandAreaMm2)
     {
         var visited = new bool[bitmap.Pixels.Length];
         var islands = new List<SliceIsland>();
@@ -308,6 +470,10 @@ public sealed class AutoSupportGenerationService
                 var centroidX = sumX / pixels.Count;
                 var centroidZ = sumZ / pixels.Count;
                 var pixelAreaMm2 = (bedWidthMm / bitmap.Width) * (bedDepthMm / bitmap.Height);
+                var islandAreaMm2 = pixels.Count * pixelAreaMm2;
+                if (islandAreaMm2 < minIslandAreaMm2)
+                    continue;
+
                 var maxRadiusMm = 0f;
                 var mappedPixels = new List<SlicePixel>(pixels.Count);
                 foreach (var pixel in pixels)
@@ -317,7 +483,7 @@ public sealed class AutoSupportGenerationService
                     mappedPixels.Add(new SlicePixel(xMm, zMm));
                     var dx = xMm - centroidX;
                     var dz = zMm - centroidZ;
-                    maxRadiusMm = MathF.Max(maxRadiusMm, MathF.Sqrt((dx * dx) + (dz * dz)) + supportMergeDistanceMm);
+                    maxRadiusMm = MathF.Max(maxRadiusMm, MathF.Sqrt((dx * dx) + (dz * dz)) + (MathF.Sqrt(pixelAreaMm2) * 0.5f));
                 }
 
                 islands.Add(new SliceIsland(
@@ -404,6 +570,8 @@ public sealed class AutoSupportGenerationService
             MinLayerHeightMm: config?.AutoSupportMinLayerHeightMm ?? AppConfigService.DefaultAutoSupportMinLayerHeightMm,
             MaxLayerHeightMm: config?.AutoSupportMaxLayerHeightMm ?? AppConfigService.DefaultAutoSupportMaxLayerHeightMm,
             SupportMergeDistanceMm: config?.AutoSupportMergeDistanceMm ?? AppConfigService.DefaultAutoSupportMergeDistanceMm,
+            MinIslandAreaMm2: config?.AutoSupportMinIslandAreaMm2 ?? AppConfigService.DefaultAutoSupportMinIslandAreaMm2,
+            MaxSupportDistanceMm: config?.AutoSupportMaxSupportDistanceMm ?? AppConfigService.DefaultAutoSupportMaxSupportDistanceMm,
             PullForceThreshold: config?.AutoSupportPullForceThreshold ?? AppConfigService.DefaultAutoSupportPullForceThreshold,
             SupportSphereRadiusMm: config?.AutoSupportSphereRadiusMm ?? AppConfigService.DefaultAutoSupportSphereRadiusMm,
             MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland);
@@ -416,6 +584,8 @@ public sealed class AutoSupportGenerationService
         float MinLayerHeightMm,
         float MaxLayerHeightMm,
         float SupportMergeDistanceMm,
+        float MinIslandAreaMm2,
+        float MaxSupportDistanceMm,
         float PullForceThreshold,
         float SupportSphereRadiusMm,
         int MaxSupportsPerIsland);
@@ -430,6 +600,8 @@ public sealed class AutoSupportGenerationService
         float SliceHeightMm,
         float PixelAreaMm2,
         float IslandRadiusMm);
+
+    private sealed record AdditionalSupportCandidate(float X, float Z, float DistanceMm);
 
     private sealed class SupportAccumulator
     {

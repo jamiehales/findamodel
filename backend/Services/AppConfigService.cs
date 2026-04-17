@@ -27,6 +27,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportMinLayerHeightMm = 0.75f;
     public const float DefaultAutoSupportMaxLayerHeightMm = 1.5f;
     public const float DefaultAutoSupportMergeDistanceMm = 2.5f;
+    public const float DefaultAutoSupportMinIslandAreaMm2 = 4f;
+    public const float DefaultAutoSupportMaxSupportDistanceMm = 10f;
     public const float DefaultAutoSupportPullForceThreshold = 3f;
     public const float DefaultAutoSupportSphereRadiusMm = 1.2f;
     public const int DefaultAutoSupportMaxSupportsPerIsland = 6;
@@ -114,6 +116,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportMinLayerHeightMm = request.AutoSupportMinLayerHeightMm;
         config.AutoSupportMaxLayerHeightMm = request.AutoSupportMaxLayerHeightMm;
         config.AutoSupportMergeDistanceMm = request.AutoSupportMergeDistanceMm;
+        config.AutoSupportMinIslandAreaMm2 = request.AutoSupportMinIslandAreaMm2;
+        config.AutoSupportMaxSupportDistanceMm = request.AutoSupportMaxSupportDistanceMm;
         config.AutoSupportPullForceThreshold = request.AutoSupportPullForceThreshold;
         config.AutoSupportSphereRadiusMm = request.AutoSupportSphereRadiusMm;
         config.AutoSupportMaxSupportsPerIsland = request.AutoSupportMaxSupportsPerIsland;
@@ -262,7 +266,9 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportMergeDistanceMm,
             config.AutoSupportPullForceThreshold,
             config.AutoSupportSphereRadiusMm,
-            config.AutoSupportMaxSupportsPerIsland);
+            config.AutoSupportMaxSupportsPerIsland,
+            config.AutoSupportMinIslandAreaMm2,
+            config.AutoSupportMaxSupportDistanceMm);
     }
 
     private async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
@@ -299,6 +305,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportMinLayerHeightMm = configuration.GetValue<float?>("AppConfig:AutoSupportMinLayerHeightMm") ?? DefaultAutoSupportMinLayerHeightMm,
             AutoSupportMaxLayerHeightMm = configuration.GetValue<float?>("AppConfig:AutoSupportMaxLayerHeightMm") ?? DefaultAutoSupportMaxLayerHeightMm,
             AutoSupportMergeDistanceMm = configuration.GetValue<float?>("AppConfig:AutoSupportMergeDistanceMm") ?? DefaultAutoSupportMergeDistanceMm,
+            AutoSupportMinIslandAreaMm2 = configuration.GetValue<float?>("AppConfig:AutoSupportMinIslandAreaMm2") ?? DefaultAutoSupportMinIslandAreaMm2,
+            AutoSupportMaxSupportDistanceMm = configuration.GetValue<float?>("AppConfig:AutoSupportMaxSupportDistanceMm") ?? DefaultAutoSupportMaxSupportDistanceMm,
             AutoSupportPullForceThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportPullForceThreshold") ?? DefaultAutoSupportPullForceThreshold,
             AutoSupportSphereRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportSphereRadiusMm") ?? DefaultAutoSupportSphereRadiusMm,
             AutoSupportMaxSupportsPerIsland = configuration.GetValue<int?>("AppConfig:AutoSupportMaxSupportsPerIsland") ?? DefaultAutoSupportMaxSupportsPerIsland,
@@ -336,6 +344,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportMinLayerHeightMm, 0.05f, 10f, nameof(request.AutoSupportMinLayerHeightMm));
         ValidateFiniteRange(request.AutoSupportMaxLayerHeightMm, request.AutoSupportMinLayerHeightMm, 10f, nameof(request.AutoSupportMaxLayerHeightMm));
         ValidateFiniteRange(request.AutoSupportMergeDistanceMm, 0.1f, 25f, nameof(request.AutoSupportMergeDistanceMm));
+        ValidateFiniteRange(request.AutoSupportMinIslandAreaMm2, 0f, 2500f, nameof(request.AutoSupportMinIslandAreaMm2));
+        ValidateFiniteRange(request.AutoSupportMaxSupportDistanceMm, request.AutoSupportMergeDistanceMm, 100f, nameof(request.AutoSupportMaxSupportDistanceMm));
         ValidateFiniteRange(request.AutoSupportPullForceThreshold, 0.1f, 100f, nameof(request.AutoSupportPullForceThreshold));
         ValidateFiniteRange(request.AutoSupportSphereRadiusMm, 0.1f, 10f, nameof(request.AutoSupportSphereRadiusMm));
 

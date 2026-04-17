@@ -121,6 +121,8 @@ export interface AppConfig {
   autoSupportMinLayerHeightMm: number;
   autoSupportMaxLayerHeightMm: number;
   autoSupportMergeDistanceMm: number;
+  autoSupportMinIslandAreaMm2: number;
+  autoSupportMaxSupportDistanceMm: number;
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
@@ -167,6 +169,8 @@ export interface UpdateAppConfigRequest {
   autoSupportMinLayerHeightMm: number;
   autoSupportMaxLayerHeightMm: number;
   autoSupportMergeDistanceMm: number;
+  autoSupportMinIslandAreaMm2: number;
+  autoSupportMaxSupportDistanceMm: number;
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
