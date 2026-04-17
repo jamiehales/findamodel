@@ -46,6 +46,7 @@ public class PlateSliceRasterServiceTests
             Assert.Equal(64, manifest.RootElement.GetProperty("resolutionX").GetInt32());
             Assert.Equal(32, manifest.RootElement.GetProperty("resolutionY").GetInt32());
             Assert.True(manifest.RootElement.GetProperty("layerCount").GetInt32() >= 1);
+            Assert.True(manifest.RootElement.GetProperty("layerBatchSize").GetInt32() >= 1);
         }
 
         var firstPng = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
@@ -70,5 +71,43 @@ public class PlateSliceRasterServiceTests
         });
 
         Assert.True(litPixelCount > 0);
+    }
+
+    [Fact]
+    public void OrthographicProjectionBatch_MatchesSingleLayerRendering()
+    {
+        var generator = new OrthographicProjectionSliceBitmapGenerator();
+        var batchGenerator = Assert.IsAssignableFrom<IBatchPlateSliceBitmapGenerator>(generator);
+        var triangles = CreateTetrahedron();
+        var sliceHeights = new[] { 0.5f, 1.5f, 2.5f };
+        var perLayerTriangles = sliceHeights
+            .Select(_ => triangles)
+            .Cast<IReadOnlyList<Triangle3D>>()
+            .ToArray();
+
+        var batched = batchGenerator.RenderLayerBitmaps(
+            perLayerTriangles,
+            sliceHeights,
+            bedWidthMm: 20,
+            bedDepthMm: 20,
+            pixelWidth: 64,
+            pixelHeight: 64,
+            layerThicknessMm: 1f);
+
+        Assert.Equal(sliceHeights.Length, batched.Count);
+
+        for (var i = 0; i < sliceHeights.Length; i++)
+        {
+            var single = generator.RenderLayerBitmap(
+                triangles,
+                sliceHeights[i],
+                bedWidthMm: 20,
+                bedDepthMm: 20,
+                pixelWidth: 64,
+                pixelHeight: 64,
+                layerThicknessMm: 1f);
+
+            Assert.Equal(single.Pixels, batched[i].Pixels);
+        }
     }
 }

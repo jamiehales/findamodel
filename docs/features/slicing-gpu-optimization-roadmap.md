@@ -1,5 +1,17 @@
 # GPU slice optimization roadmap
 
+## Status update
+Implemented on 2026-04-16 and benchmarked in the companion report at [docs/features/slicing-gpu-optimization-benchmark-report.md](docs/features/slicing-gpu-optimization-benchmark-report.md).
+
+Completed items in the codebase now include:
+- GPU-resident cached geometry uploads across batched layer work
+- Row-group GPU spatial indexing and tighter per-layer filtering
+- Batched multi-layer dispatch through the orthographic GPU path
+- Reduced readback bandwidth with single-channel slice outputs
+- Overlapped PNG encoding and ZIP packaging
+- Packed GPU upload formats and vendor-tuned row grouping
+- Automated regression and throughput benchmarks
+
 ## Overview
 This document lists the next optimizations for the GPU-backed slice path now that the first working implementation is in place.
 

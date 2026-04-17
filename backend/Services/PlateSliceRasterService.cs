@@ -10,6 +10,9 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
     public const float DefaultLayerHeightMm = 0.05f;
     public const PngSliceExportMethod DefaultZipDownloadMethod = PngSliceExportMethod.MeshIntersection;
 
+    private const int DefaultLayerBatchSize = 8;
+    private const int MaxPendingEncodedLayers = 12;
+
     private readonly Dictionary<PngSliceExportMethod, IPlateSliceBitmapGenerator> generatorsByMethod =
         generators.ToDictionary(g => g.Method);
 
@@ -48,6 +51,7 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         ValidateInputs(bedWidthMm, bedDepthMm, resolutionX, resolutionY, layerHeightMm);
 
         var selectedMethod = method ?? DefaultZipDownloadMethod;
+        var generator = GetGenerator(selectedMethod);
         var maxY = triangles.Count == 0
             ? 0f
             : triangles.Max(t => MathF.Max(t.V0.Y, MathF.Max(t.V1.Y, t.V2.Y)));
@@ -62,27 +66,57 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         {
             WriteManifest(archive, bedWidthMm, bedDepthMm, resolutionX, resolutionY, layerHeightMm, layerCount, selectedMethod);
 
-            for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+            var nextLayerToWrite = 0;
+            var pendingEncodedLayers = new Dictionary<int, Task<byte[]>>();
+            var batchSize = generator is IBatchPlateSliceBitmapGenerator ? DefaultLayerBatchSize : 1;
+
+            for (var batchStart = 0; batchStart < layerCount; batchStart += batchSize)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                progressReporter?.MarkCurrentEntry($"Slice layer {layerIndex + 1} of {layerCount}");
 
-                var sliceHeight = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
-                var bitmap = RenderLayerBitmap(
-                    trianglesByLayer[layerIndex],
-                    sliceHeight,
-                    bedWidthMm,
-                    bedDepthMm,
-                    resolutionX,
-                    resolutionY,
-                    selectedMethod,
-                    layerHeightMm);
+                var batchLength = Math.Min(batchSize, layerCount - batchStart);
+                var batchTriangles = new IReadOnlyList<Triangle3D>[batchLength];
+                var batchSliceHeights = new float[batchLength];
+                for (var offset = 0; offset < batchLength; offset++)
+                {
+                    var layerIndex = batchStart + offset;
+                    batchTriangles[offset] = trianglesByLayer[layerIndex];
+                    batchSliceHeights[offset] = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
+                }
 
-                var entry = archive.CreateEntry($"slices/layer_{layerIndex:D5}.png", CompressionLevel.Optimal);
-                using var entryStream = entry.Open();
-                WritePng(bitmap, entryStream);
-                progressReporter?.MarkEntryCompleted();
+                progressReporter?.MarkCurrentEntry($"Slice layers {batchStart + 1}-{batchStart + batchLength} of {layerCount}");
+
+                var renderedBatch = generator is IBatchPlateSliceBitmapGenerator batchGenerator && batchLength > 1
+                    ? batchGenerator.RenderLayerBitmaps(
+                        batchTriangles,
+                        batchSliceHeights,
+                        bedWidthMm,
+                        bedDepthMm,
+                        resolutionX,
+                        resolutionY,
+                        layerHeightMm)
+                    : batchTriangles
+                        .Select((layerTriangles, offset) => generator.RenderLayerBitmap(
+                            layerTriangles,
+                            batchSliceHeights[offset],
+                            bedWidthMm,
+                            bedDepthMm,
+                            resolutionX,
+                            resolutionY,
+                            layerHeightMm))
+                        .ToArray();
+
+                for (var offset = 0; offset < batchLength; offset++)
+                {
+                    var layerIndex = batchStart + offset;
+                    var bitmap = renderedBatch[offset];
+                    pendingEncodedLayers[layerIndex] = Task.Run(() => EncodePng(bitmap), cancellationToken);
+                }
+
+                FlushPendingEntries(archive, pendingEncodedLayers, ref nextLayerToWrite, forceWait: pendingEncodedLayers.Count >= MaxPendingEncodedLayers, progressReporter);
             }
+
+            FlushPendingEntries(archive, pendingEncodedLayers, ref nextLayerToWrite, forceWait: true, progressReporter);
         }
 
         return ms.ToArray();
@@ -93,7 +127,7 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         float layerHeightMm,
         int layerCount)
     {
-        var byLayer = new List<Triangle3D>?[layerCount];
+        var counts = new int[layerCount];
 
         foreach (var triangle in triangles)
         {
@@ -108,10 +142,30 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                 continue;
 
             for (var layerIndex = startLayer; layerIndex <= endLayer; layerIndex++)
-            {
-                byLayer[layerIndex] ??= [];
+                counts[layerIndex]++;
+        }
+
+        var byLayer = new List<Triangle3D>?[layerCount];
+        for (var i = 0; i < layerCount; i++)
+        {
+            if (counts[i] > 0)
+                byLayer[i] = new List<Triangle3D>(counts[i]);
+        }
+
+        foreach (var triangle in triangles)
+        {
+            var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
+            var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
+            if (maxY < 0f)
+                continue;
+
+            var startLayer = Math.Clamp((int)MathF.Floor(MathF.Max(0f, minY) / layerHeightMm), 0, layerCount - 1);
+            var endLayer = Math.Clamp((int)MathF.Ceiling(MathF.Max(0f, maxY) / layerHeightMm) - 1, 0, layerCount - 1);
+            if (endLayer < startLayer)
+                continue;
+
+            for (var layerIndex = startLayer; layerIndex <= endLayer; layerIndex++)
                 byLayer[layerIndex]!.Add(triangle);
-            }
         }
 
         return byLayer.Select(layer => (IReadOnlyList<Triangle3D>)(layer ?? [])).ToArray();
@@ -145,7 +199,7 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         int layerCount,
         PngSliceExportMethod method)
     {
-        var entry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
+        var entry = archive.CreateEntry("manifest.json", CompressionLevel.Fastest);
         using var entryStream = entry.Open();
         JsonSerializer.Serialize(entryStream, new
         {
@@ -157,7 +211,38 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
             resolutionY,
             bedWidthMm,
             bedDepthMm,
+            layerBatchSize = DefaultLayerBatchSize,
+            generatedAtUtc = DateTime.UtcNow,
         }, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static void FlushPendingEntries(
+        ZipArchive archive,
+        Dictionary<int, Task<byte[]>> pendingEncodedLayers,
+        ref int nextLayerToWrite,
+        bool forceWait,
+        IPlateGenerationProgressReporter? progressReporter)
+    {
+        while (pendingEncodedLayers.TryGetValue(nextLayerToWrite, out var pngTask))
+        {
+            if (!forceWait && !pngTask.IsCompleted)
+                break;
+
+            var entry = archive.CreateEntry($"slices/layer_{nextLayerToWrite:D5}.png", CompressionLevel.Fastest);
+            using var entryStream = entry.Open();
+            var pngBytes = pngTask.GetAwaiter().GetResult();
+            entryStream.Write(pngBytes, 0, pngBytes.Length);
+            pendingEncodedLayers.Remove(nextLayerToWrite);
+            nextLayerToWrite++;
+            progressReporter?.MarkEntryCompleted();
+        }
+    }
+
+    private static byte[] EncodePng(SliceBitmap bitmap)
+    {
+        using var ms = new MemoryStream();
+        WritePng(bitmap, ms);
+        return ms.ToArray();
     }
 
     private static void WritePng(SliceBitmap bitmap, Stream stream)

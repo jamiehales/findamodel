@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,8 @@ namespace findamodel.Services;
 public sealed class GlSliceProjectionContext : IDisposable
 {
     private const int MaxGpuTriangleCount = 250_000;
+    private const int DefaultRowGroupHeight = 8;
+    private const int NvidiaRowGroupHeight = 16;
 
     private const string VertSrc = """
         #version 330 core
@@ -23,8 +27,15 @@ public sealed class GlSliceProjectionContext : IDisposable
     private const string FragSrc = """
         #version 330 core
         uniform sampler2D uTriangleTexture;
-        uniform int uTriangleCount;
+        uniform sampler2D uBoundsTexture;
+        uniform isampler2D uIndexTexture;
+        uniform sampler2D uRangeTexture;
         uniform int uTriangleTexWidth;
+        uniform int uBoundsTexWidth;
+        uniform int uIndexTexWidth;
+        uniform int uRangeTexWidth;
+        uniform int uRowGroupHeight;
+        uniform int uRowGroupCount;
         uniform float uSliceHeight;
         uniform float uBedWidth;
         uniform float uBedDepth;
@@ -42,6 +53,25 @@ public sealed class GlSliceProjectionContext : IDisposable
             int tx = flatIndex % uTriangleTexWidth;
             int ty = flatIndex / uTriangleTexWidth;
             return texelFetch(uTriangleTexture, ivec2(tx, ty), 0).xyz;
+        }
+
+        vec4 fetchBounds(int triIndex) {
+            int tx = triIndex % uBoundsTexWidth;
+            int ty = triIndex / uBoundsTexWidth;
+            return texelFetch(uBoundsTexture, ivec2(tx, ty), 0);
+        }
+
+        int fetchTriangleIndex(int flatIndex) {
+            int tx = flatIndex % uIndexTexWidth;
+            int ty = flatIndex / uIndexTexWidth;
+            return texelFetch(uIndexTexture, ivec2(tx, ty), 0).x;
+        }
+
+        ivec2 fetchRange(int rowGroup) {
+            int tx = rowGroup % uRangeTexWidth;
+            int ty = rowGroup / uRangeTexWidth;
+            vec4 encoded = texelFetch(uRangeTexture, ivec2(tx, ty), 0);
+            return ivec2(int(encoded.x + 0.5), int(encoded.y + 0.5));
         }
 
         bool tryIntersectPositiveXRay(vec3 origin, vec3 v0, vec3 v1, vec3 v2, out float hitX) {
@@ -98,10 +128,24 @@ public sealed class GlSliceProjectionContext : IDisposable
             float zMm = (uBedDepth * 0.5) - ((gl_FragCoord.y) / float(uResolutionY)) * uBedDepth;
             vec3 origin = vec3(xMm - uRayOffset, uSliceHeight, zMm);
 
+            int rowGroup = clamp(int((gl_FragCoord.y - 1.0) / float(uRowGroupHeight)), 0, max(0, uRowGroupCount - 1));
+            ivec2 range = fetchRange(rowGroup);
+
             float hits[kMaxHits];
             int uniqueHitCount = 0;
 
-            for (int triIndex = 0; triIndex < uTriangleCount; triIndex++) {
+            for (int offset = 0; offset < range.y; offset++) {
+                int triIndex = fetchTriangleIndex(range.x + offset);
+                vec4 bounds = fetchBounds(triIndex);
+
+                if (uSliceHeight < bounds.x - kEpsilon || uSliceHeight > bounds.y + kEpsilon) {
+                    continue;
+                }
+
+                if (origin.z < bounds.z - kEpsilon || origin.z > bounds.w + kEpsilon) {
+                    continue;
+                }
+
                 vec3 v0 = fetchVertex(triIndex * 3);
                 vec3 v1 = fetchVertex(triIndex * 3 + 1);
                 vec3 v2 = fetchVertex(triIndex * 3 + 2);
@@ -139,15 +183,49 @@ public sealed class GlSliceProjectionContext : IDisposable
 
     private GL? gl;
     private bool failed;
+    private string rendererName = "unknown";
+    private bool useNvidiaFastPath;
+    private int activeRowGroupHeight = DefaultRowGroupHeight;
+
     private uint program;
     private uint vao;
     private uint vbo;
     private uint fbo;
     private uint colorTexture;
     private uint triangleTexture;
+    private uint boundsTexture;
+    private uint indexTexture;
+    private uint rangeTexture;
+
     private int fboWidth;
     private int fboHeight;
     private int maxTextureSize = 4096;
+    private int cachedTriangleTextureWidth;
+    private int cachedBoundsTextureWidth;
+    private int cachedIndexTextureWidth;
+    private int cachedRangeTextureWidth;
+    private int cachedRowGroupCount;
+    private ulong cachedGeometryHash;
+    private int cachedGeometryTriangleCount = -1;
+    private int cachedSpatialPixelHeight = -1;
+    private float cachedSpatialBedDepthMm = float.NaN;
+
+    private int uTriangleTextureLocation;
+    private int uBoundsTextureLocation;
+    private int uIndexTextureLocation;
+    private int uRangeTextureLocation;
+    private int uTriangleTexWidthLocation;
+    private int uBoundsTexWidthLocation;
+    private int uIndexTexWidthLocation;
+    private int uRangeTexWidthLocation;
+    private int uRowGroupHeightLocation;
+    private int uRowGroupCountLocation;
+    private int uSliceHeightLocation;
+    private int uBedWidthLocation;
+    private int uBedDepthLocation;
+    private int uRayOffsetLocation;
+    private int uResolutionXLocation;
+    private int uResolutionYLocation;
 
     public GlSliceProjectionContext(ILoggerFactory loggerFactory)
     {
@@ -179,20 +257,33 @@ public sealed class GlSliceProjectionContext : IDisposable
         int pixelWidth,
         int pixelHeight)
     {
+        var result = TryRenderBatch(triangles, [sliceHeightMm], bedWidthMm, bedDepthMm, pixelWidth, pixelHeight);
+        return result is { Count: > 0 } ? result[0] : null;
+    }
+
+    public IReadOnlyList<SliceBitmap>? TryRenderBatch(
+        IReadOnlyList<Triangle3D> triangles,
+        IReadOnlyList<float> sliceHeightsMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
         ready.Task.GetAwaiter().GetResult();
-        if (failed || triangles.Count == 0 || triangles.Count > MaxGpuTriangleCount)
+        if (failed || triangles.Count == 0 || triangles.Count > MaxGpuTriangleCount || sliceHeightsMm.Count == 0)
             return null;
 
-        var tcs = new TaskCompletionSource<SliceBitmap?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        channel.Writer.WriteAsync(new SliceRequest(
+        var tcs = new TaskCompletionSource<IReadOnlyList<SliceBitmap>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var request = new SliceRequest(
             tcs,
             triangles,
-            sliceHeightMm,
+            sliceHeightsMm.ToArray(),
             bedWidthMm,
             bedDepthMm,
             pixelWidth,
-            pixelHeight)).AsTask().GetAwaiter().GetResult();
+            pixelHeight);
 
+        channel.Writer.WriteAsync(request).AsTask().GetAwaiter().GetResult();
         return tcs.Task.GetAwaiter().GetResult();
     }
 
@@ -224,8 +315,13 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl = window.CreateOpenGL();
             gl.GetInteger(GLEnum.MaxTextureSize, out maxTextureSize);
 
+            rendererName = gl.GetStringS(StringName.Renderer) ?? "unknown";
+            useNvidiaFastPath = rendererName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
+            activeRowGroupHeight = useNvidiaFastPath ? NvidiaRowGroupHeight : DefaultRowGroupHeight;
+
             CompileShaders();
             SetupQuad();
+            logger.LogInformation("GL slice projection ready on {Renderer} using {FastPath} row grouping.", rendererName, useNvidiaFastPath ? "NVIDIA-tuned" : "generic");
             ready.TrySetResult();
         }
         catch (Exception ex)
@@ -243,8 +339,8 @@ public sealed class GlSliceProjectionContext : IDisposable
             {
                 try
                 {
-                    var bitmap = RenderInternal(request);
-                    request.Completion.TrySetResult(bitmap);
+                    var bitmaps = RenderInternal(request);
+                    request.Completion.TrySetResult(bitmaps);
                 }
                 catch (Exception ex)
                 {
@@ -262,6 +358,12 @@ public sealed class GlSliceProjectionContext : IDisposable
                 gl.DeleteTexture(colorTexture);
             if (triangleTexture != 0)
                 gl.DeleteTexture(triangleTexture);
+            if (boundsTexture != 0)
+                gl.DeleteTexture(boundsTexture);
+            if (indexTexture != 0)
+                gl.DeleteTexture(indexTexture);
+            if (rangeTexture != 0)
+                gl.DeleteTexture(rangeTexture);
             if (program != 0)
                 gl.DeleteProgram(program);
             if (vao != 0)
@@ -274,53 +376,111 @@ public sealed class GlSliceProjectionContext : IDisposable
         window?.Dispose();
     }
 
-    private SliceBitmap? RenderInternal(SliceRequest request)
+    private IReadOnlyList<SliceBitmap>? RenderInternal(SliceRequest request)
     {
         if (gl is null)
             return null;
 
         EnsureFramebuffer(request.PixelWidth, request.PixelHeight);
-        var triangleTextureWidth = UploadTriangleTexture(request.Triangles);
-        if (triangleTextureWidth <= 0)
+
+        var uploadSw = Stopwatch.StartNew();
+        EnsureGeometryResourcesUploaded(request.Triangles, request.BedDepthMm, request.PixelHeight);
+        uploadSw.Stop();
+
+        if (cachedTriangleTextureWidth <= 0 || cachedBoundsTextureWidth <= 0 || cachedIndexTextureWidth <= 0 || cachedRangeTextureWidth <= 0)
             return null;
+
+        var renderSw = Stopwatch.StartNew();
+        var results = new List<SliceBitmap>(request.SliceHeightsMm.Length);
 
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
         gl.Viewport(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight);
-        gl.ClearColor(0f, 0f, 0f, 1f);
-        gl.Clear(ClearBufferMask.ColorBufferBit);
-
         gl.UseProgram(program);
         gl.BindVertexArray(vao);
+
         gl.ActiveTexture(TextureUnit.Texture0);
         gl.BindTexture(TextureTarget.Texture2D, triangleTexture);
-        gl.Uniform1(gl.GetUniformLocation(program, "uTriangleTexture"), 0);
-        gl.Uniform1(gl.GetUniformLocation(program, "uTriangleCount"), request.Triangles.Count);
-        gl.Uniform1(gl.GetUniformLocation(program, "uTriangleTexWidth"), triangleTextureWidth);
-        gl.Uniform1(gl.GetUniformLocation(program, "uSliceHeight"), request.SliceHeightMm);
-        gl.Uniform1(gl.GetUniformLocation(program, "uBedWidth"), request.BedWidthMm);
-        gl.Uniform1(gl.GetUniformLocation(program, "uBedDepth"), request.BedDepthMm);
-        gl.Uniform1(gl.GetUniformLocation(program, "uRayOffset"), 0.0005f);
-        gl.Uniform1(gl.GetUniformLocation(program, "uResolutionX"), request.PixelWidth);
-        gl.Uniform1(gl.GetUniformLocation(program, "uResolutionY"), request.PixelHeight);
-        gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
-        gl.Finish();
+        gl.Uniform1(uTriangleTextureLocation, 0);
 
-        byte[] rawPixels = new byte[request.PixelWidth * request.PixelHeight * 4];
-        gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Rgba, PixelType.UnsignedByte, rawPixels.AsSpan());
+        gl.ActiveTexture(TextureUnit.Texture1);
+        gl.BindTexture(TextureTarget.Texture2D, boundsTexture);
+        gl.Uniform1(uBoundsTextureLocation, 1);
+
+        gl.ActiveTexture(TextureUnit.Texture2);
+        gl.BindTexture(TextureTarget.Texture2D, indexTexture);
+        gl.Uniform1(uIndexTextureLocation, 2);
+
+        gl.ActiveTexture(TextureUnit.Texture3);
+        gl.BindTexture(TextureTarget.Texture2D, rangeTexture);
+        gl.Uniform1(uRangeTextureLocation, 3);
+
+        gl.Uniform1(uTriangleTexWidthLocation, cachedTriangleTextureWidth);
+        gl.Uniform1(uBoundsTexWidthLocation, cachedBoundsTextureWidth);
+        gl.Uniform1(uIndexTexWidthLocation, cachedIndexTextureWidth);
+        gl.Uniform1(uRangeTexWidthLocation, cachedRangeTextureWidth);
+        gl.Uniform1(uRowGroupHeightLocation, activeRowGroupHeight);
+        gl.Uniform1(uRowGroupCountLocation, cachedRowGroupCount);
+        gl.Uniform1(uBedWidthLocation, request.BedWidthMm);
+        gl.Uniform1(uBedDepthLocation, request.BedDepthMm);
+        gl.Uniform1(uRayOffsetLocation, 0.0005f);
+        gl.Uniform1(uResolutionXLocation, request.PixelWidth);
+        gl.Uniform1(uResolutionYLocation, request.PixelHeight);
+
+        var readbackSw = Stopwatch.StartNew();
+        foreach (var sliceHeightMm in request.SliceHeightsMm)
+        {
+            gl.ClearColor(0f, 0f, 0f, 1f);
+            gl.Clear(ClearBufferMask.ColorBufferBit);
+            gl.Uniform1(uSliceHeightLocation, sliceHeightMm);
+            gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+
+            var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
+            gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
+            results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
+        }
+        readbackSw.Stop();
+        renderSw.Stop();
+
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
-        var bitmap = new SliceBitmap(request.PixelWidth, request.PixelHeight);
-        for (var row = 0; row < request.PixelHeight; row++)
+        logger.LogDebug(
+            "GL slice batch on {Renderer}: triangles={TriangleCount} layers={LayerCount} uploadMs={UploadMs:F2} renderMs={RenderMs:F2} readbackMs={ReadbackMs:F2}",
+            rendererName,
+            request.Triangles.Count,
+            request.SliceHeightsMm.Length,
+            uploadSw.Elapsed.TotalMilliseconds,
+            renderSw.Elapsed.TotalMilliseconds,
+            readbackSw.Elapsed.TotalMilliseconds);
+
+        return results;
+    }
+
+    private void EnsureGeometryResourcesUploaded(IReadOnlyList<Triangle3D> triangles, float bedDepthMm, int pixelHeight)
+    {
+        if (gl is null)
+            return;
+
+        var geometryHash = ComputeGeometryHash(triangles);
+        var geometryChanged = geometryHash != cachedGeometryHash || triangles.Count != cachedGeometryTriangleCount;
+        var spatialChanged = geometryChanged || pixelHeight != cachedSpatialPixelHeight || MathF.Abs(bedDepthMm - cachedSpatialBedDepthMm) > 0.0001f;
+
+        if (geometryChanged)
         {
-            var sourceRow = request.PixelHeight - 1 - row;
-            for (var column = 0; column < request.PixelWidth; column++)
-            {
-                var sourceIndex = ((sourceRow * request.PixelWidth) + column) * 4;
-                bitmap.SetPixel(column, row, rawPixels[sourceIndex]);
-            }
+            cachedTriangleTextureWidth = UploadTriangleTexture(triangles);
+            cachedBoundsTextureWidth = UploadBoundsTexture(triangles);
+            cachedGeometryHash = geometryHash;
+            cachedGeometryTriangleCount = triangles.Count;
         }
 
-        return bitmap;
+        if (spatialChanged)
+        {
+            var (indexWidth, rangeWidth, rowGroupCount) = UploadSpatialIndexTextures(triangles, bedDepthMm, pixelHeight);
+            cachedIndexTextureWidth = indexWidth;
+            cachedRangeTextureWidth = rangeWidth;
+            cachedRowGroupCount = rowGroupCount;
+            cachedSpatialPixelHeight = pixelHeight;
+            cachedSpatialBedDepthMm = bedDepthMm;
+        }
     }
 
     private int UploadTriangleTexture(IReadOnlyList<Triangle3D> triangles)
@@ -334,7 +494,7 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         var width = Math.Min(maxTextureSize, Math.Max(1, totalTexels));
         var height = (int)Math.Ceiling(totalTexels / (double)width);
-        var data = new float[width * height * 4];
+        var data = new Half[width * height * 4];
 
         var offset = 0;
         for (var i = 0; i < triangles.Count; i++)
@@ -353,9 +513,142 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
-        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba32f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.Float, in data[0]);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba16f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.HalfFloat, in data[0]);
 
         return width;
+    }
+
+    private int UploadBoundsTexture(IReadOnlyList<Triangle3D> triangles)
+    {
+        if (gl is null)
+            return 0;
+
+        var totalTexels = triangles.Count;
+        if (totalTexels <= 0)
+            return 0;
+
+        var width = Math.Min(maxTextureSize, Math.Max(1, totalTexels));
+        var height = (int)Math.Ceiling(totalTexels / (double)width);
+        var data = new Half[width * height * 4];
+
+        var offset = 0;
+        for (var i = 0; i < triangles.Count; i++)
+        {
+            var triangle = triangles[i];
+            var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
+            var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
+            var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
+            var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
+
+            data[offset++] = (Half)minY;
+            data[offset++] = (Half)maxY;
+            data[offset++] = (Half)minZ;
+            data[offset++] = (Half)maxZ;
+        }
+
+        if (boundsTexture == 0)
+            boundsTexture = gl.GenTexture();
+
+        gl.BindTexture(TextureTarget.Texture2D, boundsTexture);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba16f, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.HalfFloat, in data[0]);
+
+        return width;
+    }
+
+    private (int IndexWidth, int RangeWidth, int RowGroupCount) UploadSpatialIndexTextures(IReadOnlyList<Triangle3D> triangles, float bedDepthMm, int pixelHeight)
+    {
+        if (gl is null)
+            return (0, 0, 0);
+
+        var localRowGroupHeight = useNvidiaFastPath ? NvidiaRowGroupHeight : DefaultRowGroupHeight;
+        var maxTexels = Math.Max(1, maxTextureSize * maxTextureSize);
+        while (localRowGroupHeight < pixelHeight)
+        {
+            var estimatedGroups = (pixelHeight + localRowGroupHeight - 1) / localRowGroupHeight;
+            if ((long)estimatedGroups * Math.Max(1, triangles.Count) <= maxTexels)
+                break;
+
+            localRowGroupHeight *= 2;
+        }
+
+        activeRowGroupHeight = Math.Max(1, localRowGroupHeight);
+        var rowGroupCount = Math.Max(1, (pixelHeight + activeRowGroupHeight - 1) / activeRowGroupHeight);
+        var groups = new List<int>[rowGroupCount];
+
+        for (var index = 0; index < triangles.Count; index++)
+        {
+            var triangle = triangles[index];
+            var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
+            var maxZ = MathF.Max(triangle.V0.Z, MathF.Max(triangle.V1.Z, triangle.V2.Z));
+            var startRow = Math.Clamp(MapZToRow(maxZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
+            var endRow = Math.Clamp(MapZToRow(minZ, bedDepthMm, pixelHeight), 0, pixelHeight - 1);
+
+            if (endRow < startRow)
+                (startRow, endRow) = (endRow, startRow);
+
+            var startGroup = Math.Clamp(startRow / activeRowGroupHeight, 0, rowGroupCount - 1);
+            var endGroup = Math.Clamp(endRow / activeRowGroupHeight, 0, rowGroupCount - 1);
+            for (var groupIndex = startGroup; groupIndex <= endGroup; groupIndex++)
+            {
+                groups[groupIndex] ??= [];
+                groups[groupIndex].Add(index);
+            }
+        }
+
+        var flatIndexes = new List<int>(Math.Max(triangles.Count, rowGroupCount));
+        var ranges = new int[Math.Max(1, rowGroupCount * 2)];
+        for (var groupIndex = 0; groupIndex < rowGroupCount; groupIndex++)
+        {
+            ranges[groupIndex * 2] = flatIndexes.Count;
+            var candidates = groups[groupIndex];
+            if (candidates is not null)
+                flatIndexes.AddRange(candidates);
+            ranges[(groupIndex * 2) + 1] = candidates?.Count ?? 0;
+        }
+
+        if (flatIndexes.Count == 0)
+            flatIndexes.Add(0);
+
+        var indexWidth = Math.Min(maxTextureSize, Math.Max(1, flatIndexes.Count));
+        var indexHeight = (int)Math.Ceiling(flatIndexes.Count / (double)indexWidth);
+        var indexData = new int[indexWidth * indexHeight];
+        for (var i = 0; i < flatIndexes.Count; i++)
+            indexData[i] = flatIndexes[i];
+
+        if (indexTexture == 0)
+            indexTexture = gl.GenTexture();
+
+        gl.BindTexture(TextureTarget.Texture2D, indexTexture);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R32i, (uint)indexWidth, (uint)indexHeight, 0, PixelFormat.RedInteger, PixelType.Int, in indexData[0]);
+
+        var rangeWidth = Math.Min(maxTextureSize, Math.Max(1, rowGroupCount));
+        var rangeHeight = (int)Math.Ceiling(rowGroupCount / (double)rangeWidth);
+        var rangeData = new float[Math.Max(1, rangeWidth * rangeHeight * 4)];
+        for (var i = 0; i < rowGroupCount; i++)
+        {
+            rangeData[i * 4] = ranges[i * 2];
+            rangeData[(i * 4) + 1] = ranges[(i * 2) + 1];
+        }
+
+        if (rangeTexture == 0)
+            rangeTexture = gl.GenTexture();
+
+        gl.BindTexture(TextureTarget.Texture2D, rangeTexture);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba32f, (uint)rangeWidth, (uint)rangeHeight, 0, PixelFormat.Rgba, PixelType.Float, in rangeData[0]);
+
+        return (indexWidth, rangeWidth, rowGroupCount);
     }
 
     private void EnsureFramebuffer(int width, int height)
@@ -384,8 +677,8 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.BindTexture(TextureTarget.Texture2D, colorTexture);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
-        var emptyTexture = new byte[width * height * 4];
-        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, in emptyTexture[0]);
+        var emptyTexture = new byte[width * height];
+        gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R8, (uint)width, (uint)height, 0, PixelFormat.Red, PixelType.UnsignedByte, in emptyTexture[0]);
         gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, colorTexture, 0);
 
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -439,6 +732,23 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         gl.DeleteShader(vert);
         gl.DeleteShader(frag);
+
+        uTriangleTextureLocation = gl.GetUniformLocation(program, "uTriangleTexture");
+        uBoundsTextureLocation = gl.GetUniformLocation(program, "uBoundsTexture");
+        uIndexTextureLocation = gl.GetUniformLocation(program, "uIndexTexture");
+        uRangeTextureLocation = gl.GetUniformLocation(program, "uRangeTexture");
+        uTriangleTexWidthLocation = gl.GetUniformLocation(program, "uTriangleTexWidth");
+        uBoundsTexWidthLocation = gl.GetUniformLocation(program, "uBoundsTexWidth");
+        uIndexTexWidthLocation = gl.GetUniformLocation(program, "uIndexTexWidth");
+        uRangeTexWidthLocation = gl.GetUniformLocation(program, "uRangeTexWidth");
+        uRowGroupHeightLocation = gl.GetUniformLocation(program, "uRowGroupHeight");
+        uRowGroupCountLocation = gl.GetUniformLocation(program, "uRowGroupCount");
+        uSliceHeightLocation = gl.GetUniformLocation(program, "uSliceHeight");
+        uBedWidthLocation = gl.GetUniformLocation(program, "uBedWidth");
+        uBedDepthLocation = gl.GetUniformLocation(program, "uBedDepth");
+        uRayOffsetLocation = gl.GetUniformLocation(program, "uRayOffset");
+        uResolutionXLocation = gl.GetUniformLocation(program, "uResolutionX");
+        uResolutionYLocation = gl.GetUniformLocation(program, "uResolutionY");
     }
 
     private void CheckShader(uint shader, string stage)
@@ -461,18 +771,92 @@ public sealed class GlSliceProjectionContext : IDisposable
             throw new InvalidOperationException($"Slice projection program link failed: {gl.GetProgramInfoLog(linkedProgram)}");
     }
 
-    private static void WriteVertex(float[] data, ref int offset, Vec3 vertex)
+    private static SliceBitmap FlipToBitmap(byte[] rawPixels, int width, int height)
     {
-        data[offset++] = vertex.X;
-        data[offset++] = vertex.Y;
-        data[offset++] = vertex.Z;
-        data[offset++] = 1f;
+        var bitmap = new SliceBitmap(width, height);
+        for (var row = 0; row < height; row++)
+        {
+            var sourceRow = height - 1 - row;
+            Array.Copy(rawPixels, sourceRow * width, bitmap.Pixels, row * width, width);
+        }
+
+        return bitmap;
     }
 
+    private static ulong ComputeGeometryHash(IReadOnlyList<Triangle3D> triangles)
+    {
+        const ulong offset = 14695981039346656037UL;
+        const ulong prime = 1099511628211UL;
+        var hash = offset;
+
+        unchecked
+        {
+            hash ^= (uint)RuntimeHelpers.GetHashCode(triangles);
+            hash *= prime;
+            hash ^= (uint)triangles.Count;
+            hash *= prime;
+        }
+
+        if (triangles.Count == 0)
+            return hash;
+
+        var sampleIndexes = new[]
+        {
+            0,
+            triangles.Count / 4,
+            triangles.Count / 2,
+            (triangles.Count * 3) / 4,
+            triangles.Count - 1,
+        };
+
+        var lastIndex = -1;
+        foreach (var sampleIndex in sampleIndexes)
+        {
+            var clampedIndex = Math.Clamp(sampleIndex, 0, triangles.Count - 1);
+            if (clampedIndex == lastIndex)
+                continue;
+
+            lastIndex = clampedIndex;
+            var triangle = triangles[clampedIndex];
+            hash = HashFloat(hash, triangle.V0.X, prime);
+            hash = HashFloat(hash, triangle.V0.Y, prime);
+            hash = HashFloat(hash, triangle.V0.Z, prime);
+            hash = HashFloat(hash, triangle.V1.X, prime);
+            hash = HashFloat(hash, triangle.V1.Y, prime);
+            hash = HashFloat(hash, triangle.V1.Z, prime);
+            hash = HashFloat(hash, triangle.V2.X, prime);
+            hash = HashFloat(hash, triangle.V2.Y, prime);
+            hash = HashFloat(hash, triangle.V2.Z, prime);
+        }
+
+        return hash;
+    }
+
+    private static ulong HashFloat(ulong current, float value, ulong prime)
+    {
+        unchecked
+        {
+            current ^= (uint)BitConverter.SingleToInt32Bits(value);
+            current *= prime;
+            return current;
+        }
+    }
+
+    private static void WriteVertex(Half[] data, ref int offset, Vec3 vertex)
+    {
+        data[offset++] = (Half)vertex.X;
+        data[offset++] = (Half)vertex.Y;
+        data[offset++] = (Half)vertex.Z;
+        data[offset++] = (Half)1f;
+    }
+
+    private static int MapZToRow(float zMm, float bedDepthMm, int height)
+        => (int)MathF.Floor((((bedDepthMm * 0.5f) - zMm) / bedDepthMm) * height);
+
     private sealed record SliceRequest(
-        TaskCompletionSource<SliceBitmap?> Completion,
+        TaskCompletionSource<IReadOnlyList<SliceBitmap>?> Completion,
         IReadOnlyList<Triangle3D> Triangles,
-        float SliceHeightMm,
+        float[] SliceHeightsMm,
         float BedWidthMm,
         float BedDepthMm,
         int PixelWidth,

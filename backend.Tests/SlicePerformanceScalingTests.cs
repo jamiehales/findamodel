@@ -103,6 +103,47 @@ public class SlicePerformanceScalingTests(ITestOutputHelper output)
         Assert.True(gpu.LitPixels > 0);
     }
 
+    [Fact]
+    public void Benchmark_PngSliceArchive_Throughput()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_RUN_SLICE_BENCHMARKS"), "1", StringComparison.Ordinal))
+            return;
+
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        var orthographic = gpuContext.IsAvailable
+            ? new OrthographicProjectionSliceBitmapGenerator(gpuContext, NullLoggerFactory.Instance)
+            : new OrthographicProjectionSliceBitmapGenerator();
+
+        var rasterService = new PlateSliceRasterService(
+        [
+            new MeshIntersectionSliceBitmapGenerator(),
+            orthographic,
+        ]);
+
+        var triangles = new ProceduralCuboidGridMesh(
+            targetTriangleCount: 1_000_000,
+            footprintWidthMm: 20f,
+            footprintDepthMm: 20f,
+            heightMm: 12f);
+
+        foreach (var method in new[] { PngSliceExportMethod.MeshIntersection, PngSliceExportMethod.OrthographicProjection })
+        {
+            var sw = Stopwatch.StartNew();
+            var zip = rasterService.GenerateSliceArchive(
+                triangles,
+                bedWidthMm: BedWidthMm,
+                bedDepthMm: BedDepthMm,
+                resolutionX: 96,
+                resolutionY: 96,
+                method: method,
+                layerHeightMm: 0.5f);
+            sw.Stop();
+
+            output.WriteLine($"archive method={method} elapsedMs={sw.Elapsed.TotalMilliseconds:F2} zipBytes={zip.Length}");
+            Assert.True(zip.Length > 0, $"Expected non-empty slice archive for {method}.");
+        }
+    }
+
     private static (double ElapsedMs, int LitPixels) Measure(Func<SliceBitmap> render)
     {
         var sw = Stopwatch.StartNew();

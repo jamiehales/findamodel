@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace findamodel.Services;
 
-public sealed class OrthographicProjectionSliceBitmapGenerator : IPlateSliceBitmapGenerator
+public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSliceBitmapGenerator
 {
     private const float Epsilon = 0.0001f;
     private const float RayOffsetMm = 0.0005f;
@@ -36,33 +36,154 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IPlateSliceBitm
         int pixelHeight,
         float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
     {
-        if (gpuContext is not null && gpuContext.IsAvailable)
-        {
-            try
-            {
-                var activeTriangles = FilterActiveTrianglesForGpu(triangles, sliceHeightMm, maxTriangleCount: 250_000);
-                if (activeTriangles.Count > 0)
-                {
-                    var gpuBitmap = gpuContext.TryRender(
-                        activeTriangles,
-                        sliceHeightMm,
-                        bedWidthMm,
-                        bedDepthMm,
-                        pixelWidth,
-                        pixelHeight);
+        var gpuBitmap = TryRenderGpuBatch(
+            [triangles],
+            [sliceHeightMm],
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerThicknessMm);
 
-                    if (gpuBitmap is not null)
-                        return gpuBitmap;
-                }
-            }
-            catch (Exception ex)
+        if (gpuBitmap is { Count: > 0 })
+            return gpuBitmap[0];
+
+        return RenderLayerBitmapCpu(
+            triangles,
+            sliceHeightMm,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerThicknessMm);
+    }
+
+    public IReadOnlyList<SliceBitmap> RenderLayerBitmaps(
+        IReadOnlyList<IReadOnlyList<Triangle3D>> trianglesByLayer,
+        IReadOnlyList<float> sliceHeightsMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
+    {
+        if (trianglesByLayer.Count != sliceHeightsMm.Count)
+            throw new ArgumentException("Layer triangle count and slice height count must match.");
+
+        if (trianglesByLayer.Count == 0)
+            return [];
+
+        var gpuBitmaps = TryRenderGpuBatch(
+            trianglesByLayer,
+            sliceHeightsMm,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerThicknessMm);
+
+        if (gpuBitmaps is not null)
+            return gpuBitmaps;
+
+        var bitmaps = new SliceBitmap[trianglesByLayer.Count];
+        Parallel.For(0, trianglesByLayer.Count, index =>
+        {
+            bitmaps[index] = RenderLayerBitmapCpu(
+                trianglesByLayer[index],
+                sliceHeightsMm[index],
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight,
+                layerThicknessMm);
+        });
+
+        return bitmaps;
+    }
+
+    private IReadOnlyList<SliceBitmap>? TryRenderGpuBatch(
+        IReadOnlyList<IReadOnlyList<Triangle3D>> trianglesByLayer,
+        IReadOnlyList<float> sliceHeightsMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerThicknessMm)
+    {
+        if (gpuContext is null || !gpuContext.IsAvailable)
+            return null;
+
+        try
+        {
+            List<Triangle3D> activeTriangles;
+            if (trianglesByLayer.Count == 1)
             {
-                logger?.LogDebug(ex, "GPU slice projection unavailable for this layer; using CPU fallback.");
+                activeTriangles = FilterActiveTrianglesForGpu(
+                    trianglesByLayer[0],
+                    sliceHeightsMm[0],
+                    layerThicknessMm,
+                    maxTriangleCount: 250_000);
+            }
+            else
+            {
+                var minSlice = sliceHeightsMm.Min() - (layerThicknessMm * 0.5f);
+                var maxSlice = sliceHeightsMm.Max() + (layerThicknessMm * 0.5f);
+                activeTriangles = BuildBatchTriangles(trianglesByLayer, minSlice, maxSlice, maxTriangleCount: 250_000);
+            }
+
+            if (activeTriangles.Count == 0)
+                return null;
+
+            return gpuContext.TryRenderBatch(
+                activeTriangles,
+                sliceHeightsMm,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogDebug(ex, "GPU slice projection unavailable for this batch; using CPU fallback.");
+            return null;
+        }
+    }
+
+    private static List<Triangle3D> BuildBatchTriangles(
+        IReadOnlyList<IReadOnlyList<Triangle3D>> trianglesByLayer,
+        float sliceMinMm,
+        float sliceMaxMm,
+        int maxTriangleCount)
+    {
+        var uniqueTriangles = new HashSet<Triangle3D>();
+
+        foreach (var triangles in trianglesByLayer)
+        {
+            foreach (var triangle in triangles)
+            {
+                if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
+                    continue;
+
+                uniqueTriangles.Add(triangle);
+                if (uniqueTriangles.Count > maxTriangleCount)
+                    return [];
             }
         }
 
+        return uniqueTriangles.ToList();
+    }
+
+    private static SliceBitmap RenderLayerBitmapCpu(
+        IReadOnlyList<Triangle3D> triangles,
+        float sliceHeightMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerThicknessMm)
+    {
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
-        var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, bedDepthMm, pixelHeight);
+        var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
 
         Parallel.For(0, pixelHeight, row =>
         {
@@ -81,14 +202,16 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IPlateSliceBitm
     private static List<Triangle3D> FilterActiveTrianglesForGpu(
         IReadOnlyList<Triangle3D> triangles,
         float sliceHeightMm,
+        float layerThicknessMm,
         int maxTriangleCount)
     {
-        var active = new List<Triangle3D>();
+        var sliceMinMm = sliceHeightMm - (layerThicknessMm * 0.5f);
+        var sliceMaxMm = sliceHeightMm + (layerThicknessMm * 0.5f);
+        var active = new List<Triangle3D>(Math.Min(triangles.Count, maxTriangleCount));
+
         foreach (var triangle in triangles)
         {
-            var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
-            var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
-            if (sliceHeightMm < minY - Epsilon || sliceHeightMm > maxY + Epsilon)
+            if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
                 continue;
 
             active.Add(triangle);
@@ -99,19 +222,28 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IPlateSliceBitm
         return active;
     }
 
+    private static bool IntersectsSliceRange(Triangle3D triangle, float sliceMinMm, float sliceMaxMm)
+    {
+        var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
+        var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
+        return !(sliceMaxMm < minY - Epsilon || sliceMinMm > maxY + Epsilon);
+    }
+
     private static List<int>?[] BuildRowCandidates(
         IReadOnlyList<Triangle3D> triangles,
         float sliceHeightMm,
+        float layerThicknessMm,
         float bedDepthMm,
         int pixelHeight)
     {
+        var sliceMinMm = sliceHeightMm - (layerThicknessMm * 0.5f);
+        var sliceMaxMm = sliceHeightMm + (layerThicknessMm * 0.5f);
         var byRow = new List<int>?[pixelHeight];
+
         for (var index = 0; index < triangles.Count; index++)
         {
             var triangle = triangles[index];
-            var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
-            var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
-            if (sliceHeightMm < minY - Epsilon || sliceHeightMm > maxY + Epsilon)
+            if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
                 continue;
 
             var minZ = MathF.Min(triangle.V0.Z, MathF.Min(triangle.V1.Z, triangle.V2.Z));
