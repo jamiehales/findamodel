@@ -275,73 +275,180 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
     {
         var origin = new Vec3((-bedWidthMm * 0.5f) - RayOffsetMm, sliceHeightMm, zMm);
         Span<float> hitXs = stackalloc float[64];
-        List<float>? overflowHits = null;
-        var uniqueHitCount = 0;
+        Span<int> hitDeltas = stackalloc int[64];
+        List<RayHit>? overflowHits = null;
+        var hitCount = 0;
 
         foreach (var triangleIndex in candidateIndexes)
         {
-            if (!TryIntersectPositiveXRay(origin, triangles[triangleIndex], out var hitX))
+            var triangle = triangles[triangleIndex];
+            if (!TryIntersectPositiveXRay(origin, triangle, out var hitX))
                 continue;
 
-            if (ContainsApproximately(hitXs, uniqueHitCount, hitX) || (overflowHits is not null && ContainsApproximately(CollectionsMarshal.AsSpan(overflowHits), overflowHits.Count, hitX)))
+            var hitDelta = GetWindingDelta(triangle);
+            if (hitDelta == 0)
                 continue;
 
-            if (uniqueHitCount < hitXs.Length)
+            if (TryAccumulateHit(hitXs, hitDeltas, hitCount, hitX, hitDelta))
+                continue;
+
+            if (overflowHits is not null)
             {
-                hitXs[uniqueHitCount++] = hitX;
+                AddOrAccumulateHit(overflowHits, hitX, hitDelta);
                 continue;
             }
 
-            overflowHits ??= hitXs.Slice(0, uniqueHitCount).ToArray().ToList();
-            overflowHits.Add(hitX);
+            if (hitCount < hitXs.Length)
+            {
+                hitXs[hitCount] = hitX;
+                hitDeltas[hitCount] = hitDelta;
+                hitCount++;
+                continue;
+            }
+
+            overflowHits = new List<RayHit>(hitCount + 8);
+            for (var i = 0; i < hitCount; i++)
+                overflowHits.Add(new RayHit(hitXs[i], hitDeltas[i]));
+
+            AddOrAccumulateHit(overflowHits, hitX, hitDelta);
         }
 
         if (overflowHits is not null)
         {
-            overflowHits.Sort();
-            FillIntervals(span, CollectionsMarshal.AsSpan(overflowHits), bedWidthMm, pixelWidth);
+            overflowHits.Sort(static (a, b) => a.X.CompareTo(b.X));
+            FillWindingIntervals(span, CollectionsMarshal.AsSpan(overflowHits), bedWidthMm, pixelWidth);
             return;
         }
 
-        var sortedHits = hitXs.Slice(0, uniqueHitCount);
-        sortedHits.Sort();
-        FillIntervals(span, sortedHits, bedWidthMm, pixelWidth);
+        SortHits(hitXs, hitDeltas, hitCount);
+        FillWindingIntervals(span, hitXs, hitDeltas, hitCount, bedWidthMm, pixelWidth);
     }
 
-    private static bool ContainsApproximately(ReadOnlySpan<float> values, int count, float candidate)
+    private static bool TryAccumulateHit(ReadOnlySpan<float> hitXs, Span<int> hitDeltas, int count, float candidate, int delta)
     {
         for (var i = 0; i < count; i++)
         {
-            if (MathF.Abs(values[i] - candidate) <= HitDedupEpsilon)
-                return true;
+            if (MathF.Abs(hitXs[i] - candidate) > HitDedupEpsilon)
+                continue;
+
+            hitDeltas[i] += delta;
+            return true;
         }
 
         return false;
     }
 
-    private static void FillIntervals(Span<byte> span, ReadOnlySpan<float> hits, float bedWidthMm, int pixelWidth)
+    private static void AddOrAccumulateHit(List<RayHit> hits, float candidate, int delta)
+    {
+        for (var i = 0; i < hits.Count; i++)
+        {
+            if (MathF.Abs(hits[i].X - candidate) > HitDedupEpsilon)
+                continue;
+
+            hits[i] = hits[i] with { Delta = hits[i].Delta + delta };
+            return;
+        }
+
+        hits.Add(new RayHit(candidate, delta));
+    }
+
+    private static int GetWindingDelta(Triangle3D triangle)
+    {
+        var normalX = (triangle.V1 - triangle.V0).Cross(triangle.V2 - triangle.V0).X;
+        if (MathF.Abs(normalX) <= Epsilon)
+            return 0;
+
+        return normalX < 0f ? 1 : -1;
+    }
+
+    private static void SortHits(Span<float> hitXs, Span<int> hitDeltas, int count)
+    {
+        for (var i = 1; i < count; i++)
+        {
+            var x = hitXs[i];
+            var delta = hitDeltas[i];
+            var j = i - 1;
+
+            while (j >= 0 && hitXs[j] > x)
+            {
+                hitXs[j + 1] = hitXs[j];
+                hitDeltas[j + 1] = hitDeltas[j];
+                j--;
+            }
+
+            hitXs[j + 1] = x;
+            hitDeltas[j + 1] = delta;
+        }
+    }
+
+    private static void FillWindingIntervals(
+        Span<byte> span,
+        ReadOnlySpan<float> hitXs,
+        ReadOnlySpan<int> hitDeltas,
+        int count,
+        float bedWidthMm,
+        int pixelWidth)
     {
         float? startX = null;
-        foreach (var hit in hits)
+        var winding = 0;
+
+        for (var i = 0; i < count; i++)
         {
-            if (!startX.HasValue)
+            var previousWinding = winding;
+            winding += hitDeltas[i];
+
+            if (previousWinding == 0 && winding != 0)
             {
-                startX = hit;
+                startX = hitXs[i];
                 continue;
             }
 
-            if (MathF.Abs(startX.Value - hit) <= HitDedupEpsilon)
-                continue;
-
-            var start = Math.Clamp(MapXToColumn(startX.Value, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-            var end = Math.Clamp(MapXToColumn(hit, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-            if (end < start)
-                (start, end) = (end, start);
-
-            span.Slice(start, (end - start) + 1).Fill((byte)255);
-            startX = null;
+            if (previousWinding != 0 && winding == 0 && startX.HasValue)
+            {
+                FillInterval(span, startX.Value, hitXs[i], bedWidthMm, pixelWidth);
+                startX = null;
+            }
         }
     }
+
+    private static void FillWindingIntervals(Span<byte> span, ReadOnlySpan<RayHit> hits, float bedWidthMm, int pixelWidth)
+    {
+        float? startX = null;
+        var winding = 0;
+
+        foreach (var hit in hits)
+        {
+            var previousWinding = winding;
+            winding += hit.Delta;
+
+            if (previousWinding == 0 && winding != 0)
+            {
+                startX = hit.X;
+                continue;
+            }
+
+            if (previousWinding != 0 && winding == 0 && startX.HasValue)
+            {
+                FillInterval(span, startX.Value, hit.X, bedWidthMm, pixelWidth);
+                startX = null;
+            }
+        }
+    }
+
+    private static void FillInterval(Span<byte> span, float startX, float endX, float bedWidthMm, int pixelWidth)
+    {
+        if (MathF.Abs(startX - endX) <= HitDedupEpsilon)
+            return;
+
+        var start = Math.Clamp(MapXToColumn(startX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        var end = Math.Clamp(MapXToColumn(endX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        if (end < start)
+            (start, end) = (end, start);
+
+        span.Slice(start, (end - start) + 1).Fill((byte)255);
+    }
+
+    private readonly record struct RayHit(float X, int Delta);
 
     private static bool TryIntersectPositiveXRay(Vec3 origin, Triangle3D triangle, out float hitX)
     {

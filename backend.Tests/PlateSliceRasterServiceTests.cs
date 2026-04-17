@@ -126,6 +126,28 @@ public class PlateSliceRasterServiceTests
         var expected = cpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 180, 180, 1f);
         var actual = gpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 180, 180, 1f);
 
+        AssertGpuMatchesCpu(expected, actual);
+    }
+
+    [Fact]
+    public void OrthographicProjectionGpu_WhenAvailable_MatchesCpuRendering_WithOddResolution()
+    {
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        if (!gpuContext.IsAvailable)
+            return;
+
+        var triangles = CreateTetrahedron();
+        var cpu = new OrthographicProjectionSliceBitmapGenerator();
+        var gpu = new OrthographicProjectionSliceBitmapGenerator(gpuContext, NullLoggerFactory.Instance);
+
+        var expected = cpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 173, 181, 1f);
+        var actual = gpu.RenderLayerBitmap(triangles, 1.5f, 20f, 20f, 173, 181, 1f);
+
+        AssertGpuMatchesCpu(expected, actual);
+    }
+
+    private static void AssertGpuMatchesCpu(SliceBitmap expected, SliceBitmap actual)
+    {
         var intersection = 0;
         var union = 0;
         for (var i = 0; i < expected.Pixels.Length; i++)

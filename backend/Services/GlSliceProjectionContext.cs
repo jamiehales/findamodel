@@ -139,6 +139,7 @@ public sealed class GlSliceProjectionContext : IDisposable
             ivec2 range = fetchRange((rowGroup * uGridColumnCount) + xGroup);
 
             float hits[kMaxHits];
+            int hitDeltas[kMaxHits];
             int uniqueHitCount = 0;
 
             for (int offset = 0; offset < range.y; offset++) {
@@ -162,20 +163,29 @@ public sealed class GlSliceProjectionContext : IDisposable
                     continue;
                 }
 
-                bool duplicate = false;
+                int hitDelta = cross(v1 - v0, v2 - v0).x < 0.0 ? 1 : -1;
+                bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        duplicate = true;
+                        hitDeltas[hitIndex] += hitDelta;
+                        accumulated = true;
                         break;
                     }
                 }
 
-                if (!duplicate && uniqueHitCount < kMaxHits) {
-                    hits[uniqueHitCount++] = hitX;
+                if (!accumulated && uniqueHitCount < kMaxHits) {
+                    hits[uniqueHitCount] = hitX;
+                    hitDeltas[uniqueHitCount] = hitDelta;
+                    uniqueHitCount++;
                 }
             }
 
-            float value = (uniqueHitCount % 2) == 1 ? 1.0 : 0.0;
+            int winding = 0;
+            for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
+                winding += hitDeltas[hitIndex];
+            }
+
+            float value = winding != 0 ? 1.0 : 0.0;
             FragColor = vec4(value, value, value, 1.0);
         }
         """;
@@ -297,6 +307,7 @@ public sealed class GlSliceProjectionContext : IDisposable
             ivec2 range = fetchRange((rowGroup * uGridColumnCount) + xGroup);
 
             float hits[kMaxHits];
+            int hitDeltas[kMaxHits];
             int uniqueHitCount = 0;
 
             for (int offset = 0; offset < range.y; offset++) {
@@ -320,20 +331,29 @@ public sealed class GlSliceProjectionContext : IDisposable
                     continue;
                 }
 
-                bool duplicate = false;
+                int hitDelta = cross(v1 - v0, v2 - v0).x < 0.0 ? 1 : -1;
+                bool accumulated = false;
                 for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
                     if (abs(hits[hitIndex] - hitX) <= kDedupEpsilon) {
-                        duplicate = true;
+                        hitDeltas[hitIndex] += hitDelta;
+                        accumulated = true;
                         break;
                     }
                 }
 
-                if (!duplicate && uniqueHitCount < kMaxHits) {
-                    hits[uniqueHitCount++] = hitX;
+                if (!accumulated && uniqueHitCount < kMaxHits) {
+                    hits[uniqueHitCount] = hitX;
+                    hitDeltas[uniqueHitCount] = hitDelta;
+                    uniqueHitCount++;
                 }
             }
 
-            float value = (uniqueHitCount % 2) == 1 ? 1.0 : 0.0;
+            int winding = 0;
+            for (int hitIndex = 0; hitIndex < uniqueHitCount; hitIndex++) {
+                winding += hitDeltas[hitIndex];
+            }
+
+            float value = winding != 0 ? 1.0 : 0.0;
             imageStore(uOutput, pixel, vec4(value, 0.0, 0.0, 1.0));
         }
         """;
@@ -503,6 +523,8 @@ public sealed class GlSliceProjectionContext : IDisposable
             }
 
             gl.GetInteger(GLEnum.MaxTextureSize, out maxTextureSize);
+            gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
+            gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
 
             rendererName = gl.GetStringS(StringName.Renderer) ?? "unknown";
             useNvidiaFastPath = rendererName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);

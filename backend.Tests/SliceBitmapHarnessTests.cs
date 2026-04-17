@@ -110,6 +110,34 @@ public class SliceBitmapHarnessTests
         AssertBitmapsMatch(expected, actual, minIou: 0.90f, maxAreaErrorRatio: 0.12f);
     }
 
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void OverlappingCubesSlice_FillsUnionInsteadOfParityGaps(PngSliceExportMethod method)
+    {
+        const float sideMm = 8f;
+        const float sliceHeightMm = 4f;
+        var generator = CreateGenerator(method);
+
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetCube(sideMm, centerX: -2f, centerZ: 0f));
+        triangles.AddRange(CreateOffsetCube(sideMm, centerX: 2f, centerZ: 0f));
+
+        var actual = generator.RenderLayerBitmap(
+            triangles,
+            sliceHeightMm,
+            BedWidthMm,
+            BedDepthMm,
+            PixelWidth,
+            PixelHeight);
+
+        var half = sideMm * 0.5f;
+        var expected = BuildExpectedBitmap((x, z) =>
+            PointInAxisAlignedSquare(x, z, centerX: -2f, centerZ: 0f, half)
+            || PointInAxisAlignedSquare(x, z, centerX: 2f, centerZ: 0f, half));
+
+        AssertBitmapsMatch(expected, actual, minIou: 0.96f, maxAreaErrorRatio: 0.06f);
+    }
+
     private static IPlateSliceBitmapGenerator CreateGenerator(PngSliceExportMethod method) => method switch
     {
         PngSliceExportMethod.MeshIntersection => new MeshIntersectionSliceBitmapGenerator(),
@@ -170,16 +198,19 @@ public class SliceBitmapHarnessTests
         => (BedDepthMm * 0.5f) - (((row + 0.5f) / PixelHeight) * BedDepthMm);
 
     private static List<Triangle3D> CreateCube(float sideMm)
+        => CreateOffsetCube(sideMm, centerX: 0f, centerZ: 0f);
+
+    private static List<Triangle3D> CreateOffsetCube(float sideMm, float centerX, float centerZ)
     {
         var half = sideMm * 0.5f;
-        var p000 = new Vec3(-half, 0f, -half);
-        var p001 = new Vec3(-half, 0f, half);
-        var p010 = new Vec3(-half, sideMm, -half);
-        var p011 = new Vec3(-half, sideMm, half);
-        var p100 = new Vec3(half, 0f, -half);
-        var p101 = new Vec3(half, 0f, half);
-        var p110 = new Vec3(half, sideMm, -half);
-        var p111 = new Vec3(half, sideMm, half);
+        var p000 = new Vec3(centerX - half, 0f, centerZ - half);
+        var p001 = new Vec3(centerX - half, 0f, centerZ + half);
+        var p010 = new Vec3(centerX - half, sideMm, centerZ - half);
+        var p011 = new Vec3(centerX - half, sideMm, centerZ + half);
+        var p100 = new Vec3(centerX + half, 0f, centerZ - half);
+        var p101 = new Vec3(centerX + half, 0f, centerZ + half);
+        var p110 = new Vec3(centerX + half, sideMm, centerZ - half);
+        var p111 = new Vec3(centerX + half, sideMm, centerZ + half);
 
         return
         [
@@ -305,6 +336,9 @@ public class SliceBitmapHarnessTests
         var hasPositive = d1 > 0 || d2 > 0 || d3 > 0;
         return !(hasNegative && hasPositive);
     }
+
+    private static bool PointInAxisAlignedSquare(float x, float z, float centerX, float centerZ, float half)
+        => MathF.Abs(x - centerX) <= half && MathF.Abs(z - centerZ) <= half;
 
     private static float Sign((float X, float Z) p1, (float X, float Z) p2, (float X, float Z) p3)
         => ((p1.X - p3.X) * (p2.Z - p3.Z)) - ((p2.X - p3.X) * (p1.Z - p3.Z));

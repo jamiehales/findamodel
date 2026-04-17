@@ -16,7 +16,7 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
     {
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
-        var rowIntersections = new List<float>?[pixelHeight];
+        var rowIntersections = new List<ScanlineIntersection>?[pixelHeight];
 
         foreach (var triangle in triangles)
         {
@@ -28,52 +28,61 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
             if (!TryIntersectTriangle(triangle, sliceHeightMm, out var p0, out var p1))
                 continue;
 
+            OrientSegmentForWinding(triangle, ref p0, ref p1);
             AddSegmentIntersections(p0, p1, rowIntersections, bedWidthMm, bedDepthMm, pixelHeight);
         }
 
         for (var row = 0; row < pixelHeight; row++)
         {
-            var xs = rowIntersections[row];
-            if (xs == null || xs.Count < 2)
+            var intersections = rowIntersections[row];
+            if (intersections == null || intersections.Count < 2)
                 continue;
 
-            xs.Sort();
+            intersections.Sort(static (a, b) => a.X.CompareTo(b.X));
             var span = bitmap.GetRowSpan(row);
-            FillScanline(xs, span, bedWidthMm, pixelWidth);
+            FillScanline(intersections, span, bedWidthMm, pixelWidth);
         }
 
         return bitmap;
     }
 
-    private static void FillScanline(List<float> xs, Span<byte> span, float bedWidthMm, int pixelWidth)
+    private static void FillScanline(List<ScanlineIntersection> intersections, Span<byte> span, float bedWidthMm, int pixelWidth)
     {
         float? startX = null;
+        var winding = 0;
+        var index = 0;
 
-        foreach (var x in xs)
+        while (index < intersections.Count)
         {
-            if (!startX.HasValue)
+            var currentX = intersections[index].X;
+            var deltaSum = 0;
+            while (index < intersections.Count && MathF.Abs(intersections[index].X - currentX) <= Epsilon)
             {
-                startX = x;
+                deltaSum += intersections[index].WindingDelta;
+                index++;
+            }
+
+            var previousWinding = winding;
+            winding += deltaSum;
+
+            if (previousWinding == 0 && winding != 0)
+            {
+                startX = currentX;
                 continue;
             }
 
-            if (MathF.Abs(startX.Value - x) <= Epsilon)
-                continue;
-
-            var start = Math.Clamp(MapXToColumn(startX.Value, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-            var end = Math.Clamp(MapXToColumn(x, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
-            if (end < start)
-                (start, end) = (end, start);
-
-            span.Slice(start, (end - start) + 1).Fill((byte)255);
-            startX = null;
+            if (previousWinding != 0 && winding == 0 && startX.HasValue)
+            {
+                FillInterval(span, startX.Value, currentX, bedWidthMm, pixelWidth);
+                startX = null;
+            }
         }
     }
 
     private static void AddSegmentIntersections(
         (float X, float Z) p0,
         (float X, float Z) p1,
-        List<float>?[] rowIntersections,
+        List<ScanlineIntersection>?[] rowIntersections,
         float bedWidthMm,
         float bedDepthMm,
         int height)
@@ -88,6 +97,8 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
 
         if (endRow < startRow)
             (startRow, endRow) = (endRow, startRow);
+
+        var windingDelta = p0.Z < p1.Z ? 1 : -1;
 
         for (var row = startRow; row <= endRow; row++)
         {
@@ -104,7 +115,7 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
                 continue;
 
             rowIntersections[row] ??= [];
-            rowIntersections[row]!.Add(xMm);
+            rowIntersections[row]!.Add(new ScanlineIntersection(xMm, windingDelta));
         }
     }
 
@@ -203,6 +214,29 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         return distinctCount;
     }
 
+    private static void OrientSegmentForWinding(Triangle3D triangle, ref (float X, float Z) p0, ref (float X, float Z) p1)
+    {
+        var normal = (triangle.V1 - triangle.V0).Cross(triangle.V2 - triangle.V0);
+        var expectedDirection = Vec3.Up.Cross(normal);
+        var dx = p1.X - p0.X;
+        var dz = p1.Z - p0.Z;
+        if ((dx * expectedDirection.X) + (dz * expectedDirection.Z) < 0f)
+            (p0, p1) = (p1, p0);
+    }
+
+    private static void FillInterval(Span<byte> span, float startX, float endX, float bedWidthMm, int pixelWidth)
+    {
+        if (MathF.Abs(startX - endX) <= Epsilon)
+            return;
+
+        var start = Math.Clamp(MapXToColumn(startX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        var end = Math.Clamp(MapXToColumn(endX, bedWidthMm, pixelWidth), 0, pixelWidth - 1);
+        if (end < start)
+            (start, end) = (end, start);
+
+        span.Slice(start, (end - start) + 1).Fill((byte)255);
+    }
+
     private static float DistanceSquared(PointXZ a, PointXZ b)
     {
         var dx = a.X - b.X;
@@ -220,4 +254,5 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         => (bedDepthMm * 0.5f) - (((row + 0.5f) / height) * bedDepthMm);
 
     private readonly record struct PointXZ(float X, float Z);
+    private readonly record struct ScanlineIntersection(float X, int WindingDelta);
 }
