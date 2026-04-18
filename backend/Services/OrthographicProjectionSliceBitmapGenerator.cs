@@ -9,6 +9,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
     private const float Epsilon = 0.0001f;
     private const float RayOffsetMm = 0.0005f;
     private const float HitDedupEpsilon = 0.002f;
+    private const int ColumnBinCount = 16;
     private static readonly Vec3 RayDirection = new(1f, 0f, 0f);
 
     private readonly GlSliceProjectionContext? gpuContext;
@@ -210,6 +211,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float layerThicknessMm)
     {
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
+        var precomputed = BuildPrecomputedTriangles(triangles);
         var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
 
         Parallel.For(0, pixelHeight, row =>
@@ -220,7 +222,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
             var zMm = RowToZ(row, bedDepthMm, pixelHeight);
             var span = bitmap.GetRowSpan(row);
-            FillProjectedRow(span, triangles, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
+            FillProjectedRow(span, precomputed, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
         });
 
         bitmap.RemoveUnsupportedHorizontalPixels();
@@ -237,6 +239,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float layerThicknessMm)
     {
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
+        var precomputed = BuildPrecomputedTriangles(triangles);
         var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
 
         for (var row = 0; row < pixelHeight; row++)
@@ -247,7 +250,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
             var zMm = RowToZ(row, bedDepthMm, pixelHeight);
             var span = bitmap.GetRowSpan(row);
-            FillProjectedRow(span, triangles, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
+            FillProjectedRow(span, precomputed, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
         }
 
         bitmap.RemoveUnsupportedHorizontalPixels();
@@ -319,9 +322,36 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         return byRow;
     }
 
+    private static PrecomputedTriangle[] BuildPrecomputedTriangles(IReadOnlyList<Triangle3D> triangles)
+    {
+        var result = new PrecomputedTriangle[triangles.Count];
+        for (var i = 0; i < triangles.Count; i++)
+        {
+            var t = triangles[i];
+            var edge1 = t.V1 - t.V0;
+            var edge2 = t.V2 - t.V0;
+            // For RayDirection = (1,0,0): h = cross(dir, edge2) = (0, -edge2.Z, edge2.Y)
+            // a = dot(edge1, h) = edge1.Z*edge2.Y - edge1.Y*edge2.Z
+            var a = (edge1.Z * edge2.Y) - (edge1.Y * edge2.Z);
+            var invA = MathF.Abs(a) < Epsilon ? 0f : 1f / a;
+            // normalX = cross(edge1, edge2).X = edge1.Y*edge2.Z - edge1.Z*edge2.Y = -a
+            var windingDelta = MathF.Abs(a) <= Epsilon ? 0 : (a > 0f ? 1 : -1);
+            var maxX = MathF.Max(t.V0.X, MathF.Max(t.V1.X, t.V2.X));
+            var minZ = MathF.Min(t.V0.Z, MathF.Min(t.V1.Z, t.V2.Z));
+            var maxZ = MathF.Max(t.V0.Z, MathF.Max(t.V1.Z, t.V2.Z));
+
+            result[i] = new PrecomputedTriangle(
+                t.V0, edge1, edge2,
+                invA, a, windingDelta,
+                maxX, minZ, maxZ);
+        }
+
+        return result;
+    }
+
     private static void FillProjectedRow(
         Span<byte> span,
-        IReadOnlyList<Triangle3D> triangles,
+        PrecomputedTriangle[] precomputed,
         List<int> candidateIndexes,
         float sliceHeightMm,
         float zMm,
@@ -336,11 +366,11 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
         foreach (var triangleIndex in candidateIndexes)
         {
-            var triangle = triangles[triangleIndex];
-            if (!TryIntersectPositiveXRay(origin, triangle, out var hitX))
+            ref readonly var tri = ref precomputed[triangleIndex];
+            if (!TryIntersectPositiveXRayPrecomputed(origin, in tri, out var hitX))
                 continue;
 
-            var hitDelta = GetWindingDelta(triangle);
+            var hitDelta = tri.WindingDelta;
             if (hitDelta == 0)
                 continue;
 
@@ -405,15 +435,6 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         }
 
         hits.Add(new RayHit(candidate, delta));
-    }
-
-    private static int GetWindingDelta(Triangle3D triangle)
-    {
-        var normalX = (triangle.V1 - triangle.V0).Cross(triangle.V2 - triangle.V0).X;
-        if (MathF.Abs(normalX) <= Epsilon)
-            return 0;
-
-        return normalX < 0f ? 1 : -1;
     }
 
     private static void SortHits(Span<float> hitXs, Span<int> hitDeltas, int count)
@@ -518,6 +539,66 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
     }
 
     private readonly record struct RayHit(float X, int Delta);
+
+    private readonly record struct PrecomputedTriangle(
+        Vec3 V0,
+        Vec3 Edge1,
+        Vec3 Edge2,
+        float InvA,
+        float A,
+        int WindingDelta,
+        float MaxX,
+        float MinZ,
+        float MaxZ);
+
+    private static bool TryIntersectPositiveXRayPrecomputed(Vec3 origin, in PrecomputedTriangle tri, out float hitX)
+    {
+        if (tri.MaxX < origin.X + Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        if (origin.Z < tri.MinZ - Epsilon || origin.Z > tri.MaxZ + Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        if (MathF.Abs(tri.A) < Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        var s = origin - tri.V0;
+        // u = invA * dot(s, h) where h = (0, -edge2.Z, edge2.Y)
+        var u = tri.InvA * ((-s.Y * tri.Edge2.Z) + (s.Z * tri.Edge2.Y));
+        if (u < -Epsilon || u > 1f + Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        var q = s.Cross(tri.Edge1);
+        // v = invA * dot(RayDirection, q) where RayDirection = (1,0,0) so dot = q.X
+        var v = tri.InvA * q.X;
+        if (v < -Epsilon || u + v > 1f + Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        var t = tri.InvA * tri.Edge2.Dot(q);
+        if (t < Epsilon)
+        {
+            hitX = 0f;
+            return false;
+        }
+
+        hitX = origin.X + t;
+        return true;
+    }
 
     private static bool TryIntersectPositiveXRay(Vec3 origin, Triangle3D triangle, out float hitX)
     {

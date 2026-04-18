@@ -419,6 +419,25 @@ public sealed class GlSliceProjectionContext : IDisposable
     private int uResolutionXLocation;
     private int uResolutionYLocation;
 
+    // Cached compute shader uniform locations
+    private int cuTriangleTextureLocation;
+    private int cuBoundsTextureLocation;
+    private int cuIndexTextureLocation;
+    private int cuRangeTextureLocation;
+    private int cuTriangleTexWidthLocation;
+    private int cuBoundsTexWidthLocation;
+    private int cuIndexTexWidthLocation;
+    private int cuRangeTexWidthLocation;
+    private int cuRowGroupHeightLocation;
+    private int cuRowGroupCountLocation;
+    private int cuGridColumnCountLocation;
+    private int cuSliceHeightLocation;
+    private int cuBedWidthLocation;
+    private int cuBedDepthLocation;
+    private int cuRayOffsetLocation;
+    private int cuResolutionXLocation;
+    private int cuResolutionYLocation;
+
     public GlSliceProjectionContext(ILoggerFactory loggerFactory)
     {
         logger = loggerFactory.CreateLogger<GlSliceProjectionContext>();
@@ -664,6 +683,8 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.Uniform1(uResolutionXLocation, request.PixelWidth);
         gl.Uniform1(uResolutionYLocation, request.PixelHeight);
 
+        var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
+
         foreach (var sliceHeightMm in request.SliceHeightsMm)
         {
             gl.ClearColor(0f, 0f, 0f, 1f);
@@ -671,7 +692,6 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.Uniform1(uSliceHeightLocation, sliceHeightMm);
             gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
 
-            var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
             gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
             results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
         }
@@ -687,44 +707,45 @@ public sealed class GlSliceProjectionContext : IDisposable
         gl.UseProgram(computeProgram);
         gl.ActiveTexture(TextureUnit.Texture0);
         gl.BindTexture(TextureTarget.Texture2D, triangleTexture);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uTriangleTexture"), 0);
+        gl.Uniform1(cuTriangleTextureLocation, 0);
 
         gl.ActiveTexture(TextureUnit.Texture1);
         gl.BindTexture(TextureTarget.Texture2D, boundsTexture);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBoundsTexture"), 1);
+        gl.Uniform1(cuBoundsTextureLocation, 1);
 
         gl.ActiveTexture(TextureUnit.Texture2);
         gl.BindTexture(TextureTarget.Texture2D, indexTexture);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uIndexTexture"), 2);
+        gl.Uniform1(cuIndexTextureLocation, 2);
 
         gl.ActiveTexture(TextureUnit.Texture3);
         gl.BindTexture(TextureTarget.Texture2D, rangeTexture);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRangeTexture"), 3);
+        gl.Uniform1(cuRangeTextureLocation, 3);
 
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uTriangleTexWidth"), cachedTriangleTextureWidth);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBoundsTexWidth"), cachedBoundsTextureWidth);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uIndexTexWidth"), cachedIndexTextureWidth);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRangeTexWidth"), cachedRangeTextureWidth);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRowGroupHeight"), activeRowGroupHeight);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRowGroupCount"), cachedRowGroupCount);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uGridColumnCount"), activeGridColumnCount);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBedWidth"), request.BedWidthMm);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uBedDepth"), request.BedDepthMm);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uRayOffset"), 0.0005f);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uResolutionX"), request.PixelWidth);
-        gl.Uniform1(gl.GetUniformLocation(computeProgram, "uResolutionY"), request.PixelHeight);
+        gl.Uniform1(cuTriangleTexWidthLocation, cachedTriangleTextureWidth);
+        gl.Uniform1(cuBoundsTexWidthLocation, cachedBoundsTextureWidth);
+        gl.Uniform1(cuIndexTexWidthLocation, cachedIndexTextureWidth);
+        gl.Uniform1(cuRangeTexWidthLocation, cachedRangeTextureWidth);
+        gl.Uniform1(cuRowGroupHeightLocation, activeRowGroupHeight);
+        gl.Uniform1(cuRowGroupCountLocation, cachedRowGroupCount);
+        gl.Uniform1(cuGridColumnCountLocation, activeGridColumnCount);
+        gl.Uniform1(cuBedWidthLocation, request.BedWidthMm);
+        gl.Uniform1(cuBedDepthLocation, request.BedDepthMm);
+        gl.Uniform1(cuRayOffsetLocation, 0.0005f);
+        gl.Uniform1(cuResolutionXLocation, request.PixelWidth);
+        gl.Uniform1(cuResolutionYLocation, request.PixelHeight);
 
         var groupsX = (uint)((request.PixelWidth + computeWorkgroupSize - 1) / computeWorkgroupSize);
         var groupsY = (uint)((request.PixelHeight + computeWorkgroupSize - 1) / computeWorkgroupSize);
 
+        var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
+
         foreach (var sliceHeightMm in request.SliceHeightsMm)
         {
-            gl.Uniform1(gl.GetUniformLocation(computeProgram, "uSliceHeight"), sliceHeightMm);
+            gl.Uniform1(cuSliceHeightLocation, sliceHeightMm);
             gl.BindImageTexture(0, colorTexture, 0, false, 0, GLEnum.WriteOnly, GLEnum.R8);
             gl.DispatchCompute(groupsX, groupsY, 1);
             gl.MemoryBarrier(MemoryBarrierMask.ShaderImageAccessBarrierBit | MemoryBarrierMask.TextureFetchBarrierBit | MemoryBarrierMask.FramebufferBarrierBit);
 
-            var rawPixels = new byte[request.PixelWidth * request.PixelHeight];
             gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
             results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
         }
@@ -1058,6 +1079,24 @@ public sealed class GlSliceProjectionContext : IDisposable
 
             supportsComputeShaders = true;
             renderBackend = useNvidiaFastPath ? "nvidia-compute" : "compute";
+
+            cuTriangleTextureLocation = gl.GetUniformLocation(computeProgram, "uTriangleTexture");
+            cuBoundsTextureLocation = gl.GetUniformLocation(computeProgram, "uBoundsTexture");
+            cuIndexTextureLocation = gl.GetUniformLocation(computeProgram, "uIndexTexture");
+            cuRangeTextureLocation = gl.GetUniformLocation(computeProgram, "uRangeTexture");
+            cuTriangleTexWidthLocation = gl.GetUniformLocation(computeProgram, "uTriangleTexWidth");
+            cuBoundsTexWidthLocation = gl.GetUniformLocation(computeProgram, "uBoundsTexWidth");
+            cuIndexTexWidthLocation = gl.GetUniformLocation(computeProgram, "uIndexTexWidth");
+            cuRangeTexWidthLocation = gl.GetUniformLocation(computeProgram, "uRangeTexWidth");
+            cuRowGroupHeightLocation = gl.GetUniformLocation(computeProgram, "uRowGroupHeight");
+            cuRowGroupCountLocation = gl.GetUniformLocation(computeProgram, "uRowGroupCount");
+            cuGridColumnCountLocation = gl.GetUniformLocation(computeProgram, "uGridColumnCount");
+            cuSliceHeightLocation = gl.GetUniformLocation(computeProgram, "uSliceHeight");
+            cuBedWidthLocation = gl.GetUniformLocation(computeProgram, "uBedWidth");
+            cuBedDepthLocation = gl.GetUniformLocation(computeProgram, "uBedDepth");
+            cuRayOffsetLocation = gl.GetUniformLocation(computeProgram, "uRayOffset");
+            cuResolutionXLocation = gl.GetUniformLocation(computeProgram, "uResolutionX");
+            cuResolutionYLocation = gl.GetUniformLocation(computeProgram, "uResolutionY");
         }
         catch (Exception ex)
         {
@@ -1097,7 +1136,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         for (var row = 0; row < height; row++)
         {
             var sourceRow = height - 1 - row;
-            Array.Copy(rawPixels, sourceRow * width, bitmap.Pixels, row * width, width);
+            System.Buffer.BlockCopy(rawPixels, sourceRow * width, bitmap.Pixels, row * width, width);
         }
 
         return bitmap;

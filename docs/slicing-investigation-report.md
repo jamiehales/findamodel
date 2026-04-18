@@ -152,3 +152,69 @@ All added to `SliceBitmapHarnessTests.cs` and `PlateSliceRasterServiceTests.cs`:
 |------|---------|
 | `backend/Services/SliceBitmap.cs` | Added `ClearUnsupportedRunInteriors` method, called after initial run support check |
 | `backend.Tests/SliceBitmapHarnessTests.cs` | 5 new bridging-artifact tests, `AssertNoHorizontalBridging` helper |
+
+---
+
+## Performance Optimizations (CPU + GPU)
+
+### CPU Optimizations
+
+Three optimizations applied to `OrthographicProjectionSliceBitmapGenerator`:
+
+**1. Precomputed triangle data**
+
+Added `PrecomputedTriangle` struct that precomputes per-triangle edge vectors (`edge1`, `edge2`), determinant (`a`), inverse determinant (`invA`), winding delta, and bounding box (`maxX`, `minZ`, `maxZ`). These values were previously recomputed for every ray-triangle intersection test. Now computed once per `BuildPrecomputedTriangles` call and reused across all rows.
+
+**2. Ray-direction math simplification**
+
+Since `RayDirection = (1, 0, 0)` is constant, several operations in the Moller-Trumbore intersection simplify:
+- `h = cross((1,0,0), edge2) = (0, -edge2.Z, edge2.Y)` - eliminates cross product, uses two precomputed values
+- `dot(s, h)` simplifies to `-s.Y * edge2.Z + s.Z * edge2.Y` - eliminates a dot product
+- `dot(RayDirection, q)` simplifies to `q.X` - eliminates a dot product
+- Winding delta derived from `a = -normalX` without extra cross product
+
+**3. Removed per-ray GetWindingDelta**
+
+Winding delta is now precomputed in `PrecomputedTriangle.WindingDelta`, eliminating a per-intersection cross product and conditional.
+
+### GPU Optimizations
+
+Three optimizations applied to `GlSliceProjectionContext`:
+
+**1. Cached compute shader uniform locations**
+
+`RenderWithCompute` previously called `gl.GetUniformLocation(computeProgram, ...)` for every uniform on every frame (17 lookups per layer). Now all 17 compute uniform locations are cached during shader compilation, matching the fragment shader path.
+
+**2. Buffer.BlockCopy for FlipToBitmap**
+
+Replaced `Array.Copy` with `System.Buffer.BlockCopy` in `FlipToBitmap` for byte-array row flipping during GPU readback.
+
+**3. Shared readback buffer across batch layers**
+
+The `rawPixels` byte array is now allocated once per batch and reused for each layer's `ReadPixels` call, instead of allocating a new array per layer.
+
+### Benchmark Results
+
+All benchmarks run on the same machine, 5 iterations each, warmup excluded.
+
+| Configuration | Baseline (ms) | Optimized (ms) | Speedup |
+|---|---|---|---|
+| small-cube-180x180 (12 tris) | 6.85 | 4.29 | 1.6x |
+| grid-480x480 (2352 tris) | 45.95 | 35.79 | 1.3x |
+| grid-960x600 (2352 tris) | 93.61 | 82.42 | 1.1x |
+| dense-grid-960x600 (19200 tris) | 98.09 | 91.70 | 1.1x |
+| dense-grid-3840x2400 (19200 tris) | 1830.26 | 1368.79 | 1.3x |
+| sphere-960x600 (3968 tris) | 90.37 | 77.90 | 1.2x |
+| batch-16layers-960x600 (2352 tris) | 319.50 | 274.03 | 1.2x |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `backend/Services/OrthographicProjectionSliceBitmapGenerator.cs` | PrecomputedTriangle struct, math simplification, per-ray winding removal |
+| `backend/Services/GlSliceProjectionContext.cs` | Cached compute uniforms, Buffer.BlockCopy, shared readback buffer |
+| `backend.Tests/SliceBenchmarkTests.cs` | New benchmark test file for CPU slice performance |
+
+### Test Results
+
+395/395 tests passed (9m 45s total), including all 34 SliceBitmapHarnessTests.
