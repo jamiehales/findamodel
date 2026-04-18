@@ -79,6 +79,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         if (trianglesByLayer.Count == 0)
             return [];
 
+        var cleanupTasks = new ConcurrentBag<Task>();
         var gpuBitmaps = TryRenderGpuBatch(
             trianglesByLayer,
             sliceHeightsMm,
@@ -86,13 +87,13 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             bedDepthMm,
             pixelWidth,
             pixelHeight,
-            layerThicknessMm);
+            layerThicknessMm,
+            onBitmapReady: bitmap => cleanupTasks.Add(
+                Task.Run(() => bitmap.RemoveUnsupportedHorizontalPixels())));
 
         if (gpuBitmaps is not null)
         {
-            foreach (var bitmap in gpuBitmaps)
-                bitmap.RemoveUnsupportedHorizontalPixels();
-
+            Task.WaitAll(cleanupTasks.ToArray());
             return gpuBitmaps;
         }
 
@@ -146,7 +147,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm)
+        float layerThicknessMm,
+        Action<SliceBitmap>? onBitmapReady = null)
     {
         if (!EnableGpuSliceProjection || gpuContext is null || !gpuContext.IsAvailable)
             return null;
@@ -178,7 +180,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                 bedWidthMm,
                 bedDepthMm,
                 pixelWidth,
-                pixelHeight);
+                pixelHeight,
+                onBitmapReady);
         }
         catch (Exception ex)
         {

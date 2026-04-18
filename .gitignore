@@ -26,3 +26,4 @@ debug
 !desktop-tauri/src-tauri/bin/
 desktop-tauri/src-tauri/bin/*
 !desktop-tauri/src-tauri/bin/placeholder.txt
+artifacts/plate-slice-debug

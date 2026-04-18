@@ -239,7 +239,31 @@ try
             var sw = Stopwatch.StartNew();
             gpuContext.TryRenderBatch(allTriangles, heights, BedWidthMm, BedDepthMm, 3840, 2400);
             sw.Stop();
-            Console.WriteLine($"  GPU batch={bs} 3840x2400: {sw.Elapsed.TotalMilliseconds:F1}ms ({sw.Elapsed.TotalMilliseconds / bs:F1}ms/layer)");
+            Console.WriteLine($"  GPU batch={bs} 3840x2400 (raw): {sw.Elapsed.TotalMilliseconds:F1}ms ({sw.Elapsed.TotalMilliseconds / bs:F1}ms/layer)");
+        }
+
+        // GPU batch with sequential cleanup (old approach)
+        foreach (var bs in new[] { 1, 16, 32 })
+        {
+            var heights = Enumerable.Range(0, bs).Select(i => 0.025f + (i * LayerHeightMm)).ToArray();
+            var sw = Stopwatch.StartNew();
+            var bitmaps = gpuContext.TryRenderBatch(allTriangles, heights, BedWidthMm, BedDepthMm, 3840, 2400);
+            if (bitmaps != null) foreach (var b in bitmaps) b.RemoveUnsupportedHorizontalPixels();
+            sw.Stop();
+            Console.WriteLine($"  GPU batch={bs} 3840x2400 (seq cleanup): {sw.Elapsed.TotalMilliseconds:F1}ms ({sw.Elapsed.TotalMilliseconds / bs:F1}ms/layer)");
+        }
+
+        // GPU batch with overlapped parallel cleanup (new approach)
+        foreach (var bs in new[] { 1, 16, 32 })
+        {
+            var heights = Enumerable.Range(0, bs).Select(i => 0.025f + (i * LayerHeightMm)).ToArray();
+            var cleanupTasks = new ConcurrentBag<Task>();
+            var sw = Stopwatch.StartNew();
+            var bitmaps = gpuContext.TryRenderBatch(allTriangles, heights, BedWidthMm, BedDepthMm, 3840, 2400,
+                onBitmapReady: b => cleanupTasks.Add(Task.Run(() => b.RemoveUnsupportedHorizontalPixels())));
+            Task.WaitAll(cleanupTasks.ToArray());
+            sw.Stop();
+            Console.WriteLine($"  GPU batch={bs} 3840x2400 (overlap cleanup): {sw.Elapsed.TotalMilliseconds:F1}ms ({sw.Elapsed.TotalMilliseconds / bs:F1}ms/layer)");
         }
     }
     else Console.WriteLine("  GPU unavailable");

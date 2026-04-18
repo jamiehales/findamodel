@@ -480,7 +480,8 @@ public sealed class GlSliceProjectionContext : IDisposable
         float bedWidthMm,
         float bedDepthMm,
         int pixelWidth,
-        int pixelHeight)
+        int pixelHeight,
+        Action<SliceBitmap>? onBitmapReady = null)
     {
         ready.Task.GetAwaiter().GetResult();
         if (failed || triangles.Count == 0 || triangles.Count > MaxGpuTriangleCount || sliceHeightsMm.Count == 0)
@@ -494,7 +495,8 @@ public sealed class GlSliceProjectionContext : IDisposable
             bedWidthMm,
             bedDepthMm,
             pixelWidth,
-            pixelHeight);
+            pixelHeight,
+            onBitmapReady);
 
         channel.Writer.WriteAsync(request).AsTask().GetAwaiter().GetResult();
         return tcs.Task.GetAwaiter().GetResult();
@@ -693,7 +695,9 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
 
             gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
-            results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
+            var bitmap = FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight);
+            results.Add(bitmap);
+            request.OnBitmapReady?.Invoke(bitmap);
         }
 
         return results;
@@ -747,7 +751,9 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.MemoryBarrier(MemoryBarrierMask.ShaderImageAccessBarrierBit | MemoryBarrierMask.TextureFetchBarrierBit | MemoryBarrierMask.FramebufferBarrierBit);
 
             gl.ReadPixels(0, 0, (uint)request.PixelWidth, (uint)request.PixelHeight, PixelFormat.Red, PixelType.UnsignedByte, rawPixels.AsSpan());
-            results.Add(FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight));
+            var bitmap = FlipToBitmap(rawPixels, request.PixelWidth, request.PixelHeight);
+            results.Add(bitmap);
+            request.OnBitmapReady?.Invoke(bitmap);
         }
 
         return results;
@@ -1219,5 +1225,6 @@ public sealed class GlSliceProjectionContext : IDisposable
         float BedWidthMm,
         float BedDepthMm,
         int PixelWidth,
-        int PixelHeight);
+        int PixelHeight,
+        Action<SliceBitmap>? OnBitmapReady = null);
 }
