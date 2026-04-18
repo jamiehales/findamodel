@@ -42,7 +42,14 @@ public record AppConfigDto(
     float AutoSupportLightTipRadiusMm = 0.7f,
     float AutoSupportMediumTipRadiusMm = 1f,
     float AutoSupportHeavyTipRadiusMm = 1.5f,
-    float AutoSupportV2VoxelSizeMm = 2f);
+    float AutoSupportV2VoxelSizeMm = 2f,
+    bool AutoSupportV2OptimizationEnabled = true,
+    float AutoSupportV2CoarseVoxelSizeMm = 4f,
+    float AutoSupportV2FineVoxelSizeMm = 0.5f,
+    float AutoSupportV2RefinementMarginMm = 2.0f,
+    int AutoSupportV2RefinementMaxRegions = 12,
+    float AutoSupportV2RiskForceMarginRatio = 0.2f,
+    float AutoSupportV2MinRegionVolumeMm3 = 8.0f);
 
 public record UpdateAppConfigRequest(
     float DefaultRaftHeightMm,
@@ -78,7 +85,14 @@ public record UpdateAppConfigRequest(
     float AutoSupportLightTipRadiusMm = 0.7f,
     float AutoSupportMediumTipRadiusMm = 1f,
     float AutoSupportHeavyTipRadiusMm = 1.5f,
-    float AutoSupportV2VoxelSizeMm = 2f);
+    float AutoSupportV2VoxelSizeMm = 2f,
+    bool AutoSupportV2OptimizationEnabled = true,
+    float AutoSupportV2CoarseVoxelSizeMm = 4f,
+    float AutoSupportV2FineVoxelSizeMm = 0.5f,
+    float AutoSupportV2RefinementMarginMm = 2.0f,
+    int AutoSupportV2RefinementMaxRegions = 12,
+    float AutoSupportV2RiskForceMarginRatio = 0.2f,
+    float AutoSupportV2MinRegionVolumeMm3 = 8.0f);
 
 public record InitialSetupRequest(
     string ModelsDirectoryPath,

@@ -315,6 +315,13 @@ export default function SettingsPage() {
   const [autoSupportMediumTipRadiusMm, setAutoSupportMediumTipRadiusMm] = useState('1');
   const [autoSupportHeavyTipRadiusMm, setAutoSupportHeavyTipRadiusMm] = useState('1.5');
   const [autoSupportV2VoxelSizeMm, setAutoSupportV2VoxelSizeMm] = useState('2');
+  const [autoSupportV2OptimizationEnabled, setAutoSupportV2OptimizationEnabled] = useState(true);
+  const [autoSupportV2CoarseVoxelSizeMm, setAutoSupportV2CoarseVoxelSizeMm] = useState('4');
+  const [autoSupportV2FineVoxelSizeMm, setAutoSupportV2FineVoxelSizeMm] = useState('0.5');
+  const [autoSupportV2RefinementMarginMm, setAutoSupportV2RefinementMarginMm] = useState('2');
+  const [autoSupportV2RefinementMaxRegions, setAutoSupportV2RefinementMaxRegions] = useState('12');
+  const [autoSupportV2RiskForceMarginRatio, setAutoSupportV2RiskForceMarginRatio] = useState('0.2');
+  const [autoSupportV2MinRegionVolumeMm3, setAutoSupportV2MinRegionVolumeMm3] = useState('8');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -389,6 +396,13 @@ export default function SettingsPage() {
       setAutoSupportMediumTipRadiusMm(String(appConfig.autoSupportMediumTipRadiusMm));
       setAutoSupportHeavyTipRadiusMm(String(appConfig.autoSupportHeavyTipRadiusMm));
       setAutoSupportV2VoxelSizeMm(String(appConfig.autoSupportV2VoxelSizeMm));
+      setAutoSupportV2OptimizationEnabled(appConfig.autoSupportV2OptimizationEnabled);
+      setAutoSupportV2CoarseVoxelSizeMm(String(appConfig.autoSupportV2CoarseVoxelSizeMm));
+      setAutoSupportV2FineVoxelSizeMm(String(appConfig.autoSupportV2FineVoxelSizeMm));
+      setAutoSupportV2RefinementMarginMm(String(appConfig.autoSupportV2RefinementMarginMm));
+      setAutoSupportV2RefinementMaxRegions(String(appConfig.autoSupportV2RefinementMaxRegions));
+      setAutoSupportV2RiskForceMarginRatio(String(appConfig.autoSupportV2RiskForceMarginRatio));
+      setAutoSupportV2MinRegionVolumeMm3(String(appConfig.autoSupportV2MinRegionVolumeMm3));
     }
   }, [appConfig]);
 
@@ -444,6 +458,12 @@ export default function SettingsPage() {
   const autoSupportMediumTipRadiusValue = Number(autoSupportMediumTipRadiusMm);
   const autoSupportHeavyTipRadiusValue = Number(autoSupportHeavyTipRadiusMm);
   const autoSupportV2VoxelSizeValue = Number(autoSupportV2VoxelSizeMm);
+  const autoSupportV2CoarseVoxelSizeValue = Number(autoSupportV2CoarseVoxelSizeMm);
+  const autoSupportV2FineVoxelSizeValue = Number(autoSupportV2FineVoxelSizeMm);
+  const autoSupportV2RefinementMarginValue = Number(autoSupportV2RefinementMarginMm);
+  const autoSupportV2RefinementMaxRegionsValue = Number(autoSupportV2RefinementMaxRegions);
+  const autoSupportV2RiskForceMarginRatioValue = Number(autoSupportV2RiskForceMarginRatio);
+  const autoSupportV2MinRegionVolumeMm3Value = Number(autoSupportV2MinRegionVolumeMm3);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
@@ -514,7 +534,25 @@ export default function SettingsPage() {
     autoSupportHeavyTipRadiusValue <= 10 &&
     Number.isFinite(autoSupportV2VoxelSizeValue) &&
     autoSupportV2VoxelSizeValue >= 0.1 &&
-    autoSupportV2VoxelSizeValue <= 10;
+    autoSupportV2VoxelSizeValue <= 10 &&
+    Number.isFinite(autoSupportV2CoarseVoxelSizeValue) &&
+    autoSupportV2CoarseVoxelSizeValue >= 0.1 &&
+    autoSupportV2CoarseVoxelSizeValue <= 10 &&
+    Number.isFinite(autoSupportV2FineVoxelSizeValue) &&
+    autoSupportV2FineVoxelSizeValue >= 0.1 &&
+    autoSupportV2FineVoxelSizeValue <= autoSupportV2CoarseVoxelSizeValue &&
+    Number.isFinite(autoSupportV2RefinementMarginValue) &&
+    autoSupportV2RefinementMarginValue >= 0.1 &&
+    autoSupportV2RefinementMarginValue <= 20 &&
+    Number.isFinite(autoSupportV2RefinementMaxRegionsValue) &&
+    autoSupportV2RefinementMaxRegionsValue >= 1 &&
+    autoSupportV2RefinementMaxRegionsValue <= 128 &&
+    Number.isFinite(autoSupportV2RiskForceMarginRatioValue) &&
+    autoSupportV2RiskForceMarginRatioValue >= 0 &&
+    autoSupportV2RiskForceMarginRatioValue <= 1 &&
+    Number.isFinite(autoSupportV2MinRegionVolumeMm3Value) &&
+    autoSupportV2MinRegionVolumeMm3Value >= 0.1 &&
+    autoSupportV2MinRegionVolumeMm3Value <= 10000;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -576,6 +614,13 @@ export default function SettingsPage() {
       autoSupportMediumTipRadiusMm: autoSupportMediumTipRadiusValue,
       autoSupportHeavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
       autoSupportV2VoxelSizeMm: autoSupportV2VoxelSizeValue,
+      autoSupportV2OptimizationEnabled: autoSupportV2OptimizationEnabled,
+      autoSupportV2CoarseVoxelSizeMm: autoSupportV2CoarseVoxelSizeValue,
+      autoSupportV2FineVoxelSizeMm: autoSupportV2FineVoxelSizeValue,
+      autoSupportV2RefinementMarginMm: autoSupportV2RefinementMarginValue,
+      autoSupportV2RefinementMaxRegions: autoSupportV2RefinementMaxRegionsValue,
+      autoSupportV2RiskForceMarginRatio: autoSupportV2RiskForceMarginRatioValue,
+      autoSupportV2MinRegionVolumeMm3: autoSupportV2MinRegionVolumeMm3Value,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -835,6 +880,85 @@ export default function SettingsPage() {
                     value={autoSupportV2VoxelSizeMm}
                     onChange={(e) => setAutoSupportV2VoxelSizeMm(e.target.value)}
                     helperText="Resolution of the voxel grid for method 2 (0.1 to 10, default 2)"
+                  />
+                </Stack>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={autoSupportV2OptimizationEnabled}
+                      onChange={(e) => setAutoSupportV2OptimizationEnabled(e.target.checked)}
+                    />
+                  }
+                  label="Two-stage optimization"
+                />
+                <Typography color="text.secondary">
+                  When enabled, uses a coarse pass to identify problem regions, then refines only
+                  those areas at higher resolution. Improves performance on large models.
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Coarse voxel size (mm)"
+                    value={autoSupportV2CoarseVoxelSizeMm}
+                    onChange={(e) => setAutoSupportV2CoarseVoxelSizeMm(e.target.value)}
+                    helperText="Voxel size for the initial coarse pass (0.1 to 10, default 4)"
+                    disabled={!autoSupportV2OptimizationEnabled}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Fine voxel size (mm)"
+                    value={autoSupportV2FineVoxelSizeMm}
+                    onChange={(e) => setAutoSupportV2FineVoxelSizeMm(e.target.value)}
+                    helperText="Voxel size for regional refinement (0.1 to coarse size, default 0.5)"
+                    disabled={!autoSupportV2OptimizationEnabled}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Refinement margin (mm)"
+                    value={autoSupportV2RefinementMarginMm}
+                    onChange={(e) => setAutoSupportV2RefinementMarginMm(e.target.value)}
+                    helperText="Margin around detected problem regions (0.1 to 20, default 2)"
+                    disabled={!autoSupportV2OptimizationEnabled}
+                  />
+                </Stack>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max refinement regions"
+                    value={autoSupportV2RefinementMaxRegions}
+                    onChange={(e) => setAutoSupportV2RefinementMaxRegions(e.target.value)}
+                    helperText="Maximum number of regions to refine (1 to 128, default 12)"
+                    disabled={!autoSupportV2OptimizationEnabled}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Risk force margin ratio"
+                    value={autoSupportV2RiskForceMarginRatio}
+                    onChange={(e) => setAutoSupportV2RiskForceMarginRatio(e.target.value)}
+                    helperText="Force margin ratio for risk detection (0 to 1, default 0.2)"
+                    disabled={!autoSupportV2OptimizationEnabled}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min region volume (mm3)"
+                    value={autoSupportV2MinRegionVolumeMm3}
+                    onChange={(e) => setAutoSupportV2MinRegionVolumeMm3(e.target.value)}
+                    helperText="Minimum volume for a refinement region (0.1 to 10000, default 8)"
+                    disabled={!autoSupportV2OptimizationEnabled}
                   />
                 </Stack>
                 <Typography variant="h6">Cumulative force settings</Typography>

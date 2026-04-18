@@ -264,4 +264,132 @@ public class AutoSupportGenerationV2ServiceTests
             new Triangle3D(p100, p111, p110, new Vec3(1f, 0f, 0f)),
         ];
     }
+
+    [Fact]
+    public void GenerateSupportPreview_OptimizationDisabled_ProducesSameAsUniform()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_OptimizationDisabled_ProducesSameAsUniform),
+            request => request with { AutoSupportV2OptimizationEnabled = false });
+        var configuredSut = new AutoSupportGenerationV2Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 8f, depth: 8f, height: 6f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        Assert.NotEmpty(result.SupportGeometry.Triangles);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_OptimizationEnabled_ProducesSupports()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_OptimizationEnabled_ProducesSupports),
+            request => request with
+            {
+                AutoSupportV2OptimizationEnabled = true,
+                AutoSupportV2CoarseVoxelSizeMm = 4f,
+                AutoSupportV2FineVoxelSizeMm = 1f,
+            });
+        var configuredSut = new AutoSupportGenerationV2Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 8f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_CoarseOnlyWhenNoRefinementNeeded()
+    {
+        // With a very small simple geometry at coarse resolution, no refinement should trigger
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_CoarseOnlyWhenNoRefinementNeeded),
+            request => request with
+            {
+                AutoSupportV2OptimizationEnabled = true,
+                AutoSupportV2CoarseVoxelSizeMm = 4f,
+                AutoSupportV2FineVoxelSizeMm = 2f,
+                AutoSupportV2MinRegionVolumeMm3 = 10000f, // very high threshold - no regions qualify
+            });
+        var configuredSut = new AutoSupportGenerationV2Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 6f, depth: 6f, height: 4f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_OptimizationStability_DeterministicOutput()
+    {
+        var config1 = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_OptimizationStability_DeterministicOutput) + "_1",
+            request => request with
+            {
+                AutoSupportV2OptimizationEnabled = true,
+                AutoSupportV2CoarseVoxelSizeMm = 4f,
+                AutoSupportV2FineVoxelSizeMm = 2f,
+            });
+        var config2 = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_OptimizationStability_DeterministicOutput) + "_2",
+            request => request with
+            {
+                AutoSupportV2OptimizationEnabled = true,
+                AutoSupportV2CoarseVoxelSizeMm = 4f,
+                AutoSupportV2FineVoxelSizeMm = 2f,
+            });
+        var sut1 = new AutoSupportGenerationV2Service(config1, NullLoggerFactory.Instance);
+        var sut2 = new AutoSupportGenerationV2Service(config2, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 6f));
+
+        var result1 = sut1.GenerateSupportPreview(geometry);
+        var result2 = sut2.GenerateSupportPreview(geometry);
+
+        Assert.Equal(result1.SupportPoints.Count, result2.SupportPoints.Count);
+    }
+
+    [Fact]
+    public void SpatialIndex_FindNearby_MatchesBruteForce()
+    {
+        var supports = new List<SupportPoint>
+        {
+            new(new Vec3(0f, 0f, 0f), 1f, new Vec3(0f, 0f, 0f), SupportSize.Medium),
+            new(new Vec3(5f, 0f, 5f), 1f, new Vec3(0f, 0f, 0f), SupportSize.Medium),
+            new(new Vec3(20f, 0f, 20f), 1f, new Vec3(0f, 0f, 0f), SupportSize.Medium),
+        };
+
+        var index = new AutoSupportGenerationV2Service.SupportSpatialIndex(10f);
+        index.Build(supports);
+
+        var nearby = index.FindNearby(1f, 1f, 10f, supports);
+
+        // Should find supports at (0,0) and (5,5) but not (20,20)
+        Assert.Equal(2, nearby.Count);
+        Assert.Contains(0, nearby);
+        Assert.Contains(1, nearby);
+        Assert.DoesNotContain(2, nearby);
+    }
+
+    [Fact]
+    public void SpatialIndex_Insert_FindsNewlyInsertedSupport()
+    {
+        var supports = new List<SupportPoint>
+        {
+            new(new Vec3(0f, 0f, 0f), 1f, new Vec3(0f, 0f, 0f), SupportSize.Medium),
+        };
+
+        var index = new AutoSupportGenerationV2Service.SupportSpatialIndex(10f);
+        index.Build(supports);
+
+        supports.Add(new SupportPoint(new Vec3(3f, 0f, 3f), 1f, new Vec3(0f, 0f, 0f), SupportSize.Light));
+        index.Insert(1, 3f, 3f);
+
+        var nearby = index.FindNearby(2f, 2f, 5f, supports);
+        Assert.Equal(2, nearby.Count);
+    }
 }

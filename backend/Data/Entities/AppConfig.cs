@@ -41,6 +41,14 @@ public class AppConfig
     public float AutoSupportHeavyTipRadiusMm { get; set; } = 1.5f;
     public float AutoSupportV2VoxelSizeMm { get; set; } = 2f;
 
+    public bool AutoSupportV2OptimizationEnabled { get; set; } = true;
+    public float AutoSupportV2CoarseVoxelSizeMm { get; set; } = 4f;
+    public float AutoSupportV2FineVoxelSizeMm { get; set; } = 0.5f;
+    public float AutoSupportV2RefinementMarginMm { get; set; } = 2.0f;
+    public int AutoSupportV2RefinementMaxRegions { get; set; } = 12;
+    public float AutoSupportV2RiskForceMarginRatio { get; set; } = 0.2f;
+    public float AutoSupportV2MinRegionVolumeMm3 { get; set; } = 8.0f;
+
     // Initial setup tracking
     public bool SetupCompleted { get; set; } = false;
     public string? ModelsDirectoryPath { get; set; }

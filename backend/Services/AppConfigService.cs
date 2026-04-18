@@ -41,6 +41,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportMediumTipRadiusMm = 1f;
     public const float DefaultAutoSupportHeavyTipRadiusMm = 1.5f;
     public const float DefaultAutoSupportV2VoxelSizeMm = 2f;
+    public const bool DefaultAutoSupportV2OptimizationEnabled = true;
+    public const float DefaultAutoSupportV2CoarseVoxelSizeMm = 4f;
+    public const float DefaultAutoSupportV2FineVoxelSizeMm = 0.5f;
+    public const float DefaultAutoSupportV2RefinementMarginMm = 2.0f;
+    public const int DefaultAutoSupportV2RefinementMaxRegions = 12;
+    public const float DefaultAutoSupportV2RiskForceMarginRatio = 0.2f;
+    public const float DefaultAutoSupportV2MinRegionVolumeMm3 = 8.0f;
     public const string DefaultTagGenerationPromptTemplate =
         "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
     public const string DefaultDescriptionGenerationPromptTemplate =
@@ -139,6 +146,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportMediumTipRadiusMm = request.AutoSupportMediumTipRadiusMm;
         config.AutoSupportHeavyTipRadiusMm = request.AutoSupportHeavyTipRadiusMm;
         config.AutoSupportV2VoxelSizeMm = request.AutoSupportV2VoxelSizeMm;
+        config.AutoSupportV2OptimizationEnabled = request.AutoSupportV2OptimizationEnabled;
+        config.AutoSupportV2CoarseVoxelSizeMm = request.AutoSupportV2CoarseVoxelSizeMm;
+        config.AutoSupportV2FineVoxelSizeMm = request.AutoSupportV2FineVoxelSizeMm;
+        config.AutoSupportV2RefinementMarginMm = request.AutoSupportV2RefinementMarginMm;
+        config.AutoSupportV2RefinementMaxRegions = request.AutoSupportV2RefinementMaxRegions;
+        config.AutoSupportV2RiskForceMarginRatio = request.AutoSupportV2RiskForceMarginRatio;
+        config.AutoSupportV2MinRegionVolumeMm3 = request.AutoSupportV2MinRegionVolumeMm3;
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return ToDto(config);
@@ -293,7 +307,14 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportLightTipRadiusMm,
             config.AutoSupportMediumTipRadiusMm,
             config.AutoSupportHeavyTipRadiusMm,
-            config.AutoSupportV2VoxelSizeMm);
+            config.AutoSupportV2VoxelSizeMm,
+            config.AutoSupportV2OptimizationEnabled,
+            config.AutoSupportV2CoarseVoxelSizeMm,
+            config.AutoSupportV2FineVoxelSizeMm,
+            config.AutoSupportV2RefinementMarginMm,
+            config.AutoSupportV2RefinementMaxRegions,
+            config.AutoSupportV2RiskForceMarginRatio,
+            config.AutoSupportV2MinRegionVolumeMm3);
     }
 
     private async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
@@ -344,6 +365,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportMediumTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMediumTipRadiusMm") ?? DefaultAutoSupportMediumTipRadiusMm,
             AutoSupportHeavyTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportHeavyTipRadiusMm") ?? DefaultAutoSupportHeavyTipRadiusMm,
             AutoSupportV2VoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2VoxelSizeMm") ?? DefaultAutoSupportV2VoxelSizeMm,
+            AutoSupportV2OptimizationEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportV2OptimizationEnabled") ?? DefaultAutoSupportV2OptimizationEnabled,
+            AutoSupportV2CoarseVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2CoarseVoxelSizeMm") ?? DefaultAutoSupportV2CoarseVoxelSizeMm,
+            AutoSupportV2FineVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2FineVoxelSizeMm") ?? DefaultAutoSupportV2FineVoxelSizeMm,
+            AutoSupportV2RefinementMarginMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2RefinementMarginMm") ?? DefaultAutoSupportV2RefinementMarginMm,
+            AutoSupportV2RefinementMaxRegions = configuration.GetValue<int?>("AppConfig:AutoSupportV2RefinementMaxRegions") ?? DefaultAutoSupportV2RefinementMaxRegions,
+            AutoSupportV2RiskForceMarginRatio = configuration.GetValue<float?>("AppConfig:AutoSupportV2RiskForceMarginRatio") ?? DefaultAutoSupportV2RiskForceMarginRatio,
+            AutoSupportV2MinRegionVolumeMm3 = configuration.GetValue<float?>("AppConfig:AutoSupportV2MinRegionVolumeMm3") ?? DefaultAutoSupportV2MinRegionVolumeMm3,
             SetupCompleted = !string.IsNullOrWhiteSpace(normalizedConfiguredModelsPath),
             ModelsDirectoryPath = normalizedConfiguredModelsPath,
             UpdatedAt = DateTime.UtcNow,
@@ -395,6 +423,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportMediumTipRadiusMm, 0.1f, 7f, nameof(request.AutoSupportMediumTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportHeavyTipRadiusMm, 0.1f, 10f, nameof(request.AutoSupportHeavyTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportV2CoarseVoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2CoarseVoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportV2FineVoxelSizeMm, 0.1f, request.AutoSupportV2CoarseVoxelSizeMm, nameof(request.AutoSupportV2FineVoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportV2RefinementMarginMm, 0.1f, 20f, nameof(request.AutoSupportV2RefinementMarginMm));
+        if (request.AutoSupportV2RefinementMaxRegions < 1 || request.AutoSupportV2RefinementMaxRegions > 128)
+            throw new ArgumentException("Auto support V2 refinement max regions must be between 1 and 128.", nameof(request.AutoSupportV2RefinementMaxRegions));
+        ValidateFiniteRange(request.AutoSupportV2RiskForceMarginRatio, 0f, 1f, nameof(request.AutoSupportV2RiskForceMarginRatio));
+        ValidateFiniteRange(request.AutoSupportV2MinRegionVolumeMm3, 0.1f, 10000f, nameof(request.AutoSupportV2MinRegionVolumeMm3));
     }
 
     private static void ValidateFiniteRange(float value, float min, float max, string paramName)

@@ -135,6 +135,13 @@ export interface AppConfig {
   autoSupportMediumTipRadiusMm: number;
   autoSupportHeavyTipRadiusMm: number;
   autoSupportV2VoxelSizeMm: number;
+  autoSupportV2OptimizationEnabled: boolean;
+  autoSupportV2CoarseVoxelSizeMm: number;
+  autoSupportV2FineVoxelSizeMm: number;
+  autoSupportV2RefinementMarginMm: number;
+  autoSupportV2RefinementMaxRegions: number;
+  autoSupportV2RiskForceMarginRatio: number;
+  autoSupportV2MinRegionVolumeMm3: number;
 }
 
 export interface SetupStatus {
@@ -192,6 +199,13 @@ export interface UpdateAppConfigRequest {
   autoSupportMediumTipRadiusMm: number;
   autoSupportHeavyTipRadiusMm: number;
   autoSupportV2VoxelSizeMm: number;
+  autoSupportV2OptimizationEnabled: boolean;
+  autoSupportV2CoarseVoxelSizeMm: number;
+  autoSupportV2FineVoxelSizeMm: number;
+  autoSupportV2RefinementMarginMm: number;
+  autoSupportV2RefinementMaxRegions: number;
+  autoSupportV2RiskForceMarginRatio: number;
+  autoSupportV2MinRegionVolumeMm3: number;
 }
 
 export interface InitialSetupRequest {

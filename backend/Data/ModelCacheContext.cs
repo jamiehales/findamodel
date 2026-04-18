@@ -177,6 +177,34 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .Property(c => c.AutoSupportV2VoxelSizeMm)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportV2VoxelSizeMm);
 
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2OptimizationEnabled)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2OptimizationEnabled);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2CoarseVoxelSizeMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2CoarseVoxelSizeMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2FineVoxelSizeMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2FineVoxelSizeMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2RefinementMarginMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2RefinementMarginMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2RefinementMaxRegions)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2RefinementMaxRegions);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2RiskForceMarginRatio)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2RiskForceMarginRatio);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2MinRegionVolumeMm3)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2MinRegionVolumeMm3);
+
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();

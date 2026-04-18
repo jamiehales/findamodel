@@ -128,6 +128,41 @@ namespace findamodel.Migrations
                         .HasColumnType("REAL")
                         .HasDefaultValue(2f);
 
+                    b.Property<bool>("AutoSupportV2OptimizationEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<float>("AutoSupportV2CoarseVoxelSizeMm")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(4f);
+
+                    b.Property<float>("AutoSupportV2FineVoxelSizeMm")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(0.5f);
+
+                    b.Property<float>("AutoSupportV2RefinementMarginMm")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(2f);
+
+                    b.Property<int>("AutoSupportV2RefinementMaxRegions")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(12);
+
+                    b.Property<float>("AutoSupportV2RiskForceMarginRatio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(0.2f);
+
+                    b.Property<float>("AutoSupportV2MinRegionVolumeMm3")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(8f);
+
                     b.Property<float>("DefaultRaftHeightMm")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
