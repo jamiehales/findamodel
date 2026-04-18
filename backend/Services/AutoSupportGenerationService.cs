@@ -24,7 +24,7 @@ public sealed class AutoSupportGenerationService
         ArgumentNullException.ThrowIfNull(geometry);
 
         if (geometry.Triangles.Count == 0)
-            return new SupportPreviewResult([], CloneGeometry(geometry, []));
+            return new SupportPreviewResult([], CloneGeometry(geometry, []), []);
 
         var tuning = ResolveTuning();
         var bedWidthMm = MathF.Max(geometry.DimensionXMm + (tuning.BedMarginMm * 2f), 10f);
@@ -36,10 +36,12 @@ public sealed class AutoSupportGenerationService
         var layerHeightMm = Math.Clamp(geometry.DimensionYMm / 48f, tuning.MinLayerHeightMm, tuning.MaxLayerHeightMm);
         var pixelWidth = Math.Max(24, (int)Math.Ceiling(bedWidthMm / voxelSizeMm));
         var pixelHeight = Math.Max(24, (int)Math.Ceiling(bedDepthMm / voxelSizeMm));
+
         var supportPoints = new List<SupportPoint>();
         var unsupportedIslands = new Dictionary<(int XBucket, int ZBucket), UnsupportedIslandState>();
         var modelHeightMm = geometry.DimensionYMm;
         var cumulativeVolumePerPixelMm3 = 0f;
+        var detectedIslands = new List<IslandPreview>();
 
         var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(geometry.DimensionYMm, layerHeightMm) / layerHeightMm));
         for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
@@ -84,6 +86,18 @@ public sealed class AutoSupportGenerationService
                          tuning.SupportMergeDistanceMm,
                          tuning.MinIslandAreaMm2))
             {
+                // Collect island preview data
+                detectedIslands.Add(new IslandPreview(
+                    island.CentroidX,
+                    island.CentroidZ,
+                    island.SliceHeightMm,
+                    island.Pixels.Count * island.PixelAreaMm2,
+                    island.IslandRadiusMm,
+                    island.BoundaryPoints));
+
+                // Ensure every island has at least one support before force calculations
+                EnsureInitialSupport(island, supportPoints, tuning, modelHeightMm);
+
                 TrackUnsupportedIslandAndPlaceSupportIfNeeded(
                     island,
                     supportPoints,
@@ -105,7 +119,8 @@ public sealed class AutoSupportGenerationService
 
         return new SupportPreviewResult(
             supportPoints,
-            CloneGeometry(geometry, supportTriangles));
+            CloneGeometry(geometry, supportTriangles),
+            detectedIslands);
     }
 
     private static LoadedGeometry CloneGeometry(LoadedGeometry geometry, List<Triangle3D> triangles) => new()
@@ -857,4 +872,13 @@ public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce,
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,
-    LoadedGeometry SupportGeometry);
+    LoadedGeometry SupportGeometry,
+    IReadOnlyList<IslandPreview> Islands);
+
+public sealed record IslandPreview(
+    float CentroidX,
+    float CentroidZ,
+    float SliceHeightMm,
+    float AreaMm2,
+    float RadiusMm,
+    IReadOnlyList<(float X, float Z)>? Boundary = null);

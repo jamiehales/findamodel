@@ -344,6 +344,14 @@ export interface AutoSupportPoint {
   size: 'micro' | 'light' | 'medium' | 'heavy';
 }
 
+export interface AutoSupportIsland {
+  centroidX: number;
+  centroidZ: number;
+  sliceHeightMm: number;
+  areaMm2: number;
+  radiusMm: number;
+}
+
 export interface AutoSupportJob {
   jobId: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
@@ -351,6 +359,7 @@ export interface AutoSupportJob {
   supportCount: number;
   errorMessage: string | null;
   supportPoints: AutoSupportPoint[] | null;
+  islands: AutoSupportIsland[] | null;
 }
 
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {

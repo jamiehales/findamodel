@@ -35,7 +35,7 @@ public sealed class AutoSupportGenerationV2Service
         ArgumentNullException.ThrowIfNull(geometry);
 
         if (geometry.Triangles.Count == 0)
-            return new SupportPreviewResult([], CloneGeometry(geometry, []));
+            return new SupportPreviewResult([], CloneGeometry(geometry, []), []);
 
         var tuning = ResolveTuning();
         var totalSw = Stopwatch.StartNew();
@@ -91,7 +91,7 @@ public sealed class AutoSupportGenerationV2Service
         {
             // No refinement needed - coarse result is sufficient
             var supportTriangles = BuildSupportSphereMesh(coarseResult.SupportPoints);
-            return new SupportPreviewResult(coarseResult.SupportPoints, CloneGeometry(geometry, supportTriangles));
+            return new SupportPreviewResult(coarseResult.SupportPoints, CloneGeometry(geometry, supportTriangles), coarseResult.DetectedIslands);
         }
 
         // Stage 3: Regional refinement
@@ -123,7 +123,7 @@ public sealed class AutoSupportGenerationV2Service
         }
 
         var finalTriangles = BuildSupportSphereMesh(refinedSupports);
-        return new SupportPreviewResult(refinedSupports, CloneGeometry(geometry, finalTriangles));
+        return new SupportPreviewResult(refinedSupports, CloneGeometry(geometry, finalTriangles), coarseResult.DetectedIslands);
     }
 
     // -----------------------------------------------------------------
@@ -134,7 +134,7 @@ public sealed class AutoSupportGenerationV2Service
     {
         var passResult = RunUniformPass(geometry, tuning, voxelSizeMm);
         var supportTriangles = BuildSupportSphereMesh(passResult.SupportPoints);
-        return new SupportPreviewResult(passResult.SupportPoints, CloneGeometry(geometry, supportTriangles));
+        return new SupportPreviewResult(passResult.SupportPoints, CloneGeometry(geometry, supportTriangles), passResult.DetectedIslands);
     }
 
     private UniformPassResult RunUniformPass(LoadedGeometry geometry, Tuning tuning, float voxelSizeMm)
@@ -165,6 +165,7 @@ public sealed class AutoSupportGenerationV2Service
         var supportPoints = new List<SupportPoint>();
         var modelHeightMm = geometry.DimensionYMm;
         var riskInfos = new List<IslandRiskInfo>();
+        var detectedIslands = new List<IslandPreview>();
         var spatialIndex = new SupportSpatialIndex(tuning.MaxSupportDistanceMm);
 
         for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
@@ -222,6 +223,24 @@ public sealed class AutoSupportGenerationV2Service
                 foreach (var cell in island.Cells)
                     curIslandIds[cell.Gz * gridW + cell.Gx] = assignedId;
 
+                // Collect island preview data for all islands
+                {
+                    var islandAreaForPreview = island.Cells.Count * pixelAreaMm2;
+                    var maxRadiusMm = 0f;
+                    foreach (var cell in island.Cells)
+                    {
+                        var dx = cell.XMm - island.CentroidX;
+                        var dz = cell.ZMm - island.CentroidZ;
+                        maxRadiusMm = MathF.Max(maxRadiusMm, MathF.Sqrt(dx * dx + dz * dz) + voxelSizeMm * 0.5f);
+                    }
+                    detectedIslands.Add(new IslandPreview(
+                        island.CentroidX,
+                        island.CentroidZ,
+                        sliceHeightMm,
+                        islandAreaForPreview,
+                        maxRadiusMm));
+                }
+
                 var state = islandStates[assignedId];
                 state.CumulativeVoxelCount += island.Cells.Count;
                 var layerContactArea = island.Cells.Count * pixelAreaMm2;
@@ -235,12 +254,15 @@ public sealed class AutoSupportGenerationV2Service
                 // Use spatial index for support lookup
                 var islandSupports = FindSupportsInAreaWithIndex(island, supportPoints, tuning.MaxSupportDistanceMm, spatialIndex);
 
-                if (islandSupports.Count == 0
-                    && island.Cells.Count * pixelAreaMm2 >= tuning.MinIslandAreaMm2)
+                // Ensure every unsupported island gets at least one support
+                if (islandSupports.Count == 0)
                 {
-                    var size = IsNearBase(sliceHeightMm, modelHeightMm)
-                        ? SupportSize.Heavy
-                        : SupportSize.Medium;
+                    var islandArea = island.Cells.Count * pixelAreaMm2;
+                    var size = islandArea < tuning.MinIslandAreaMm2
+                        ? SupportSize.Light
+                        : IsNearBase(sliceHeightMm, modelHeightMm)
+                            ? SupportSize.Heavy
+                            : SupportSize.Medium;
                     var newIdx = supportPoints.Count;
                     supportPoints.Add(new SupportPoint(
                         SnapToVoxelBottom(island.CentroidX, sliceHeightMm, island.CentroidZ),
@@ -330,7 +352,7 @@ public sealed class AutoSupportGenerationV2Service
             prevIslandIds = curIslandIds;
         }
 
-        return new UniformPassResult(supportPoints, islandStates, riskInfos);
+        return new UniformPassResult(supportPoints, islandStates, riskInfos, detectedIslands);
     }
 
     // -----------------------------------------------------------------
@@ -1108,7 +1130,8 @@ public sealed class AutoSupportGenerationV2Service
     private sealed record UniformPassResult(
         List<SupportPoint> SupportPoints,
         Dictionary<int, VoxelIslandState> IslandStates,
-        List<IslandRiskInfo> RiskInfos);
+        List<IslandRiskInfo> RiskInfos,
+        List<IslandPreview> DetectedIslands);
 
     private sealed record IslandRiskInfo(
         int IslandId,

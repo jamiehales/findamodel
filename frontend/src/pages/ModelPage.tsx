@@ -320,6 +320,7 @@ function ModelPage() {
                   supported
                   splitGeometryOverride={autoSupportGeometry}
                   supportPointsOverride={autoSupportJob?.supportPoints ?? null}
+                  islandsOverride={autoSupportJob?.islands ?? null}
                 />
               ) : (
                 <Box className={styles.autoSupportPlaceholder}>

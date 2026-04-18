@@ -352,6 +352,48 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
   );
 }
 
+interface IslandHighlightsProps {
+  islands: import('../lib/api').AutoSupportIsland[] | null;
+  visible: boolean;
+}
+
+function IslandHighlights({ islands, visible }: IslandHighlightsProps) {
+  if (!visible || !islands || islands.length === 0) return null;
+
+  return (
+    <group>
+      {islands.map((island, index) => {
+        const radius = Math.max(island.radiusMm, 0.3);
+        return (
+          <group
+            key={`island-${island.centroidX}-${island.centroidZ}-${island.sliceHeightMm}-${index}`}
+            position={[island.centroidX, island.sliceHeightMm, island.centroidZ]}
+          >
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[radius * 0.85, radius, 24]} />
+              <meshBasicMaterial
+                color="#ef4444"
+                transparent
+                opacity={0.6}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[radius, 24]} />
+              <meshBasicMaterial
+                color="#ef4444"
+                transparent
+                opacity={0.15}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 class ViewerErrorBoundary extends React.Component<
   React.PropsWithChildren<{ fallback: React.ReactNode }>,
   ErrorBoundaryState
@@ -377,6 +419,7 @@ interface ModelViewerProps {
   supported?: boolean | null;
   splitGeometryOverride?: import('../lib/api').SplitGeometryResponse | null;
   supportPointsOverride?: import('../lib/api').AutoSupportPoint[] | null;
+  islandsOverride?: import('../lib/api').AutoSupportIsland[] | null;
 }
 
 export default function ModelViewer({
@@ -387,6 +430,7 @@ export default function ModelViewer({
   supported,
   splitGeometryOverride,
   supportPointsOverride,
+  islandsOverride,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
   const { showSupports, setSupportsToggleAvailable } = useRenderControls();
@@ -495,6 +539,7 @@ export default function ModelViewer({
             />
           )}
           <SupportForceArrows points={supportPointsOverride ?? null} visible={showSupports} />
+          <IslandHighlights islands={islandsOverride ?? null} visible={showSupports} />
           <OrbitControls
             target={orbitTarget}
             enableDamping

@@ -392,4 +392,158 @@ public class AutoSupportGenerationV2ServiceTests
         var nearby = index.FindNearby(2f, 2f, 5f, supports);
         Assert.Equal(2, nearby.Count);
     }
+
+    [Fact]
+    public void GenerateSupportPreview_ReturnsDetectedIslands()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 6f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.Islands);
+        Assert.All(result.Islands, island =>
+        {
+            Assert.True(island.AreaMm2 > 0f, "Island area must be positive");
+            Assert.True(island.RadiusMm > 0f, "Island radius must be positive");
+        });
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_DetectsMultipleIslandsForSeparatedBodies()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: -12f, centerZ: 0f, width: 4f, depth: 4f, height: 6f),
+            MakeBox(centerX: 12f, centerZ: 0f, width: 4f, depth: 4f, height: 6f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.True(result.Islands.Count >= 2, $"Expected at least 2 islands, got {result.Islands.Count}");
+        Assert.Contains(result.Islands, i => i.CentroidX < 0f);
+        Assert.Contains(result.Islands, i => i.CentroidX > 0f);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_EachIslandReceivesAtLeastOneSupport()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: -12f, centerZ: 0f, width: 4f, depth: 4f, height: 6f),
+            MakeBox(centerX: 12f, centerZ: 0f, width: 4f, depth: 4f, height: 6f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.Contains(result.SupportPoints, p => p.Position.X < -4f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > 4f);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_EmptyGeometryReturnsEmptyIslands()
+    {
+        var geometry = new LoadedGeometry
+        {
+            Triangles = [],
+            DimensionXMm = 10f,
+            DimensionYMm = 10f,
+            DimensionZMm = 10f,
+            SphereCentre = new Vec3(0f, 5f, 0f),
+            SphereRadius = 10f,
+        };
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.Empty(result.Islands);
+        Assert.Empty(result.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_PlateWithMultipleHangingSpikes_DetectsIslandsAtEachTip()
+    {
+        // Elevated plate (Y=6..8) with three pillars hanging down to different depths.
+        // Each pillar tip creates a separate island at lower slices.
+        // Pillars are 4x4mm so they occupy multiple voxels (2mm voxel size) and survive
+        // the bitmap's RemoveUnsupportedHorizontalPixels filtering.
+        var plate = MakeElevatedBox(centerX: 0f, centerZ: 0f, width: 30f, depth: 14f, bottomY: 6f, topY: 8f);
+        var spikeA = MakeElevatedBox(centerX: -10f, centerZ: 0f, width: 4f, depth: 4f, bottomY: 0f, topY: 6f);
+        var spikeB = MakeElevatedBox(centerX: 0f, centerZ: 0f, width: 4f, depth: 4f, bottomY: 2f, topY: 6f);
+        var spikeC = MakeElevatedBox(centerX: 10f, centerZ: 0f, width: 4f, depth: 4f, bottomY: 4f, topY: 6f);
+        var geometry = CreateGeometry(plate, spikeA, spikeB, spikeC);
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.True(result.Islands.Count >= 3, $"Expected at least 3 islands, got {result.Islands.Count}");
+
+        Assert.Contains(result.SupportPoints, p => p.Position.X < -5f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > -5f && p.Position.X < 5f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > 5f);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_MultipleIslandsAtSameSliceLevel_AllGetSupports()
+    {
+        // Four separate boxes spread along the X axis - all at the same height.
+        // All should be separate islands and all should get supports.
+        var geometry = CreateGeometry(
+            MakeBox(centerX: -15f, centerZ: 0f, width: 4f, depth: 4f, height: 6f),
+            MakeBox(centerX: -5f, centerZ: 0f, width: 4f, depth: 4f, height: 6f),
+            MakeBox(centerX: 5f, centerZ: 0f, width: 4f, depth: 4f, height: 6f),
+            MakeBox(centerX: 15f, centerZ: 0f, width: 4f, depth: 4f, height: 6f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.True(result.Islands.Count >= 4, $"Expected at least 4 islands, got {result.Islands.Count}");
+
+        Assert.Contains(result.SupportPoints, p => p.Position.X < -10f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > -8f && p.Position.X < -2f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > 2f && p.Position.X < 8f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > 10f);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_DifferentSizedSpikes_SmallSpikesStillGetSupports()
+    {
+        // A large and small spike hanging from an elevated plate.
+        // Even the smaller spike should get a support.
+        var plate = MakeElevatedBox(centerX: 0f, centerZ: 0f, width: 30f, depth: 14f, bottomY: 6f, topY: 8f);
+        var largeSpike = MakeElevatedBox(centerX: -10f, centerZ: 0f, width: 6f, depth: 6f, bottomY: 0f, topY: 6f);
+        var smallSpike = MakeElevatedBox(centerX: 10f, centerZ: 0f, width: 4f, depth: 4f, bottomY: 0f, topY: 6f);
+        var geometry = CreateGeometry(plate, smallSpike, largeSpike);
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.Contains(result.SupportPoints, p => p.Position.X < -5f);
+        Assert.Contains(result.SupportPoints, p => p.Position.X > 5f);
+    }
+
+    private static List<Triangle3D> MakeElevatedBox(float centerX, float centerZ, float width, float depth, float bottomY, float topY)
+    {
+        var minX = centerX - (width * 0.5f);
+        var maxX = centerX + (width * 0.5f);
+        var minZ = centerZ - (depth * 0.5f);
+        var maxZ = centerZ + (depth * 0.5f);
+
+        var p000 = new Vec3(minX, bottomY, minZ);
+        var p001 = new Vec3(minX, bottomY, maxZ);
+        var p010 = new Vec3(minX, topY, minZ);
+        var p011 = new Vec3(minX, topY, maxZ);
+        var p100 = new Vec3(maxX, bottomY, minZ);
+        var p101 = new Vec3(maxX, bottomY, maxZ);
+        var p110 = new Vec3(maxX, topY, minZ);
+        var p111 = new Vec3(maxX, topY, maxZ);
+
+        return
+        [
+            new Triangle3D(p000, p001, p101, new Vec3(0f, -1f, 0f)),
+            new Triangle3D(p000, p101, p100, new Vec3(0f, -1f, 0f)),
+            new Triangle3D(p010, p110, p111, new Vec3(0f, 1f, 0f)),
+            new Triangle3D(p010, p111, p011, new Vec3(0f, 1f, 0f)),
+            new Triangle3D(p000, p100, p110, new Vec3(0f, 0f, -1f)),
+            new Triangle3D(p000, p110, p010, new Vec3(0f, 0f, -1f)),
+            new Triangle3D(p001, p011, p111, new Vec3(0f, 0f, 1f)),
+            new Triangle3D(p001, p111, p101, new Vec3(0f, 0f, 1f)),
+            new Triangle3D(p000, p010, p011, new Vec3(-1f, 0f, 0f)),
+            new Triangle3D(p000, p011, p001, new Vec3(-1f, 0f, 0f)),
+            new Triangle3D(p100, p101, p111, new Vec3(1f, 0f, 0f)),
+            new Triangle3D(p100, p111, p110, new Vec3(1f, 0f, 0f)),
+        ];
+    }
 }

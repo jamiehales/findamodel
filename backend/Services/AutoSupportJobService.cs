@@ -115,7 +115,13 @@ public sealed class AutoSupportJobService(
                     point.Position.Z,
                     point.RadiusMm,
                     new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z),
-                    point.Size.ToString().ToLowerInvariant()))]);
+                    point.Size.ToString().ToLowerInvariant()))],
+                [.. preview.Islands.Select(island => new AutoSupportIslandDto(
+                    island.CentroidX,
+                    island.CentroidZ,
+                    island.SliceHeightMm,
+                    island.AreaMm2,
+                    island.RadiusMm))]);
         }
         catch (Exception ex)
         {
@@ -173,6 +179,7 @@ public sealed class AutoSupportJobService(
         private int supportCount;
         private string? errorMessage;
         private IReadOnlyList<AutoSupportPointDto> supportPoints = [];
+        private IReadOnlyList<AutoSupportIslandDto> islands = [];
         private DateTime updatedAtUtc = DateTime.UtcNow;
 
         public Guid JobId { get; } = jobId;
@@ -199,7 +206,7 @@ public sealed class AutoSupportJobService(
             }
         }
 
-        public void MarkCompleted(int generatedSupportCount, IReadOnlyList<AutoSupportPointDto> generatedSupportPoints)
+        public void MarkCompleted(int generatedSupportCount, IReadOnlyList<AutoSupportPointDto> generatedSupportPoints, IReadOnlyList<AutoSupportIslandDto> generatedIslands)
         {
             lock (gate)
             {
@@ -207,6 +214,7 @@ public sealed class AutoSupportJobService(
                 progressPercent = 100;
                 supportCount = generatedSupportCount;
                 supportPoints = generatedSupportPoints;
+                islands = generatedIslands;
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -219,6 +227,7 @@ public sealed class AutoSupportJobService(
                 progressPercent = 100;
                 errorMessage = message;
                 supportPoints = [];
+                islands = [];
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -232,7 +241,7 @@ public sealed class AutoSupportJobService(
         public AutoSupportJobDto ToDto()
         {
             lock (gate)
-                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage, supportPoints);
+                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage, supportPoints, islands);
         }
     }
 }
