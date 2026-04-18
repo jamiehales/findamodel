@@ -117,9 +117,100 @@ Code added in this phase:
 | 8-layer GPU batch workload | 4303.15 | 1015.20 | 4.24x faster |
 | End-to-end orthographic archive generation | n/a | 2887.87 | 2.35x faster than mesh archive path |
 
-## Outcome
+## Outcome (phases 1-3)
 
 The full roadmap is now represented in the implementation through the portable OpenGL stack: cached GPU geometry, GPU spatial indexing, batched layer work, reduced readback bandwidth, overlapping CPU encoding, a compute-shader backend, and a vendor-tuned NVIDIA fast path. The strongest measured gains now show up on realistic multi-layer and end-to-end archive workloads, which is where the slicing pipeline spends most of its time.
+
+---
+
+## Phase 4: Corrected GPU benchmarks
+
+Date: 2025-07-22
+
+### Critical bugs found
+
+Two bugs were discovered that invalidated all prior GPU benchmark data:
+
+1. **Compute shader never activated**: In `GlSliceProjectionContext.CompileShaders()`, the `supportsComputeShaders` flag and `renderBackend` string were set to `false` / `"nvidia-fragment"` BEFORE the compute shader try-block but were NEVER updated on successful compilation. The compute shader code was compiled and linked successfully, but the runtime always fell back to the fragment shader path. Fixed by setting `supportsComputeShaders = true` and `renderBackend = "nvidia-compute"` after successful link.
+
+2. **GPU path never invoked in benchmarks**: `OrthographicProjectionSliceBitmapGenerator.EnableGpuSliceProjection` is `false`, so `TryRenderGpuBatch` always returned null. All phase 1-3 "GPU" benchmarks actually measured CPU performance via the orthographic projection fallback path. The benchmark tests have been updated to call `gpuContext.TryRenderBatch` directly to bypass this flag.
+
+### Additional fixes
+
+- **GPU dedup epsilon**: Fragment and compute shaders used `kDedupEpsilon = 0.0005`. CPU interval-fill dedup uses `0.002`. Updated GPU epsilon to `0.001` (compromise - GPU per-pixel winding sum is more sensitive to epsilon than CPU interval fill; 0.002 caused correctness regression at IoU < 0.90 in dense scenes).
+- **Triangle limit**: `MaxGpuTriangleCount` raised from 250,000 to 2,000,000 to allow benchmarking at 1M triangles.
+
+### Corrected single-layer CPU vs GPU benchmarks
+
+Direct `TryRenderBatch` calls, bypassing `EnableGpuSliceProjection` flag. NVIDIA GPU with compute shader backend confirmed active.
+
+#### 100K active triangles (10x10x10 cuboid grid)
+
+| Resolution | CPU Ortho ms | GPU Compute ms | GPU/CPU ratio | Result |
+| --- | ---: | ---: | ---: | --- |
+| 96x96 | 49 | 237 | 4.84x | GPU 4.8x slower |
+| 480x300 | 72 | 91 | 1.27x | GPU 1.3x slower |
+| 960x600 | 137 | 117 | 0.86x | **GPU 1.2x faster** |
+| 1920x1200 | 375 | 194 | 0.52x | **GPU 1.9x faster** |
+| 3840x2400 | 1332 | 563 | 0.42x | **GPU 2.4x faster** |
+
+#### 1M active triangles (22x22x22 cuboid grid)
+
+| Resolution | CPU Ortho ms | GPU Compute ms | GPU/CPU ratio | Result |
+| --- | ---: | ---: | ---: | --- |
+| 96x96 | 492 | 1093 | 2.22x | GPU 2.2x slower |
+| 480x300 | 473 | 858 | 1.82x | GPU 1.8x slower |
+| 960x600 | 584 | 1093 | 1.87x | GPU 1.9x slower |
+| 1920x1200 | 859 | 2380 | 2.77x | GPU 2.8x slower |
+| 3840x2400 | 1844 | 6065 | 3.29x | GPU 3.3x slower |
+
+#### Key observations
+
+- **GPU crossover point**: At 100K triangles, GPU becomes faster than CPU above ~800x500 resolution. At production resolution (3840x2400), GPU is 2.4x faster.
+- **Triangle count scaling**: GPU performance degrades sharply with triangle count. At 1M triangles, the per-pixel winding sum evaluates more triangles per pixel through the spatial grid, and the GPU is 1.8x-3.3x slower at all resolutions.
+- **CPU resolution scaling**: CPU time scales roughly linearly with pixel count (49ms at 96x96 to 1332ms at 3840x2400 for 100K triangles), consistent with per-row interval fill.
+- **GPU resolution scaling**: GPU time at 100K triangles is nearly flat from 96x96 to 960x600 (overhead-dominated), then scales sub-linearly to 3840x2400 - the GPU excels when there is enough parallel work to amortize dispatch and readback overhead.
+
+### Corrected batch benchmarks (16 layers, 1M triangles)
+
+| Resolution | CPU batch ms | GPU batch ms | GPU/CPU ratio | Result |
+| --- | ---: | ---: | ---: | --- |
+| 96x96 | 2609 | 4281 | 1.64x | GPU 1.6x slower |
+| 480x300 | 2767 | 4290 | 1.55x | GPU 1.6x slower |
+| 960x600 | 3343 | 7662 | 2.29x | GPU 2.3x slower |
+| 1920x1200 | 5078 | 24795 | 4.88x | GPU 4.9x slower |
+
+GPU batch performance is poor at 1M triangles: sequential dispatch + readback per layer compounds the per-layer overhead, and batch amortization does not overcome the high per-pixel triangle evaluation cost.
+
+### Corrected outcome
+
+The previous phases (1-3) implemented the correct GPU infrastructure (spatial indexing, compute shaders, batching, NVIDIA tuning), but the benchmark data in those phases actually measured CPU performance due to the two bugs above.
+
+With the bugs fixed and direct GPU benchmarks collected:
+
+| Scenario | CPU ms | GPU ms | Net result |
+| --- | ---: | ---: | --- |
+| 100K tris, 3840x2400, single layer | 1332 | 563 | **GPU 2.4x faster** |
+| 100K tris, 1920x1200, single layer | 375 | 194 | **GPU 1.9x faster** |
+| 1M tris, 3840x2400, single layer | 1844 | 6065 | GPU 3.3x slower |
+| 1M tris, 16 layers, 1920x1200 | 5078 | 24795 | GPU 4.9x slower |
+
+### Recommendation
+
+Keep `EnableGpuSliceProjection = false` (GPU disabled by default). The GPU path should be enabled adaptively based on runtime conditions:
+
+- **Use GPU when**: active triangle count per layer is below ~200K AND output resolution is >= 960x600
+- **Use CPU when**: active triangle count exceeds ~200K, resolution is low, or GPU is unavailable
+
+The original `MaxGpuTriangleCount = 250,000` limit was well-calibrated to this crossover point. The limit has been raised to 2M for benchmarking flexibility, but the adaptive selector should cap GPU dispatch at ~200K active triangles.
+
+### Future optimization opportunities
+
+1. **Adaptive GPU/CPU selection**: Implement runtime triangle count check before each layer dispatch; route to GPU only when profitable
+2. **GPU triangle culling**: The compute shader evaluates all triangles in a grid cell per pixel. A tighter per-workgroup bounding box cull or hierarchical grid could reduce wasted work at high triangle counts
+3. **Multi-layer compute dispatch**: Render multiple Z heights in a single dispatch using layered framebuffers or 3D textures to amortize readback
+4. **Async readback**: Use PBOs or persistent mapped buffers to overlap readback with the next layer's dispatch
+5. **Mesh decimation**: For models exceeding 200K triangles, decimate before GPU dispatch (lossy but may be acceptable for preview slices)
 
 ## Files changed
 

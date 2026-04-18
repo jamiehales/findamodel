@@ -12,7 +12,7 @@ namespace findamodel.Services;
 
 public sealed class GlSliceProjectionContext : IDisposable
 {
-    private const int MaxGpuTriangleCount = 250_000;
+    private const int MaxGpuTriangleCount = 2_000_000;
     private const int DefaultRowGroupHeight = 8;
     private const int NvidiaRowGroupHeight = 16;
     private const int DefaultGridColumnCount = 16;
@@ -51,7 +51,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         out vec4 FragColor;
 
         const float kEpsilon = 0.0001;
-        const float kDedupEpsilon = 0.0005;
+        const float kDedupEpsilon = 0.001;
         const int kMaxHits = 128;
 
         vec3 fetchVertex(int flatIndex) {
@@ -214,7 +214,7 @@ public sealed class GlSliceProjectionContext : IDisposable
         uniform int uResolutionY;
 
         const float kEpsilon = 0.0001;
-        const float kDedupEpsilon = 0.0005;
+        const float kDedupEpsilon = 0.001;
         const int kMaxHits = 128;
 
         vec3 fetchVertex(int flatIndex) {
@@ -1055,6 +1055,9 @@ public sealed class GlSliceProjectionContext : IDisposable
             gl.LinkProgram(computeProgram);
             CheckProgram(computeProgram);
             gl.DeleteShader(compute);
+
+            supportsComputeShaders = true;
+            renderBackend = useNvidiaFastPath ? "nvidia-compute" : "compute";
         }
         catch (Exception ex)
         {

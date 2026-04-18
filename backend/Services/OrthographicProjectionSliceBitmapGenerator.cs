@@ -149,13 +149,13 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                     trianglesByLayer[0],
                     sliceHeightsMm[0],
                     layerThicknessMm,
-                    maxTriangleCount: 250_000);
+                    maxTriangleCount: 2_000_000);
             }
             else
             {
                 var minSlice = sliceHeightsMm.Min() - (layerThicknessMm * 0.5f);
                 var maxSlice = sliceHeightsMm.Max() + (layerThicknessMm * 0.5f);
-                activeTriangles = BuildBatchTriangles(trianglesByLayer, minSlice, maxSlice, maxTriangleCount: 250_000);
+                activeTriangles = BuildBatchTriangles(trianglesByLayer, minSlice, maxSlice, maxTriangleCount: 2_000_000);
             }
 
             if (activeTriangles.Count == 0)
