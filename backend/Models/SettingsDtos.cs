@@ -33,7 +33,14 @@ public record AppConfigDto(
     float AutoSupportSphereRadiusMm = 1.2f,
     int AutoSupportMaxSupportsPerIsland = 6,
     float AutoSupportMinIslandAreaMm2 = 4f,
-    float AutoSupportMaxSupportDistanceMm = 10f);
+    float AutoSupportMaxSupportDistanceMm = 10f,
+    float AutoSupportResinStrength = 1f,
+    float AutoSupportResinDensityGPerMl = 1.25f,
+    float AutoSupportPeelForceMultiplier = 0.15f,
+    float AutoSupportMicroTipRadiusMm = 0.4f,
+    float AutoSupportLightTipRadiusMm = 0.7f,
+    float AutoSupportMediumTipRadiusMm = 1f,
+    float AutoSupportHeavyTipRadiusMm = 1.5f);
 
 public record UpdateAppConfigRequest(
     float DefaultRaftHeightMm,
@@ -60,7 +67,14 @@ public record UpdateAppConfigRequest(
     float AutoSupportSphereRadiusMm = 1.2f,
     int AutoSupportMaxSupportsPerIsland = 6,
     float AutoSupportMinIslandAreaMm2 = 4f,
-    float AutoSupportMaxSupportDistanceMm = 10f);
+    float AutoSupportMaxSupportDistanceMm = 10f,
+    float AutoSupportResinStrength = 1f,
+    float AutoSupportResinDensityGPerMl = 1.25f,
+    float AutoSupportPeelForceMultiplier = 0.15f,
+    float AutoSupportMicroTipRadiusMm = 0.4f,
+    float AutoSupportLightTipRadiusMm = 0.7f,
+    float AutoSupportMediumTipRadiusMm = 1f,
+    float AutoSupportHeavyTipRadiusMm = 1.5f);
 
 public record InitialSetupRequest(
     string ModelsDirectoryPath,

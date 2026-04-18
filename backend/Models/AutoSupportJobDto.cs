@@ -10,7 +10,8 @@ public sealed record AutoSupportPointDto(
     float Y,
     float Z,
     float RadiusMm,
-    AutoSupportVectorDto PullForce);
+    AutoSupportVectorDto PullForce,
+    string Size);
 
 public sealed record AutoSupportJobDto(
     Guid JobId,

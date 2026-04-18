@@ -503,6 +503,14 @@ public sealed class GlSliceProjectionContext : IDisposable
 
         try
         {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                failed = true;
+                logger.LogInformation("GL slice projection disabled on macOS in headless mode; using CPU fallback.");
+                ready.TrySetResult();
+                return;
+            }
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", "offscreen");
 

@@ -264,6 +264,15 @@ public sealed class GlPreviewContext : IDisposable
         IWindow? window = null;
         try
         {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                _failed = true;
+                _logger.LogInformation("GL preview disabled on macOS in headless mode; using CPU rasterizer.");
+                _ready.TrySetResult();
+                DrainChannel();
+                return;
+            }
+
             // On Linux / Docker, SDL offscreen driver creates EGL contexts without a display.
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", "offscreen");

@@ -37,6 +37,8 @@ public sealed class AutoSupportGenerationService
         var pixelWidth = Math.Max(24, (int)Math.Ceiling(bedWidthMm / voxelSizeMm));
         var pixelHeight = Math.Max(24, (int)Math.Ceiling(bedDepthMm / voxelSizeMm));
         var supportPoints = new List<SupportPoint>();
+        var modelHeightMm = geometry.DimensionYMm;
+        var cumulativeVolumePerPixelMm3 = 0f;
 
         var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(geometry.DimensionYMm, layerHeightMm) / layerHeightMm));
         for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
@@ -51,8 +53,27 @@ public sealed class AutoSupportGenerationService
                 pixelHeight,
                 layerHeightMm);
 
-            if (bitmap.CountLitPixels() == 0)
+            var litPixelCount = bitmap.CountLitPixels();
+            if (litPixelCount == 0)
                 continue;
+
+            var pixelWidthMm = bedWidthMm / pixelWidth;
+            var pixelDepthMm = bedDepthMm / pixelHeight;
+            var pixelAreaMm2 = pixelWidthMm * pixelDepthMm;
+
+            // Accumulate volume for this layer (each lit pixel represents a voxel column)
+            cumulativeVolumePerPixelMm3 += layerHeightMm;
+
+            // Weight force: cumulative volume * density converted to grams then to Newtons (g / 1000 * 9.81)
+            var cumulativeWeightN = litPixelCount * cumulativeVolumePerPixelMm3 * pixelAreaMm2
+                * (tuning.ResinDensityGPerMl / 1000f)  // mm3 -> ml = /1000, * g/ml -> grams
+                * 0.00981f;                              // grams -> Newtons (g * 9.81 / 1000)
+
+            // Peel force: proportional to cross-sectional area of this layer
+            var layerAreaMm2 = litPixelCount * pixelAreaMm2;
+            var peelForceN = layerAreaMm2 * tuning.PeelForceMultiplier;
+
+            var layerForces = new LayerForces(cumulativeWeightN, peelForceN);
 
             foreach (var island in FindIslands(
                          bitmap,
@@ -62,8 +83,8 @@ public sealed class AutoSupportGenerationService
                          tuning.SupportMergeDistanceMm,
                          tuning.MinIslandAreaMm2))
             {
-                EnsureInitialSupport(island, supportPoints, tuning);
-                ReinforceIslandIfNeeded(island, supportPoints, tuning);
+                EnsureInitialSupport(island, supportPoints, tuning, modelHeightMm);
+                ReinforceIslandIfNeeded(island, supportPoints, tuning, modelHeightMm, layerForces, litPixelCount);
             }
         }
 
@@ -89,51 +110,86 @@ public sealed class AutoSupportGenerationService
         SphereRadius = geometry.SphereRadius,
     };
 
-    private static void EnsureInitialSupport(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning)
+    private static void EnsureInitialSupport(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning, float modelHeightMm)
     {
         if (FindSupportsInsideIsland(island, supportPoints).Count > 0)
             return;
 
+        var size = IsNearBase(island.SliceHeightMm, modelHeightMm) ? SupportSize.Heavy : SupportSize.Medium;
         supportPoints.Add(new SupportPoint(
             new Vec3(island.CentroidX, island.SliceHeightMm, island.CentroidZ),
-            tuning.SupportSphereRadiusMm,
-            new Vec3(0f, 0f, 0f)));
+            GetTipRadiusMm(size, tuning),
+            new Vec3(0f, 0f, 0f),
+            size));
     }
 
-    private static void ReinforceIslandIfNeeded(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning)
+    private static void ReinforceIslandIfNeeded(SliceIsland island, List<SupportPoint> supportPoints, AutoSupportTuning tuning, float modelHeightMm, LayerForces layerForces, int totalLitPixels)
     {
         for (var iteration = 0; iteration < tuning.MaxSupportsPerIsland; iteration++)
         {
             var islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
             if (islandSupportIndices.Count == 0)
             {
-                EnsureInitialSupport(island, supportPoints, tuning);
+                EnsureInitialSupport(island, supportPoints, tuning, modelHeightMm);
                 islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
                 if (islandSupportIndices.Count == 0)
                     return;
             }
 
-            var strongestPull = EvaluatePullForces(island, islandSupportIndices, supportPoints);
+            var strongestPull = EvaluatePullForces(island, islandSupportIndices, supportPoints, layerForces, totalLitPixels);
             var uncoveredPixels = FindPixelsBeyondMaxDistance(
                 island,
                 islandSupportIndices,
                 supportPoints,
                 tuning.MaxSupportDistanceMm);
             var needsAdditionalCoverage = uncoveredPixels.Count > 0;
-            if (!needsAdditionalCoverage && strongestPull.Score <= tuning.PullForceThreshold)
+
+            var currentSize = strongestPull.SupportIndex >= 0
+                ? supportPoints[strongestPull.SupportIndex].Size
+                : SupportSize.Medium;
+            var maxCapacity = ComputeMaxPullForce(currentSize, tuning);
+            var forceExceeded = strongestPull.Score > maxCapacity;
+
+            if (!needsAdditionalCoverage && !forceExceeded)
                 return;
+
+            if (forceExceeded && strongestPull.SupportIndex >= 0)
+            {
+                var nearbyCount = CountNearbySupports(
+                    supportPoints[strongestPull.SupportIndex].Position,
+                    supportPoints,
+                    tuning.MaxSupportDistanceMm,
+                    strongestPull.SupportIndex);
+
+                if (nearbyCount >= 3 && currentSize != SupportSize.Heavy)
+                {
+                    var newSize = NextLargerSize(currentSize);
+                    var existing = supportPoints[strongestPull.SupportIndex];
+                    supportPoints[strongestPull.SupportIndex] = existing with
+                    {
+                        Size = newSize,
+                        RadiusMm = GetTipRadiusMm(newSize, tuning),
+                        PullForce = strongestPull.Vector,
+                    };
+                    continue;
+                }
+            }
 
             var candidatePoint = FindBestAdditionalSupportPoint(island, islandSupportIndices, supportPoints, tuning);
             if (candidatePoint is null)
                 return;
 
             var respectsMinDistance = candidatePoint.DistanceMm >= tuning.SupportMergeDistanceMm;
+            var newSupportSize = IsNearBase(island.SliceHeightMm, modelHeightMm)
+                ? SupportSize.Heavy
+                : SupportSize.Light;
             if (respectsMinDistance)
             {
                 supportPoints.Add(new SupportPoint(
                     new Vec3(candidatePoint.X, island.SliceHeightMm, candidatePoint.Z),
-                    tuning.SupportSphereRadiusMm,
-                    strongestPull.Vector));
+                    GetTipRadiusMm(newSupportSize, tuning),
+                    strongestPull.Vector,
+                    newSupportSize));
                 continue;
             }
 
@@ -145,15 +201,18 @@ public sealed class AutoSupportGenerationService
 
             supportPoints.Add(new SupportPoint(
                 new Vec3(candidatePoint.X, island.SliceHeightMm, candidatePoint.Z),
-                tuning.SupportSphereRadiusMm,
-                strongestPull.Vector));
+                GetTipRadiusMm(newSupportSize, tuning),
+                strongestPull.Vector,
+                newSupportSize));
         }
     }
 
     private static PullForceEstimate EvaluatePullForces(
         SliceIsland island,
         List<int> islandSupportIndices,
-        List<SupportPoint> supportPoints)
+        List<SupportPoint> supportPoints,
+        LayerForces layerForces,
+        int totalLitPixels)
     {
         var pixelAreaMm2 = island.PixelAreaMm2;
         var supportAssignments = islandSupportIndices.ToDictionary(index => index, _ => new SupportAccumulator());
@@ -198,7 +257,16 @@ public sealed class AutoSupportGenerationService
             var verticalComponent = MathF.Sqrt(MathF.Max(supportedAreaMm2, 0.01f));
             var lateralX = (centroidX - support.Position.X) * 0.35f * verticalComponent;
             var lateralZ = (centroidZ - support.Position.Z) * 0.35f * verticalComponent;
-            var vector = new Vec3(lateralX, verticalComponent, lateralZ);
+
+            // Distribute cumulative weight and peel forces proportionally to this support's pixel share
+            var pixelFraction = totalLitPixels > 0
+                ? (float)accumulator.Count / totalLitPixels
+                : 0f;
+            var weightContribution = layerForces.CumulativeWeightN * pixelFraction;
+            var peelContribution = layerForces.PeelForceN * pixelFraction;
+            var physicsForce = weightContribution + peelContribution;
+
+            var vector = new Vec3(lateralX, verticalComponent + physicsForce, lateralZ);
             var score = vector.Length + (averageDistanceMm * 1.5f);
 
             supportPoints[supportIndex] = support with { PullForce = vector };
@@ -584,8 +652,13 @@ public sealed class AutoSupportGenerationService
             SupportMergeDistanceMm: config?.AutoSupportMergeDistanceMm ?? AppConfigService.DefaultAutoSupportMergeDistanceMm,
             MinIslandAreaMm2: config?.AutoSupportMinIslandAreaMm2 ?? AppConfigService.DefaultAutoSupportMinIslandAreaMm2,
             MaxSupportDistanceMm: config?.AutoSupportMaxSupportDistanceMm ?? AppConfigService.DefaultAutoSupportMaxSupportDistanceMm,
-            PullForceThreshold: config?.AutoSupportPullForceThreshold ?? AppConfigService.DefaultAutoSupportPullForceThreshold,
-            SupportSphereRadiusMm: config?.AutoSupportSphereRadiusMm ?? AppConfigService.DefaultAutoSupportSphereRadiusMm,
+            ResinStrength: config?.AutoSupportResinStrength ?? AppConfigService.DefaultAutoSupportResinStrength,
+            ResinDensityGPerMl: config?.AutoSupportResinDensityGPerMl ?? AppConfigService.DefaultAutoSupportResinDensityGPerMl,
+            PeelForceMultiplier: config?.AutoSupportPeelForceMultiplier ?? AppConfigService.DefaultAutoSupportPeelForceMultiplier,
+            MicroTipRadiusMm: config?.AutoSupportMicroTipRadiusMm ?? AppConfigService.DefaultAutoSupportMicroTipRadiusMm,
+            LightTipRadiusMm: config?.AutoSupportLightTipRadiusMm ?? AppConfigService.DefaultAutoSupportLightTipRadiusMm,
+            MediumTipRadiusMm: config?.AutoSupportMediumTipRadiusMm ?? AppConfigService.DefaultAutoSupportMediumTipRadiusMm,
+            HeavyTipRadiusMm: config?.AutoSupportHeavyTipRadiusMm ?? AppConfigService.DefaultAutoSupportHeavyTipRadiusMm,
             MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland);
     }
 
@@ -598,9 +671,59 @@ public sealed class AutoSupportGenerationService
         float SupportMergeDistanceMm,
         float MinIslandAreaMm2,
         float MaxSupportDistanceMm,
-        float PullForceThreshold,
-        float SupportSphereRadiusMm,
+        float ResinStrength,
+        float ResinDensityGPerMl,
+        float PeelForceMultiplier,
+        float MicroTipRadiusMm,
+        float LightTipRadiusMm,
+        float MediumTipRadiusMm,
+        float HeavyTipRadiusMm,
         int MaxSupportsPerIsland);
+
+    private static float GetTipRadiusMm(SupportSize size, AutoSupportTuning tuning) => size switch
+    {
+        SupportSize.Micro => tuning.MicroTipRadiusMm,
+        SupportSize.Light => tuning.LightTipRadiusMm,
+        SupportSize.Medium => tuning.MediumTipRadiusMm,
+        SupportSize.Heavy => tuning.HeavyTipRadiusMm,
+        _ => tuning.MediumTipRadiusMm,
+    };
+
+    private static float ComputeMaxPullForce(SupportSize size, AutoSupportTuning tuning)
+    {
+        var r = GetTipRadiusMm(size, tuning);
+        return MathF.PI * r * r * tuning.ResinStrength;
+    }
+
+    private static SupportSize NextLargerSize(SupportSize size) => size switch
+    {
+        SupportSize.Micro => SupportSize.Light,
+        SupportSize.Light => SupportSize.Medium,
+        SupportSize.Medium => SupportSize.Heavy,
+        _ => SupportSize.Heavy,
+    };
+
+    private static bool IsNearBase(float sliceHeightMm, float modelHeightMm)
+        => sliceHeightMm <= MathF.Max(modelHeightMm * 0.15f, 3f);
+
+    private static int CountNearbySupports(
+        Vec3 position,
+        List<SupportPoint> supportPoints,
+        float radiusMm,
+        int excludeIndex)
+    {
+        var count = 0;
+        var radiusSq = radiusMm * radiusMm;
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            if (i == excludeIndex) continue;
+            var dx = supportPoints[i].Position.X - position.X;
+            var dz = supportPoints[i].Position.Z - position.Z;
+            if ((dx * dx) + (dz * dz) <= radiusSq)
+                count++;
+        }
+        return count;
+    }
 
     private sealed record SlicePixel(float XMm, float ZMm);
 
@@ -615,6 +738,8 @@ public sealed class AutoSupportGenerationService
 
     private sealed record AdditionalSupportCandidate(float X, float Z, float DistanceMm);
 
+    private sealed record LayerForces(float CumulativeWeightN, float PeelForceN);
+
     private sealed class SupportAccumulator
     {
         public int Count { get; set; }
@@ -626,7 +751,9 @@ public sealed class AutoSupportGenerationService
     private sealed record PullForceEstimate(int SupportIndex, float Score, Vec3 Vector);
 }
 
-public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce);
+public enum SupportSize { Micro, Light, Medium, Heavy }
+
+public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce, SupportSize Size);
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,

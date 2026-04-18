@@ -43,7 +43,7 @@
     {
       "label": "frontend: install",
       "type": "shell",
-      "command": "yarn install",
+      "command": "corepack yarn@1.22.22 install",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
@@ -90,7 +90,7 @@
     {
       "label": "desktop-tauri: install",
       "type": "shell",
-      "command": "yarn install",
+      "command": "corepack yarn@1.22.22 install",
       "options": {
         "cwd": "${workspaceFolder}/desktop-tauri"
       },
@@ -105,7 +105,7 @@
     {
       "label": "desktop-tauri: publish",
       "type": "shell",
-      "command": "yarn build",
+      "command": "corepack yarn@1.22.22 build",
       "options": {
         "cwd": "${workspaceFolder}/desktop-tauri"
       },
@@ -134,7 +134,7 @@
     {
       "label": "desktop-tauri: tauri dev (external backend)",
       "type": "shell",
-      "command": "yarn tauri dev",
+      "command": "corepack yarn@1.22.22 tauri dev",
       "options": {
         "cwd": "${workspaceFolder}/desktop-tauri",
         "env": {
@@ -160,7 +160,7 @@
     {
       "label": "frontend: dev",
       "type": "shell",
-      "command": "yarn dev",
+      "command": "corepack yarn@1.22.22 dev",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },

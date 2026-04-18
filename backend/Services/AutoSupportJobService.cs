@@ -110,7 +110,8 @@ public sealed class AutoSupportJobService(
                     point.Position.Y,
                     point.Position.Z,
                     point.RadiusMm,
-                    new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z)))]);
+                    new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z),
+                    point.Size.ToString().ToLowerInvariant()))]);
         }
         catch (Exception ex)
         {

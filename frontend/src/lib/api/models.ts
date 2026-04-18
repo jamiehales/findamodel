@@ -341,6 +341,7 @@ export interface AutoSupportPoint {
   z: number;
   radiusMm: number;
   pullForce: AutoSupportVector;
+  size: 'micro' | 'light' | 'medium' | 'heavy';
 }
 
 export interface AutoSupportJob {

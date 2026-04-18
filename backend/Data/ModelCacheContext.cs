@@ -141,6 +141,34 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .Property(c => c.AutoSupportMaxSupportsPerIsland)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxSupportsPerIsland);
 
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportResinStrength)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportResinStrength);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportResinDensityGPerMl)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportResinDensityGPerMl);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportPeelForceMultiplier)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportPeelForceMultiplier);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMicroTipRadiusMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMicroTipRadiusMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportLightTipRadiusMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportLightTipRadiusMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMediumTipRadiusMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMediumTipRadiusMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportHeavyTipRadiusMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportHeavyTipRadiusMm);
+
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();

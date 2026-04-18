@@ -303,6 +303,13 @@ export default function SettingsPage() {
   const [autoSupportPullForceThreshold, setAutoSupportPullForceThreshold] = useState('3');
   const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
   const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
+  const [autoSupportResinStrength, setAutoSupportResinStrength] = useState('1');
+  const [autoSupportResinDensityGPerMl, setAutoSupportResinDensityGPerMl] = useState('1.25');
+  const [autoSupportPeelForceMultiplier, setAutoSupportPeelForceMultiplier] = useState('0.15');
+  const [autoSupportMicroTipRadiusMm, setAutoSupportMicroTipRadiusMm] = useState('0.4');
+  const [autoSupportLightTipRadiusMm, setAutoSupportLightTipRadiusMm] = useState('0.7');
+  const [autoSupportMediumTipRadiusMm, setAutoSupportMediumTipRadiusMm] = useState('1');
+  const [autoSupportHeavyTipRadiusMm, setAutoSupportHeavyTipRadiusMm] = useState('1.5');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -366,6 +373,13 @@ export default function SettingsPage() {
       setAutoSupportPullForceThreshold(String(appConfig.autoSupportPullForceThreshold));
       setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
       setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
+      setAutoSupportResinStrength(String(appConfig.autoSupportResinStrength));
+      setAutoSupportResinDensityGPerMl(String(appConfig.autoSupportResinDensityGPerMl));
+      setAutoSupportPeelForceMultiplier(String(appConfig.autoSupportPeelForceMultiplier));
+      setAutoSupportMicroTipRadiusMm(String(appConfig.autoSupportMicroTipRadiusMm));
+      setAutoSupportLightTipRadiusMm(String(appConfig.autoSupportLightTipRadiusMm));
+      setAutoSupportMediumTipRadiusMm(String(appConfig.autoSupportMediumTipRadiusMm));
+      setAutoSupportHeavyTipRadiusMm(String(appConfig.autoSupportHeavyTipRadiusMm));
     }
   }, [appConfig]);
 
@@ -410,6 +424,13 @@ export default function SettingsPage() {
   const autoSupportPullForceThresholdValue = Number(autoSupportPullForceThreshold);
   const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
   const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
+  const autoSupportResinStrengthValue = Number(autoSupportResinStrength);
+  const autoSupportResinDensityValue = Number(autoSupportResinDensityGPerMl);
+  const autoSupportPeelForceMultiplierValue = Number(autoSupportPeelForceMultiplier);
+  const autoSupportMicroTipRadiusValue = Number(autoSupportMicroTipRadiusMm);
+  const autoSupportLightTipRadiusValue = Number(autoSupportLightTipRadiusMm);
+  const autoSupportMediumTipRadiusValue = Number(autoSupportMediumTipRadiusMm);
+  const autoSupportHeavyTipRadiusValue = Number(autoSupportHeavyTipRadiusMm);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
@@ -453,7 +474,28 @@ export default function SettingsPage() {
     autoSupportSphereRadiusValue >= 0.1 &&
     Number.isInteger(autoSupportMaxSupportsPerIslandValue) &&
     autoSupportMaxSupportsPerIslandValue >= 1 &&
-    autoSupportMaxSupportsPerIslandValue <= 64;
+    autoSupportMaxSupportsPerIslandValue <= 64 &&
+    Number.isFinite(autoSupportResinStrengthValue) &&
+    autoSupportResinStrengthValue >= 0.1 &&
+    autoSupportResinStrengthValue <= 10 &&
+    Number.isFinite(autoSupportResinDensityValue) &&
+    autoSupportResinDensityValue >= 0.1 &&
+    autoSupportResinDensityValue <= 10 &&
+    Number.isFinite(autoSupportPeelForceMultiplierValue) &&
+    autoSupportPeelForceMultiplierValue >= 0.01 &&
+    autoSupportPeelForceMultiplierValue <= 5 &&
+    Number.isFinite(autoSupportMicroTipRadiusValue) &&
+    autoSupportMicroTipRadiusValue >= 0.1 &&
+    autoSupportMicroTipRadiusValue <= 3 &&
+    Number.isFinite(autoSupportLightTipRadiusValue) &&
+    autoSupportLightTipRadiusValue >= 0.1 &&
+    autoSupportLightTipRadiusValue <= 5 &&
+    Number.isFinite(autoSupportMediumTipRadiusValue) &&
+    autoSupportMediumTipRadiusValue >= 0.1 &&
+    autoSupportMediumTipRadiusValue <= 7 &&
+    Number.isFinite(autoSupportHeavyTipRadiusValue) &&
+    autoSupportHeavyTipRadiusValue >= 0.1 &&
+    autoSupportHeavyTipRadiusValue <= 10;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -505,6 +547,13 @@ export default function SettingsPage() {
       autoSupportPullForceThreshold: autoSupportPullForceThresholdValue,
       autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
       autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
+      autoSupportResinStrength: autoSupportResinStrengthValue,
+      autoSupportResinDensityGPerMl: autoSupportResinDensityValue,
+      autoSupportPeelForceMultiplier: autoSupportPeelForceMultiplierValue,
+      autoSupportMicroTipRadiusMm: autoSupportMicroTipRadiusValue,
+      autoSupportLightTipRadiusMm: autoSupportLightTipRadiusValue,
+      autoSupportMediumTipRadiusMm: autoSupportMediumTipRadiusValue,
+      autoSupportHeavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -680,14 +729,14 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
-                    label="Pull-force threshold"
+                    label="Pull-force threshold (legacy)"
                     value={autoSupportPullForceThreshold}
                     onChange={(e) => setAutoSupportPullForceThreshold(e.target.value)}
                   />
                   <TextField
                     size="small"
                     type="number"
-                    label="Marker sphere radius (mm)"
+                    label="Marker sphere radius (mm, legacy)"
                     value={autoSupportSphereRadiusMm}
                     onChange={(e) => setAutoSupportSphereRadiusMm(e.target.value)}
                   />
@@ -697,6 +746,82 @@ export default function SettingsPage() {
                     label="Max supports per island"
                     value={autoSupportMaxSupportsPerIsland}
                     onChange={(e) => setAutoSupportMaxSupportsPerIsland(e.target.value)}
+                  />
+                </Stack>
+                <Typography variant="h6">Support tip sizing</Typography>
+                <Typography color="text.secondary">
+                  Per-size tip radii control the contact area of each support type. Pull force
+                  capacity is computed as pi * radius^2 * resin strength. Supports near the model
+                  base automatically use heavy tips.
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Resin strength"
+                    value={autoSupportResinStrength}
+                    onChange={(e) => setAutoSupportResinStrength(e.target.value)}
+                    helperText="Dimensionless multiplier (default 1.0)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Micro tip radius (mm)"
+                    value={autoSupportMicroTipRadiusMm}
+                    onChange={(e) => setAutoSupportMicroTipRadiusMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Light tip radius (mm)"
+                    value={autoSupportLightTipRadiusMm}
+                    onChange={(e) => setAutoSupportLightTipRadiusMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Medium tip radius (mm)"
+                    value={autoSupportMediumTipRadiusMm}
+                    onChange={(e) => setAutoSupportMediumTipRadiusMm(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Heavy tip radius (mm)"
+                    value={autoSupportHeavyTipRadiusMm}
+                    onChange={(e) => setAutoSupportHeavyTipRadiusMm(e.target.value)}
+                  />
+                </Stack>
+                <Typography variant="h6">Cumulative force settings</Typography>
+                <Typography color="text.secondary">
+                  Controls how resin weight and peel forces accumulate across layers. Higher density
+                  or peel multiplier values increase per-support loads, triggering more or heavier
+                  supports.
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Resin density (g/ml)"
+                    value={autoSupportResinDensityGPerMl}
+                    onChange={(e) => setAutoSupportResinDensityGPerMl(e.target.value)}
+                    helperText="Default 1.25 (1000g per 800ml)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Peel force multiplier"
+                    value={autoSupportPeelForceMultiplier}
+                    onChange={(e) => setAutoSupportPeelForceMultiplier(e.target.value)}
+                    helperText="Scales cross-sectional area to peel force (default 0.15)"
                   />
                 </Stack>
                 <Stack direction="row" spacing={1}>

@@ -126,6 +126,11 @@ export interface AppConfig {
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
+  autoSupportResinStrength: number;
+  autoSupportMicroTipRadiusMm: number;
+  autoSupportLightTipRadiusMm: number;
+  autoSupportMediumTipRadiusMm: number;
+  autoSupportHeavyTipRadiusMm: number;
 }
 
 export interface SetupStatus {
@@ -174,6 +179,11 @@ export interface UpdateAppConfigRequest {
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
+  autoSupportResinStrength: number;
+  autoSupportMicroTipRadiusMm: number;
+  autoSupportLightTipRadiusMm: number;
+  autoSupportMediumTipRadiusMm: number;
+  autoSupportHeavyTipRadiusMm: number;
 }
 
 export interface InitialSetupRequest {

@@ -249,9 +249,16 @@ function SupportForceArrow({
       direction,
     );
     const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
+    const sizeColors: Record<string, [string, string]> = {
+      micro: ['#93c5fd', '#3b82f6'],
+      light: ['#fbbf24', '#f59e0b'],
+      medium: ['#fb923c', '#ea580c'],
+      heavy: ['#ef4444', '#b91c1c'],
+    };
+    const [lowColor, highColor] = sizeColors[point.size] ?? sizeColors.medium;
     const color = new THREE.Color().lerpColors(
-      new THREE.Color('#fbbf24'),
-      new THREE.Color('#ef4444'),
+      new THREE.Color(lowColor),
+      new THREE.Color(highColor),
       normalizedMagnitude,
     );
     return { coneCenter, coneQuaternion, color, headLength, linePoints: [start, shaftEnd] };

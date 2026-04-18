@@ -32,6 +32,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportPullForceThreshold = 3f;
     public const float DefaultAutoSupportSphereRadiusMm = 1.2f;
     public const int DefaultAutoSupportMaxSupportsPerIsland = 6;
+    public const float DefaultAutoSupportResinStrength = 1f;
+    public const float DefaultAutoSupportResinDensityGPerMl = 1.25f;
+    public const float DefaultAutoSupportPeelForceMultiplier = 0.15f;
+    public const float DefaultAutoSupportMicroTipRadiusMm = 0.4f;
+    public const float DefaultAutoSupportLightTipRadiusMm = 0.7f;
+    public const float DefaultAutoSupportMediumTipRadiusMm = 1f;
+    public const float DefaultAutoSupportHeavyTipRadiusMm = 1.5f;
     public const string DefaultTagGenerationPromptTemplate =
         "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
     public const string DefaultDescriptionGenerationPromptTemplate =
@@ -121,6 +128,11 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportPullForceThreshold = request.AutoSupportPullForceThreshold;
         config.AutoSupportSphereRadiusMm = request.AutoSupportSphereRadiusMm;
         config.AutoSupportMaxSupportsPerIsland = request.AutoSupportMaxSupportsPerIsland;
+        config.AutoSupportResinStrength = request.AutoSupportResinStrength;
+        config.AutoSupportMicroTipRadiusMm = request.AutoSupportMicroTipRadiusMm;
+        config.AutoSupportLightTipRadiusMm = request.AutoSupportLightTipRadiusMm;
+        config.AutoSupportMediumTipRadiusMm = request.AutoSupportMediumTipRadiusMm;
+        config.AutoSupportHeavyTipRadiusMm = request.AutoSupportHeavyTipRadiusMm;
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return ToDto(config);
@@ -152,9 +164,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (string.IsNullOrWhiteSpace(request.ModelsDirectoryPath))
             throw new ArgumentException("Models directory path is required.", nameof(request.ModelsDirectoryPath));
 
-        var fullPath = Path.GetFullPath(request.ModelsDirectoryPath);
-        if (!Directory.Exists(fullPath))
-            throw new ArgumentException($"Models directory does not exist: {fullPath}", nameof(request.ModelsDirectoryPath));
+        var fullPath = ModelsDirectoryPathResolver.Resolve(request.ModelsDirectoryPath, requireExisting: true);
 
         // Validate other config values
         if (!float.IsFinite(request.DefaultRaftHeightMm) || request.DefaultRaftHeightMm < 0f)
@@ -268,7 +278,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportSphereRadiusMm,
             config.AutoSupportMaxSupportsPerIsland,
             config.AutoSupportMinIslandAreaMm2,
-            config.AutoSupportMaxSupportDistanceMm);
+            config.AutoSupportMaxSupportDistanceMm,
+            config.AutoSupportResinStrength,
+            config.AutoSupportMicroTipRadiusMm,
+            config.AutoSupportLightTipRadiusMm,
+            config.AutoSupportMediumTipRadiusMm,
+            config.AutoSupportHeavyTipRadiusMm);
     }
 
     private async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
@@ -280,7 +295,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         var configuredModelsPath = configuration["Models:DirectoryPath"];
         var normalizedConfiguredModelsPath = string.IsNullOrWhiteSpace(configuredModelsPath)
             ? null
-            : Path.GetFullPath(configuredModelsPath);
+            : ModelsDirectoryPathResolver.Resolve(configuredModelsPath);
 
         config = new AppConfig
         {
@@ -310,6 +325,11 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportPullForceThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportPullForceThreshold") ?? DefaultAutoSupportPullForceThreshold,
             AutoSupportSphereRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportSphereRadiusMm") ?? DefaultAutoSupportSphereRadiusMm,
             AutoSupportMaxSupportsPerIsland = configuration.GetValue<int?>("AppConfig:AutoSupportMaxSupportsPerIsland") ?? DefaultAutoSupportMaxSupportsPerIsland,
+            AutoSupportResinStrength = configuration.GetValue<float?>("AppConfig:AutoSupportResinStrength") ?? DefaultAutoSupportResinStrength,
+            AutoSupportMicroTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMicroTipRadiusMm") ?? DefaultAutoSupportMicroTipRadiusMm,
+            AutoSupportLightTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportLightTipRadiusMm") ?? DefaultAutoSupportLightTipRadiusMm,
+            AutoSupportMediumTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMediumTipRadiusMm") ?? DefaultAutoSupportMediumTipRadiusMm,
+            AutoSupportHeavyTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportHeavyTipRadiusMm") ?? DefaultAutoSupportHeavyTipRadiusMm,
             SetupCompleted = !string.IsNullOrWhiteSpace(normalizedConfiguredModelsPath),
             ModelsDirectoryPath = normalizedConfiguredModelsPath,
             UpdatedAt = DateTime.UtcNow,
@@ -351,6 +371,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
 
         if (request.AutoSupportMaxSupportsPerIsland < 1 || request.AutoSupportMaxSupportsPerIsland > 64)
             throw new ArgumentException("Auto support max supports per island must be between 1 and 64.", nameof(request.AutoSupportMaxSupportsPerIsland));
+
+        ValidateFiniteRange(request.AutoSupportResinStrength, 0.1f, 10f, nameof(request.AutoSupportResinStrength));
+        ValidateFiniteRange(request.AutoSupportMicroTipRadiusMm, 0.1f, 3f, nameof(request.AutoSupportMicroTipRadiusMm));
+        ValidateFiniteRange(request.AutoSupportLightTipRadiusMm, 0.1f, 5f, nameof(request.AutoSupportLightTipRadiusMm));
+        ValidateFiniteRange(request.AutoSupportMediumTipRadiusMm, 0.1f, 7f, nameof(request.AutoSupportMediumTipRadiusMm));
+        ValidateFiniteRange(request.AutoSupportHeavyTipRadiusMm, 0.1f, 10f, nameof(request.AutoSupportHeavyTipRadiusMm));
     }
 
     private static void ValidateFiniteRange(float value, float min, float max, string paramName)

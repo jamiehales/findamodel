@@ -31,6 +31,14 @@ public class AppConfig
     public float AutoSupportSphereRadiusMm { get; set; } = 1.2f;
     public int AutoSupportMaxSupportsPerIsland { get; set; } = 6;
 
+    public float AutoSupportResinStrength { get; set; } = 1f;
+    public float AutoSupportResinDensityGPerMl { get; set; } = 1.25f;
+    public float AutoSupportPeelForceMultiplier { get; set; } = 0.15f;
+    public float AutoSupportMicroTipRadiusMm { get; set; } = 0.4f;
+    public float AutoSupportLightTipRadiusMm { get; set; } = 0.7f;
+    public float AutoSupportMediumTipRadiusMm { get; set; } = 1f;
+    public float AutoSupportHeavyTipRadiusMm { get; set; } = 1.5f;
+
     // Initial setup tracking
     public bool SetupCompleted { get; set; } = false;
     public string? ModelsDirectoryPath { get; set; }

@@ -46,7 +46,14 @@ public class AutoSupportGenerationServiceTests
             current.AutoSupportSphereRadiusMm,
             current.AutoSupportMaxSupportsPerIsland,
             current.AutoSupportMinIslandAreaMm2,
-            current.AutoSupportMaxSupportDistanceMm);
+            current.AutoSupportMaxSupportDistanceMm,
+            current.AutoSupportResinStrength,
+            current.AutoSupportResinDensityGPerMl,
+            current.AutoSupportPeelForceMultiplier,
+            current.AutoSupportMicroTipRadiusMm,
+            current.AutoSupportLightTipRadiusMm,
+            current.AutoSupportMediumTipRadiusMm,
+            current.AutoSupportHeavyTipRadiusMm);
 
         request = configure?.Invoke(request) ?? request;
         service.UpdateAsync(request).GetAwaiter().GetResult();
@@ -103,7 +110,8 @@ public class AutoSupportGenerationServiceTests
                     2f,
                     3f,
                     0.75f,
-                    new findamodel.Models.AutoSupportVectorDto(0.5f, 4f, -0.25f)),
+                    new findamodel.Models.AutoSupportVectorDto(0.5f, 4f, -0.25f),
+                    "medium"),
             ]);
 
         var supportPoints = Assert.IsAssignableFrom<IReadOnlyList<findamodel.Models.AutoSupportPointDto>>(dto.SupportPoints);
@@ -172,6 +180,143 @@ public class AutoSupportGenerationServiceTests
         Assert.True(result.SupportPoints.Count >= 2);
         Assert.Contains(result.SupportPoints, point => point.Position.X < 0f);
         Assert.Contains(result.SupportPoints, point => point.Position.X > 0f);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_AssignsSupportSizeToEachPoint()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 6f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        Assert.All(result.SupportPoints, point =>
+        {
+            Assert.True(
+                point.Size == SupportSize.Micro ||
+                point.Size == SupportSize.Light ||
+                point.Size == SupportSize.Medium ||
+                point.Size == SupportSize.Heavy,
+                $"Unexpected support size: {point.Size}");
+            Assert.True(point.RadiusMm > 0f, "Support radius must be positive");
+        });
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_UsesHeavySupportsNearBase()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 30f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var baseSupports = result.SupportPoints
+            .Where(p => p.Position.Y <= 3f)
+            .ToList();
+        if (baseSupports.Count > 0)
+        {
+            Assert.Contains(baseSupports, p => p.Size == SupportSize.Heavy);
+        }
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_LargerTipRadiusForHeavierSupports()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_LargerTipRadiusForHeavierSupports),
+            request => request with
+            {
+                AutoSupportMicroTipRadiusMm = 0.3f,
+                AutoSupportLightTipRadiusMm = 0.6f,
+                AutoSupportMediumTipRadiusMm = 1.0f,
+                AutoSupportHeavyTipRadiusMm = 1.8f,
+            });
+        var configuredSut = new AutoSupportGenerationService(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 30f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var heavySupports = result.SupportPoints.Where(p => p.Size == SupportSize.Heavy).ToList();
+        var lightSupports = result.SupportPoints.Where(p => p.Size == SupportSize.Light).ToList();
+        if (heavySupports.Count > 0 && lightSupports.Count > 0)
+        {
+            Assert.True(
+                heavySupports.Average(p => p.RadiusMm) > lightSupports.Average(p => p.RadiusMm),
+                "Heavy supports should have larger radii than light supports");
+        }
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_ResinStrengthAffectsSupportDensity()
+    {
+        var weakResinConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_ResinStrengthAffectsSupportDensity) + "_weak",
+            request => request with { AutoSupportResinStrength = 0.3f, AutoSupportMaxSupportsPerIsland = 16 });
+        var strongResinConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_ResinStrengthAffectsSupportDensity) + "_strong",
+            request => request with { AutoSupportResinStrength = 5f, AutoSupportMaxSupportsPerIsland = 16 });
+
+        var weakSut = new AutoSupportGenerationService(weakResinConfig, NullLoggerFactory.Instance);
+        var strongSut = new AutoSupportGenerationService(strongResinConfig, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 4f));
+
+        var weakResult = weakSut.GenerateSupportPreview(geometry);
+        var strongResult = strongSut.GenerateSupportPreview(geometry);
+
+        Assert.True(
+            weakResult.SupportPoints.Count >= strongResult.SupportPoints.Count,
+            $"Weak resin ({weakResult.SupportPoints.Count} supports) should need at least as many supports as strong resin ({strongResult.SupportPoints.Count})");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_HigherResinDensityIncreasesSupports()
+    {
+        var lightConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_HigherResinDensityIncreasesSupports) + "_light",
+            request => request with { AutoSupportResinDensityGPerMl = 0.5f, AutoSupportMaxSupportsPerIsland = 16 });
+        var heavyConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_HigherResinDensityIncreasesSupports) + "_heavy",
+            request => request with { AutoSupportResinDensityGPerMl = 5f, AutoSupportMaxSupportsPerIsland = 16 });
+
+        var lightSut = new AutoSupportGenerationService(lightConfig, NullLoggerFactory.Instance);
+        var heavySut = new AutoSupportGenerationService(heavyConfig, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 10f));
+
+        var lightResult = lightSut.GenerateSupportPreview(geometry);
+        var heavyResult = heavySut.GenerateSupportPreview(geometry);
+
+        Assert.True(
+            heavyResult.SupportPoints.Count >= lightResult.SupportPoints.Count,
+            $"Heavy resin ({heavyResult.SupportPoints.Count} supports) should need at least as many supports as light resin ({lightResult.SupportPoints.Count})");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_PeelForceMultiplierAffectsSupports()
+    {
+        var lowPeelConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_PeelForceMultiplierAffectsSupports) + "_low",
+            request => request with { AutoSupportPeelForceMultiplier = 0.01f, AutoSupportMaxSupportsPerIsland = 16 });
+        var highPeelConfig = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_PeelForceMultiplierAffectsSupports) + "_high",
+            request => request with { AutoSupportPeelForceMultiplier = 2f, AutoSupportMaxSupportsPerIsland = 16 });
+
+        var lowSut = new AutoSupportGenerationService(lowPeelConfig, NullLoggerFactory.Instance);
+        var highSut = new AutoSupportGenerationService(highPeelConfig, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 10f));
+
+        var lowResult = lowSut.GenerateSupportPreview(geometry);
+        var highResult = highSut.GenerateSupportPreview(geometry);
+
+        Assert.True(
+            highResult.SupportPoints.Count >= lowResult.SupportPoints.Count,
+            $"High peel force ({highResult.SupportPoints.Count} supports) should need at least as many supports as low peel force ({lowResult.SupportPoints.Count})");
     }
 
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
