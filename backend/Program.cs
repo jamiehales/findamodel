@@ -82,6 +82,7 @@ builder.Services.AddSingleton<findamodel.Services.MeshTransferService>();
 builder.Services.AddSingleton<findamodel.Services.SupportSeparationService>();
 builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationService>();
 builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationV2Service>();
+builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationV3Service>();
 builder.Services.AddSingleton<findamodel.Services.AutoSupportJobService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();
 builder.Services.AddSingleton<findamodel.Services.GlSliceProjectionContext>();

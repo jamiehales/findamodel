@@ -266,7 +266,7 @@ public class ModelsController(
         var model = await modelService.GetModelAsync(id);
         if (model == null) return NotFound();
 
-        var method = request?.Method is 1 or 2 ? request.Method : 1;
+        var method = request?.Method is 1 or 2 or 3 ? request.Method : 1;
         var job = await autoSupportJobService.CreateJobAsync(id, method, ct);
         if (job == null) return NotFound();
 

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ModelsPage from './pages/ModelsPage';
 import ModelPage from './pages/ModelPage';
+import ModelAutoSupportPage from './pages/ModelAutoSupportPage';
 import PrintingListPage from './pages/PrintingListPage';
 import PrintingListsManagePage from './pages/PrintingListsManagePage';
 import ExplorePage from './pages/ExplorePage';
@@ -64,6 +65,7 @@ function App() {
         <Routes>
           <Route path="/" element={<ModelsPage />} />
           <Route path="/model/:id" element={<ModelPage />} />
+          <Route path="/model/:id/supports" element={<ModelAutoSupportPage />} />
           <Route path="/printing-list/:listId" element={<PrintingListPage />} />
           <Route path="/printing-lists" element={<PrintingListsManagePage />} />
           <Route path="/explore" element={<ExplorePage />} />

@@ -10,6 +10,7 @@ public sealed class AutoSupportJobService(
     MeshTransferService meshTransferService,
     AutoSupportGenerationService autoSupportGenerationService,
     AutoSupportGenerationV2Service autoSupportGenerationV2Service,
+    AutoSupportGenerationV3Service autoSupportGenerationV3Service,
     IConfiguration config,
     ILoggerFactory loggerFactory)
 {
@@ -35,7 +36,7 @@ public sealed class AutoSupportJobService(
             $"{Path.GetFileNameWithoutExtension(model.FileName)}-supported-preview.bin",
             Path.Combine(cacheDirectory, $"{Guid.NewGuid():N}.bin"));
 
-        var clampedMethod = method is 1 or 2 ? method : 1;
+        var clampedMethod = method is 1 or 2 or 3 ? method : 1;
         jobs[job.JobId] = job;
         _ = Task.Run(() => RunJobAsync(job, clampedMethod), CancellationToken.None);
         return job.ToDto();
@@ -99,10 +100,13 @@ public sealed class AutoSupportJobService(
                 return;
             }
 
-            var preview = method == 2
-                ? autoSupportGenerationV2Service.GenerateSupportPreview(geometry)
-                : autoSupportGenerationService.GenerateSupportPreview(geometry);
-            var bodyPayload = meshTransferService.Encode(geometry);
+            var preview = method switch
+            {
+                2 => autoSupportGenerationV2Service.GenerateSupportPreview(geometry),
+                3 => autoSupportGenerationV3Service.GenerateSupportPreview(geometry),
+                _ => autoSupportGenerationService.GenerateSupportPreview(geometry),
+            };
+            var bodyPayload = meshTransferService.Encode(preview.BodyGeometry ?? geometry);
             var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
             var envelope = BuildEnvelope(bodyPayload, supportPayload);
             await File.WriteAllBytesAsync(job.CacheFilePath, envelope, CancellationToken.None);

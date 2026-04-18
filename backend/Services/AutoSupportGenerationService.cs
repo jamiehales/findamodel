@@ -873,7 +873,8 @@ public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce,
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,
     LoadedGeometry SupportGeometry,
-    IReadOnlyList<IslandPreview> Islands);
+    IReadOnlyList<IslandPreview> Islands,
+    LoadedGeometry? BodyGeometry = null);
 
 public sealed record IslandPreview(
     float CentroidX,
