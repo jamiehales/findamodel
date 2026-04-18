@@ -285,7 +285,8 @@ public class AppConfigServiceTests
             AutoSupportMaxSupportDistanceMm: 11f,
             AutoSupportPullForceThreshold: 5.5f,
             AutoSupportSphereRadiusMm: 1.6f,
-            AutoSupportMaxSupportsPerIsland: 9));
+            AutoSupportMaxSupportsPerIsland: 9,
+            AutoSupportV2VoxelSizeMm: 0.25f));
 
         Assert.Equal(4f, updated.AutoSupportBedMarginMm);
         Assert.Equal(1.1f, updated.AutoSupportMinVoxelSizeMm);
@@ -298,6 +299,7 @@ public class AppConfigServiceTests
         Assert.Equal(5.5f, updated.AutoSupportPullForceThreshold);
         Assert.Equal(1.6f, updated.AutoSupportSphereRadiusMm);
         Assert.Equal(9, updated.AutoSupportMaxSupportsPerIsland);
+        Assert.Equal(0.25f, updated.AutoSupportV2VoxelSizeMm);
 
         await using var db = factory.CreateDbContext();
         var stored = await db.AppConfigs.SingleAsync();
@@ -306,6 +308,7 @@ public class AppConfigServiceTests
         Assert.Equal(11f, stored.AutoSupportMaxSupportDistanceMm);
         Assert.Equal(5.5f, stored.AutoSupportPullForceThreshold);
         Assert.Equal(9, stored.AutoSupportMaxSupportsPerIsland);
+        Assert.Equal(0.25f, stored.AutoSupportV2VoxelSizeMm);
     }
 
     [Fact]

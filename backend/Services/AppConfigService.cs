@@ -394,7 +394,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportLightTipRadiusMm, 0.1f, 5f, nameof(request.AutoSupportLightTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportMediumTipRadiusMm, 0.1f, 7f, nameof(request.AutoSupportMediumTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportHeavyTipRadiusMm, 0.1f, 10f, nameof(request.AutoSupportHeavyTipRadiusMm));
-        ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.5f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
+        ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
     }
 
     private static void ValidateFiniteRange(float value, float min, float max, string paramName)

@@ -496,7 +496,7 @@ public sealed class AutoSupportGenerationV2Service
                     result.Add(i);
             }
 
-            next:;
+        next:;
         }
 
         return result;

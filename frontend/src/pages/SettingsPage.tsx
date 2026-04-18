@@ -513,7 +513,7 @@ export default function SettingsPage() {
     autoSupportHeavyTipRadiusValue >= 0.1 &&
     autoSupportHeavyTipRadiusValue <= 10 &&
     Number.isFinite(autoSupportV2VoxelSizeValue) &&
-    autoSupportV2VoxelSizeValue >= 0.5 &&
+    autoSupportV2VoxelSizeValue >= 0.1 &&
     autoSupportV2VoxelSizeValue <= 10;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
@@ -818,10 +818,10 @@ export default function SettingsPage() {
                     onChange={(e) => setAutoSupportHeavyTipRadiusMm(e.target.value)}
                   />
                 </Stack>
-                <Typography variant="h6">Cumulative force settings</Typography>
                 <Typography variant="h6">Method 2 settings</Typography>
                 <Typography color="text.secondary">
-                  Settings specific to the force-based voxel algorithm (method 2).
+                  Settings specific to the force-based voxel algorithm (method 2). Smaller voxels
+                  improve detail capture but increase processing cost.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -834,7 +834,7 @@ export default function SettingsPage() {
                     label="Voxel size (mm)"
                     value={autoSupportV2VoxelSizeMm}
                     onChange={(e) => setAutoSupportV2VoxelSizeMm(e.target.value)}
-                    helperText="Resolution of the voxel grid for method 2 (default 2)"
+                    helperText="Resolution of the voxel grid for method 2 (0.1 to 10, default 2)"
                   />
                 </Stack>
                 <Typography variant="h6">Cumulative force settings</Typography>
