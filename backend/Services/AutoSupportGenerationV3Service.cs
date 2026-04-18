@@ -382,23 +382,23 @@ public sealed class AutoSupportGenerationV3Service
         var p111 = new Vec3(x1, y1, z1);
 
         // Top (+Y)
-        triangles.Add(new Triangle3D(p010, p110, p111, new Vec3(0f, 1f, 0f)));
-        triangles.Add(new Triangle3D(p010, p111, p011, new Vec3(0f, 1f, 0f)));
+        triangles.Add(new Triangle3D(p010, p111, p110, new Vec3(0f, 1f, 0f)));
+        triangles.Add(new Triangle3D(p010, p011, p111, new Vec3(0f, 1f, 0f)));
         // Bottom (-Y)
-        triangles.Add(new Triangle3D(p000, p101, p100, new Vec3(0f, -1f, 0f)));
-        triangles.Add(new Triangle3D(p000, p001, p101, new Vec3(0f, -1f, 0f)));
+        triangles.Add(new Triangle3D(p000, p100, p101, new Vec3(0f, -1f, 0f)));
+        triangles.Add(new Triangle3D(p000, p101, p001, new Vec3(0f, -1f, 0f)));
         // Front (+Z)
-        triangles.Add(new Triangle3D(p001, p011, p111, new Vec3(0f, 0f, 1f)));
-        triangles.Add(new Triangle3D(p001, p111, p101, new Vec3(0f, 0f, 1f)));
+        triangles.Add(new Triangle3D(p001, p111, p011, new Vec3(0f, 0f, 1f)));
+        triangles.Add(new Triangle3D(p001, p101, p111, new Vec3(0f, 0f, 1f)));
         // Back (-Z)
-        triangles.Add(new Triangle3D(p000, p110, p010, new Vec3(0f, 0f, -1f)));
-        triangles.Add(new Triangle3D(p000, p100, p110, new Vec3(0f, 0f, -1f)));
+        triangles.Add(new Triangle3D(p000, p010, p110, new Vec3(0f, 0f, -1f)));
+        triangles.Add(new Triangle3D(p000, p110, p100, new Vec3(0f, 0f, -1f)));
         // Left (-X)
-        triangles.Add(new Triangle3D(p000, p010, p011, new Vec3(-1f, 0f, 0f)));
-        triangles.Add(new Triangle3D(p000, p011, p001, new Vec3(-1f, 0f, 0f)));
+        triangles.Add(new Triangle3D(p000, p011, p010, new Vec3(-1f, 0f, 0f)));
+        triangles.Add(new Triangle3D(p000, p001, p011, new Vec3(-1f, 0f, 0f)));
         // Right (+X)
-        triangles.Add(new Triangle3D(p100, p101, p111, new Vec3(1f, 0f, 0f)));
-        triangles.Add(new Triangle3D(p100, p111, p110, new Vec3(1f, 0f, 0f)));
+        triangles.Add(new Triangle3D(p100, p111, p101, new Vec3(1f, 0f, 0f)));
+        triangles.Add(new Triangle3D(p100, p110, p111, new Vec3(1f, 0f, 0f)));
 
         return true;
     }
