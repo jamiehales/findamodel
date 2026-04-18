@@ -57,11 +57,14 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         {
             var currentX = intersections[index].X;
             var deltaSum = 0;
-            while (index < intersections.Count && MathF.Abs(intersections[index].X - currentX) <= Epsilon)
+            while (index < intersections.Count && MathF.Abs(intersections[index].X - currentX) <= 0.002f)
             {
                 deltaSum += intersections[index].WindingDelta;
                 index++;
             }
+
+            if (deltaSum == 0)
+                continue;
 
             var previousWinding = winding;
             winding += deltaSum;

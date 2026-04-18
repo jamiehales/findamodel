@@ -8,7 +8,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
     private const bool EnableGpuSliceProjection = false;
     private const float Epsilon = 0.0001f;
     private const float RayOffsetMm = 0.0005f;
-    private const float HitDedupEpsilon = 0.0005f;
+    private const float HitDedupEpsilon = 0.002f;
     private static readonly Vec3 RayDirection = new(1f, 0f, 0f);
 
     private readonly GlSliceProjectionContext? gpuContext;
@@ -95,17 +95,35 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         }
 
         var bitmaps = new SliceBitmap[trianglesByLayer.Count];
-        Parallel.For(0, trianglesByLayer.Count, index =>
+
+        if (trianglesByLayer.Count <= 2)
         {
-            bitmaps[index] = RenderLayerBitmapCpu(
-                trianglesByLayer[index],
-                sliceHeightsMm[index],
-                bedWidthMm,
-                bedDepthMm,
-                pixelWidth,
-                pixelHeight,
-                layerThicknessMm);
-        });
+            for (var index = 0; index < trianglesByLayer.Count; index++)
+            {
+                bitmaps[index] = RenderLayerBitmapCpu(
+                    trianglesByLayer[index],
+                    sliceHeightsMm[index],
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    layerThicknessMm);
+            }
+        }
+        else
+        {
+            Parallel.For(0, trianglesByLayer.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, index =>
+            {
+                bitmaps[index] = RenderLayerBitmapCpuSerial(
+                    trianglesByLayer[index],
+                    sliceHeightsMm[index],
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    layerThicknessMm);
+            });
+        }
 
         return bitmaps;
     }
@@ -204,6 +222,33 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             var span = bitmap.GetRowSpan(row);
             FillProjectedRow(span, triangles, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
         });
+
+        bitmap.RemoveUnsupportedHorizontalPixels();
+        return bitmap;
+    }
+
+    private static SliceBitmap RenderLayerBitmapCpuSerial(
+        IReadOnlyList<Triangle3D> triangles,
+        float sliceHeightMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerThicknessMm)
+    {
+        var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
+        var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
+
+        for (var row = 0; row < pixelHeight; row++)
+        {
+            var candidates = candidatesByRow[row];
+            if (candidates == null || candidates.Count == 0)
+                continue;
+
+            var zMm = RowToZ(row, bedDepthMm, pixelHeight);
+            var span = bitmap.GetRowSpan(row);
+            FillProjectedRow(span, triangles, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
+        }
 
         bitmap.RemoveUnsupportedHorizontalPixels();
         return bitmap;
@@ -404,6 +449,9 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
         for (var i = 0; i < count; i++)
         {
+            if (hitDeltas[i] == 0)
+                continue;
+
             var previousWinding = winding;
             winding += hitDeltas[i];
 
@@ -428,6 +476,9 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
         foreach (var hit in hits)
         {
+            if (hit.Delta == 0)
+                continue;
+
             var previousWinding = winding;
             winding += hit.Delta;
 

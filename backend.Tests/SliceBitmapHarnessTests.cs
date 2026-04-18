@@ -219,6 +219,147 @@ public class SliceBitmapHarnessTests
         Assert.Equal(2, CountConnectedComponents(actual));
     }
 
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedCubeSlice_ProducesSingleConnectedComponent(PngSliceExportMethod method)
+    {
+        const float sideMm = 8f;
+        const float sliceHeightMm = 4f;
+        var cube = CreateCube(sideMm);
+
+        foreach (var angleRad in new[] { 0.3f, 0.84f, 1.57f, 2.19f, -0.42f, 3.14f })
+        {
+            var rotated = RotateTrianglesY(cube, angleRad);
+            var generator = CreateGenerator(method);
+
+            var actual = generator.RenderLayerBitmap(
+                rotated,
+                sliceHeightMm,
+                BedWidthMm,
+                BedDepthMm,
+                PixelWidth,
+                PixelHeight);
+
+            var components = CountConnectedComponents(actual);
+            Assert.True(components == 1, $"angle={angleRad}: expected 1 component, got {components}");
+            Assert.True(actual.CountLitPixels() > 0, $"angle={angleRad}: expected non-empty slice");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedHighPolyCylinder_ProducesSingleConnectedComponent(PngSliceExportMethod method)
+    {
+        const float radiusMm = 5f;
+        const float heightMm = 10f;
+        const float sliceHeightMm = 5f;
+        var cylinder = CreateCylinder(radiusMm, heightMm, segments: 256);
+
+        foreach (var angleRad in new[] { 0.53f, 1.61f, -0.72f, 2.61f })
+        {
+            var rotated = RotateTrianglesY(cylinder, angleRad);
+            var generator = CreateGenerator(method);
+
+            var actual = generator.RenderLayerBitmap(
+                rotated,
+                sliceHeightMm,
+                BedWidthMm,
+                BedDepthMm,
+                PixelWidth,
+                PixelHeight);
+
+            var components = CountConnectedComponents(actual);
+            Assert.True(components == 1, $"angle={angleRad}: expected 1 component, got {components}");
+            Assert.True(actual.CountLitPixels() > 10, $"angle={angleRad}: expected substantial slice");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedCubeSlice_StaysWithinRotatedBounds(PngSliceExportMethod method)
+    {
+        const float sideMm = 8f;
+        const float sliceHeightMm = 4f;
+        var cube = CreateCube(sideMm);
+
+        foreach (var angleRad in new[] { 0.3f, 0.84f, 1.57f, 2.19f, -0.42f })
+        {
+            var rotated = RotateTrianglesY(cube, angleRad);
+            var generator = CreateGenerator(method);
+
+            var actual = generator.RenderLayerBitmap(
+                rotated,
+                sliceHeightMm,
+                BedWidthMm,
+                BedDepthMm,
+                PixelWidth,
+                PixelHeight);
+
+            AssertBitmapWithinBounds(actual, rotated, BedWidthMm, BedDepthMm, PixelWidth, PixelHeight, $"angle={angleRad}");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedSeparatedBoxes_RemainSeparateComponents(PngSliceExportMethod method)
+    {
+        var generator = CreateGenerator(method);
+        var left = CreateOffsetBox(widthMm: 3f, depthMm: 3f, heightMm: 6f, centerX: -6f, centerZ: 0f);
+        var right = CreateOffsetBox(widthMm: 3f, depthMm: 3f, heightMm: 6f, centerX: 6f, centerZ: 0f);
+
+        foreach (var angleRad in new[] { 0.18f, 0.84f, -1.6f, 2.43f })
+        {
+            var triangles = new List<Triangle3D>();
+            triangles.AddRange(RotateTrianglesY(left, angleRad, offsetX: -6f, offsetZ: 0f));
+            triangles.AddRange(RotateTrianglesY(right, angleRad, offsetX: 6f, offsetZ: 0f));
+
+            var actual = generator.RenderLayerBitmap(
+                triangles,
+                sliceHeightMm: 3f,
+                bedWidthMm: 30f,
+                bedDepthMm: 30f,
+                pixelWidth: 180,
+                pixelHeight: 180);
+
+            var components = CountConnectedComponents(actual);
+            Assert.True(components == 2, $"angle={angleRad}: expected 2 separated components, got {components}");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedCubeSlice_MatchesAnalyticRotatedBitmap(PngSliceExportMethod method)
+    {
+        const float sideMm = 8f;
+        const float sliceHeightMm = 4f;
+        var half = sideMm * 0.5f;
+
+        foreach (var angleRad in new[] { 0.3f, 0.84f, -0.42f })
+        {
+            var sinA = MathF.Sin(angleRad);
+            var cosA = MathF.Cos(angleRad);
+            var rotated = RotateTrianglesY(CreateCube(sideMm), angleRad);
+            var generator = CreateGenerator(method);
+
+            var actual = generator.RenderLayerBitmap(
+                rotated,
+                sliceHeightMm,
+                BedWidthMm,
+                BedDepthMm,
+                PixelWidth,
+                PixelHeight);
+
+            var expected = BuildExpectedBitmap((x, z) =>
+            {
+                var localX = x * cosA + z * sinA;
+                var localZ = -x * sinA + z * cosA;
+                return MathF.Abs(localX) <= half && MathF.Abs(localZ) <= half;
+            });
+
+            AssertBitmapsMatch(expected, actual, minIou: 0.92f, maxAreaErrorRatio: 0.10f);
+        }
+    }
+
     private static IPlateSliceBitmapGenerator CreateGenerator(PngSliceExportMethod method) => method switch
     {
         PngSliceExportMethod.MeshIntersection => new MeshIntersectionSliceBitmapGenerator(),
@@ -494,4 +635,64 @@ public class SliceBitmapHarnessTests
 
     private static float Sign((float X, float Z) p1, (float X, float Z) p2, (float X, float Z) p3)
         => ((p1.X - p3.X) * (p2.Z - p3.Z)) - ((p2.X - p3.X) * (p1.Z - p3.Z));
+
+    private static List<Triangle3D> RotateTrianglesY(
+        IReadOnlyList<Triangle3D> triangles,
+        float angleRad,
+        float offsetX = 0f,
+        float offsetZ = 0f)
+    {
+        var sinA = MathF.Sin(angleRad);
+        var cosA = MathF.Cos(angleRad);
+
+        static Vec3 Rotate(Vec3 v, float sin, float cos)
+            => new(v.X * cos - v.Z * sin, v.Y, v.X * sin + v.Z * cos);
+
+        return triangles
+            .Select(triangle =>
+            {
+                var v0 = Rotate(triangle.V0, sinA, cosA);
+                var v1 = Rotate(triangle.V1, sinA, cosA);
+                var v2 = Rotate(triangle.V2, sinA, cosA);
+                var normal = Rotate(triangle.Normal, sinA, cosA);
+                return new Triangle3D(
+                    new Vec3(v0.X + offsetX, v0.Y, v0.Z + offsetZ),
+                    new Vec3(v1.X + offsetX, v1.Y, v1.Z + offsetZ),
+                    new Vec3(v2.X + offsetX, v2.Y, v2.Z + offsetZ),
+                    normal);
+            })
+            .ToList();
+    }
+
+    private static void AssertBitmapWithinBounds(
+        SliceBitmap bitmap,
+        IReadOnlyList<Triangle3D> triangles,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        string context = "")
+    {
+        var minX = triangles.Min(t => MathF.Min(t.V0.X, MathF.Min(t.V1.X, t.V2.X)));
+        var maxX = triangles.Max(t => MathF.Max(t.V0.X, MathF.Max(t.V1.X, t.V2.X)));
+        var minZ = triangles.Min(t => MathF.Min(t.V0.Z, MathF.Min(t.V1.Z, t.V2.Z)));
+        var maxZ = triangles.Max(t => MathF.Max(t.V0.Z, MathF.Max(t.V1.Z, t.V2.Z)));
+
+        var minColumn = Math.Clamp((int)MathF.Floor(((minX + (bedWidthMm * 0.5f)) / bedWidthMm) * pixelWidth) - 2, 0, pixelWidth - 1);
+        var maxColumn = Math.Clamp((int)MathF.Ceiling(((maxX + (bedWidthMm * 0.5f)) / bedWidthMm) * pixelWidth) + 2, 0, pixelWidth - 1);
+        var minRow = Math.Clamp((int)MathF.Floor((((bedDepthMm * 0.5f) - maxZ) / bedDepthMm) * pixelHeight) - 2, 0, pixelHeight - 1);
+        var maxRow = Math.Clamp((int)MathF.Ceiling((((bedDepthMm * 0.5f) - minZ) / bedDepthMm) * pixelHeight) + 2, 0, pixelHeight - 1);
+
+        for (var row = 0; row < pixelHeight; row++)
+        {
+            for (var column = 0; column < pixelWidth; column++)
+            {
+                if (bitmap.GetPixel(column, row) == 0)
+                    continue;
+
+                var insideBounds = column >= minColumn && column <= maxColumn && row >= minRow && row <= maxRow;
+                Assert.True(insideBounds, $"{context} Found lit pixel outside object bounds at ({column}, {row}) expected box x=[{minColumn},{maxColumn}] y=[{minRow},{maxRow}].");
+            }
+        }
+    }
 }

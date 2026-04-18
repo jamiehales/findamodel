@@ -10,7 +10,7 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
     public const float DefaultLayerHeightMm = 0.05f;
     public const PngSliceExportMethod DefaultZipDownloadMethod = PngSliceExportMethod.MeshIntersection;
 
-    private const int DefaultLayerBatchSize = 8;
+    private const int DefaultLayerBatchSize = 16;
     private const int MaxPendingEncodedLayers = 12;
 
     private readonly Dictionary<PngSliceExportMethod, IPlateSliceBitmapGenerator> generatorsByMethod =
@@ -225,33 +225,56 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
             .Select(_ => new SliceBitmap(resolutionX, resolutionY))
             .ToArray();
 
+        var activeGroups = new List<IReadOnlyList<Triangle3D>[]>();
         foreach (var groupLayers in trianglesByGroup)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var batchTriangles = new IReadOnlyList<Triangle3D>[batchLength];
             var hasAnyTriangles = false;
             for (var offset = 0; offset < batchLength; offset++)
             {
-                batchTriangles[offset] = groupLayers[batchStart + offset];
-                hasAnyTriangles |= batchTriangles[offset].Count > 0;
+                hasAnyTriangles |= groupLayers[batchStart + offset].Count > 0;
+                if (hasAnyTriangles) break;
             }
 
-            if (!hasAnyTriangles)
-                continue;
+            if (hasAnyTriangles)
+                activeGroups.Add(groupLayers);
+        }
 
-            var rendered = generator is IBatchPlateSliceBitmapGenerator batchGenerator && batchLength > 1
-                ? batchGenerator.RenderLayerBitmaps(
+        if (activeGroups.Count == 0)
+            return composed;
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var renderedPerGroup = new IReadOnlyList<SliceBitmap>[activeGroups.Count];
+
+        var parallelizeGroups = activeGroups.Count > 1;
+        var maxGroupParallelism = Math.Max(1, Math.Min(Environment.ProcessorCount, activeGroups.Count));
+        var bitmapByteSize = (long)resolutionX * resolutionY;
+        var estimatedBytesPerGroup = bitmapByteSize * batchLength;
+        var maxMemoryBudget = 512L * 1024 * 1024;
+        if (parallelizeGroups && estimatedBytesPerGroup * maxGroupParallelism > maxMemoryBudget)
+            maxGroupParallelism = Math.Max(2, (int)(maxMemoryBudget / estimatedBytesPerGroup));
+
+        var groupAction = (int groupIndex) =>
+        {
+            var groupLayers = activeGroups[groupIndex];
+            var batchTriangles = new IReadOnlyList<Triangle3D>[batchLength];
+            for (var offset = 0; offset < batchLength; offset++)
+                batchTriangles[offset] = groupLayers[batchStart + offset];
+
+            if (generator is IBatchPlateSliceBitmapGenerator batchGenerator && batchLength > 1)
+            {
+                renderedPerGroup[groupIndex] = batchGenerator.RenderLayerBitmaps(
                     batchTriangles,
                     batchSliceHeights,
                     bedWidthMm,
                     bedDepthMm,
                     resolutionX,
                     resolutionY,
-                    layerHeightMm)
-                : batchTriangles
-                    .AsParallel()
-                    .AsOrdered()
+                    layerHeightMm);
+            }
+            else if (parallelizeGroups)
+            {
+                renderedPerGroup[groupIndex] = batchTriangles
                     .Select((layerTriangles, offset) => generator.RenderLayerBitmap(
                         layerTriangles,
                         batchSliceHeights[offset],
@@ -261,7 +284,38 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                         resolutionY,
                         layerHeightMm))
                     .ToArray();
+            }
+            else
+            {
+                var results = new SliceBitmap[batchLength];
+                Parallel.For(0, batchLength, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, offset =>
+                {
+                    results[offset] = generator.RenderLayerBitmap(
+                        batchTriangles[offset],
+                        batchSliceHeights[offset],
+                        bedWidthMm,
+                        bedDepthMm,
+                        resolutionX,
+                        resolutionY,
+                        layerHeightMm);
+                });
+                renderedPerGroup[groupIndex] = results;
+            }
+        };
 
+        if (parallelizeGroups)
+        {
+            Parallel.For(0, activeGroups.Count, new ParallelOptions { MaxDegreeOfParallelism = maxGroupParallelism }, groupAction);
+        }
+        else
+        {
+            for (var i = 0; i < activeGroups.Count; i++)
+                groupAction(i);
+        }
+
+        foreach (var rendered in renderedPerGroup)
+        {
+            if (rendered is null) continue;
             for (var offset = 0; offset < batchLength; offset++)
                 OrInto(composed[offset], rendered[offset]);
         }
