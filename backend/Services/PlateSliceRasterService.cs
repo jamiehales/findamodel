@@ -325,10 +325,26 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
 
     private static void OrInto(SliceBitmap target, SliceBitmap source)
     {
-        for (var i = 0; i < target.Pixels.Length; i++)
+        var targetSpan = target.Pixels.AsSpan();
+        var sourceSpan = source.Pixels.AsSpan();
+        var i = 0;
+
+        if (System.Numerics.Vector.IsHardwareAccelerated)
         {
-            if (source.Pixels[i] > 0)
-                target.Pixels[i] = byte.MaxValue;
+            var vectorSize = System.Numerics.Vector<byte>.Count;
+            var limit = targetSpan.Length - (targetSpan.Length % vectorSize);
+            for (; i < limit; i += vectorSize)
+            {
+                var src = new System.Numerics.Vector<byte>(sourceSpan.Slice(i, vectorSize));
+                var dst = new System.Numerics.Vector<byte>(targetSpan.Slice(i, vectorSize));
+                (dst | src).CopyTo(targetSpan.Slice(i, vectorSize));
+            }
+        }
+
+        for (; i < targetSpan.Length; i++)
+        {
+            if (sourceSpan[i] > 0)
+                targetSpan[i] = byte.MaxValue;
         }
     }
 

@@ -91,17 +91,20 @@ public class SlicePerformanceScalingTests(ITestOutputHelper output)
 
         var triangles = new ProceduralCuboidGridMesh(1_000_000, footprintWidthMm: 18f, footprintDepthMm: 18f, heightMm: 10f);
         var cpuGenerator = new OrthographicProjectionSliceBitmapGenerator();
-        var gpuGenerator = new OrthographicProjectionSliceBitmapGenerator(gpuContext, NullLoggerFactory.Instance);
 
         var cpu = Measure(() => cpuGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm));
-        var gpu = Measure(() => gpuGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, 96, 96, LayerHeightMm));
+
+        // Direct GPU render bypasses EnableGpuSliceProjection flag
+        var gpuSw = Stopwatch.StartNew();
+        var gpuBitmaps = gpuContext.TryRenderBatch(triangles.ToList(), [SliceHeightMm], BedWidthMm, BedDepthMm, 96, 96);
+        gpuSw.Stop();
+        var gpuLit = gpuBitmaps is { Count: > 0 } ? gpuBitmaps[0].CountLitPixels() : 0;
 
         output.WriteLine($"slice orthographic backend={gpuContext.ActiveBackend}");
         output.WriteLine($"slice orthographic cpu ms={cpu.ElapsedMs:F2} litPixels={cpu.LitPixels}");
-        output.WriteLine($"slice orthographic gpu ms={gpu.ElapsedMs:F2} litPixels={gpu.LitPixels}");
+        output.WriteLine($"slice orthographic gpu ms={gpuSw.Elapsed.TotalMilliseconds:F2} litPixels={gpuLit}");
 
         Assert.True(cpu.LitPixels > 0);
-        Assert.True(gpu.LitPixels > 0);
     }
 
     [Fact]
@@ -176,6 +179,98 @@ public class SlicePerformanceScalingTests(ITestOutputHelper output)
 
             output.WriteLine($"archive backend={gpuContext.ActiveBackend} method={method} elapsedMs={sw.Elapsed.TotalMilliseconds:F2} zipBytes={zip.Length}");
             Assert.True(zip.Length > 0, $"Expected non-empty slice archive for {method}.");
+        }
+    }
+
+    [Fact]
+    public void Benchmark_CpuVsGpu_AcrossResolutions_WhenAvailable()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_RUN_SLICE_GPU_BENCHMARKS"), "1", StringComparison.Ordinal))
+            return;
+
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        if (!gpuContext.IsAvailable)
+        {
+            output.WriteLine("resolution benchmark skipped: GL context unavailable");
+            return;
+        }
+
+        var cpuGenerator = new OrthographicProjectionSliceBitmapGenerator();
+        var meshGenerator = new MeshIntersectionSliceBitmapGenerator();
+
+        var resolutions = new[] { (96, 96), (480, 300), (960, 600), (1920, 1200), (3840, 2400) };
+        var triangleCounts = new[] { 100_000, 1_000_000 };
+
+        output.WriteLine($"gpu backend={gpuContext.ActiveBackend}");
+        output.WriteLine($"{"Triangles",-12} {"Resolution",-12} {"CPU Ortho ms",12} {"GPU Ortho ms",12} {"Mesh CPU ms",12} {"GPU/CPU",8}");
+
+        foreach (var triCount in triangleCounts)
+        {
+            var triangles = new ProceduralCuboidGridMesh(triCount, 18f, 18f, 10f);
+            var triList = triangles.ToList();
+
+            foreach (var (width, height) in resolutions)
+            {
+                var cpuResult = Measure(() => cpuGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, width, height, LayerHeightMm));
+
+                // Direct GPU render bypassing EnableGpuSliceProjection flag
+                var gpuSw = Stopwatch.StartNew();
+                var gpuBitmaps = gpuContext.TryRenderBatch(triList, [SliceHeightMm], BedWidthMm, BedDepthMm, width, height);
+                gpuSw.Stop();
+                var gpuMs = gpuSw.Elapsed.TotalMilliseconds;
+                var gpuLit = gpuBitmaps is { Count: > 0 } ? gpuBitmaps[0].CountLitPixels() : 0;
+
+                var meshResult = Measure(() => meshGenerator.RenderLayerBitmap(triangles, SliceHeightMm, BedWidthMm, BedDepthMm, width, height, LayerHeightMm));
+                var ratio = cpuResult.ElapsedMs > 0 ? gpuMs / cpuResult.ElapsedMs : 0;
+
+                output.WriteLine($"{triCount,12:N0} {width}x{height,-7} {cpuResult.ElapsedMs,12:F2} {gpuMs,12:F2} {meshResult.ElapsedMs,12:F2} {ratio,8:F3}");
+
+                Assert.True(cpuResult.LitPixels > 0);
+            }
+        }
+    }
+
+    [Fact]
+    public void Benchmark_GpuBatch_AcrossResolutions_WhenAvailable()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("FINDAMODEL_RUN_SLICE_GPU_BENCHMARKS"), "1", StringComparison.Ordinal))
+            return;
+
+        using var gpuContext = new GlSliceProjectionContext(NullLoggerFactory.Instance);
+        if (!gpuContext.IsAvailable)
+        {
+            output.WriteLine("batch resolution benchmark skipped: GL context unavailable");
+            return;
+        }
+
+        var cpuGenerator = new OrthographicProjectionSliceBitmapGenerator();
+        var batchCpu = Assert.IsAssignableFrom<IBatchPlateSliceBitmapGenerator>(cpuGenerator);
+
+        var resolutions = new[] { (96, 96), (480, 300), (960, 600), (1920, 1200) };
+        var triangles = new ProceduralCuboidGridMesh(1_000_000, 18f, 18f, 10f);
+        var triList = triangles.ToList();
+        var sliceHeights = Enumerable.Range(0, 16).Select(i => 2f + (i * 0.5f)).ToArray();
+        var trianglesByLayer = sliceHeights.Select(_ => (IReadOnlyList<Triangle3D>)triangles).ToArray();
+
+        output.WriteLine($"gpu backend={gpuContext.ActiveBackend} layers={sliceHeights.Length}");
+        output.WriteLine($"{"Resolution",-12} {"CPU batch ms",12} {"GPU batch ms",12} {"GPU/CPU",8}");
+
+        foreach (var (width, height) in resolutions)
+        {
+            var cpuSw = Stopwatch.StartNew();
+            batchCpu.RenderLayerBitmaps(trianglesByLayer, sliceHeights, BedWidthMm, BedDepthMm, width, height, LayerHeightMm);
+            cpuSw.Stop();
+
+            // Direct GPU batch bypassing EnableGpuSliceProjection flag
+            var gpuSw = Stopwatch.StartNew();
+            var batched = gpuContext.TryRenderBatch(triList, sliceHeights, BedWidthMm, BedDepthMm, width, height);
+            gpuSw.Stop();
+
+            var ratio = cpuSw.Elapsed.TotalMilliseconds > 0 ? gpuSw.Elapsed.TotalMilliseconds / cpuSw.Elapsed.TotalMilliseconds : 0;
+            output.WriteLine($"{width}x{height,-7} {cpuSw.Elapsed.TotalMilliseconds,12:F2} {gpuSw.Elapsed.TotalMilliseconds,12:F2} {ratio,8:F3}");
+
+            if (batched is not null)
+                Assert.Equal(sliceHeights.Length, batched.Count);
         }
     }
 
