@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -113,10 +114,19 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         }
         else
         {
+            // Pre-build precomputed triangles per unique triangle set to avoid redundant work
+            var precomputedCache = new Dictionary<IReadOnlyList<Triangle3D>, PrecomputedTriangle[]>(ReferenceEqualityComparer.Instance);
+            foreach (var triangles in trianglesByLayer)
+            {
+                if (!precomputedCache.ContainsKey(triangles))
+                    precomputedCache[triangles] = BuildPrecomputedTriangles(triangles);
+            }
+
             Parallel.For(0, trianglesByLayer.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, index =>
             {
-                bitmaps[index] = RenderLayerBitmapCpuSerial(
+                bitmaps[index] = RenderLayerBitmapCpuSerialWithPrecomputed(
                     trianglesByLayer[index],
+                    precomputedCache[trianglesByLayer[index]],
                     sliceHeightsMm[index],
                     bedWidthMm,
                     bedDepthMm,
@@ -214,16 +224,31 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         var precomputed = BuildPrecomputedTriangles(triangles);
         var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
 
-        Parallel.For(0, pixelHeight, row =>
+        // Collect non-empty rows to avoid Parallel.For overhead on empty rows
+        var activeRows = new List<int>(pixelHeight / 4);
+        for (var row = 0; row < pixelHeight; row++)
         {
-            var candidates = candidatesByRow[row];
-            if (candidates == null || candidates.Count == 0)
-                return;
+            if (candidatesByRow[row] is { Count: > 0 })
+                activeRows.Add(row);
+        }
 
-            var zMm = RowToZ(row, bedDepthMm, pixelHeight);
-            var span = bitmap.GetRowSpan(row);
-            FillProjectedRow(span, precomputed, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
-        });
+        if (activeRows.Count > 0)
+        {
+            Parallel.ForEach(
+                Partitioner.Create(0, activeRows.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+                range =>
+                {
+                    for (var i = range.Item1; i < range.Item2; i++)
+                    {
+                        var row = activeRows[i];
+                        var candidates = candidatesByRow[row]!;
+                        var zMm = RowToZ(row, bedDepthMm, pixelHeight);
+                        var span = bitmap.GetRowSpan(row);
+                        FillProjectedRow(span, precomputed, candidates, sliceHeightMm, zMm, bedWidthMm, pixelWidth);
+                    }
+                });
+        }
 
         bitmap.RemoveUnsupportedHorizontalPixels();
         return bitmap;
@@ -238,8 +263,22 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         int pixelHeight,
         float layerThicknessMm)
     {
-        var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
         var precomputed = BuildPrecomputedTriangles(triangles);
+        return RenderLayerBitmapCpuSerialWithPrecomputed(
+            triangles, precomputed, sliceHeightMm, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight, layerThicknessMm);
+    }
+
+    private static SliceBitmap RenderLayerBitmapCpuSerialWithPrecomputed(
+        IReadOnlyList<Triangle3D> triangles,
+        PrecomputedTriangle[] precomputed,
+        float sliceHeightMm,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerThicknessMm)
+    {
+        var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
         var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
 
         for (var row = 0; row < pixelHeight; row++)

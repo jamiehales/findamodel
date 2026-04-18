@@ -1,38 +1,53 @@
-* Do a whole debug pass on tags, I think it needs some work
-=> Separate AI tag indexing from normal index, allow it to run separately (including separate cron/startup indexing)
-=> On the model card, show standard tags (format, support, etc...) separately from user/ai tags
-=> Allow clicking on either standard or ai tags to add that to the filtere (note: ADD to - not replace)
-
-* Add a refresh index button to the model card
-=> Is there an easy way to show the index is out of date, and only show it if it is, or does that require additional scan/work?
-
-* Add an 'initial setup' wizard, if the environment variable isn't defined to set the model location, it allows selection of the model root and saves that out in the database
-=> Allow all config/environment values that set the default values to be overriden and saved out during that config wizard step
-=> Only use the appsettings/env vars for that initial setup, and use sensible default values if they're not overridden
-
-* When indexing at startup, the population of the database does not appear to happen until all the preview images have been generated - this should be populating the database incrementally.
-* Add the ability to safely cancel an index via the indexing page
-
-* The cards in 'other parts' on the model details page show wayyyy too large (they should be the same size as the model cards on the models page)
-
-* Some support parts aren't detected as supports - these are usually the tips of the supports
-
 * Add note to AI to ignore orange parts of the image, or somehow filter them out before passing it over? Or render previews both with and without supports?
 
-* Remove the close button from the some files in this list cannot be included in exported plates warning
+* Add the ability to duplicate a list, or copy models into another list? Something for better list item management (staging lists, combining plates, etc...)
 
-* Remove the manage lists button on hover of "printing", and add a "switch list" button to the right of the list name header on the printing page
+* Add support for generating (and caching) hulls on the fly - when added to a printing list, or when the model page is opened. Put behind turning off a "Precalculate hulls" toggle?
 
-* Make the search column count dynamic so the page works on mobile
+* When rendering the item without supports, can we check if there's a rotation on the object and if there is reset it, so that it's "upright"?
 
-* Investigate how expensive downscaling meshes is - some of the meshes are 60mb plus, which takes a while streaming to the frontend when on wifi. Evaluate whether minimizing that would speed that up, or if the compute cost would take longer than over the wire. Assume a it will be used mostly on a 1gbit lan connection, but will also occasionally be used on a 20mbit internet connection, having support for both is a valid option.
+* The -/+ buttons on a model card that add and remove the model from the printing list, make those buttons a single text "add to printing list" button when quantity is 0, when the quantity is >=1 keep the remaining +/- buttons
 
-* Indexing seems to take a long time to actually start processing files... 30s or so for 8 files, no idea how long for 2000 files
-=> If ai generation is happening, it almost looks as if it's doing all of that before starting anything else?
-=> remove the tooltip 
+* Bug: Removing a model from the print plate while on the printing list page reloads the entire page
 
-* Add a toggle to settings for enable description generation
+* It looks like the layout might not be stored in the database, but in the local browser?
+* Add support for building desktop as portable installation - not just installer
 
-* Don't reset viewport when toggling supports on/off
+---
 
-* Don't run ai tagging/description generation on anything that doesn't have a valid preview - using this logic, model change shouldn't be the trigger for the ai tagging/description generation to re-run, but rather the preview being changed (use modified date of the preview image vs stored description/tag generation date - if the preview is newer, re-run)
+Now implement all the methods you suggested, as pngzip_<method>, making sure to hook them up in the frontend. Design a test harness that runs tests for the following model types, where in it generates the model, then validates that the image output from the method is correct. These are the model types - a sphere, a 3 sided pyramid, a cube, and a cylinder. Write a test case to test the image output (raw code backed bitmap, not encoded to png, jpg etc...). The test case should validate via calculated mathematics expectation of the shape at any given layer, not using the algorithms designed to work on polygonal data that we're testing. Spin up subagents for each of these, implementing each in a separate service (or at least a separate class coordinated by the same service). In each subagent implement the slicing algorithm, then validate first on the cube, adding then the cylinder, then the sphere and finally the pyramid until all 4 work. Fix up and iterate on the algorithms based on the results of each test. In the application the implementation should be swappable at compile time via an enum in order to set which implementation is used when clicking download zip.
+
+* See about optimizing triangle intersection by using an octree or just an indexed list of layer overlaps or similar for reducing queries?
+* Add progress bar for slice generation when downloading
+* Multithread the slicing algorithm for speed
+* Add support for anti-aliasing
+* Add support for anti-aliasing only on supports
+* Expose private const int DefaultLayerBatchSize = 8; in settings (and document)
+* Document DefaultRowGroupHeight and GenericComputeWorkgroupSize and maybe expose them
+* Add support for ctb for uniformation
+* Add support for overexposing supports (or just support tips? add rerf test support for it?)
+* Move slice to it's own button, and use gpu by default only falling back to cpu if supported gpu is unavailable
+* Slicing progress is wrong, it shows "slice layers 9-16 of 1109" but "generating slices 0 of 1109"
+* Slice CPU/GPU usage is very low, and slicing is incredibly slow
+
+--
+
+Add an auto supporting algorithm, calculating the pull forces at each layer as it calculates the mesh, determining where an additional support may be needed.
+
+To calculate pull forces, research your own algorithms to determine the best, but take into account this one:
+* Voxelize the mesh (at a lower resolution than the printer) and calculate the forces on each support using it
+
+Follow this thought process for the support generation:
+* Slice until the first layer where there is mesh
+* When mesh is discovered, place a support at the center point of mass of each island of pixels
+* Slice until the pull forces on that support exceed a fixed threshold (to be determined). Note that pull forces can be 3 dimensional
+* Add another support at a location that will reduce the forces the most (this can be approximate if hard to compute) - note that supports can be generated at the edge of the mesh, not just at the center, keep into account the best locations based on the reduction in forces
+* Keep adding supports until the fixed threshold for pull forces is no longer exceeded
+* Slice more layers until there is a pull force that exceeds the tolerance
+* If there is a new island on any new slice layer, add a support at the center of mass of that location before continuing
+
+--
+
+
+* Add a function that can use an existing supported model to detect support points, and modify heuristics to generate supports in a similar manner
+* Generate different pull forces based on support contact size. Differ contact size based on point on model and requirements from overall supported weight? Weight towards larger supports at the base of the model

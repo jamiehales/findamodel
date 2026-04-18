@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace findamodel.Services;
 
 public sealed class SliceBitmap
@@ -136,64 +138,72 @@ public sealed class SliceBitmap
         if (Width < 3 || Height < 3)
             return;
 
-        var visited = new bool[Pixels.Length];
+        var visited = ArrayPool<bool>.Shared.Rent(Pixels.Length);
+        Array.Clear(visited, 0, Pixels.Length);
         var stack = new Stack<int>();
         var component = new List<int>();
 
-        for (var index = 0; index < Pixels.Length; index++)
+        try
         {
-            if (Pixels[index] > 0 || visited[index])
-                continue;
-
-            component.Clear();
-            stack.Push(index);
-            visited[index] = true;
-
-            var minX = Width;
-            var minY = Height;
-            var maxX = -1;
-            var maxY = -1;
-            var touchesBoundary = false;
-
-            while (stack.Count > 0)
+            for (var index = 0; index < Pixels.Length; index++)
             {
-                var current = stack.Pop();
-                component.Add(current);
+                if (Pixels[index] > 0 || visited[index])
+                    continue;
 
-                var x = current % Width;
-                var y = current / Width;
-                minX = Math.Min(minX, x);
-                maxX = Math.Max(maxX, x);
-                minY = Math.Min(minY, y);
-                maxY = Math.Max(maxY, y);
-                touchesBoundary |= x == 0 || x == Width - 1 || y == 0 || y == Height - 1;
+                component.Clear();
+                stack.Push(index);
+                visited[index] = true;
 
-                for (var ny = Math.Max(0, y - 1); ny <= Math.Min(Height - 1, y + 1); ny++)
+                var minX = Width;
+                var minY = Height;
+                var maxX = -1;
+                var maxY = -1;
+                var touchesBoundary = false;
+
+                while (stack.Count > 0)
                 {
-                    for (var nx = Math.Max(0, x - 1); nx <= Math.Min(Width - 1, x + 1); nx++)
-                    {
-                        var neighborIndex = (ny * Width) + nx;
-                        if (visited[neighborIndex] || Pixels[neighborIndex] > 0)
-                            continue;
+                    var current = stack.Pop();
+                    component.Add(current);
 
-                        visited[neighborIndex] = true;
-                        stack.Push(neighborIndex);
+                    var x = current % Width;
+                    var y = current / Width;
+                    minX = Math.Min(minX, x);
+                    maxX = Math.Max(maxX, x);
+                    minY = Math.Min(minY, y);
+                    maxY = Math.Max(maxY, y);
+                    touchesBoundary |= x == 0 || x == Width - 1 || y == 0 || y == Height - 1;
+
+                    for (var ny = Math.Max(0, y - 1); ny <= Math.Min(Height - 1, y + 1); ny++)
+                    {
+                        for (var nx = Math.Max(0, x - 1); nx <= Math.Min(Width - 1, x + 1); nx++)
+                        {
+                            var neighborIndex = (ny * Width) + nx;
+                            if (visited[neighborIndex] || Pixels[neighborIndex] > 0)
+                                continue;
+
+                            visited[neighborIndex] = true;
+                            stack.Push(neighborIndex);
+                        }
                     }
                 }
+
+                var holeWidth = maxX - minX + 1;
+                var holeHeight = maxY - minY + 1;
+                var shouldFill = !touchesBoundary
+                    && holeWidth <= 96
+                    && holeHeight <= 32
+                    && component.Count <= 1600;
+
+                if (!shouldFill)
+                    continue;
+
+                foreach (var pixelIndex in component)
+                    Pixels[pixelIndex] = byte.MaxValue;
             }
-
-            var holeWidth = maxX - minX + 1;
-            var holeHeight = maxY - minY + 1;
-            var shouldFill = !touchesBoundary
-                && holeWidth <= 96
-                && holeHeight <= 32
-                && component.Count <= 1600;
-
-            if (!shouldFill)
-                continue;
-
-            foreach (var pixelIndex in component)
-                Pixels[pixelIndex] = byte.MaxValue;
+        }
+        finally
+        {
+            ArrayPool<bool>.Shared.Return(visited);
         }
     }
 
@@ -304,16 +314,24 @@ public sealed class SliceBitmap
         if (Width < 2 || Height < 2)
             return;
 
-        var visited = new bool[Pixels.Length];
+        var visited = ArrayPool<bool>.Shared.Rent(Pixels.Length);
+        Array.Clear(visited, 0, Pixels.Length);
         List<ComponentInfo>? components = null;
 
-        for (var index = 0; index < Pixels.Length; index++)
+        try
         {
-            if (Pixels[index] == 0 || visited[index])
-                continue;
+            for (var index = 0; index < Pixels.Length; index++)
+            {
+                if (Pixels[index] == 0 || visited[index])
+                    continue;
 
-            components ??= [];
-            components.Add(CollectComponent(index, visited));
+                components ??= [];
+                components.Add(CollectComponent(index, visited));
+            }
+        }
+        finally
+        {
+            ArrayPool<bool>.Shared.Return(visited);
         }
 
         if (components is null || components.Count <= 1)
