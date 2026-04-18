@@ -69,6 +69,7 @@ public sealed class SliceBitmap
             }
         }
 
+        ClearUnsupportedRunInteriors(original);
         RepairVerticalDropouts(maxGapHeight: 2);
         FillSmallInteriorVoids();
         RepairThinInteriorHorizontalGaps();
@@ -230,6 +231,70 @@ public sealed class SliceBitmap
 
                     x++;
                 }
+            }
+        }
+    }
+
+    private void ClearUnsupportedRunInteriors(byte[] referencePixels)
+    {
+        const int minUnsupportedGap = 4;
+
+        for (var y = 0; y < Height; y++)
+        {
+            var x = 0;
+            while (x < Width)
+            {
+                if (Pixels[(y * Width) + x] == 0)
+                {
+                    x++;
+                    continue;
+                }
+
+                var runStart = x;
+                while (x + 1 < Width && Pixels[(y * Width) + x + 1] > 0)
+                    x++;
+
+                var runEnd = x;
+                if (runEnd - runStart + 1 <= minUnsupportedGap * 2)
+                {
+                    x++;
+                    continue;
+                }
+
+                var gapStart = -1;
+                for (var px = runStart; px <= runEnd; px++)
+                {
+                    var supported = false;
+                    if (y > 0 && referencePixels[((y - 1) * Width) + px] > 0)
+                        supported = true;
+
+                    if (!supported && y + 1 < Height && referencePixels[((y + 1) * Width) + px] > 0)
+                        supported = true;
+
+                    if (!supported)
+                    {
+                        if (gapStart < 0)
+                            gapStart = px;
+                    }
+                    else
+                    {
+                        if (gapStart >= 0 && px - gapStart >= minUnsupportedGap)
+                        {
+                            for (var cx = gapStart; cx < px; cx++)
+                                Pixels[(y * Width) + cx] = 0;
+                        }
+
+                        gapStart = -1;
+                    }
+                }
+
+                if (gapStart >= 0 && runEnd - gapStart + 1 >= minUnsupportedGap)
+                {
+                    for (var cx = gapStart; cx <= runEnd; cx++)
+                        Pixels[(y * Width) + cx] = 0;
+                }
+
+                x++;
             }
         }
     }

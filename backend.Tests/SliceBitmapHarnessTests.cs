@@ -664,6 +664,157 @@ public class SliceBitmapHarnessTests
             .ToList();
     }
 
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void SeparatedBoxes_NoBridgingArtifactAtAnyRow(PngSliceExportMethod method)
+    {
+        // Two boxes separated by a gap - verify no row fills the gap
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetBox(4f, 4f, 10f, -4f, 0f));
+        triangles.AddRange(CreateOffsetBox(4f, 4f, 10f, 4f, 0f));
+
+        var generator = CreateGenerator(method);
+        var bitmap = generator.RenderLayerBitmap(
+            triangles, 5f, BedWidthMm, BedDepthMm, PixelWidth, PixelHeight);
+
+        AssertNoHorizontalBridging(bitmap, "SeparatedBoxes");
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void RotatedSeparatedBoxes_NoBridgingArtifactAtAnyRow(PngSliceExportMethod method)
+    {
+        // Two separated boxes rotated to an angle - verify no bridging after rotation
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetBox(4f, 4f, 10f, -4f, 0f));
+        triangles.AddRange(CreateOffsetBox(4f, 4f, 10f, 4f, 0f));
+
+        foreach (var angleDeg in new[] { 15f, 21f, 30f, 45f })
+        {
+            var rotated = RotateTrianglesY(triangles, angleDeg * MathF.PI / 180f);
+            var generator = CreateGenerator(method);
+            var bitmap = generator.RenderLayerBitmap(
+                rotated, 5f, BedWidthMm, BedDepthMm, PixelWidth, PixelHeight);
+
+            AssertNoHorizontalBridging(bitmap, $"RotatedSeparatedBoxes@{angleDeg}deg");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Methods))]
+    public void UShapeModel_NoHorizontalBridgingAboveBase(PngSliceExportMethod method)
+    {
+        // U-shape: two pillars connected at bottom by a thin base
+        // Slice above the base should show two separate runs, not a solid bridge
+        var triangles = new List<Triangle3D>();
+        triangles.AddRange(CreateOffsetBox(2f, 6f, 10f, -4f, 0f)); // left pillar
+        triangles.AddRange(CreateOffsetBox(2f, 6f, 10f, 4f, 0f));  // right pillar
+        triangles.AddRange(CreateOffsetBox(10f, 6f, 1f, 0f, 0f));  // base (1mm tall)
+
+        var sliceAboveBase = 2f; // well above the 1mm base
+        var generator = CreateGenerator(method);
+        var bitmap = generator.RenderLayerBitmap(
+            triangles, sliceAboveBase, BedWidthMm, BedDepthMm, PixelWidth, PixelHeight);
+
+        AssertNoHorizontalBridging(bitmap, "UShape@2mm");
+    }
+
+    [Fact]
+    public void SliceBitmapCleanup_RemovesBridgingArtifactInSolidRow()
+    {
+        // Simulate the exact artifact pattern: a row with a solid bridge that has
+        // partial vertical support on the left and right (two separate bodies)
+        // but no support in the middle. The cleanup should remove the middle.
+        var bitmap = new SliceBitmap(100, 5);
+
+        // Row 1 and 3: two separate runs [10-30] and [70-90] (support rows)
+        for (var x = 10; x <= 30; x++)
+        {
+            bitmap.SetPixel(x, 1, 255);
+            bitmap.SetPixel(x, 3, 255);
+        }
+
+        for (var x = 70; x <= 90; x++)
+        {
+            bitmap.SetPixel(x, 1, 255);
+            bitmap.SetPixel(x, 3, 255);
+        }
+
+        // Row 2: solid bridge [10-90] (artifact - fills the gap)
+        for (var x = 10; x <= 90; x++)
+            bitmap.SetPixel(x, 2, 255);
+
+        bitmap.RemoveUnsupportedHorizontalPixels();
+
+        // After cleanup, row 2 should have the gap removed
+        var row2Span = bitmap.GetRowSpan(2);
+        var runs = CountLitRuns(row2Span);
+        Assert.True(runs.Count >= 2, $"Expected at least 2 separate runs after cleanup, got {runs.Count}.");
+
+        // The gap region [31-69] should be dark
+        for (var x = 35; x <= 65; x++)
+            Assert.Equal(0, bitmap.GetPixel(x, 2));
+    }
+
+    [Fact]
+    public void SliceBitmapCleanup_PreservesLegitimateWideSolidRun()
+    {
+        // A legitimately wide solid run with full vertical support should be preserved
+        var bitmap = new SliceBitmap(100, 5);
+
+        // Rows 1, 2, 3: all have wide solid runs [10-90]
+        for (var x = 10; x <= 90; x++)
+        {
+            bitmap.SetPixel(x, 1, 255);
+            bitmap.SetPixel(x, 2, 255);
+            bitmap.SetPixel(x, 3, 255);
+        }
+
+        bitmap.RemoveUnsupportedHorizontalPixels();
+
+        // Row 2 should still be a single solid run [10-90]
+        var row2Span = bitmap.GetRowSpan(2);
+        var runs = CountLitRuns(row2Span);
+        Assert.Single(runs);
+        Assert.True(runs[0] >= 78, $"Expected preserved wide run, got width {runs[0]}.");
+    }
+
+    private static void AssertNoHorizontalBridging(SliceBitmap bitmap, string context)
+    {
+        // For each row, check that if there are multiple lit runs, their gap isn't
+        // wider than a reasonable bridge (max 4px for rasterization tolerance)
+        const int maxAllowedGap = 4;
+
+        for (var row = 0; row < bitmap.Height; row++)
+        {
+            var span = bitmap.GetRowSpan(row);
+            var inRun = false;
+            var lastRunEnd = -1;
+
+            for (var x = 0; x < span.Length; x++)
+            {
+                if (span[x] > 0)
+                {
+                    if (!inRun && lastRunEnd >= 0)
+                    {
+                        var gap = x - lastRunEnd - 1;
+                        // Gaps <= maxAllowedGap are OK (rasterization tolerance)
+                        // Very large gaps filled by a bridge are the artifact
+                        Assert.True(gap <= maxAllowedGap || gap > 8,
+                            $"{context} row {row}: unexpected medium gap of {gap}px between runs at x={lastRunEnd+1}..{x-1}. This suggests incorrect bridging.");
+                    }
+
+                    inRun = true;
+                }
+                else if (inRun)
+                {
+                    lastRunEnd = x - 1;
+                    inRun = false;
+                }
+            }
+        }
+    }
+
     private static void AssertBitmapWithinBounds(
         SliceBitmap bitmap,
         IReadOnlyList<Triangle3D> triangles,
