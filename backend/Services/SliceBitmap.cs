@@ -44,7 +44,7 @@ public sealed class SliceBitmap
             return;
 
         var original = (byte[])Pixels.Clone();
-        for (var y = 0; y < Height; y++)
+        Parallel.For(0, Height, y =>
         {
             var x = 0;
             while (x < Width)
@@ -69,7 +69,7 @@ public sealed class SliceBitmap
 
                 x++;
             }
-        }
+        });
 
         ClearUnsupportedRunInteriors(original);
         RepairVerticalDropouts(maxGapHeight: 2);
@@ -78,7 +78,7 @@ public sealed class SliceBitmap
         RemoveDetachedArtifacts();
     }
 
-    private void RepairVerticalDropouts(int maxGapHeight)
+    internal void RepairVerticalDropouts(int maxGapHeight)
     {
         if (Height < 3 || maxGapHeight < 1)
             return;
@@ -86,28 +86,29 @@ public sealed class SliceBitmap
         for (var gapHeight = 1; gapHeight <= maxGapHeight; gapHeight++)
         {
             var current = (byte[])Pixels.Clone();
-            for (var y = 1; y + gapHeight < Height; y++)
+            var gh = gapHeight;
+            Parallel.For(1, Height - gh, y =>
             {
                 var topRow = y - 1;
-                var bottomRow = y + gapHeight;
+                var bottomRow = y + gh;
                 if (bottomRow >= Height)
-                    break;
+                    return;
 
                 var x = 0;
                 while (x < Width)
                 {
-                    if (!IsVerticalGapColumn(current, x, topRow, y, gapHeight, bottomRow))
+                    if (!IsVerticalGapColumn(current, x, topRow, y, gh, bottomRow))
                     {
                         x++;
                         continue;
                     }
 
                     var runStart = x;
-                    while (x + 1 < Width && IsVerticalGapColumn(current, x + 1, topRow, y, gapHeight, bottomRow))
+                    while (x + 1 < Width && IsVerticalGapColumn(current, x + 1, topRow, y, gh, bottomRow))
                         x++;
 
                     var runEnd = x;
-                    for (var row = y; row < y + gapHeight; row++)
+                    for (var row = y; row < y + gh; row++)
                     {
                         for (var fillX = runStart; fillX <= runEnd; fillX++)
                             Pixels[(row * Width) + fillX] = byte.MaxValue;
@@ -115,7 +116,7 @@ public sealed class SliceBitmap
 
                     x++;
                 }
-            }
+            });
         }
     }
 
@@ -133,81 +134,154 @@ public sealed class SliceBitmap
         return true;
     }
 
-    private void FillSmallInteriorVoids()
+    internal void FillSmallInteriorVoids()
     {
         if (Width < 3 || Height < 3)
             return;
 
-        var visited = ArrayPool<bool>.Shared.Rent(Pixels.Length);
-        Array.Clear(visited, 0, Pixels.Length);
-        var stack = new Stack<int>();
-        var component = new List<int>();
-
-        try
+        // Compute bounding box of lit pixels
+        int litMinX = Width, litMinY = Height, litMaxX = -1, litMaxY = -1;
+        for (var y = 0; y < Height; y++)
         {
-            for (var index = 0; index < Pixels.Length; index++)
+            var rowOffset = y * Width;
+            for (var x = 0; x < Width; x++)
             {
-                if (Pixels[index] > 0 || visited[index])
-                    continue;
-
-                component.Clear();
-                stack.Push(index);
-                visited[index] = true;
-
-                var minX = Width;
-                var minY = Height;
-                var maxX = -1;
-                var maxY = -1;
-                var touchesBoundary = false;
-
-                while (stack.Count > 0)
-                {
-                    var current = stack.Pop();
-                    component.Add(current);
-
-                    var x = current % Width;
-                    var y = current / Width;
-                    minX = Math.Min(minX, x);
-                    maxX = Math.Max(maxX, x);
-                    minY = Math.Min(minY, y);
-                    maxY = Math.Max(maxY, y);
-                    touchesBoundary |= x == 0 || x == Width - 1 || y == 0 || y == Height - 1;
-
-                    for (var ny = Math.Max(0, y - 1); ny <= Math.Min(Height - 1, y + 1); ny++)
-                    {
-                        for (var nx = Math.Max(0, x - 1); nx <= Math.Min(Width - 1, x + 1); nx++)
-                        {
-                            var neighborIndex = (ny * Width) + nx;
-                            if (visited[neighborIndex] || Pixels[neighborIndex] > 0)
-                                continue;
-
-                            visited[neighborIndex] = true;
-                            stack.Push(neighborIndex);
-                        }
-                    }
-                }
-
-                var holeWidth = maxX - minX + 1;
-                var holeHeight = maxY - minY + 1;
-                var shouldFill = !touchesBoundary
-                    && holeWidth <= 96
-                    && holeHeight <= 32
-                    && component.Count <= 1600;
-
-                if (!shouldFill)
-                    continue;
-
-                foreach (var pixelIndex in component)
-                    Pixels[pixelIndex] = byte.MaxValue;
+                if (Pixels[rowOffset + x] == 0) continue;
+                if (x < litMinX) litMinX = x;
+                if (x > litMaxX) litMaxX = x;
+                if (y < litMinY) litMinY = y;
+                if (y > litMaxY) litMaxY = y;
             }
         }
-        finally
+
+        if (litMaxX < 0)
+            return;
+
+        var bMinX = Math.Max(0, litMinX - 1);
+        var bMinY = Math.Max(0, litMinY - 1);
+        var bMaxX = Math.Min(Width - 1, litMaxX + 1);
+        var bMaxY = Math.Min(Height - 1, litMaxY + 1);
+
+        // Run-length connected component labeling (8-connectivity)
+        // Collect empty pixel runs within bounding box
+        var runs = new List<(int Row, int Start, int End)>();
+        var rowRunStart = new int[bMaxY - bMinY + 2]; // index into runs list per row
+
+        for (var y = bMinY; y <= bMaxY; y++)
         {
-            ArrayPool<bool>.Shared.Return(visited);
+            rowRunStart[y - bMinY] = runs.Count;
+            var rowOffset = y * Width;
+            var x = bMinX;
+
+            while (x <= bMaxX)
+            {
+                if (Pixels[rowOffset + x] > 0) { x++; continue; }
+                var start = x;
+                while (x <= bMaxX && Pixels[rowOffset + x] == 0) x++;
+                runs.Add((y, start, x - 1));
+            }
+        }
+
+        rowRunStart[bMaxY - bMinY + 1] = runs.Count;
+
+        if (runs.Count == 0)
+            return;
+
+        // Union-find over runs
+        var ufParent = new int[runs.Count];
+        for (var i = 0; i < runs.Count; i++)
+            ufParent[i] = i;
+
+        // Connect runs on adjacent rows (8-connectivity: overlap if start <= other.end+1 && end >= other.start-1)
+        for (var y = bMinY + 1; y <= bMaxY; y++)
+        {
+            var curStart = rowRunStart[y - bMinY];
+            var curEnd = rowRunStart[y - bMinY + 1];
+            var prevStart = rowRunStart[y - bMinY - 1];
+            var prevEnd = rowRunStart[y - bMinY];
+
+            var pi = prevStart;
+            for (var ci = curStart; ci < curEnd; ci++)
+            {
+                var (_, cStart, cEnd) = runs[ci];
+
+                // Advance prev pointer past runs that end before current starts (with 8-conn margin)
+                while (pi < prevEnd && runs[pi].End < cStart - 1)
+                    pi++;
+
+                // Connect all overlapping runs on previous row
+                for (var pj = pi; pj < prevEnd && runs[pj].Start <= cEnd + 1; pj++)
+                    UfUnion(ufParent, ci, pj);
+            }
+        }
+
+        // Resolve all labels and compute component stats
+        var compMinX = new int[runs.Count];
+        var compMinY = new int[runs.Count];
+        var compMaxX = new int[runs.Count];
+        var compMaxY = new int[runs.Count];
+        var compArea = new int[runs.Count];
+        var compBoundary = new bool[runs.Count];
+
+        Array.Fill(compMinX, int.MaxValue);
+        Array.Fill(compMinY, int.MaxValue);
+        Array.Fill(compMaxX, -1);
+        Array.Fill(compMaxY, -1);
+
+        for (var i = 0; i < runs.Count; i++)
+        {
+            var root = UfFind(ufParent, i);
+            var (row, start, end) = runs[i];
+            var runLen = end - start + 1;
+
+            compArea[root] += runLen;
+            if (start < compMinX[root]) compMinX[root] = start;
+            if (end > compMaxX[root]) compMaxX[root] = end;
+            if (row < compMinY[root]) compMinY[root] = row;
+            if (row > compMaxY[root]) compMaxY[root] = row;
+            compBoundary[root] |= start == 0 || end == Width - 1
+                || row == 0 || row == Height - 1
+                || start <= bMinX || end >= bMaxX
+                || row <= bMinY || row >= bMaxY;
+        }
+
+        // Fill qualifying voids
+        for (var i = 0; i < runs.Count; i++)
+        {
+            var root = UfFind(ufParent, i);
+            if (compBoundary[root]) continue;
+            if (compArea[root] > 1600) continue;
+            var w = compMaxX[root] - compMinX[root] + 1;
+            var h = compMaxY[root] - compMinY[root] + 1;
+            if (w > 96 || h > 32) continue;
+
+            var (row, start, end) = runs[i];
+            var rowOffset = row * Width;
+            for (var px = start; px <= end; px++)
+                Pixels[rowOffset + px] = byte.MaxValue;
         }
     }
 
-    private void RepairThinInteriorHorizontalGaps()
+    private static int UfFind(int[] parent, int x)
+    {
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+
+        return x;
+    }
+
+    private static void UfUnion(int[] parent, int a, int b)
+    {
+        var ra = UfFind(parent, a);
+        var rb = UfFind(parent, b);
+        if (ra != rb)
+            parent[rb] = ra;
+    }
+
+    internal void RepairThinInteriorHorizontalGaps()
     {
         if (Width < 3 || Height < 3)
             return;
@@ -215,7 +289,7 @@ public sealed class SliceBitmap
         for (var pass = 0; pass < 2; pass++)
         {
             var current = (byte[])Pixels.Clone();
-            for (var y = 1; y < Height - 1; y++)
+            Parallel.For(1, Height - 1, y =>
             {
                 var x = 1;
                 while (x < Width - 1)
@@ -241,15 +315,15 @@ public sealed class SliceBitmap
 
                     x++;
                 }
-            }
+            });
         }
     }
 
-    private void ClearUnsupportedRunInteriors(byte[] referencePixels)
+    internal void ClearUnsupportedRunInteriors(byte[] referencePixels)
     {
         const int minUnsupportedGap = 4;
 
-        for (var y = 0; y < Height; y++)
+        Parallel.For(0, Height, y =>
         {
             var x = 0;
             while (x < Width)
@@ -306,10 +380,10 @@ public sealed class SliceBitmap
 
                 x++;
             }
-        }
+        });
     }
 
-    private void RemoveDetachedArtifacts()
+    internal void RemoveDetachedArtifacts()
     {
         if (Width < 2 || Height < 2)
             return;

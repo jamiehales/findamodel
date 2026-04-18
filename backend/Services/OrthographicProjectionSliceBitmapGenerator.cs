@@ -326,7 +326,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         return !(sliceMaxMm < minY - Epsilon || sliceMinMm > maxY + Epsilon);
     }
 
-    private static List<int>?[] BuildRowCandidates(
+    internal static List<int>?[] BuildRowCandidates(
         IReadOnlyList<Triangle3D> triangles,
         float sliceHeightMm,
         float layerThicknessMm,
@@ -361,7 +361,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         return byRow;
     }
 
-    private static PrecomputedTriangle[] BuildPrecomputedTriangles(IReadOnlyList<Triangle3D> triangles)
+    internal static PrecomputedTriangle[] BuildPrecomputedTriangles(IReadOnlyList<Triangle3D> triangles)
     {
         var result = new PrecomputedTriangle[triangles.Count];
         for (var i = 0; i < triangles.Count; i++)
@@ -388,7 +388,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         return result;
     }
 
-    private static void FillProjectedRow(
+    internal static void FillProjectedRow(
         Span<byte> span,
         PrecomputedTriangle[] precomputed,
         List<int> candidateIndexes,
@@ -579,7 +579,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
     private readonly record struct RayHit(float X, int Delta);
 
-    private readonly record struct PrecomputedTriangle(
+    internal readonly record struct PrecomputedTriangle(
         Vec3 V0,
         Vec3 Edge1,
         Vec3 Edge2,
@@ -701,6 +701,6 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
     private static int MapZToRow(float zMm, float bedDepthMm, int height)
         => (int)MathF.Floor((((bedDepthMm * 0.5f) - zMm) / bedDepthMm) * height);
 
-    private static float RowToZ(int row, float bedDepthMm, int height)
+    internal static float RowToZ(int row, float bedDepthMm, int height)
         => (bedDepthMm * 0.5f) - (((row + 0.5f) / height) * bedDepthMm);
 }

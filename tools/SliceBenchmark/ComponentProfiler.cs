@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using findamodel.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -53,6 +54,150 @@ foreach (var (w, h, label) in resolutions)
     var cpuAfter = proc.TotalProcessorTime;
     var cpuMs = (cpuAfter - cpuBefore).TotalMilliseconds;
     Console.WriteLine($"  {label}: wall={wallSw.Elapsed.TotalMilliseconds:F1}ms cpu={cpuMs:F1}ms parallelism={cpuMs / wallSw.Elapsed.TotalMilliseconds:F2}x");
+}
+
+// Component breakdown at 3840x2400
+Console.WriteLine("\n--- Component Breakdown (3840x2400, height=2.0mm) ---");
+{
+    const int pw = 3840, ph = 2400;
+    const float sliceH = 2.0f;
+
+    var sw = Stopwatch.StartNew();
+    var precomp = OrthographicProjectionSliceBitmapGenerator.BuildPrecomputedTriangles(allTriangles);
+    sw.Stop();
+    Console.WriteLine($"  BuildPrecomputedTriangles: {sw.Elapsed.TotalMilliseconds:F2}ms ({allTriangles.Count} tris)");
+
+    sw.Restart();
+    var candidates = OrthographicProjectionSliceBitmapGenerator.BuildRowCandidates(allTriangles, sliceH, LayerHeightMm, BedDepthMm, ph);
+    sw.Stop();
+    var activeCount = candidates.Count(c => c is { Count: > 0 });
+    var totalCandidates = candidates.Where(c => c != null).Sum(c => c!.Count);
+    Console.WriteLine($"  BuildRowCandidates: {sw.Elapsed.TotalMilliseconds:F2}ms (active rows: {activeCount}/{ph}, total entries: {totalCandidates})");
+
+    // Measure FillProjectedRow serial
+    var bitmap = new SliceBitmap(pw, ph);
+    sw.Restart();
+    for (var row = 0; row < ph; row++)
+    {
+        var cands = candidates[row];
+        if (cands == null || cands.Count == 0) continue;
+        var zMm = OrthographicProjectionSliceBitmapGenerator.RowToZ(row, BedDepthMm, ph);
+        OrthographicProjectionSliceBitmapGenerator.FillProjectedRow(bitmap.GetRowSpan(row), precomp, cands, sliceH, zMm, BedWidthMm, pw);
+    }
+    sw.Stop();
+    Console.WriteLine($"  FillProjectedRow (serial, all rows): {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    // Measure FillProjectedRow parallel (ForEach Partitioner)
+    bitmap = new SliceBitmap(pw, ph);
+    var activeRows = new List<int>(activeCount);
+    for (var row = 0; row < ph; row++)
+        if (candidates[row] is { Count: > 0 }) activeRows.Add(row);
+
+    sw.Restart();
+    Parallel.ForEach(
+        Partitioner.Create(0, activeRows.Count),
+        new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+        range =>
+        {
+            for (var i = range.Item1; i < range.Item2; i++)
+            {
+                var row = activeRows[i];
+                var cands = candidates[row]!;
+                var zMm = OrthographicProjectionSliceBitmapGenerator.RowToZ(row, BedDepthMm, ph);
+                OrthographicProjectionSliceBitmapGenerator.FillProjectedRow(bitmap.GetRowSpan(row), precomp, cands, sliceH, zMm, BedWidthMm, pw);
+            }
+        });
+    sw.Stop();
+    Console.WriteLine($"  FillProjectedRow (Parallel.ForEach partitioned): {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    // Measure FillProjectedRow parallel (Parallel.For active rows)
+    bitmap = new SliceBitmap(pw, ph);
+    sw.Restart();
+    Parallel.For(0, activeRows.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, i =>
+    {
+        var row = activeRows[i];
+        var cands = candidates[row]!;
+        var zMm = OrthographicProjectionSliceBitmapGenerator.RowToZ(row, BedDepthMm, ph);
+        OrthographicProjectionSliceBitmapGenerator.FillProjectedRow(bitmap.GetRowSpan(row), precomp, cands, sliceH, zMm, BedWidthMm, pw);
+    });
+    sw.Stop();
+    Console.WriteLine($"  FillProjectedRow (Parallel.For active rows): {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    // Cleanup cost - broken down by sub-step
+    // First render a fresh bitmap for cleanup timing
+    var cleanupBitmap = new SliceBitmap(pw, ph);
+    {
+        var cb_candidates = OrthographicProjectionSliceBitmapGenerator.BuildRowCandidates(allTriangles, sliceH, LayerHeightMm, BedDepthMm, ph);
+        var cb_precomp = OrthographicProjectionSliceBitmapGenerator.BuildPrecomputedTriangles(allTriangles);
+        for (var row = 0; row < ph; row++)
+        {
+            var cands = cb_candidates[row];
+            if (cands == null || cands.Count == 0) continue;
+            var zMm = OrthographicProjectionSliceBitmapGenerator.RowToZ(row, BedDepthMm, ph);
+            OrthographicProjectionSliceBitmapGenerator.FillProjectedRow(cleanupBitmap.GetRowSpan(row), cb_precomp, cands, sliceH, zMm, BedWidthMm, pw);
+        }
+    }
+    Console.WriteLine($"  Lit pixels before cleanup: {cleanupBitmap.CountLitPixels():N0}");
+
+    // Clone original for the initial pass
+    var originalClone = (byte[])cleanupBitmap.Pixels.Clone();
+
+    sw.Restart();
+    // Initial support check (the first loop in RemoveUnsupportedHorizontalPixels)
+    for (var y = 0; y < ph; y++)
+    {
+        var x = 0;
+        while (x < pw)
+        {
+            var index = (y * pw) + x;
+            if (originalClone[index] == 0) { x++; continue; }
+            var runStart = x;
+            while (x + 1 < pw && originalClone[(y * pw) + x + 1] > 0) x++;
+            x++; // just iterate, don't modify
+        }
+    }
+    sw.Stop();
+    Console.WriteLine($"  Initial support check loop: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    // Now measure each cleanup sub-step on a fresh copy
+    var cleanupBitmap2 = new SliceBitmap(pw, ph);
+    Array.Copy(cleanupBitmap.Pixels, cleanupBitmap2.Pixels, cleanupBitmap.Pixels.Length);
+
+    sw.Restart();
+    cleanupBitmap2.ClearUnsupportedRunInteriors(originalClone);
+    sw.Stop();
+    Console.WriteLine($"  ClearUnsupportedRunInteriors: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    sw.Restart();
+    cleanupBitmap2.RepairVerticalDropouts(2);
+    sw.Stop();
+    Console.WriteLine($"  RepairVerticalDropouts(2): {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    sw.Restart();
+    cleanupBitmap2.FillSmallInteriorVoids();
+    sw.Stop();
+    Console.WriteLine($"  FillSmallInteriorVoids: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    sw.Restart();
+    cleanupBitmap2.RepairThinInteriorHorizontalGaps();
+    sw.Stop();
+    Console.WriteLine($"  RepairThinInteriorHorizontalGaps: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    sw.Restart();
+    cleanupBitmap2.RemoveDetachedArtifacts();
+    sw.Stop();
+    Console.WriteLine($"  RemoveDetachedArtifacts: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    sw.Restart();
+    cleanupBitmap.RemoveUnsupportedHorizontalPixels();
+    sw.Stop();
+    Console.WriteLine($"  Full RemoveUnsupportedHorizontalPixels: {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+    // Full path for reference
+    sw.Restart();
+    cpuOrtho.RenderLayerBitmap(allTriangles, sliceH, BedWidthMm, BedDepthMm, pw, ph, LayerHeightMm);
+    sw.Stop();
+    Console.WriteLine($"  Full RenderLayerBitmap: {sw.Elapsed.TotalMilliseconds:F2}ms");
 }
 
 Console.WriteLine("\n--- Batch vs Single (Ortho, 960x600) ---");
