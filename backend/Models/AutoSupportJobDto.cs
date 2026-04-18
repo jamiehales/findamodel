@@ -20,3 +20,5 @@ public sealed record AutoSupportJobDto(
     int SupportCount,
     string? ErrorMessage,
     IReadOnlyList<AutoSupportPointDto>? SupportPoints = null);
+
+public sealed record CreateAutoSupportJobRequest(int Method = 1);

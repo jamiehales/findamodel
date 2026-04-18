@@ -37,6 +37,7 @@ public sealed class AutoSupportGenerationService
         var pixelWidth = Math.Max(24, (int)Math.Ceiling(bedWidthMm / voxelSizeMm));
         var pixelHeight = Math.Max(24, (int)Math.Ceiling(bedDepthMm / voxelSizeMm));
         var supportPoints = new List<SupportPoint>();
+        var unsupportedIslands = new Dictionary<(int XBucket, int ZBucket), UnsupportedIslandState>();
         var modelHeightMm = geometry.DimensionYMm;
         var cumulativeVolumePerPixelMm3 = 0f;
 
@@ -83,7 +84,14 @@ public sealed class AutoSupportGenerationService
                          tuning.SupportMergeDistanceMm,
                          tuning.MinIslandAreaMm2))
             {
-                EnsureInitialSupport(island, supportPoints, tuning, modelHeightMm);
+                TrackUnsupportedIslandAndPlaceSupportIfNeeded(
+                    island,
+                    supportPoints,
+                    unsupportedIslands,
+                    tuning,
+                    modelHeightMm,
+                    layerHeightMm);
+
                 ReinforceIslandIfNeeded(island, supportPoints, tuning, modelHeightMm, layerForces, litPixelCount);
             }
         }
@@ -129,12 +137,7 @@ public sealed class AutoSupportGenerationService
         {
             var islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
             if (islandSupportIndices.Count == 0)
-            {
-                EnsureInitialSupport(island, supportPoints, tuning, modelHeightMm);
-                islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
-                if (islandSupportIndices.Count == 0)
-                    return;
-            }
+                return;
 
             var strongestPull = EvaluatePullForces(island, islandSupportIndices, supportPoints, layerForces, totalLitPixels);
             var uncoveredPixels = FindPixelsBeyondMaxDistance(
@@ -205,6 +208,94 @@ public sealed class AutoSupportGenerationService
                 strongestPull.Vector,
                 newSupportSize));
         }
+    }
+
+    private static void TrackUnsupportedIslandAndPlaceSupportIfNeeded(
+        SliceIsland island,
+        List<SupportPoint> supportPoints,
+        Dictionary<(int XBucket, int ZBucket), UnsupportedIslandState> unsupportedIslands,
+        AutoSupportTuning tuning,
+        float modelHeightMm,
+        float layerHeightMm)
+    {
+        var islandSupportIndices = FindSupportsInsideIsland(island, supportPoints);
+        var unsupportedPixels = islandSupportIndices.Count == 0
+            ? island.Pixels
+            : FindPixelsBeyondMaxDistance(island, islandSupportIndices, supportPoints, tuning.MaxSupportDistanceMm);
+
+        if (unsupportedPixels.Count == 0)
+            return;
+
+        var unsupportedVolumeMm3 = unsupportedPixels.Count * island.PixelAreaMm2 * layerHeightMm;
+        if (unsupportedVolumeMm3 <= 0f)
+            return;
+
+        var centroidX = unsupportedPixels.Average(pixel => pixel.XMm);
+        var centroidZ = unsupportedPixels.Average(pixel => pixel.ZMm);
+
+        var bucketSizeMm = MathF.Max(tuning.SupportMergeDistanceMm, 0.5f);
+        var xBucket = (int)MathF.Round(centroidX / bucketSizeMm, MidpointRounding.AwayFromZero);
+        var zBucket = (int)MathF.Round(centroidZ / bucketSizeMm, MidpointRounding.AwayFromZero);
+        var key = (xBucket, zBucket);
+
+        if (!unsupportedIslands.TryGetValue(key, out var state))
+        {
+            state = new UnsupportedIslandState(
+                FirstSliceHeightMm: island.SliceHeightMm,
+                PreferredX: centroidX,
+                PreferredZ: centroidZ,
+                AccumulatedVolumeMm3: 0f,
+                SupportPlaced: false);
+        }
+
+        if (state.SupportPlaced)
+            return;
+
+        state = state with
+        {
+            FirstSliceHeightMm = MathF.Min(state.FirstSliceHeightMm, island.SliceHeightMm),
+            PreferredX = (state.PreferredX + centroidX) * 0.5f,
+            PreferredZ = (state.PreferredZ + centroidZ) * 0.5f,
+            AccumulatedVolumeMm3 = state.AccumulatedVolumeMm3 + unsupportedVolumeMm3,
+        };
+
+        if (state.AccumulatedVolumeMm3 >= tuning.UnsupportedIslandVolumeThresholdMm3
+            && !HasSupportingSupportAtOrBelow(state.PreferredX, state.PreferredZ, state.FirstSliceHeightMm, supportPoints, tuning.MaxSupportDistanceMm))
+        {
+            var size = IsNearBase(state.FirstSliceHeightMm, modelHeightMm) ? SupportSize.Heavy : SupportSize.Medium;
+            supportPoints.Add(new SupportPoint(
+                new Vec3(state.PreferredX, state.FirstSliceHeightMm, state.PreferredZ),
+                GetTipRadiusMm(size, tuning),
+                new Vec3(0f, 0f, 0f),
+                size));
+
+            state = state with { SupportPlaced = true };
+        }
+
+        unsupportedIslands[key] = state;
+    }
+
+    private static bool HasSupportingSupportAtOrBelow(
+        float xMm,
+        float zMm,
+        float sliceHeightMm,
+        List<SupportPoint> supportPoints,
+        float maxSupportDistanceMm)
+    {
+        var maxSupportDistanceSq = maxSupportDistanceMm * maxSupportDistanceMm;
+        foreach (var support in supportPoints)
+        {
+            if (support.Position.Y > sliceHeightMm + 0.001f)
+                continue;
+
+            var dx = support.Position.X - xMm;
+            var dz = support.Position.Z - zMm;
+            var distanceSq = (dx * dx) + (dz * dz);
+            if (distanceSq <= maxSupportDistanceSq)
+                return true;
+        }
+
+        return false;
     }
 
     private static PullForceEstimate EvaluatePullForces(
@@ -652,6 +743,7 @@ public sealed class AutoSupportGenerationService
             SupportMergeDistanceMm: config?.AutoSupportMergeDistanceMm ?? AppConfigService.DefaultAutoSupportMergeDistanceMm,
             MinIslandAreaMm2: config?.AutoSupportMinIslandAreaMm2 ?? AppConfigService.DefaultAutoSupportMinIslandAreaMm2,
             MaxSupportDistanceMm: config?.AutoSupportMaxSupportDistanceMm ?? AppConfigService.DefaultAutoSupportMaxSupportDistanceMm,
+            UnsupportedIslandVolumeThresholdMm3: config?.AutoSupportUnsupportedIslandVolumeThresholdMm3 ?? AppConfigService.DefaultAutoSupportUnsupportedIslandVolumeThresholdMm3,
             ResinStrength: config?.AutoSupportResinStrength ?? AppConfigService.DefaultAutoSupportResinStrength,
             ResinDensityGPerMl: config?.AutoSupportResinDensityGPerMl ?? AppConfigService.DefaultAutoSupportResinDensityGPerMl,
             PeelForceMultiplier: config?.AutoSupportPeelForceMultiplier ?? AppConfigService.DefaultAutoSupportPeelForceMultiplier,
@@ -671,6 +763,7 @@ public sealed class AutoSupportGenerationService
         float SupportMergeDistanceMm,
         float MinIslandAreaMm2,
         float MaxSupportDistanceMm,
+        float UnsupportedIslandVolumeThresholdMm3,
         float ResinStrength,
         float ResinDensityGPerMl,
         float PeelForceMultiplier,
@@ -739,6 +832,13 @@ public sealed class AutoSupportGenerationService
     private sealed record AdditionalSupportCandidate(float X, float Z, float DistanceMm);
 
     private sealed record LayerForces(float CumulativeWeightN, float PeelForceN);
+
+    private sealed record UnsupportedIslandState(
+        float FirstSliceHeightMm,
+        float PreferredX,
+        float PreferredZ,
+        float AccumulatedVolumeMm3,
+        bool SupportPlaced);
 
     private sealed class SupportAccumulator
     {

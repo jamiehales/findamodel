@@ -43,6 +43,11 @@ namespace findamodel.Migrations
                         .HasColumnType("REAL")
                         .HasDefaultValue(10f);
 
+                    b.Property<float>("AutoSupportUnsupportedIslandVolumeThresholdMm3")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(1f);
+
                     b.Property<int>("AutoSupportMaxSupportsPerIsland")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -117,6 +122,11 @@ namespace findamodel.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
                         .HasDefaultValue(1.5f);
+
+                    b.Property<float>("AutoSupportV2VoxelSizeMm")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(2f);
 
                     b.Property<float>("DefaultRaftHeightMm")
                         .ValueGeneratedOnAdd()

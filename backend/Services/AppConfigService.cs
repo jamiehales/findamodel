@@ -29,6 +29,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportMergeDistanceMm = 2.5f;
     public const float DefaultAutoSupportMinIslandAreaMm2 = 4f;
     public const float DefaultAutoSupportMaxSupportDistanceMm = 10f;
+    public const float DefaultAutoSupportUnsupportedIslandVolumeThresholdMm3 = 1f;
     public const float DefaultAutoSupportPullForceThreshold = 3f;
     public const float DefaultAutoSupportSphereRadiusMm = 1.2f;
     public const int DefaultAutoSupportMaxSupportsPerIsland = 6;
@@ -39,6 +40,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportLightTipRadiusMm = 0.7f;
     public const float DefaultAutoSupportMediumTipRadiusMm = 1f;
     public const float DefaultAutoSupportHeavyTipRadiusMm = 1.5f;
+    public const float DefaultAutoSupportV2VoxelSizeMm = 2f;
     public const string DefaultTagGenerationPromptTemplate =
         "Given the provided image and metadata context, return tags only from the allowed schema. Focus on monochrome mesh renders (no color cues). Return at most {{maxTags}} tags as JSON: {\"tags\":[...],\"confidence\":{\"tag\":0.0},\"notes\":\"optional\"}. Output the JSON object only with no leading or trailing text. Allowed tags: {{allowedTags}}.";
     public const string DefaultDescriptionGenerationPromptTemplate =
@@ -125,14 +127,18 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportMergeDistanceMm = request.AutoSupportMergeDistanceMm;
         config.AutoSupportMinIslandAreaMm2 = request.AutoSupportMinIslandAreaMm2;
         config.AutoSupportMaxSupportDistanceMm = request.AutoSupportMaxSupportDistanceMm;
+        config.AutoSupportUnsupportedIslandVolumeThresholdMm3 = request.AutoSupportUnsupportedIslandVolumeThresholdMm3;
         config.AutoSupportPullForceThreshold = request.AutoSupportPullForceThreshold;
         config.AutoSupportSphereRadiusMm = request.AutoSupportSphereRadiusMm;
         config.AutoSupportMaxSupportsPerIsland = request.AutoSupportMaxSupportsPerIsland;
         config.AutoSupportResinStrength = request.AutoSupportResinStrength;
+        config.AutoSupportResinDensityGPerMl = request.AutoSupportResinDensityGPerMl;
+        config.AutoSupportPeelForceMultiplier = request.AutoSupportPeelForceMultiplier;
         config.AutoSupportMicroTipRadiusMm = request.AutoSupportMicroTipRadiusMm;
         config.AutoSupportLightTipRadiusMm = request.AutoSupportLightTipRadiusMm;
         config.AutoSupportMediumTipRadiusMm = request.AutoSupportMediumTipRadiusMm;
         config.AutoSupportHeavyTipRadiusMm = request.AutoSupportHeavyTipRadiusMm;
+        config.AutoSupportV2VoxelSizeMm = request.AutoSupportV2VoxelSizeMm;
         config.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return ToDto(config);
@@ -279,11 +285,15 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportMaxSupportsPerIsland,
             config.AutoSupportMinIslandAreaMm2,
             config.AutoSupportMaxSupportDistanceMm,
+            config.AutoSupportUnsupportedIslandVolumeThresholdMm3,
             config.AutoSupportResinStrength,
+            config.AutoSupportResinDensityGPerMl,
+            config.AutoSupportPeelForceMultiplier,
             config.AutoSupportMicroTipRadiusMm,
             config.AutoSupportLightTipRadiusMm,
             config.AutoSupportMediumTipRadiusMm,
-            config.AutoSupportHeavyTipRadiusMm);
+            config.AutoSupportHeavyTipRadiusMm,
+            config.AutoSupportV2VoxelSizeMm);
     }
 
     private async Task<AppConfig> EnsureConfigAsync(ModelCacheContext db)
@@ -322,14 +332,18 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportMergeDistanceMm = configuration.GetValue<float?>("AppConfig:AutoSupportMergeDistanceMm") ?? DefaultAutoSupportMergeDistanceMm,
             AutoSupportMinIslandAreaMm2 = configuration.GetValue<float?>("AppConfig:AutoSupportMinIslandAreaMm2") ?? DefaultAutoSupportMinIslandAreaMm2,
             AutoSupportMaxSupportDistanceMm = configuration.GetValue<float?>("AppConfig:AutoSupportMaxSupportDistanceMm") ?? DefaultAutoSupportMaxSupportDistanceMm,
+            AutoSupportUnsupportedIslandVolumeThresholdMm3 = configuration.GetValue<float?>("AppConfig:AutoSupportUnsupportedIslandVolumeThresholdMm3") ?? DefaultAutoSupportUnsupportedIslandVolumeThresholdMm3,
             AutoSupportPullForceThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportPullForceThreshold") ?? DefaultAutoSupportPullForceThreshold,
             AutoSupportSphereRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportSphereRadiusMm") ?? DefaultAutoSupportSphereRadiusMm,
             AutoSupportMaxSupportsPerIsland = configuration.GetValue<int?>("AppConfig:AutoSupportMaxSupportsPerIsland") ?? DefaultAutoSupportMaxSupportsPerIsland,
             AutoSupportResinStrength = configuration.GetValue<float?>("AppConfig:AutoSupportResinStrength") ?? DefaultAutoSupportResinStrength,
+            AutoSupportResinDensityGPerMl = configuration.GetValue<float?>("AppConfig:AutoSupportResinDensityGPerMl") ?? DefaultAutoSupportResinDensityGPerMl,
+            AutoSupportPeelForceMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportPeelForceMultiplier") ?? DefaultAutoSupportPeelForceMultiplier,
             AutoSupportMicroTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMicroTipRadiusMm") ?? DefaultAutoSupportMicroTipRadiusMm,
             AutoSupportLightTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportLightTipRadiusMm") ?? DefaultAutoSupportLightTipRadiusMm,
             AutoSupportMediumTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMediumTipRadiusMm") ?? DefaultAutoSupportMediumTipRadiusMm,
             AutoSupportHeavyTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportHeavyTipRadiusMm") ?? DefaultAutoSupportHeavyTipRadiusMm,
+            AutoSupportV2VoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2VoxelSizeMm") ?? DefaultAutoSupportV2VoxelSizeMm,
             SetupCompleted = !string.IsNullOrWhiteSpace(normalizedConfiguredModelsPath),
             ModelsDirectoryPath = normalizedConfiguredModelsPath,
             UpdatedAt = DateTime.UtcNow,
@@ -366,6 +380,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportMergeDistanceMm, 0.1f, 25f, nameof(request.AutoSupportMergeDistanceMm));
         ValidateFiniteRange(request.AutoSupportMinIslandAreaMm2, 0f, 2500f, nameof(request.AutoSupportMinIslandAreaMm2));
         ValidateFiniteRange(request.AutoSupportMaxSupportDistanceMm, request.AutoSupportMergeDistanceMm, 100f, nameof(request.AutoSupportMaxSupportDistanceMm));
+        ValidateFiniteRange(request.AutoSupportUnsupportedIslandVolumeThresholdMm3, 0.01f, 100000f, nameof(request.AutoSupportUnsupportedIslandVolumeThresholdMm3));
         ValidateFiniteRange(request.AutoSupportPullForceThreshold, 0.1f, 100f, nameof(request.AutoSupportPullForceThreshold));
         ValidateFiniteRange(request.AutoSupportSphereRadiusMm, 0.1f, 10f, nameof(request.AutoSupportSphereRadiusMm));
 
@@ -373,10 +388,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             throw new ArgumentException("Auto support max supports per island must be between 1 and 64.", nameof(request.AutoSupportMaxSupportsPerIsland));
 
         ValidateFiniteRange(request.AutoSupportResinStrength, 0.1f, 10f, nameof(request.AutoSupportResinStrength));
+        ValidateFiniteRange(request.AutoSupportResinDensityGPerMl, 0.1f, 10f, nameof(request.AutoSupportResinDensityGPerMl));
+        ValidateFiniteRange(request.AutoSupportPeelForceMultiplier, 0.01f, 5f, nameof(request.AutoSupportPeelForceMultiplier));
         ValidateFiniteRange(request.AutoSupportMicroTipRadiusMm, 0.1f, 3f, nameof(request.AutoSupportMicroTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportLightTipRadiusMm, 0.1f, 5f, nameof(request.AutoSupportLightTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportMediumTipRadiusMm, 0.1f, 7f, nameof(request.AutoSupportMediumTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportHeavyTipRadiusMm, 0.1f, 10f, nameof(request.AutoSupportHeavyTipRadiusMm));
+        ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.5f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
     }
 
     private static void ValidateFiniteRange(float value, float min, float max, string paramName)

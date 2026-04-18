@@ -123,14 +123,18 @@ export interface AppConfig {
   autoSupportMergeDistanceMm: number;
   autoSupportMinIslandAreaMm2: number;
   autoSupportMaxSupportDistanceMm: number;
+  autoSupportUnsupportedIslandVolumeThresholdMm3: number;
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
   autoSupportResinStrength: number;
+  autoSupportResinDensityGPerMl: number;
+  autoSupportPeelForceMultiplier: number;
   autoSupportMicroTipRadiusMm: number;
   autoSupportLightTipRadiusMm: number;
   autoSupportMediumTipRadiusMm: number;
   autoSupportHeavyTipRadiusMm: number;
+  autoSupportV2VoxelSizeMm: number;
 }
 
 export interface SetupStatus {
@@ -176,14 +180,18 @@ export interface UpdateAppConfigRequest {
   autoSupportMergeDistanceMm: number;
   autoSupportMinIslandAreaMm2: number;
   autoSupportMaxSupportDistanceMm: number;
+  autoSupportUnsupportedIslandVolumeThresholdMm3: number;
   autoSupportPullForceThreshold: number;
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
   autoSupportResinStrength: number;
+  autoSupportResinDensityGPerMl: number;
+  autoSupportPeelForceMultiplier: number;
   autoSupportMicroTipRadiusMm: number;
   autoSupportLightTipRadiusMm: number;
   autoSupportMediumTipRadiusMm: number;
   autoSupportHeavyTipRadiusMm: number;
+  autoSupportV2VoxelSizeMm: number;
 }
 
 export interface InitialSetupRequest {

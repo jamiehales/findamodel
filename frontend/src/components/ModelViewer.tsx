@@ -224,6 +224,13 @@ interface SupportForceArrowsProps {
   visible: boolean;
 }
 
+const SIZE_COLORS: Record<string, [string, string]> = {
+  micro: ['#93c5fd', '#3b82f6'],
+  light: ['#fbbf24', '#f59e0b'],
+  medium: ['#fb923c', '#ea580c'],
+  heavy: ['#ef4444', '#b91c1c'],
+};
+
 function SupportForceArrow({
   point,
   maxMagnitude,
@@ -231,10 +238,18 @@ function SupportForceArrow({
   point: import('../lib/api').AutoSupportPoint;
   maxMagnitude: number;
 }) {
-  const arrowData = useMemo(() => {
+  const { arrowData, sphereColor } = useMemo(() => {
     const force = new THREE.Vector3(point.pullForce.x, point.pullForce.y, point.pullForce.z);
     const magnitude = force.length();
-    if (magnitude < 0.001) return null;
+    const [lowColor, highColor] = SIZE_COLORS[point.size] ?? SIZE_COLORS.medium;
+    const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
+    const color = new THREE.Color().lerpColors(
+      new THREE.Color(lowColor),
+      new THREE.Color(highColor),
+      normalizedMagnitude,
+    );
+
+    if (magnitude < 0.001) return { arrowData: null, sphereColor: color };
 
     const start = new THREE.Vector3(point.x, point.y + point.radiusMm * 0.25, point.z);
     const direction = force.normalize();
@@ -248,31 +263,29 @@ function SupportForceArrow({
       new THREE.Vector3(0, 1, 0),
       direction,
     );
-    const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
-    const sizeColors: Record<string, [string, string]> = {
-      micro: ['#93c5fd', '#3b82f6'],
-      light: ['#fbbf24', '#f59e0b'],
-      medium: ['#fb923c', '#ea580c'],
-      heavy: ['#ef4444', '#b91c1c'],
+    return {
+      arrowData: { coneCenter, coneQuaternion, color, headLength, linePoints: [start, shaftEnd] },
+      sphereColor: color,
     };
-    const [lowColor, highColor] = sizeColors[point.size] ?? sizeColors.medium;
-    const color = new THREE.Color().lerpColors(
-      new THREE.Color(lowColor),
-      new THREE.Color(highColor),
-      normalizedMagnitude,
-    );
-    return { coneCenter, coneQuaternion, color, headLength, linePoints: [start, shaftEnd] };
   }, [maxMagnitude, point]);
-
-  if (!arrowData) return null;
 
   return (
     <group>
-      <Line points={arrowData.linePoints} color={arrowData.color} lineWidth={1.5} />
-      <mesh position={arrowData.coneCenter} quaternion={arrowData.coneQuaternion}>
-        <coneGeometry args={[Math.max(point.radiusMm * 0.55, 0.25), arrowData.headLength, 10]} />
-        <meshBasicMaterial color={arrowData.color} />
+      <mesh position={[point.x, point.y, point.z]}>
+        <sphereGeometry args={[point.radiusMm, 12, 8]} />
+        <meshStandardMaterial color={sphereColor} roughness={0.4} metalness={0.1} />
       </mesh>
+      {arrowData && (
+        <>
+          <Line points={arrowData.linePoints} color={arrowData.color} lineWidth={1.5} />
+          <mesh position={arrowData.coneCenter} quaternion={arrowData.coneQuaternion}>
+            <coneGeometry
+              args={[Math.max(point.radiusMm * 0.55, 0.25), arrowData.headLength, 10]}
+            />
+            <meshBasicMaterial color={arrowData.color} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }

@@ -188,7 +188,7 @@ export function useSplitGeometry(id: string, enabled: boolean = true) {
 export function useGenerateAutoSupportJob(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => createAutoSupportJob(id),
+    mutationFn: (method: number) => createAutoSupportJob(id, method),
     onSuccess: (job) => {
       queryClient.setQueryData(queryKeys.autoSupportJob(id, job.jobId), job);
     },

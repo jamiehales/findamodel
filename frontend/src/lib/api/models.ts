@@ -377,9 +377,14 @@ export async function fetchSplitGeometry(id: string): Promise<SplitGeometryRespo
   return { body, supports };
 }
 
-export async function createAutoSupportJob(id: string): Promise<AutoSupportJob> {
+export async function createAutoSupportJob(
+  id: string,
+  method: number = 1,
+): Promise<AutoSupportJob> {
   const r = await apiFetch(`/api/models/${id}/auto-support/jobs`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method }),
   });
   if (!r.ok) throw new Error('Failed to start support generation');
   return r.json();

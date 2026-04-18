@@ -130,6 +130,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxSupportDistanceMm);
 
         modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportUnsupportedIslandVolumeThresholdMm3)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportUnsupportedIslandVolumeThresholdMm3);
+
+        modelBuilder.Entity<AppConfig>()
             .Property(c => c.AutoSupportPullForceThreshold)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportPullForceThreshold);
 
@@ -168,6 +172,10 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
         modelBuilder.Entity<AppConfig>()
             .Property(c => c.AutoSupportHeavyTipRadiusMm)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportHeavyTipRadiusMm);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportV2VoxelSizeMm)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportV2VoxelSizeMm);
 
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)

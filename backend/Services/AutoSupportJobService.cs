@@ -9,6 +9,7 @@ public sealed class AutoSupportJobService(
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
     AutoSupportGenerationService autoSupportGenerationService,
+    AutoSupportGenerationV2Service autoSupportGenerationV2Service,
     IConfiguration config,
     ILoggerFactory loggerFactory)
 {
@@ -18,7 +19,7 @@ public sealed class AutoSupportJobService(
     private readonly string cacheDirectory = config["Cache:AutoSupportsPath"]
         ?? Path.Combine(Path.GetTempPath(), "findamodel", "auto-support");
 
-    public async Task<AutoSupportJobDto?> CreateJobAsync(Guid modelId, CancellationToken cancellationToken = default)
+    public async Task<AutoSupportJobDto?> CreateJobAsync(Guid modelId, int method = 1, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         CleanupExpiredJobs();
@@ -34,8 +35,9 @@ public sealed class AutoSupportJobService(
             $"{Path.GetFileNameWithoutExtension(model.FileName)}-supported-preview.bin",
             Path.Combine(cacheDirectory, $"{Guid.NewGuid():N}.bin"));
 
+        var clampedMethod = method is 1 or 2 ? method : 1;
         jobs[job.JobId] = job;
-        _ = Task.Run(() => RunJobAsync(job), CancellationToken.None);
+        _ = Task.Run(() => RunJobAsync(job, clampedMethod), CancellationToken.None);
         return job.ToDto();
     }
 
@@ -60,7 +62,7 @@ public sealed class AutoSupportJobService(
         return File.ReadAllBytes(job.CacheFilePath);
     }
 
-    private async Task RunJobAsync(AutoSupportJobState job)
+    private async Task RunJobAsync(AutoSupportJobState job, int method)
     {
         try
         {
@@ -97,7 +99,9 @@ public sealed class AutoSupportJobService(
                 return;
             }
 
-            var preview = autoSupportGenerationService.GenerateSupportPreview(geometry);
+            var preview = method == 2
+                ? autoSupportGenerationV2Service.GenerateSupportPreview(geometry)
+                : autoSupportGenerationService.GenerateSupportPreview(geometry);
             var bodyPayload = meshTransferService.Encode(geometry);
             var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
             var envelope = BuildEnvelope(bodyPayload, supportPayload);

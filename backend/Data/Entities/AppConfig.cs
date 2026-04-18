@@ -27,6 +27,7 @@ public class AppConfig
     public float AutoSupportMergeDistanceMm { get; set; } = 2.5f;
     public float AutoSupportMinIslandAreaMm2 { get; set; } = 4f;
     public float AutoSupportMaxSupportDistanceMm { get; set; } = 10f;
+    public float AutoSupportUnsupportedIslandVolumeThresholdMm3 { get; set; } = 1f;
     public float AutoSupportPullForceThreshold { get; set; } = 3f;
     public float AutoSupportSphereRadiusMm { get; set; } = 1.2f;
     public int AutoSupportMaxSupportsPerIsland { get; set; } = 6;
@@ -38,6 +39,7 @@ public class AppConfig
     public float AutoSupportLightTipRadiusMm { get; set; } = 0.7f;
     public float AutoSupportMediumTipRadiusMm { get; set; } = 1f;
     public float AutoSupportHeavyTipRadiusMm { get; set; } = 1.5f;
+    public float AutoSupportV2VoxelSizeMm { get; set; } = 2f;
 
     // Initial setup tracking
     public bool SetupCompleted { get; set; } = false;

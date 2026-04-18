@@ -166,20 +166,36 @@ function ModelPage() {
                 </Button>
 
                 {model.supported !== true && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    disabled={isGeneratingAutoSupport}
-                    onClick={() =>
-                      generateAutoSupport(undefined, {
-                        onSuccess: (job) => setAutoSupportJobId(job.jobId),
-                      })
-                    }
-                  >
-                    {isGeneratingAutoSupport
-                      ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-                      : 'Generate supports'}
-                  </Button>
+                  <>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={isGeneratingAutoSupport}
+                      onClick={() =>
+                        generateAutoSupport(1, {
+                          onSuccess: (job) => setAutoSupportJobId(job.jobId),
+                        })
+                      }
+                    >
+                      {isGeneratingAutoSupport
+                        ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
+                        : 'Generate autosupport (method 1)'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={isGeneratingAutoSupport}
+                      onClick={() =>
+                        generateAutoSupport(2, {
+                          onSuccess: (job) => setAutoSupportJobId(job.jobId),
+                        })
+                      }
+                    >
+                      {isGeneratingAutoSupport
+                        ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
+                        : 'Generate autosupport (method 2)'}
+                    </Button>
+                  </>
                 )}
 
                 <IconButton
@@ -270,14 +286,27 @@ function ModelPage() {
                   variant="contained"
                   disabled={isGeneratingAutoSupport}
                   onClick={() =>
-                    generateAutoSupport(undefined, {
+                    generateAutoSupport(1, {
                       onSuccess: (job) => setAutoSupportJobId(job.jobId),
                     })
                   }
                 >
                   {isGeneratingAutoSupport
                     ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-                    : 'Generate supports'}
+                    : 'Generate autosupport (method 1)'}
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={isGeneratingAutoSupport}
+                  onClick={() =>
+                    generateAutoSupport(2, {
+                      onSuccess: (job) => setAutoSupportJobId(job.jobId),
+                    })
+                  }
+                >
+                  {isGeneratingAutoSupport
+                    ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
+                    : 'Generate autosupport (method 2)'}
                 </Button>
               </Box>
             </Box>

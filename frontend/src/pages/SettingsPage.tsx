@@ -300,6 +300,10 @@ export default function SettingsPage() {
   const [autoSupportMergeDistanceMm, setAutoSupportMergeDistanceMm] = useState('2.5');
   const [autoSupportMinIslandAreaMm2, setAutoSupportMinIslandAreaMm2] = useState('4');
   const [autoSupportMaxSupportDistanceMm, setAutoSupportMaxSupportDistanceMm] = useState('10');
+  const [
+    autoSupportUnsupportedIslandVolumeThresholdMm3,
+    setAutoSupportUnsupportedIslandVolumeThresholdMm3,
+  ] = useState('1');
   const [autoSupportPullForceThreshold, setAutoSupportPullForceThreshold] = useState('3');
   const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
   const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
@@ -310,6 +314,7 @@ export default function SettingsPage() {
   const [autoSupportLightTipRadiusMm, setAutoSupportLightTipRadiusMm] = useState('0.7');
   const [autoSupportMediumTipRadiusMm, setAutoSupportMediumTipRadiusMm] = useState('1');
   const [autoSupportHeavyTipRadiusMm, setAutoSupportHeavyTipRadiusMm] = useState('1.5');
+  const [autoSupportV2VoxelSizeMm, setAutoSupportV2VoxelSizeMm] = useState('2');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -370,6 +375,9 @@ export default function SettingsPage() {
       setAutoSupportMergeDistanceMm(String(appConfig.autoSupportMergeDistanceMm));
       setAutoSupportMinIslandAreaMm2(String(appConfig.autoSupportMinIslandAreaMm2));
       setAutoSupportMaxSupportDistanceMm(String(appConfig.autoSupportMaxSupportDistanceMm));
+      setAutoSupportUnsupportedIslandVolumeThresholdMm3(
+        String(appConfig.autoSupportUnsupportedIslandVolumeThresholdMm3),
+      );
       setAutoSupportPullForceThreshold(String(appConfig.autoSupportPullForceThreshold));
       setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
       setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
@@ -380,6 +388,7 @@ export default function SettingsPage() {
       setAutoSupportLightTipRadiusMm(String(appConfig.autoSupportLightTipRadiusMm));
       setAutoSupportMediumTipRadiusMm(String(appConfig.autoSupportMediumTipRadiusMm));
       setAutoSupportHeavyTipRadiusMm(String(appConfig.autoSupportHeavyTipRadiusMm));
+      setAutoSupportV2VoxelSizeMm(String(appConfig.autoSupportV2VoxelSizeMm));
     }
   }, [appConfig]);
 
@@ -421,6 +430,9 @@ export default function SettingsPage() {
   const autoSupportMergeDistanceValue = Number(autoSupportMergeDistanceMm);
   const autoSupportMinIslandAreaValue = Number(autoSupportMinIslandAreaMm2);
   const autoSupportMaxSupportDistanceValue = Number(autoSupportMaxSupportDistanceMm);
+  const autoSupportUnsupportedIslandVolumeThresholdValue = Number(
+    autoSupportUnsupportedIslandVolumeThresholdMm3,
+  );
   const autoSupportPullForceThresholdValue = Number(autoSupportPullForceThreshold);
   const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
   const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
@@ -431,6 +443,7 @@ export default function SettingsPage() {
   const autoSupportLightTipRadiusValue = Number(autoSupportLightTipRadiusMm);
   const autoSupportMediumTipRadiusValue = Number(autoSupportMediumTipRadiusMm);
   const autoSupportHeavyTipRadiusValue = Number(autoSupportHeavyTipRadiusMm);
+  const autoSupportV2VoxelSizeValue = Number(autoSupportV2VoxelSizeMm);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
@@ -468,6 +481,9 @@ export default function SettingsPage() {
     autoSupportMinIslandAreaValue >= 0 &&
     Number.isFinite(autoSupportMaxSupportDistanceValue) &&
     autoSupportMaxSupportDistanceValue >= autoSupportMergeDistanceValue &&
+    Number.isFinite(autoSupportUnsupportedIslandVolumeThresholdValue) &&
+    autoSupportUnsupportedIslandVolumeThresholdValue >= 0.01 &&
+    autoSupportUnsupportedIslandVolumeThresholdValue <= 100000 &&
     Number.isFinite(autoSupportPullForceThresholdValue) &&
     autoSupportPullForceThresholdValue >= 0.1 &&
     Number.isFinite(autoSupportSphereRadiusValue) &&
@@ -495,7 +511,10 @@ export default function SettingsPage() {
     autoSupportMediumTipRadiusValue <= 7 &&
     Number.isFinite(autoSupportHeavyTipRadiusValue) &&
     autoSupportHeavyTipRadiusValue >= 0.1 &&
-    autoSupportHeavyTipRadiusValue <= 10;
+    autoSupportHeavyTipRadiusValue <= 10 &&
+    Number.isFinite(autoSupportV2VoxelSizeValue) &&
+    autoSupportV2VoxelSizeValue >= 0.5 &&
+    autoSupportV2VoxelSizeValue <= 10;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -544,6 +563,8 @@ export default function SettingsPage() {
       autoSupportMergeDistanceMm: autoSupportMergeDistanceValue,
       autoSupportMinIslandAreaMm2: autoSupportMinIslandAreaValue,
       autoSupportMaxSupportDistanceMm: autoSupportMaxSupportDistanceValue,
+      autoSupportUnsupportedIslandVolumeThresholdMm3:
+        autoSupportUnsupportedIslandVolumeThresholdValue,
       autoSupportPullForceThreshold: autoSupportPullForceThresholdValue,
       autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
       autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
@@ -554,6 +575,7 @@ export default function SettingsPage() {
       autoSupportLightTipRadiusMm: autoSupportLightTipRadiusValue,
       autoSupportMediumTipRadiusMm: autoSupportMediumTipRadiusValue,
       autoSupportHeavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
+      autoSupportV2VoxelSizeMm: autoSupportV2VoxelSizeValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -797,6 +819,25 @@ export default function SettingsPage() {
                   />
                 </Stack>
                 <Typography variant="h6">Cumulative force settings</Typography>
+                <Typography variant="h6">Method 2 settings</Typography>
+                <Typography color="text.secondary">
+                  Settings specific to the force-based voxel algorithm (method 2).
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Voxel size (mm)"
+                    value={autoSupportV2VoxelSizeMm}
+                    onChange={(e) => setAutoSupportV2VoxelSizeMm(e.target.value)}
+                    helperText="Resolution of the voxel grid for method 2 (default 2)"
+                  />
+                </Stack>
+                <Typography variant="h6">Cumulative force settings</Typography>
                 <Typography color="text.secondary">
                   Controls how resin weight and peel forces accumulate across layers. Higher density
                   or peel multiplier values increase per-support loads, triggering more or heavier
@@ -807,6 +848,16 @@ export default function SettingsPage() {
                   spacing={1}
                   className={styles.addRow}
                 >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Unsupported volume threshold (mm^3)"
+                    value={autoSupportUnsupportedIslandVolumeThresholdMm3}
+                    onChange={(e) =>
+                      setAutoSupportUnsupportedIslandVolumeThresholdMm3(e.target.value)
+                    }
+                    helperText="Place support once unsupported cumulative volume exceeds this"
+                  />
                   <TextField
                     size="small"
                     type="number"

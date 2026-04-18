@@ -47,6 +47,7 @@ public class AutoSupportGenerationServiceTests
             current.AutoSupportMaxSupportsPerIsland,
             current.AutoSupportMinIslandAreaMm2,
             current.AutoSupportMaxSupportDistanceMm,
+            current.AutoSupportUnsupportedIslandVolumeThresholdMm3,
             current.AutoSupportResinStrength,
             current.AutoSupportResinDensityGPerMl,
             current.AutoSupportPeelForceMultiplier,
@@ -168,12 +169,13 @@ public class AutoSupportGenerationServiceTests
             {
                 AutoSupportMergeDistanceMm = 5f,
                 AutoSupportMaxSupportDistanceMm = 6f,
+                AutoSupportUnsupportedIslandVolumeThresholdMm3 = 0.01f,
                 AutoSupportMaxSupportsPerIsland = 4,
             });
         var configuredSut = new AutoSupportGenerationService(config, NullLoggerFactory.Instance);
         var geometry = CreateGeometry(
-            MakeBox(centerX: -2.5f, centerZ: 0f, width: 1.2f, depth: 2f, height: 4f),
-            MakeBox(centerX: 2.5f, centerZ: 0f, width: 1.2f, depth: 2f, height: 4f));
+            MakeBox(centerX: -6f, centerZ: 0f, width: 1.2f, depth: 2f, height: 4f),
+            MakeBox(centerX: 6f, centerZ: 0f, width: 1.2f, depth: 2f, height: 4f));
 
         var result = configuredSut.GenerateSupportPreview(geometry);
 
@@ -317,6 +319,45 @@ public class AutoSupportGenerationServiceTests
         Assert.True(
             highResult.SupportPoints.Count >= lowResult.SupportPoints.Count,
             $"High peel force ({highResult.SupportPoints.Count} supports) should need at least as many supports as low peel force ({lowResult.SupportPoints.Count})");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_DelaysSupportUntilUnsupportedVolumeThresholdExceeded()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_DelaysSupportUntilUnsupportedVolumeThresholdExceeded),
+            request => request with
+            {
+                AutoSupportUnsupportedIslandVolumeThresholdMm3 = 10f,
+                AutoSupportMaxSupportsPerIsland = 2,
+            });
+        var configuredSut = new AutoSupportGenerationService(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 2f, depth: 2f, height: 8f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var firstSupportHeight = result.SupportPoints.Min(point => point.Position.Y);
+        Assert.True(firstSupportHeight <= 0.4f, $"Expected support to be placed at earliest layer, got {firstSupportHeight:F3}mm");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_SkipsSupportsWhenUnsupportedVolumeThresholdIsVeryHigh()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_SkipsSupportsWhenUnsupportedVolumeThresholdIsVeryHigh),
+            request => request with
+            {
+                AutoSupportUnsupportedIslandVolumeThresholdMm3 = 100000f,
+            });
+        var configuredSut = new AutoSupportGenerationService(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 2f, depth: 2f, height: 4f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.Empty(result.SupportPoints);
     }
 
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
