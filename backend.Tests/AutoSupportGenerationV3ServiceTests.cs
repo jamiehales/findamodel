@@ -401,6 +401,22 @@ public class AutoSupportGenerationV3ServiceTests
             $"High area growth ({highGrowth.SupportPoints.Count}) should produce >= supports than baseline ({baseline.SupportPoints.Count})");
     }
 
+    [Fact]
+    public void GenerateSupportPreview_Donut_DoesNotPlaceSupportInCenterHole()
+    {
+        var geometry = CreateGeometry(
+            MakeTorus(majorRadius: 10f, minorRadius: 3f, centerY: 8f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        Assert.Contains(result.SupportPoints, point =>
+        {
+            var radialDistance = MathF.Sqrt((point.Position.X * point.Position.X) + (point.Position.Z * point.Position.Z));
+            return radialDistance >= 6f;
+        });
+    }
+
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
     {
         var triangles = parts.SelectMany(x => x).ToList();
@@ -447,5 +463,48 @@ public class AutoSupportGenerationV3ServiceTests
             new Triangle3D(p100, p101, p111, new Vec3(1f, 0f, 0f)),
             new Triangle3D(p100, p111, p110, new Vec3(1f, 0f, 0f)),
         ];
+    }
+
+    private static List<Triangle3D> MakeTorus(float majorRadius, float minorRadius, float centerY)
+    {
+        const int majorSegments = 32;
+        const int minorSegments = 24;
+        var triangles = new List<Triangle3D>(majorSegments * minorSegments * 2);
+
+        for (var i = 0; i < majorSegments; i++)
+        {
+            var u0 = (MathF.PI * 2f * i) / majorSegments;
+            var u1 = (MathF.PI * 2f * (i + 1)) / majorSegments;
+
+            for (var j = 0; j < minorSegments; j++)
+            {
+                var v0 = (MathF.PI * 2f * j) / minorSegments;
+                var v1 = (MathF.PI * 2f * (j + 1)) / minorSegments;
+
+                var p00 = TorusPoint(majorRadius, minorRadius, centerY, u0, v0);
+                var p01 = TorusPoint(majorRadius, minorRadius, centerY, u0, v1);
+                var p10 = TorusPoint(majorRadius, minorRadius, centerY, u1, v0);
+                var p11 = TorusPoint(majorRadius, minorRadius, centerY, u1, v1);
+
+                triangles.Add(new Triangle3D(p00, p01, p10, (p01 - p00).Cross(p10 - p00).Normalized));
+                triangles.Add(new Triangle3D(p01, p11, p10, (p11 - p01).Cross(p10 - p01).Normalized));
+            }
+        }
+
+        return triangles;
+    }
+
+    private static Vec3 TorusPoint(float majorRadius, float minorRadius, float centerY, float u, float v)
+    {
+        var cosU = MathF.Cos(u);
+        var sinU = MathF.Sin(u);
+        var cosV = MathF.Cos(v);
+        var sinV = MathF.Sin(v);
+        var ringRadius = majorRadius + (minorRadius * cosV);
+
+        return new Vec3(
+            ringRadius * cosU,
+            centerY + (minorRadius * sinV),
+            ringRadius * sinU);
     }
 }

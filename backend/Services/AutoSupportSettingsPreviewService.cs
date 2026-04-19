@@ -45,6 +45,7 @@ public sealed class AutoSupportSettingsPreviewService(
             new("cube-40", "Cube 40mm", "builtin", BuildCubeGeometry(40f, new Vec3(0f, 30f, 0f))),
             new("cube-40-rotated-45", "Cube 40mm rotated 45 degrees", "builtin", BuildRotatedCubeGeometry(40f, MathF.PI / 4f, new Vec3(0f, 45f, 0f))),
             new("cone-upside-down", "Upside-down cone 40mm diameter x 80mm height", "builtin", BuildInvertedConeGeometry(20f, 80f, 10f)),
+            new("donut-40", "Donut 40mm diameter (tests enclosed void)", "builtin", BuildDonutGeometry(15f, 5f, new Vec3(0f, 35f, 0f))),
         };
 
         await AppendExternalScenariosAsync(scenarios, cancellationToken);
@@ -282,14 +283,14 @@ public sealed class AutoSupportSettingsPreviewService(
 
     private static LoadedGeometry BuildParallelPlaneGeometry()
         => CreateGeometry([
-            .. BuildBoxTriangles(
+            .. BuildBoxTrianglesList(
                 new Vec3(-20f, 28f, -20f),
                 new Vec3(20f, 30f, 20f))
         ]);
 
     private static LoadedGeometry BuildAngledPlaneGeometry()
     {
-        var localPlane = BuildBoxTriangles(new Vec3(-20f, -1f, -20f), new Vec3(20f, 1f, 20f));
+        var localPlane = BuildBoxTrianglesList(new Vec3(-20f, -1f, -20f), new Vec3(20f, 1f, 20f));
         var rotated = TransformTriangles(localPlane, point =>
         {
             var rotatedPoint = RotateX(point, MathF.PI / 6f);
@@ -336,13 +337,13 @@ public sealed class AutoSupportSettingsPreviewService(
         var half = sizeMm / 2f;
         var min = new Vec3(centre.X - half, centre.Y - half, centre.Z - half);
         var max = new Vec3(centre.X + half, centre.Y + half, centre.Z + half);
-        return CreateGeometry(BuildBoxTriangles(min, max));
+        return CreateGeometry(BuildBoxTrianglesList(min, max));
     }
 
     private static LoadedGeometry BuildRotatedCubeGeometry(float sizeMm, float angleRad, Vec3 centre)
     {
         var half = sizeMm / 2f;
-        var local = BuildBoxTriangles(new Vec3(-half, -half, -half), new Vec3(half, half, half));
+        var local = BuildBoxTrianglesList(new Vec3(-half, -half, -half), new Vec3(half, half, half));
         var rotated = TransformTriangles(local, point => Translate(RotateX(point, angleRad), centre.X, centre.Y, centre.Z));
         return CreateGeometry(rotated);
     }
@@ -371,7 +372,41 @@ public sealed class AutoSupportSettingsPreviewService(
         return CreateGeometry(triangles);
     }
 
-    private static List<Triangle3D> BuildBoxTriangles(Vec3 min, Vec3 max)
+    private static LoadedGeometry BuildDonutGeometry(float majorRadiusMm, float minorRadiusMm, Vec3 centre)
+    {
+        const int majorSegments = 32;
+        const int minorSegments = 24;
+        var triangles = new List<Triangle3D>(majorSegments * minorSegments * 2);
+
+        for (var i = 0; i < majorSegments; i++)
+        {
+            var u0 = (MathF.PI * 2f * i) / majorSegments;
+            var u1 = (MathF.PI * 2f * (i + 1)) / majorSegments;
+
+            for (var j = 0; j < minorSegments; j++)
+            {
+                var v0 = (MathF.PI * 2f * j) / minorSegments;
+                var v1 = (MathF.PI * 2f * (j + 1)) / minorSegments;
+
+                var p00 = TorusPoint(centre, majorRadiusMm, minorRadiusMm, u0, v0);
+                var p01 = TorusPoint(centre, majorRadiusMm, minorRadiusMm, u0, v1);
+                var p10 = TorusPoint(centre, majorRadiusMm, minorRadiusMm, u1, v0);
+                var p11 = TorusPoint(centre, majorRadiusMm, minorRadiusMm, u1, v1);
+
+                triangles.Add(MakeTriangle(p00, p10, p01));
+                triangles.Add(MakeTriangle(p01, p10, p11));
+            }
+        }
+
+        return CreateGeometry(triangles);
+    }
+
+    private static LoadedGeometry BuildBoxTriangles(Vec3 min, Vec3 max)
+    {
+        return CreateGeometry(BuildBoxTrianglesList(min, max));
+    }
+
+    private static List<Triangle3D> BuildBoxTrianglesList(Vec3 min, Vec3 max)
     {
         var triangles = new List<Triangle3D>(12);
 
@@ -419,6 +454,19 @@ public sealed class AutoSupportSettingsPreviewService(
 
     private static LoadedGeometry CreateGeometry(List<Triangle3D> triangles)
     {
+        if (triangles.Count == 0)
+        {
+            return new LoadedGeometry
+            {
+                Triangles = triangles,
+                DimensionXMm = 0f,
+                DimensionYMm = 0f,
+                DimensionZMm = 0f,
+                SphereCentre = new Vec3(0f, 0f, 0f),
+                SphereRadius = 0f,
+            };
+        }
+
         float minX = float.MaxValue;
         float minY = float.MaxValue;
         float minZ = float.MaxValue;
@@ -431,6 +479,38 @@ public sealed class AutoSupportSettingsPreviewService(
             UpdateBounds(triangle.V0, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
             UpdateBounds(triangle.V1, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
             UpdateBounds(triangle.V2, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+        }
+
+        var offsetX = -((minX + maxX) * 0.5f);
+        var offsetY = -minY;
+        var offsetZ = -((minZ + maxZ) * 0.5f);
+
+        if (MathF.Abs(offsetX) > 0.0001f || MathF.Abs(offsetY) > 0.0001f || MathF.Abs(offsetZ) > 0.0001f)
+        {
+            var normalized = new List<Triangle3D>(triangles.Count);
+            foreach (var triangle in triangles)
+            {
+                var v0 = Translate(triangle.V0, offsetX, offsetY, offsetZ);
+                var v1 = Translate(triangle.V1, offsetX, offsetY, offsetZ);
+                var v2 = Translate(triangle.V2, offsetX, offsetY, offsetZ);
+                normalized.Add(MakeTriangle(v0, v1, v2));
+            }
+
+            triangles = normalized;
+
+            minX = float.MaxValue;
+            minY = float.MaxValue;
+            minZ = float.MaxValue;
+            maxX = float.MinValue;
+            maxY = float.MinValue;
+            maxZ = float.MinValue;
+
+            foreach (var triangle in triangles)
+            {
+                UpdateBounds(triangle.V0, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+                UpdateBounds(triangle.V1, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+                UpdateBounds(triangle.V2, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+            }
         }
 
         var dimensionX = maxX - minX;
@@ -481,6 +561,23 @@ public sealed class AutoSupportSettingsPreviewService(
             centre.X + (radiusMm * sinTheta * MathF.Cos(phi)),
             centre.Y + (radiusMm * MathF.Cos(theta)),
             centre.Z + (radiusMm * sinTheta * MathF.Sin(phi)));
+    }
+
+    private static Vec3 TorusPoint(Vec3 centre, float majorRadiusMm, float minorRadiusMm, float u, float v)
+    {
+        var cosU = MathF.Cos(u);
+        var sinU = MathF.Sin(u);
+        var cosV = MathF.Cos(v);
+        var sinV = MathF.Sin(v);
+
+        var x = (majorRadiusMm + (minorRadiusMm * cosV)) * cosU;
+        var y = minorRadiusMm * sinV;
+        var z = (majorRadiusMm + (minorRadiusMm * cosV)) * sinU;
+
+        return new Vec3(
+            centre.X + x,
+            centre.Y + y,
+            centre.Z + z);
     }
 
     private static Vec3 RotateX(Vec3 point, float angleRad)

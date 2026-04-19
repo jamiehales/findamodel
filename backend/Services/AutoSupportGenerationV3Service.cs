@@ -16,6 +16,7 @@ public sealed class AutoSupportGenerationV3Service
     private const int TrianglesPerVoxelBlock = 12;
     private const int MaxPreviewVoxelTriangles = 2_000_000;
     private const int MaxReinforcementIterationsPerIsland = 32;
+    private const int MaxSolverPasses = 8;
 
     private readonly ILogger logger;
     private readonly OrthographicProjectionSliceBitmapGenerator slicer = new();
@@ -126,62 +127,37 @@ public sealed class AutoSupportGenerationV3Service
                 layerAreaGrowthRatio[layerIndex] = (layerTotalArea[layerIndex] - prevArea) / prevArea;
         }
 
-        // An island is an overhang "tip" when none of its pixels exist in the layer below -
-        // i.e. it is the first (lowest) appearance of that connected region, requiring a support.
-        // Build per-layer pixel sets for the layer below upfront so the check is a simple hash lookup.
-        var prevLayerPixels = new HashSet<(int Column, int Row)>?[layerCount];
-        for (var layerIndex = 1; layerIndex < layerCount; layerIndex++)
+        // Build per-layer pixel sets once so each algorithm can re-evaluate support decisions
+        // against all currently placed supports from lower layers.
+        var layerPixelSets = new HashSet<(int Column, int Row)>?[layerCount];
+        for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
         {
-            var below = layerIslands[layerIndex - 1];
-            if (below.Count == 0)
+            var islands = layerIslands[layerIndex];
+            if (islands.Count == 0)
                 continue;
 
             var set = new HashSet<(int Column, int Row)>();
-            foreach (var island in below)
+            foreach (var island in islands)
                 foreach (var pixel in island.PixelCoords)
                     set.Add(pixel);
-            prevLayerPixels[layerIndex] = set;
+            layerPixelSets[layerIndex] = set;
         }
+
+        // An island is an overhang "tip" when none of its pixels exist in the layer below -
+        // i.e. it is the first (lowest) appearance of that connected region, requiring a support.
+        var prevLayerPixels = new HashSet<(int Column, int Row)>?[layerCount];
+        for (var layerIndex = 1; layerIndex < layerCount; layerIndex++)
+            prevLayerPixels[layerIndex] = layerPixelSets[layerIndex - 1];
 
         var supportPoints = new List<SupportPoint>();
 
-        for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+        for (var solverPass = 0; solverPass < MaxSolverPasses; solverPass++)
         {
-            var prevPixels = prevLayerPixels[layerIndex];
+            var changed = false;
 
-            foreach (var island in layerIslands[layerIndex])
-            {
-                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
-                if (unsupportedPixels.Count == 0)
-                    continue;
-
-                var centroid = ComputePixelCentroidMm(unsupportedPixels, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight);
-
-                supportPoints.Add(new SupportPoint(
-                    new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
-                    GetTipRadiusMm(SupportSize.Light, tuning),
-                    new Vec3(0f, 0f, 0f),
-                    SupportSize.Light));
-            }
-        }
-
-        ReinforceSupportsByForceAndSpacing(
-            layerIslands,
-            prevLayerPixels,
-            supportPoints,
-            bedWidthMm,
-            bedDepthMm,
-            pixelWidth,
-            pixelHeight,
-            layerHeightMm,
-            layerAreaGrowthRatio,
-            tuning);
-
-        // Gravity pass: accumulate connected mass per support top-down
-        if (tuning.GravityEnabled)
-        {
-            ApplyGravityLoading(
+            changed |= ReinforceSupportsByForceAndSpacing(
                 layerIslands,
+                layerPixelSets,
                 prevLayerPixels,
                 supportPoints,
                 bedWidthMm,
@@ -189,21 +165,40 @@ public sealed class AutoSupportGenerationV3Service
                 pixelWidth,
                 pixelHeight,
                 layerHeightMm,
+                layerAreaGrowthRatio,
                 tuning);
-        }
 
-        // Shrinkage edge-bias pass: for large flat islands, add edge supports
-        if (tuning.ShrinkagePercent > 0f)
-        {
-            ApplyShrinkageEdgeSupports(
-                layerIslands,
-                prevLayerPixels,
-                supportPoints,
-                bedWidthMm,
-                bedDepthMm,
-                pixelWidth,
-                pixelHeight,
-                tuning);
+            if (tuning.ShrinkagePercent > 0f)
+            {
+                changed |= ApplyShrinkageEdgeSupports(
+                    layerIslands,
+                    layerPixelSets,
+                    prevLayerPixels,
+                    supportPoints,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    layerHeightMm,
+                    tuning);
+            }
+
+            if (tuning.GravityEnabled)
+            {
+                changed |= ApplyGravityLoading(
+                    layerIslands,
+                    prevLayerPixels,
+                    supportPoints,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    layerHeightMm,
+                    tuning);
+            }
+
+            if (!changed)
+                break;
         }
 
         PopulateSupportForces(
@@ -359,8 +354,9 @@ public sealed class AutoSupportGenerationV3Service
     private static float RowToZ(int row, float bedDepthMm, int height)
         => (bedDepthMm * 0.5f) - (((row + 0.5f) / height) * bedDepthMm);
 
-    private static void ReinforceSupportsByForceAndSpacing(
+    private static bool ReinforceSupportsByForceAndSpacing(
         List<TipIsland>[] layerIslands,
+        HashSet<(int Column, int Row)>?[] layerPixelSets,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
         List<SupportPoint> supportPoints,
         float bedWidthMm,
@@ -371,6 +367,8 @@ public sealed class AutoSupportGenerationV3Service
         float[] layerAreaGrowthRatio,
         V3Tuning tuning)
     {
+        var changed = false;
+
         for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
         {
             var prevPixels = prevLayerPixels[layerIndex];
@@ -383,7 +381,7 @@ public sealed class AutoSupportGenerationV3Service
                 for (var i = 0; i < MaxReinforcementIterationsPerIsland; i++)
                 {
                     var supportIndices = FindSupportingSupportsForPixels(
-                        unsupportedPixels,
+                        island.PixelCoords,
                         island.SliceHeightMm,
                         supportPoints,
                         bedWidthMm,
@@ -395,11 +393,21 @@ public sealed class AutoSupportGenerationV3Service
                     if (supportIndices.Count == 0)
                     {
                         var centroid = ComputePixelCentroidMm(unsupportedPixels, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight);
-                        supportPoints.Add(new SupportPoint(
-                            new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
-                            GetTipRadiusMm(SupportSize.Light, tuning),
-                            new Vec3(0f, 0f, 0f),
-                            SupportSize.Light));
+                        AddSupportAtBestLayer(
+                            supportPoints,
+                            island.PixelCoords,
+                            layerPixelSets,
+                            layerIndex,
+                            centroid.XMm,
+                            centroid.ZMm,
+                            SupportSize.Light,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight,
+                            layerHeightMm,
+                            tuning);
+                        changed = true;
                         continue;
                     }
 
@@ -433,7 +441,7 @@ public sealed class AutoSupportGenerationV3Service
                     var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
                     var strictSupportIndices = FindSupportingSupportsForPixels(
-                        unsupportedPixels,
+                        island.PixelCoords,
                         island.SliceHeightMm,
                         supportPoints,
                         bedWidthMm,
@@ -452,11 +460,21 @@ public sealed class AutoSupportGenerationV3Service
                             bedDepthMm,
                             pixelWidth,
                             pixelHeight);
-                        supportPoints.Add(new SupportPoint(
-                            new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
-                            GetTipRadiusMm(SupportSize.Light, tuning),
-                            new Vec3(0f, 0f, 0f),
-                            SupportSize.Light));
+                        AddSupportAtBestLayer(
+                            supportPoints,
+                            island.PixelCoords,
+                            layerPixelSets,
+                            layerIndex,
+                            centroid.XMm,
+                            centroid.ZMm,
+                            SupportSize.Light,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight,
+                            layerHeightMm,
+                            tuning);
+                        changed = true;
                         continue;
                     }
 
@@ -473,14 +491,91 @@ public sealed class AutoSupportGenerationV3Service
                             ? SupportSize.Medium
                             : SupportSize.Light;
 
-                    supportPoints.Add(new SupportPoint(
-                        new Vec3(furthest.XMm, island.SliceHeightMm, furthest.ZMm),
-                        GetTipRadiusMm(newSize, tuning),
-                        new Vec3(0f, 0f, 0f),
-                        newSize));
+                    AddSupportAtBestLayer(
+                        supportPoints,
+                        island.PixelCoords,
+                        layerPixelSets,
+                        layerIndex,
+                        furthest.XMm,
+                        furthest.ZMm,
+                        newSize,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight,
+                        layerHeightMm,
+                        tuning);
+                    changed = true;
                 }
             }
         }
+
+        return changed;
+    }
+
+    private static void AddSupportAtBestLayer(
+        List<SupportPoint> supportPoints,
+        List<(int X, int Y)> candidatePixels,
+        HashSet<(int Column, int Row)>?[] layerPixelSets,
+        int currentLayerIndex,
+        float targetXMm,
+        float targetZMm,
+        SupportSize size,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        V3Tuning tuning)
+    {
+        if (candidatePixels.Count == 0)
+            return;
+
+        var bestPixel = candidatePixels[0];
+        var bestLayer = currentLayerIndex;
+        var bestDistSq = float.MaxValue;
+
+        foreach (var pixel in candidatePixels)
+        {
+            var candidateLayer = FindLowestLayerContainingPixel(layerPixelSets, currentLayerIndex, pixel);
+            var xMm = ColumnToX(pixel.X, bedWidthMm, pixelWidth);
+            var zMm = RowToZ(pixel.Y, bedDepthMm, pixelHeight);
+            var dx = xMm - targetXMm;
+            var dz = zMm - targetZMm;
+            var distSq = (dx * dx) + (dz * dz);
+
+            if (candidateLayer < bestLayer || (candidateLayer == bestLayer && distSq < bestDistSq))
+            {
+                bestLayer = candidateLayer;
+                bestPixel = pixel;
+                bestDistSq = distSq;
+            }
+        }
+
+        var yMm = (bestLayer * layerHeightMm) + (layerHeightMm * 0.5f);
+        var xPlacementMm = ColumnToX(bestPixel.X, bedWidthMm, pixelWidth);
+        var zPlacementMm = RowToZ(bestPixel.Y, bedDepthMm, pixelHeight);
+
+        supportPoints.Add(new SupportPoint(
+            new Vec3(xPlacementMm, yMm, zPlacementMm),
+            GetTipRadiusMm(size, tuning),
+            new Vec3(0f, 0f, 0f),
+            size));
+    }
+
+    private static int FindLowestLayerContainingPixel(
+        HashSet<(int Column, int Row)>?[] layerPixelSets,
+        int currentLayerIndex,
+        (int X, int Y) pixel)
+    {
+        for (var layerIndex = 0; layerIndex <= currentLayerIndex; layerIndex++)
+        {
+            var set = layerPixelSets[layerIndex];
+            if (set != null && set.Contains((pixel.X, pixel.Y)))
+                return layerIndex;
+        }
+
+        return currentLayerIndex;
     }
 
     private static void PopulateSupportForces(
@@ -1225,7 +1320,57 @@ public sealed class AutoSupportGenerationV3Service
     // Item 3: Apply cumulative gravitational loading per support.
     // For each support, accumulate the weight of connected geometry above it
     // and upgrade supports that are overloaded by gravitational mass.
-    private static void ApplyGravityLoading(
+    private static bool ApplyGravityLoading(
+        List<TipIsland>[] layerIslands,
+        HashSet<(int Column, int Row)>?[] prevLayerPixels,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        V3Tuning tuning)
+    {
+        var cumulativeWeightPerSupport = ComputeCumulativeWeightPerSupport(
+            layerIslands,
+            prevLayerPixels,
+            supportPoints,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm,
+            tuning);
+
+        var changed = false;
+
+        // Upgrade supports that are overloaded by gravity
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            var support = supportPoints[i];
+            var capacity = ComputeCapacity(support, tuning);
+            var gravityLoad = cumulativeWeightPerSupport[i];
+
+            if (gravityLoad <= capacity * 0.5f)
+                continue;
+
+            var newSize = support.Size;
+            if (gravityLoad > capacity * 1.5f)
+                newSize = SupportSize.Heavy;
+            else if (gravityLoad > capacity)
+                newSize = support.Size == SupportSize.Light ? SupportSize.Medium : support.Size;
+
+            if (newSize != support.Size)
+            {
+                supportPoints[i] = support with { Size = newSize, RadiusMm = GetTipRadiusMm(newSize, tuning) };
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private static float[] ComputeCumulativeWeightPerSupport(
         List<TipIsland>[] layerIslands,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
         List<SupportPoint> supportPoints,
@@ -1244,8 +1389,13 @@ public sealed class AutoSupportGenerationV3Service
         // Bottom-up pass: assign each layer's volume to its supporting supports
         for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
         {
+            var prevPixels = prevLayerPixels[layerIndex];
             foreach (var island in layerIslands[layerIndex])
             {
+                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                if (unsupportedPixels.Count == 0)
+                    continue;
+
                 var supportIndices = FindSupportingSupportsForPixels(
                     island.PixelCoords,
                     island.SliceHeightMm,
@@ -1271,41 +1421,26 @@ public sealed class AutoSupportGenerationV3Service
             }
         }
 
-        // Upgrade supports that are overloaded by gravity
-        for (var i = 0; i < supportPoints.Count; i++)
-        {
-            var support = supportPoints[i];
-            var capacity = ComputeCapacity(support, tuning);
-            var gravityLoad = cumulativeWeightPerSupport[i];
-
-            if (gravityLoad <= capacity * 0.5f)
-                continue;
-
-            var newSize = support.Size;
-            if (gravityLoad > capacity * 1.5f)
-                newSize = SupportSize.Heavy;
-            else if (gravityLoad > capacity)
-                newSize = support.Size == SupportSize.Light ? SupportSize.Medium : support.Size;
-
-            if (newSize != support.Size)
-                supportPoints[i] = support with { Size = newSize, RadiusMm = GetTipRadiusMm(newSize, tuning) };
-        }
+        return cumulativeWeightPerSupport;
     }
 
     // Item 5: Place additional supports at edges of large flat islands to counter shrinkage curling.
-    private static void ApplyShrinkageEdgeSupports(
+    private static bool ApplyShrinkageEdgeSupports(
         List<TipIsland>[] layerIslands,
+        HashSet<(int Column, int Row)>?[] layerPixelSets,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
         List<SupportPoint> supportPoints,
         float bedWidthMm,
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
+        float layerHeightMm,
         V3Tuning tuning)
     {
         var shrinkageFactor = tuning.ShrinkagePercent / 100f;
         var pixelWidthMm = bedWidthMm / pixelWidth;
         var pixelDepthMm = bedDepthMm / pixelHeight;
+        var changed = false;
 
         // Threshold: large islands with low perimeter-to-area ratio are shrinkage-prone
         var minAreaForShrinkage = 25f; // mm2, only large flat areas need edge supports
@@ -1379,14 +1514,26 @@ public sealed class AutoSupportGenerationV3Service
                     var (ex, ey) = edgePixels[e * step];
                     var xMm = ColumnToX(ex, bedWidthMm, pixelWidth);
                     var zMm = RowToZ(ey, bedDepthMm, pixelHeight);
-                    supportPoints.Add(new SupportPoint(
-                        new Vec3(xMm, island.SliceHeightMm, zMm),
-                        GetTipRadiusMm(SupportSize.Light, tuning),
-                        new Vec3(0f, 0f, 0f),
-                        SupportSize.Light));
+                    AddSupportAtBestLayer(
+                        supportPoints,
+                        island.PixelCoords,
+                        layerPixelSets,
+                        layerIndex,
+                        xMm,
+                        zMm,
+                        SupportSize.Light,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight,
+                        layerHeightMm,
+                        tuning);
+                    changed = true;
                 }
             }
         }
+
+        return changed;
     }
 
     private sealed record TipIsland(
