@@ -362,28 +362,51 @@ export interface AutoSupportJob {
   islands: AutoSupportIsland[] | null;
 }
 
+export interface AutoSupportSettingsPreviewTuningRequest {
+  bedMarginMm: number;
+  minVoxelSizeMm: number;
+  maxVoxelSizeMm: number;
+  minLayerHeightMm: number;
+  maxLayerHeightMm: number;
+  mergeDistanceMm: number;
+  minIslandAreaMm2: number;
+  resinStrength: number;
+  crushForceThreshold: number;
+  maxAngularForce: number;
+  peelForceMultiplier: number;
+  lightTipRadiusMm: number;
+  mediumTipRadiusMm: number;
+  heavyTipRadiusMm: number;
+}
+
+export interface AutoSupportSettingsPreviewScenario {
+  scenarioId: string;
+  name: string;
+  source: 'builtin' | 'stl' | string;
+  status: 'completed' | 'failed' | 'not-generated';
+  supportCount: number;
+  errorMessage: string | null;
+  supportPoints: AutoSupportPoint[] | null;
+  islands: AutoSupportIsland[] | null;
+}
+
+export interface AutoSupportSettingsPreviewResponse {
+  previewId: string;
+  scenarios: AutoSupportSettingsPreviewScenario[];
+}
+
+export interface AutoSupportSettingsPreviewRequest {
+  tuning: AutoSupportSettingsPreviewTuningRequest;
+  scenarioId?: string;
+}
+
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {
   const r = await apiFetch(`/api/models/${id}/geometry/split`, {
     headers: { Accept: 'application/vnd.findamodel.mesh-split' },
   });
   if (r.status === 204) return null;
   if (!r.ok) throw new Error('Failed to fetch split geometry');
-
-  const buf = await r.arrayBuffer();
-  const view = new DataView(buf);
-  let offset = 0;
-
-  const bodyLength = view.getUint32(offset, true);
-  offset += 4;
-  const body = decodeBinaryGeometry(buf.slice(offset, offset + bodyLength));
-  offset += bodyLength;
-
-  const supportLength = view.getUint32(offset, true);
-  offset += 4;
-  const supports =
-    supportLength > 0 ? decodeBinaryGeometry(buf.slice(offset, offset + supportLength)) : null;
-
-  return { body, supports };
+  return decodeSplitGeometryEnvelope(await r.arrayBuffer());
 }
 
 export async function createAutoSupportJob(id: string): Promise<AutoSupportJob> {
@@ -410,7 +433,40 @@ export async function fetchAutoSupportGeometry(
   if (r.status === 204 || r.status === 404) return null;
   if (!r.ok) throw new Error('Failed to fetch generated support geometry');
 
-  const buf = await r.arrayBuffer();
+  return decodeSplitGeometryEnvelope(await r.arrayBuffer());
+}
+
+export async function createAutoSupportSettingsPreview(
+  request: AutoSupportSettingsPreviewRequest,
+): Promise<AutoSupportSettingsPreviewResponse> {
+  const r = await apiFetch('/api/settings/auto-support-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!r.ok) throw new Error('Failed to generate auto-support settings preview');
+  return r.json();
+}
+
+export async function fetchAutoSupportSettingsPreviewGeometry(
+  previewId: string,
+  scenarioId: string,
+): Promise<SplitGeometryResponse | null> {
+  const r = await apiFetch(
+    `/api/settings/auto-support-preview/${encodeURIComponent(previewId)}/geometry/${encodeURIComponent(scenarioId)}`,
+    {
+      headers: { Accept: 'application/vnd.findamodel.mesh-split' },
+    },
+  );
+
+  if (r.status === 204 || r.status === 404) return null;
+  if (!r.ok) throw new Error('Failed to fetch auto-support settings preview geometry');
+
+  return decodeSplitGeometryEnvelope(await r.arrayBuffer());
+}
+
+function decodeSplitGeometryEnvelope(buf: ArrayBuffer): SplitGeometryResponse {
   const view = new DataView(buf);
   let offset = 0;
 

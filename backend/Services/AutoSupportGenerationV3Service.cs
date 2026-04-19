@@ -15,6 +15,7 @@ public sealed class AutoSupportGenerationV3Service
 {
     private const int TrianglesPerVoxelBlock = 12;
     private const int MaxPreviewVoxelTriangles = 2_000_000;
+    private const int MaxReinforcementIterationsPerIsland = 32;
 
     private readonly ILogger logger;
     private readonly OrthographicProjectionSliceBitmapGenerator slicer = new();
@@ -31,14 +32,14 @@ public sealed class AutoSupportGenerationV3Service
         logger = loggerFactory.CreateLogger<AutoSupportGenerationV3Service>();
     }
 
-    public SupportPreviewResult GenerateSupportPreview(LoadedGeometry geometry)
+    public SupportPreviewResult GenerateSupportPreview(LoadedGeometry geometry, AutoSupportV3TuningOverrides? tuningOverrides = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
         if (geometry.Triangles.Count == 0)
             return new SupportPreviewResult([], CloneGeometry(geometry, []), []);
 
-        var tuning = ResolveTuning();
+        var tuning = ResolveTuning(tuningOverrides);
         var bedWidthMm = MathF.Max(geometry.DimensionXMm + (tuning.BedMarginMm * 2f), 10f);
         var bedDepthMm = MathF.Max(geometry.DimensionZMm + (tuning.BedMarginMm * 2f), 10f);
         var voxelSizeMm = Math.Clamp(
@@ -261,8 +262,7 @@ public sealed class AutoSupportGenerationV3Service
                 if (unsupportedPixels.Count == 0)
                     continue;
 
-                var maxIterations = Math.Max(1, tuning.MaxSupportsPerIsland);
-                for (var i = 0; i < maxIterations; i++)
+                for (var i = 0; i < MaxReinforcementIterationsPerIsland; i++)
                 {
                     var supportIndices = FindSupportingSupportsForPixels(
                         unsupportedPixels,
@@ -312,6 +312,33 @@ public sealed class AutoSupportGenerationV3Service
                     var exceedsCrushForce = maxCompressiveForce > tuning.CrushForceThreshold;
                     var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
+                    var strictSupportIndices = FindSupportingSupportsForPixels(
+                        unsupportedPixels,
+                        island.SliceHeightMm,
+                        supportPoints,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight,
+                        layerHeightMm,
+                        includeNeighborPixels: false);
+                    var islandWouldLoseSupportOnMerge = strictSupportIndices.Count == 0;
+
+                    if (islandWouldLoseSupportOnMerge)
+                    {
+                        var centroid = ComputePixelCentroidMm(
+                            unsupportedPixels,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight);
+                        supportPoints.Add(new SupportPoint(
+                            new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
+                            GetTipRadiusMm(SupportSize.Light, tuning),
+                            new Vec3(0f, 0f, 0f),
+                            SupportSize.Light));
+                        continue;
+                    }
 
                     if (!isOverloaded && !exceedsCrushForce && !exceedsAngularForce && !exceedsSpacing)
                         break;
@@ -505,7 +532,8 @@ public sealed class AutoSupportGenerationV3Service
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerHeightMm)
+        float layerHeightMm,
+        bool includeNeighborPixels = true)
     {
         var indices = new List<int>();
         var maxY = sliceHeightMm + (layerHeightMm * 0.5f);
@@ -517,7 +545,14 @@ public sealed class AutoSupportGenerationV3Service
             if (support.Position.Y > maxY)
                 continue;
 
-            if (IsSupportInsidePixelSet(support.Position, pixelSet, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight))
+            if (IsSupportInsidePixelSet(
+                support.Position,
+                pixelSet,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight,
+                includeNeighborPixels))
                 indices.Add(i);
         }
 
@@ -530,10 +565,14 @@ public sealed class AutoSupportGenerationV3Service
         float bedWidthMm,
         float bedDepthMm,
         int pixelWidth,
-        int pixelHeight)
+        int pixelHeight,
+        bool includeNeighborPixels)
     {
         var col = (int)MathF.Floor(((supportPosition.X + (bedWidthMm * 0.5f)) / bedWidthMm) * pixelWidth);
         var row = (int)MathF.Floor((((bedDepthMm * 0.5f) - supportPosition.Z) / bedDepthMm) * pixelHeight);
+
+        if (!includeNeighborPixels)
+            return pixelSet.Contains((col, row));
 
         for (var dy = -1; dy <= 1; dy++)
         {
@@ -839,8 +878,27 @@ public sealed class AutoSupportGenerationV3Service
         SphereRadius = geometry.SphereRadius,
     };
 
-    private V3Tuning ResolveTuning()
+    private V3Tuning ResolveTuning(AutoSupportV3TuningOverrides? tuningOverrides)
     {
+        if (tuningOverrides != null)
+        {
+            return new V3Tuning(
+                BedMarginMm: tuningOverrides.BedMarginMm,
+                MinVoxelSizeMm: tuningOverrides.MinVoxelSizeMm,
+                MaxVoxelSizeMm: tuningOverrides.MaxVoxelSizeMm,
+                MinLayerHeightMm: tuningOverrides.MinLayerHeightMm,
+                MaxLayerHeightMm: tuningOverrides.MaxLayerHeightMm,
+                MinIslandAreaMm2: tuningOverrides.MinIslandAreaMm2,
+                SupportSpacingThresholdMm: tuningOverrides.SupportSpacingThresholdMm,
+                ResinStrength: tuningOverrides.ResinStrength,
+                CrushForceThreshold: tuningOverrides.CrushForceThreshold,
+                MaxAngularForce: tuningOverrides.MaxAngularForce,
+                PeelForceMultiplier: tuningOverrides.PeelForceMultiplier,
+                LightTipRadiusMm: tuningOverrides.LightTipRadiusMm,
+                MediumTipRadiusMm: tuningOverrides.MediumTipRadiusMm,
+                HeavyTipRadiusMm: tuningOverrides.HeavyTipRadiusMm);
+        }
+
         var config = appConfigService?.GetAsync().GetAwaiter().GetResult();
         return new V3Tuning(
             BedMarginMm: config?.AutoSupportBedMarginMm ?? AppConfigService.DefaultAutoSupportBedMarginMm,
@@ -850,7 +908,6 @@ public sealed class AutoSupportGenerationV3Service
             MaxLayerHeightMm: config?.AutoSupportMaxLayerHeightMm ?? AppConfigService.DefaultAutoSupportMaxLayerHeightMm,
             MinIslandAreaMm2: config?.AutoSupportMinIslandAreaMm2 ?? AppConfigService.DefaultAutoSupportMinIslandAreaMm2,
             SupportSpacingThresholdMm: config?.AutoSupportMergeDistanceMm ?? 3f,
-            MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland,
             ResinStrength: config?.AutoSupportResinStrength ?? AppConfigService.DefaultAutoSupportResinStrength,
             CrushForceThreshold: config?.AutoSupportCrushForceThreshold ?? AppConfigService.DefaultAutoSupportCrushForceThreshold,
             MaxAngularForce: config?.AutoSupportMaxAngularForce ?? AppConfigService.DefaultAutoSupportMaxAngularForce,
@@ -868,7 +925,6 @@ public sealed class AutoSupportGenerationV3Service
         float MaxLayerHeightMm,
         float MinIslandAreaMm2,
         float SupportSpacingThresholdMm,
-        int MaxSupportsPerIsland,
         float ResinStrength,
         float CrushForceThreshold,
         float MaxAngularForce,

@@ -413,6 +413,15 @@ class ViewerErrorBoundary extends React.Component<
 
 interface ModelViewerProps {
   modelId: string;
+  modelOverride?: {
+    sphereCentreX: number;
+    sphereCentreY: number;
+    sphereCentreZ: number;
+    dimensionXMm: number;
+    dimensionYMm: number;
+    dimensionZMm: number;
+    raftHeightMm: number;
+  } | null;
   convexHull?: string | null;
   concaveHull?: string | null;
   convexSansRaftHull?: string | null;
@@ -425,6 +434,7 @@ interface ModelViewerProps {
 
 export default function ModelViewer({
   modelId,
+  modelOverride,
   convexHull,
   concaveHull,
   convexSansRaftHull,
@@ -434,7 +444,11 @@ export default function ModelViewer({
   islandsOverride,
   showForceMarkers = true,
 }: ModelViewerProps) {
-  const { data: model, isPending, isError } = useModel(modelId);
+  const shouldFetchModel = modelOverride == null;
+  const { data: fetchedModel, isPending, isError } = useModel(modelId, shouldFetchModel);
+  const model = modelOverride ?? fetchedModel;
+  const isModelPending = shouldFetchModel && isPending;
+  const hasModelError = shouldFetchModel && isError;
   const { showSupports, setSupportsToggleAvailable } = useRenderControls();
   const hasSplitOverride = splitGeometryOverride !== undefined;
   const shouldFetchStoredSplitGeometry = supported === true && !hasSplitOverride;
@@ -487,15 +501,16 @@ export default function ModelViewer({
     </div>
   );
 
-  if (isError) return errorFallback;
+  if (hasModelError) return errorFallback;
 
   if (
-    isPending ||
+    isModelPending ||
     isGeometryPending ||
+    model == null ||
     geometryData == null ||
-    model.dimensionXMm == null ||
-    model.dimensionYMm == null ||
-    model.dimensionZMm == null
+    model?.dimensionXMm == null ||
+    model?.dimensionYMm == null ||
+    model?.dimensionZMm == null
   ) {
     return (
       <div
@@ -507,7 +522,7 @@ export default function ModelViewer({
         }}
       >
         <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-          {isPending || isGeometryPending || geometryData == null
+          {isModelPending || isGeometryPending || geometryData == null
             ? 'Loading model…'
             : 'Model dimensions not yet available'}
         </span>

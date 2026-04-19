@@ -120,6 +120,35 @@
   overflow-wrap: anywhere;
 }
 
+.previewGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.previewTabs {
+  border-bottom: 1px solid var(--mui-palette-divider);
+}
+
+.previewCard {
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.previewViewer {
+  height: 320px;
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.previewPlaceholder {
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     width: 100%;

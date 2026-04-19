@@ -86,24 +86,120 @@ Capacity = `pi * radius^2 * resinStrength` (default resinStrength = 1.0).
 ## Configuration
 
 All parameters are stored in the `AppConfig` entity and exposed via the Settings page.
+Each setting directly controls a specific aspect of the auto-support generation algorithm.
 
 ### Slicing Parameters
-- **BedMarginMm** (0-20mm, default 2) - margin added around the model footprint
-- **MinVoxelSizeMm** / **MaxVoxelSizeMm** - voxel size clamp range
-- **MinLayerHeightMm** / **MaxLayerHeightMm** - layer height clamp range
+
+These settings control how the model is sliced into horizontal layers for analysis.
+
+- **Bed margin (mm)** (0-20mm, default 2) - extra space added around the model footprint when
+  calculating the analysis bitmap. The model's X and Z dimensions are each increased by
+  `BedMarginMm * 2` to give the projection some breathing room. Increasing this adds padding
+  around the edges but reduces the effective resolution of the analysis grid for a given
+  pixel count.
+
+- **Min voxel size (mm)** / **Max voxel size (mm)** (default 0.8 / 2.0) - the algorithm
+  auto-calculates the voxel (pixel) size by dividing the model's largest horizontal dimension
+  by 48. This value is then clamped to the min/max range. Smaller voxel sizes increase
+  analysis resolution and detect finer geometry, but increase processing time and memory.
+  Larger values run faster but may miss small overhangs. Each pixel in the layer bitmap
+  represents one voxel-sized square area.
+
+- **Min layer height (mm)** / **Max layer height (mm)** (default 0.75 / 1.5) - the algorithm
+  auto-calculates the layer height by dividing the model's vertical dimension by 48. This
+  value is then clamped to the min/max range. Smaller layer heights analyze the model at
+  more vertical positions, catching overhangs that start between layers. Larger values
+  skip more vertical detail but run faster. Each layer is rendered at the midpoint of
+  that layer slice.
 
 ### Support Placement Parameters
-- **MergeDistanceMm** (0.1-25mm, default 2.5) - minimum distance between supports
-- **MinIslandAreaMm2** (0-2500mm2, default 4) - islands below this area are skipped
-- **MaxSupportDistanceMm** (merge distance-100mm, default 10) - max gap before adding supports
-- **MaxSupportsPerIsland** (1-64, default 6) - iteration limit per island
 
-### Support Sizing Parameters
-- **ResinStrength** (0.1-10, default 1.0) - dimensionless resin strength multiplier
-- **MicroTipRadiusMm** (0.1-3mm, default 0.4) - tip radius for Micro supports
-- **LightTipRadiusMm** (0.1-5mm, default 0.7) - tip radius for Light supports
-- **MediumTipRadiusMm** (0.1-7mm, default 1.0) - tip radius for Medium supports
-- **HeavyTipRadiusMm** (0.1-10mm, default 1.5) - tip radius for Heavy supports
+These settings control when and where new supports are added during the reinforcement loop.
+
+- **Merge supports threshold (mm)** (0.1-25mm, default 2.5) - during the reinforcement loop,
+  if the furthest unsupported pixel from any existing support exceeds this distance, a new
+  support is added at that location. Decreasing this value increases support density by
+  adding supports more aggressively to fill gaps. Increasing it allows larger unsupported
+  spans before triggering a new support.
+
+- **Min island area (mm2)** (0-2500mm2, default 4) - during island detection, connected pixel
+  regions whose total area falls below this threshold are silently discarded. This filters
+  out noise and tiny geometry features that do not need support. The area is calculated as
+  `pixelCount * pixelAreaMm2` where pixel area comes from the voxel size. Setting this to 0
+  means every detected island, no matter how small, will receive a support.
+
+### Force and Capacity Parameters
+
+These settings control the physics model that decides whether existing supports can handle
+the load or need reinforcement.
+
+- **Resin strength** (0.1+, default 1.0) - a dimensionless multiplier used in the support
+  capacity formula: `capacity = pi * tipRadius^2 * resinStrength`. This scales how much
+  load each support can carry. A value of 1.0 means the raw tip area determines capacity.
+  Increasing this (e.g. for tougher resins) allows each support to carry more force before
+  the algorithm adds reinforcement. Decreasing it (e.g. for brittle resins) makes the
+  algorithm more conservative and generates more supports.
+
+- **Crush force threshold** (0.1+, default 20.0) - the maximum compressive force allowed on
+  any single support before the algorithm adds a reinforcement support. Compressive force is
+  calculated from the angular moment of off-center pixels divided by the support tip radius.
+  When any support's compressive force exceeds this value, a new support is placed at the
+  furthest unsupported pixel. Lower values trigger reinforcement sooner, producing more
+  supports.
+
+- **Max angular force** (0.1+, default 40.0) - the maximum angular (tipping) force allowed on
+  any single support. Angular force accumulates as `peelForce * distanceToPixel` for each
+  pixel assigned to a support via Voronoi partitioning. When any support's angular force
+  exceeds this threshold, a reinforcement support is added. This setting prevents situations
+  where a support handles a large area that is far from its tip, which would cause it to
+  tip over in practice.
+
+- **Peel force multiplier** (0.01-5.0, default 0.15) - converts pixel area to force. Each
+  pixel's contribution to the peel force is `pixelAreaMm2 * peelForceMultiplier`. This
+  represents how much force the FEP/screen film separation exerts per unit area of cured
+  resin. Higher values model stickier films or resins, resulting in more supports. Lower
+  values model easier separation, resulting in fewer supports.
+
+### Support Tip Sizing Parameters
+
+These settings control the physical dimensions of support tips. The tip radius directly
+determines the contact area where the support meets the model surface.
+
+- **Light tip radius (mm)** (0.1-5mm, default 0.7) - radius of Light-size support tips.
+  Light supports are the default size for newly placed supports and have a capacity of
+  approximately `pi * 0.7^2 * resinStrength = 1.54`. Light supports are used for most
+  initial placements and low-load reinforcement (overload ratio below 1.25).
+
+- **Medium tip radius (mm)** (0.1-7mm, default 1.0) - radius of Medium-size support tips.
+  Capacity of approximately `pi * 1.0^2 * resinStrength = 3.14`. Medium supports are
+  assigned when the reinforcement loop detects moderate overload (overload ratio between
+  1.25 and 1.8). They leave a slightly larger mark on the model surface but carry roughly
+  twice the load of a Light support.
+
+- **Heavy tip radius (mm)** (0.1-10mm, default 1.5) - radius of Heavy-size support tips.
+  Capacity of approximately `pi * 1.5^2 * resinStrength = 7.07`. Heavy supports are
+  assigned when the reinforcement loop detects severe overload (overload ratio above 1.8).
+  They leave the largest mark but carry roughly 4.6 times the load of a Light support.
+
+### How the reinforcement loop uses these settings together
+
+For each island of unsupported pixels:
+
+1. All supports in range are identified and each pixel is assigned to its nearest support
+   (Voronoi partitioning).
+2. Per-support vertical pull force = `assignedPixelCount * pixelAreaMm2 * PeelForceMultiplier`.
+3. Per-support angular force = sum of `peelForce * distanceFromPixelToSupport` for each pixel.
+4. Per-support compressive force = `angularForce / tipRadius`.
+5. Combined capacity = sum of `pi * tipRadius^2 * ResinStrength` across all supports on
+   the island.
+6. The algorithm checks four conditions to decide if reinforcement is needed:
+   - Total vertical pull exceeds combined capacity
+   - Any support's compressive force exceeds `CrushForceThreshold`
+   - Any support's angular force exceeds `MaxAngularForce`
+   - The furthest pixel distance exceeds `MergeSupportsThreshold` (spacing)
+7. If reinforcement is needed, a new support is placed at the furthest unsupported pixel.
+   Its size (Light/Medium/Heavy) is chosen based on the overload ratio - the maximum of
+   the load ratio, crush ratio, and angular ratio.
 
 ## Frontend Visualization
 

@@ -61,6 +61,16 @@ Add an autosupports configuration preview on the autosupports settings screen - 
 * An upside down cone (point facing downwards) of diameter 40mm and height 80mm
 * Support for some hardcoded stls, not yet provided - implement a list that can be populated (in code for now), and will automatically add new viewports and support generation for each of them
 
+* Check whether the supports that are generated are 
+
+* When finalizing support positions, place the support tip at the closest x,y,z position which meets the mesh within the voxel bounds, at the lowermost y position
+* Add the reason the support was generated when you click on a support tip in the autosupport window - e.g. large island, fixing pull force/crush force, etc... also add a toggle to render a number by each support based on the order they were created
+* Remove unused autosupport settings from config
+* Add support to toggle between rendering the real mesh and the voxel mesh in autosupports
+
+Next:
+* Add support trunk generation - support on a grid basis (no model overlap)
+* Add scaffolding generation (no model overlap)
 
 To calculate pull forces, research your own algorithms to determine the best, but take into account this one:
 * Voxelize the mesh (at a lower resolution than the printer) and calculate the forces on each support using it

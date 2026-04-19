@@ -11,7 +11,8 @@ public class SettingsController(
     MetadataDictionaryService metadataDictionaryService,
     AppConfigService appConfigService,
     InstanceStatsService instanceStatsService,
-    ApplicationLogBuffer applicationLogBuffer) : ControllerBase
+    ApplicationLogBuffer applicationLogBuffer,
+    AutoSupportSettingsPreviewService autoSupportSettingsPreviewService) : ControllerBase
 {
     [HttpGet("config")]
     public async Task<ActionResult<AppConfigDto>> GetConfig()
@@ -60,6 +61,36 @@ public class SettingsController(
         {
             return BadRequest(ex.Message);
         }
+    }
+
+    [HttpPost("auto-support-preview")]
+    public async Task<ActionResult<AutoSupportSettingsPreviewDto>> GenerateAutoSupportPreview(
+        [FromBody] AutoSupportSettingsPreviewRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await autoSupportSettingsPreviewService.GeneratePreviewAsync(request, ct);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("auto-support-preview/{previewId:guid}/geometry/{scenarioId}")]
+    public IActionResult GetAutoSupportPreviewGeometry(Guid previewId, string scenarioId)
+    {
+        if (string.IsNullOrWhiteSpace(scenarioId))
+            return BadRequest("Scenario id is required.");
+
+        var envelope = autoSupportSettingsPreviewService.GetScenarioEnvelope(previewId, scenarioId);
+        if (envelope == null)
+            return NotFound();
+
+        Response.Headers.CacheControl = "no-store";
+        return File(envelope, MeshTransferService.ContentTypeSplit);
     }
 
     [HttpGet("metadata-dictionary")]

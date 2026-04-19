@@ -10,6 +10,8 @@ import {
   createAutoSupportJob,
   fetchAutoSupportJob,
   fetchAutoSupportGeometry,
+  createAutoSupportSettingsPreview,
+  fetchAutoSupportSettingsPreviewGeometry,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -62,6 +64,7 @@ import {
   type InitialSetupRequest,
   type InstanceStats,
   type UpdateAppConfigRequest,
+  type AutoSupportSettingsPreviewTuningRequest,
   type UpdateModelMetadataRequest,
 } from './api';
 
@@ -76,6 +79,8 @@ export const queryKeys = {
   splitGeometry: (id: string) => ['split-geometry', id] as const,
   autoSupportJob: (id: string, jobId: string) => ['auto-support-job', id, jobId] as const,
   autoSupportGeometry: (id: string, jobId: string) => ['auto-support-geometry', id, jobId] as const,
+  autoSupportSettingsPreviewGeometry: (previewId: string, scenarioId: string) =>
+    ['auto-support-settings-preview-geometry', previewId, scenarioId] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
@@ -133,10 +138,11 @@ export function useModelsByIds(ids: string[]) {
   });
 }
 
-export function useModel(id: string) {
+export function useModel(id: string, enabled: boolean = true) {
   return useQuery({
     queryKey: queryKeys.model(id),
     queryFn: () => fetchModel(id),
+    enabled,
   });
 }
 
@@ -212,6 +218,27 @@ export function useAutoSupportGeometry(id: string, jobId: string | null, enabled
     queryKey: queryKeys.autoSupportGeometry(id, jobId ?? 'pending'),
     queryFn: () => fetchAutoSupportGeometry(id, jobId!),
     enabled: !!id && !!jobId && enabled,
+  });
+}
+
+export function useCreateAutoSupportSettingsPreview() {
+  return useMutation({
+    mutationFn: (request: {
+      tuning: AutoSupportSettingsPreviewTuningRequest;
+      scenarioId?: string;
+    }) => createAutoSupportSettingsPreview(request),
+  });
+}
+
+export function useAutoSupportSettingsPreviewGeometry(
+  previewId: string | null,
+  scenarioId: string,
+  enabled: boolean = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.autoSupportSettingsPreviewGeometry(previewId ?? 'pending', scenarioId),
+    queryFn: () => fetchAutoSupportSettingsPreviewGeometry(previewId!, scenarioId),
+    enabled: !!previewId && !!scenarioId && enabled,
   });
 }
 

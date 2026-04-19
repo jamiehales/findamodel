@@ -11,6 +11,8 @@ import {
   Chip,
   Divider,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -18,7 +20,9 @@ import {
 } from '@mui/material';
 import {
   useAppConfig,
+  useAutoSupportSettingsPreviewGeometry,
   useCreatePrinter,
+  useCreateAutoSupportSettingsPreview,
   useDeletePrinter,
   useCreateMetadataDictionaryValue,
   useDeleteMetadataDictionaryValue,
@@ -30,9 +34,14 @@ import {
   useUpdateAppConfig,
   useUpdateMetadataDictionaryValue,
 } from '../lib/queries';
-import type { InstanceStats, MetadataDictionaryField } from '../lib/api';
+import type {
+  AutoSupportSettingsPreviewScenario,
+  InstanceStats,
+  MetadataDictionaryField,
+} from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
+import ModelViewer from '../components/ModelViewer';
 import PageLayout from '../components/layouts/PageLayout';
 import { useApplicationLogs } from '../lib/queries';
 import styles from './SettingsPage.module.css';
@@ -157,6 +166,7 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
 
 const SETTINGS_SECTIONS = [
   { key: 'settings', label: 'Settings', path: '/settings' },
+  { key: 'autosupport', label: 'Auto Supports', path: '/settings/autosupport' },
   { key: 'printers', label: 'Printers', path: '/settings/printers' },
   { key: 'logs', label: 'Logs', path: '/settings/logs' },
   { key: 'ai', label: 'AI Settings', path: '/settings/ai' },
@@ -167,6 +177,73 @@ const SETTINGS_SECTIONS = [
 type SettingsSectionKey = (typeof SETTINGS_SECTIONS)[number]['key'];
 
 const LOG_LIMIT = 500;
+
+const DEFAULT_AUTO_SUPPORT_PREVIEW_SCENARIOS: AutoSupportSettingsPreviewScenario[] = [
+  {
+    scenarioId: 'thin-plane-parallel',
+    name: 'Box 40x40x2mm (parallel)',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+  {
+    scenarioId: 'thin-plane-30deg',
+    name: 'Box 40x40x2mm (30 degrees)',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+  {
+    scenarioId: 'sphere-40',
+    name: 'Sphere 40mm diameter',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+  {
+    scenarioId: 'cube-40',
+    name: 'Cube 40mm',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+  {
+    scenarioId: 'cube-40-rotated-45',
+    name: 'Cube 40mm rotated 45 degrees',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+  {
+    scenarioId: 'cone-upside-down',
+    name: 'Upside-down cone 40mm diameter x 80mm height',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
+];
+
+const AUTO_SUPPORT_PREVIEW_ORDER = new Map(
+  DEFAULT_AUTO_SUPPORT_PREVIEW_SCENARIOS.map((scenario, index) => [scenario.scenarioId, index]),
+);
 
 function formatEnabled(value: boolean): string {
   return value ? 'Enabled' : 'Disabled';
@@ -266,6 +343,82 @@ function InstanceStatsSection({
   );
 }
 
+function AutoSupportPreviewViewport({
+  previewId,
+  scenario,
+  showForceMarkers,
+}: {
+  previewId: string | null;
+  scenario: AutoSupportSettingsPreviewScenario;
+  showForceMarkers: boolean;
+}) {
+  const {
+    data: splitGeometry,
+    isPending,
+    isError,
+  } = useAutoSupportSettingsPreviewGeometry(
+    previewId,
+    scenario.scenarioId,
+    scenario.status === 'completed' && !!previewId,
+  );
+
+  return (
+    <Stack spacing={1} className={styles.previewCard}>
+      <Typography variant="subtitle1">{scenario.name}</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {scenario.source === 'stl' ? 'Source: hardcoded STL' : 'Source: generated test shape'}
+      </Typography>
+      {scenario.status === 'failed' && (
+        <Typography color="error">
+          {scenario.errorMessage ?? 'Preview generation failed.'}
+        </Typography>
+      )}
+      {scenario.status === 'completed' && (
+        <Typography color="text.secondary">Supports generated: {scenario.supportCount}</Typography>
+      )}
+      {scenario.status === 'not-generated' && (
+        <Typography color="text.secondary">This preview has not been generated yet.</Typography>
+      )}
+      <Stack className={styles.previewViewer}>
+        {scenario.status !== 'completed' ? (
+          <Stack className={styles.previewPlaceholder}>
+            <Typography color="text.secondary">No preview available.</Typography>
+          </Stack>
+        ) : isPending ? (
+          <Stack className={styles.previewPlaceholder}>
+            <Typography color="text.secondary">Loading preview geometry...</Typography>
+          </Stack>
+        ) : isError || !splitGeometry ? (
+          <Stack className={styles.previewPlaceholder}>
+            <Typography color="error">Failed to load preview geometry.</Typography>
+          </Stack>
+        ) : (
+          <ModelViewer
+            modelId="settings-auto-support-preview"
+            modelOverride={{
+              sphereCentreX: splitGeometry.body.sphereCentre.x,
+              sphereCentreY: splitGeometry.body.sphereCentre.y,
+              sphereCentreZ: splitGeometry.body.sphereCentre.z,
+              dimensionXMm: splitGeometry.body.dimensionXMm,
+              dimensionYMm: splitGeometry.body.dimensionYMm,
+              dimensionZMm: splitGeometry.body.dimensionZMm,
+              raftHeightMm: 0,
+            }}
+            convexHull={null}
+            concaveHull={null}
+            convexSansRaftHull={null}
+            supported
+            splitGeometryOverride={splitGeometry}
+            supportPointsOverride={scenario.supportPoints}
+            islandsOverride={scenario.islands}
+            showForceMarkers={showForceMarkers}
+          />
+        )}
+      </Stack>
+    </Stack>
+  );
+}
+
 export default function SettingsPage() {
   const location = useLocation();
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
@@ -275,6 +428,15 @@ export default function SettingsPage() {
     isError: instanceStatsError,
   } = useInstanceStats();
   const updateAppConfigMutation = useUpdateAppConfig();
+  const createAutoSupportSettingsPreviewMutation = useCreateAutoSupportSettingsPreview();
+  const [previewIdByScenarioId, setPreviewIdByScenarioId] = useState<Record<string, string>>({});
+  const [previewScenarios, setPreviewScenarios] = useState<AutoSupportSettingsPreviewScenario[]>(
+    DEFAULT_AUTO_SUPPORT_PREVIEW_SCENARIOS,
+  );
+  const [activePreviewScenarioId, setActivePreviewScenarioId] = useState(
+    DEFAULT_AUTO_SUPPORT_PREVIEW_SCENARIOS[0].scenarioId,
+  );
+  const [showPreviewForceMarkers, setShowPreviewForceMarkers] = useState(true);
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [theme, setTheme] = useState<string>('nord');
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
@@ -306,7 +468,6 @@ export default function SettingsPage() {
   ] = useState('1');
   const [autoSupportPullForceThreshold, setAutoSupportPullForceThreshold] = useState('3');
   const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
-  const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
   const [autoSupportResinStrength, setAutoSupportResinStrength] = useState('1');
   const [autoSupportCrushForceThreshold, setAutoSupportCrushForceThreshold] = useState('20');
   const [autoSupportMaxAngularForce, setAutoSupportMaxAngularForce] = useState('40');
@@ -389,7 +550,6 @@ export default function SettingsPage() {
       );
       setAutoSupportPullForceThreshold(String(appConfig.autoSupportPullForceThreshold));
       setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
-      setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
       setAutoSupportResinStrength(String(appConfig.autoSupportResinStrength));
       setAutoSupportCrushForceThreshold(String(appConfig.autoSupportCrushForceThreshold));
       setAutoSupportMaxAngularForce(String(appConfig.autoSupportMaxAngularForce));
@@ -453,7 +613,6 @@ export default function SettingsPage() {
   );
   const autoSupportPullForceThresholdValue = Number(autoSupportPullForceThreshold);
   const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
-  const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
   const autoSupportResinStrengthValue = Number(autoSupportResinStrength);
   const autoSupportCrushForceThresholdValue = Number(autoSupportCrushForceThreshold);
   const autoSupportMaxAngularForceValue = Number(autoSupportMaxAngularForce);
@@ -471,6 +630,40 @@ export default function SettingsPage() {
   const autoSupportV2RiskForceMarginRatioValue = Number(autoSupportV2RiskForceMarginRatio);
   const autoSupportV2MinRegionVolumeMm3Value = Number(autoSupportV2MinRegionVolumeMm3);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
+
+  const autoSupportConfigValid =
+    Number.isFinite(autoSupportBedMarginValue) &&
+    autoSupportBedMarginValue >= 0 &&
+    autoSupportBedMarginValue <= 20 &&
+    Number.isFinite(autoSupportMinVoxelSizeValue) &&
+    Number.isFinite(autoSupportMaxVoxelSizeValue) &&
+    autoSupportMinVoxelSizeValue >= 0.1 &&
+    autoSupportMaxVoxelSizeValue >= autoSupportMinVoxelSizeValue &&
+    Number.isFinite(autoSupportMinLayerHeightValue) &&
+    Number.isFinite(autoSupportMaxLayerHeightValue) &&
+    autoSupportMinLayerHeightValue >= 0.05 &&
+    autoSupportMaxLayerHeightValue >= autoSupportMinLayerHeightValue &&
+    Number.isFinite(autoSupportMergeDistanceValue) &&
+    autoSupportMergeDistanceValue >= 0.1 &&
+    Number.isFinite(autoSupportMinIslandAreaValue) &&
+    autoSupportMinIslandAreaValue >= 0 &&
+    Number.isFinite(autoSupportResinStrengthValue) &&
+    autoSupportResinStrengthValue >= 0.1 &&
+    Number.isFinite(autoSupportCrushForceThresholdValue) &&
+    autoSupportCrushForceThresholdValue >= 0.1 &&
+    Number.isFinite(autoSupportMaxAngularForceValue) &&
+    autoSupportMaxAngularForceValue >= 0.1 &&
+    Number.isFinite(autoSupportPeelForceMultiplierValue) &&
+    autoSupportPeelForceMultiplierValue > 0 &&
+    Number.isFinite(autoSupportLightTipRadiusValue) &&
+    autoSupportLightTipRadiusValue >= 0.1 &&
+    autoSupportLightTipRadiusValue <= 5 &&
+    Number.isFinite(autoSupportMediumTipRadiusValue) &&
+    autoSupportMediumTipRadiusValue >= 0.1 &&
+    autoSupportMediumTipRadiusValue <= 7 &&
+    Number.isFinite(autoSupportHeavyTipRadiusValue) &&
+    autoSupportHeavyTipRadiusValue >= 0.1 &&
+    autoSupportHeavyTipRadiusValue <= 10;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
@@ -490,41 +683,10 @@ export default function SettingsPage() {
     Number.isFinite(minConfidenceValue) &&
     minConfidenceValue >= 0 &&
     minConfidenceValue <= 1 &&
-    Number.isFinite(autoSupportBedMarginValue) &&
-    autoSupportBedMarginValue >= 0 &&
-    autoSupportBedMarginValue <= 20 &&
-    Number.isFinite(autoSupportMinVoxelSizeValue) &&
-    Number.isFinite(autoSupportMaxVoxelSizeValue) &&
-    autoSupportMinVoxelSizeValue >= 0.1 &&
-    autoSupportMaxVoxelSizeValue >= autoSupportMinVoxelSizeValue &&
-    Number.isFinite(autoSupportMinLayerHeightValue) &&
-    Number.isFinite(autoSupportMaxLayerHeightValue) &&
-    autoSupportMinLayerHeightValue >= 0.05 &&
-    autoSupportMaxLayerHeightValue >= autoSupportMinLayerHeightValue &&
-    Number.isFinite(autoSupportMergeDistanceValue) &&
-    autoSupportMergeDistanceValue >= 0.1 &&
-    Number.isFinite(autoSupportMinIslandAreaValue) &&
-    autoSupportMinIslandAreaValue >= 0 &&
-    Number.isInteger(autoSupportMaxSupportsPerIslandValue) &&
-    autoSupportMaxSupportsPerIslandValue >= 1 &&
-    autoSupportMaxSupportsPerIslandValue <= 64 &&
-    Number.isFinite(autoSupportResinStrengthValue) &&
-    autoSupportResinStrengthValue >= 0.1 &&
-    Number.isFinite(autoSupportCrushForceThresholdValue) &&
-    autoSupportCrushForceThresholdValue >= 0.1 &&
-    Number.isFinite(autoSupportMaxAngularForceValue) &&
-    autoSupportMaxAngularForceValue >= 0.1 &&
-    Number.isFinite(autoSupportLightTipRadiusValue) &&
-    autoSupportLightTipRadiusValue >= 0.1 &&
-    autoSupportLightTipRadiusValue <= 5 &&
-    Number.isFinite(autoSupportMediumTipRadiusValue) &&
-    autoSupportMediumTipRadiusValue >= 0.1 &&
-    autoSupportMediumTipRadiusValue <= 7 &&
-    Number.isFinite(autoSupportHeavyTipRadiusValue) &&
-    autoSupportHeavyTipRadiusValue >= 0.1 &&
-    autoSupportHeavyTipRadiusValue <= 10;
+    autoSupportConfigValid;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
+    if (location.pathname.startsWith('/settings/autosupport')) return 'autosupport';
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
     if (location.pathname.startsWith('/settings/logs')) return 'logs';
     if (location.pathname.startsWith('/settings/ai')) return 'ai';
@@ -575,7 +737,7 @@ export default function SettingsPage() {
         autoSupportUnsupportedIslandVolumeThresholdValue,
       autoSupportPullForceThreshold: autoSupportPullForceThresholdValue,
       autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
-      autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
+      autoSupportMaxSupportsPerIsland: appConfig?.autoSupportMaxSupportsPerIsland ?? 6,
       autoSupportResinStrength: autoSupportResinStrengthValue,
       autoSupportCrushForceThreshold: autoSupportCrushForceThresholdValue,
       autoSupportMaxAngularForce: autoSupportMaxAngularForceValue,
@@ -594,6 +756,72 @@ export default function SettingsPage() {
       autoSupportV2RiskForceMarginRatio: autoSupportV2RiskForceMarginRatioValue,
       autoSupportV2MinRegionVolumeMm3: autoSupportV2MinRegionVolumeMm3Value,
     });
+
+  const generateAutoSupportPreview = () =>
+    createAutoSupportSettingsPreviewMutation.mutate(
+      {
+        tuning: {
+          bedMarginMm: autoSupportBedMarginValue,
+          minVoxelSizeMm: autoSupportMinVoxelSizeValue,
+          maxVoxelSizeMm: autoSupportMaxVoxelSizeValue,
+          minLayerHeightMm: autoSupportMinLayerHeightValue,
+          maxLayerHeightMm: autoSupportMaxLayerHeightValue,
+          mergeDistanceMm: autoSupportMergeDistanceValue,
+          minIslandAreaMm2: autoSupportMinIslandAreaValue,
+          resinStrength: autoSupportResinStrengthValue,
+          crushForceThreshold: autoSupportCrushForceThresholdValue,
+          maxAngularForce: autoSupportMaxAngularForceValue,
+          peelForceMultiplier: autoSupportPeelForceMultiplierValue,
+          lightTipRadiusMm: autoSupportLightTipRadiusValue,
+          mediumTipRadiusMm: autoSupportMediumTipRadiusValue,
+          heavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
+        },
+        scenarioId: activePreviewScenarioId,
+      },
+      {
+        onSuccess: (result) => {
+          setPreviewScenarios((current) => {
+            const byId = new Map(current.map((scenario) => [scenario.scenarioId, scenario]));
+            for (const scenario of result.scenarios) {
+              const existing = byId.get(scenario.scenarioId);
+              const shouldPreserveExisting =
+                scenario.status === 'not-generated' &&
+                existing !== undefined &&
+                existing.status !== 'not-generated';
+
+              if (!shouldPreserveExisting) {
+                byId.set(scenario.scenarioId, scenario);
+              }
+            }
+
+            return [...byId.values()].sort((a, b) => {
+              const left = AUTO_SUPPORT_PREVIEW_ORDER.get(a.scenarioId) ?? Number.MAX_SAFE_INTEGER;
+              const right = AUTO_SUPPORT_PREVIEW_ORDER.get(b.scenarioId) ?? Number.MAX_SAFE_INTEGER;
+              return left - right;
+            });
+          });
+
+          const generatedScenarioIds = result.scenarios
+            .filter((scenario) => scenario.status === 'completed')
+            .map((scenario) => scenario.scenarioId);
+
+          if (generatedScenarioIds.length > 0) {
+            setPreviewIdByScenarioId((current) => {
+              const next = { ...current };
+              for (const scenarioId of generatedScenarioIds) {
+                next[scenarioId] = result.previewId;
+              }
+              return next;
+            });
+          }
+        },
+      },
+    );
+
+  const activePreviewScenario =
+    previewScenarios.find((scenario) => scenario.scenarioId === activePreviewScenarioId) ??
+    previewScenarios[0] ??
+    null;
 
   if (isPending || appConfigPending) return <LoadingView />;
 
@@ -687,9 +915,26 @@ export default function SettingsPage() {
                     }
                   />
                 </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    disabled={updateAppConfigMutation.isPending || !appConfigValid}
+                    onClick={saveConfig}
+                  >
+                    Save
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
+          )}
+
+          {currentSection === 'autosupport' && (
+            <Stack className={styles.globalSettingsSection}>
+              <Stack spacing={2}>
                 <Typography variant="h6">Auto support preview tuning</Typography>
                 <Typography color="text.secondary">
-                  These values control method 3 auto-support generation.
+                  Change settings, then regenerate previews to compare support behavior across test
+                  models and optional hardcoded STLs.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -740,7 +985,7 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
-                    label="Support spacing threshold (mm)"
+                    label="Merge supports threshold (mm)"
                     value={autoSupportMergeDistanceMm}
                     onChange={(e) => setAutoSupportMergeDistanceMm(e.target.value)}
                   />
@@ -752,23 +997,10 @@ export default function SettingsPage() {
                     onChange={(e) => setAutoSupportMinIslandAreaMm2(e.target.value)}
                   />
                 </Stack>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1}
-                  className={styles.addRow}
-                >
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Max supports per island"
-                    value={autoSupportMaxSupportsPerIsland}
-                    onChange={(e) => setAutoSupportMaxSupportsPerIsland(e.target.value)}
-                  />
-                </Stack>
                 <Typography variant="h6">Support tip sizing</Typography>
                 <Typography color="text.secondary">
-                  Tip radii, resin strength, crush force, and angular force control method 3 support
-                  capacity and stability checks.
+                  Tip radii, resin strength, crush force, and angular force control support capacity
+                  and stability checks.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -800,6 +1032,13 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
+                    label="Peel force multiplier"
+                    value={autoSupportPeelForceMultiplier}
+                    onChange={(e) => setAutoSupportPeelForceMultiplier(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
                     label="Light tip radius (mm)"
                     value={autoSupportLightTipRadiusMm}
                     onChange={(e) => setAutoSupportLightTipRadiusMm(e.target.value)}
@@ -819,7 +1058,7 @@ export default function SettingsPage() {
                     onChange={(e) => setAutoSupportHeavyTipRadiusMm(e.target.value)}
                   />
                 </Stack>
-                <Stack direction="row" spacing={1}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                   <Button
                     variant="contained"
                     disabled={updateAppConfigMutation.isPending || !appConfigValid}
@@ -827,7 +1066,67 @@ export default function SettingsPage() {
                   >
                     Save
                   </Button>
+                  <Button
+                    variant="outlined"
+                    disabled={
+                      createAutoSupportSettingsPreviewMutation.isPending || !autoSupportConfigValid
+                    }
+                    onClick={generateAutoSupportPreview}
+                  >
+                    {createAutoSupportSettingsPreviewMutation.isPending
+                      ? 'Generating selected preview...'
+                      : 'Regenerate selected support preview'}
+                  </Button>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={showPreviewForceMarkers}
+                        onChange={(event) => setShowPreviewForceMarkers(event.target.checked)}
+                      />
+                    }
+                    label="Show force markers"
+                  />
                 </Stack>
+
+                {createAutoSupportSettingsPreviewMutation.isError && (
+                  <Typography color="error">Failed to generate support preview.</Typography>
+                )}
+
+                {previewScenarios.length > 0 ? (
+                  <Stack spacing={1}>
+                    <Tabs
+                      value={activePreviewScenarioId}
+                      onChange={(_, value: string) => setActivePreviewScenarioId(value)}
+                      variant="scrollable"
+                      allowScrollButtonsMobile
+                      className={styles.previewTabs}
+                    >
+                      {previewScenarios.map((scenario) => (
+                        <Tab
+                          key={scenario.scenarioId}
+                          value={scenario.scenarioId}
+                          label={scenario.name}
+                        />
+                      ))}
+                    </Tabs>
+
+                    {activePreviewScenario ? (
+                      <AutoSupportPreviewViewport
+                        previewId={previewIdByScenarioId[activePreviewScenario.scenarioId] ?? null}
+                        scenario={activePreviewScenario}
+                        showForceMarkers={showPreviewForceMarkers}
+                      />
+                    ) : (
+                      <Typography color="text.secondary">
+                        Select a preview tab to continue.
+                      </Typography>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography color="text.secondary">
+                    Regenerate selected previews to render scenarios.
+                  </Typography>
+                )}
               </Stack>
             </Stack>
           )}
