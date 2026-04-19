@@ -29,4 +29,3 @@ public sealed record AutoSupportJobDto(
     IReadOnlyList<AutoSupportPointDto>? SupportPoints = null,
     IReadOnlyList<AutoSupportIslandDto>? Islands = null);
 
-public sealed record CreateAutoSupportJobRequest(int Method = 1);

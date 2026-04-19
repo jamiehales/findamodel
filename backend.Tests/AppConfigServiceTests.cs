@@ -312,6 +312,36 @@ public class AppConfigServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_AllowsHighAutoSupportResinStrength()
+    {
+        var factory = CreateFactory(nameof(UpdateAsync_AllowsHighAutoSupportResinStrength));
+        var sut = new AppConfigService(factory, CreateConfiguration());
+
+        var updated = await sut.UpdateAsync(new(
+            DefaultRaftHeightMm: 3f,
+            Theme: "nord",
+            GeneratePreviewsEnabled: true,
+            MinimumPreviewGenerationVersion: 5,
+            TagGenerationEnabled: true,
+            AiDescriptionEnabled: true,
+            TagGenerationProvider: "internal",
+            TagGenerationEndpoint: "http://localhost:11434",
+            TagGenerationModel: "",
+            TagGenerationTimeoutMs: 45000,
+            TagGenerationMaxTags: 10,
+            TagGenerationMinConfidence: 0.5f,
+            TagGenerationPromptTemplate: "Tag prompt {{maxTags}} {{allowedTags}}",
+            DescriptionGenerationPromptTemplate: "Describe {{modelName}}",
+            AutoSupportResinStrength: 25f));
+
+        Assert.Equal(25f, updated.AutoSupportResinStrength);
+
+        await using var db = factory.CreateDbContext();
+        var stored = await db.AppConfigs.SingleAsync();
+        Assert.Equal(25f, stored.AutoSupportResinStrength);
+    }
+
+    [Fact]
     public async Task UpdateAsync_ThrowsForUnknownTagGenerationProvider()
     {
         var sut = new AppConfigService(CreateFactory(nameof(UpdateAsync_ThrowsForUnknownTagGenerationProvider)), CreateConfiguration());

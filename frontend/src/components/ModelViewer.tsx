@@ -420,6 +420,7 @@ interface ModelViewerProps {
   splitGeometryOverride?: import('../lib/api').SplitGeometryResponse | null;
   supportPointsOverride?: import('../lib/api').AutoSupportPoint[] | null;
   islandsOverride?: import('../lib/api').AutoSupportIsland[] | null;
+  showForceMarkers?: boolean;
 }
 
 export default function ModelViewer({
@@ -431,6 +432,7 @@ export default function ModelViewer({
   splitGeometryOverride,
   supportPointsOverride,
   islandsOverride,
+  showForceMarkers = true,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
   const { showSupports, setSupportsToggleAvailable } = useRenderControls();
@@ -465,6 +467,7 @@ export default function ModelViewer({
   );
 
   const hasSupportMesh = activeSplitData?.supports != null;
+  const shouldShowForceMarkers = showSupports && showForceMarkers;
 
   useEffect(() => {
     setSupportsToggleAvailable(hasSupportMesh);
@@ -538,8 +541,11 @@ export default function ModelViewer({
               visible={showSupports}
             />
           )}
-          <SupportForceArrows points={supportPointsOverride ?? null} visible={showSupports} />
-          <IslandHighlights islands={islandsOverride ?? null} visible={showSupports} />
+          <SupportForceArrows
+            points={supportPointsOverride ?? null}
+            visible={shouldShowForceMarkers}
+          />
+          <IslandHighlights islands={islandsOverride ?? null} visible={shouldShowForceMarkers} />
           <OrbitControls
             target={orbitTarget}
             enableDamping

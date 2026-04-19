@@ -10,9 +10,8 @@ island detection, and per-support pull force evaluation with configurable suppor
 
 ### Services
 
-- **AutoSupportGenerationService** - core algorithm that slices geometry layer-by-layer,
-  detects islands via flood-fill, evaluates pull forces, and places support points with
-  appropriate sizing.
+- **AutoSupportGenerationV3Service** - current auto-support algorithm that slices geometry layer-by-layer,
+  detects unsupported overhang pixels against the layer below, and places/reinforces support points.
 - **AutoSupportJobService** - manages asynchronous job lifecycle (queued, running,
   completed, failed) and caches results as binary envelopes.
 - **AppConfigService** - persists and validates all auto-support tuning parameters.

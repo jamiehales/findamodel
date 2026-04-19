@@ -499,30 +499,11 @@ export default function SettingsPage() {
     autoSupportMergeDistanceValue >= 0.1 &&
     Number.isFinite(autoSupportMinIslandAreaValue) &&
     autoSupportMinIslandAreaValue >= 0 &&
-    Number.isFinite(autoSupportMaxSupportDistanceValue) &&
-    autoSupportMaxSupportDistanceValue >= autoSupportMergeDistanceValue &&
-    Number.isFinite(autoSupportUnsupportedIslandVolumeThresholdValue) &&
-    autoSupportUnsupportedIslandVolumeThresholdValue >= 0.01 &&
-    autoSupportUnsupportedIslandVolumeThresholdValue <= 100000 &&
-    Number.isFinite(autoSupportPullForceThresholdValue) &&
-    autoSupportPullForceThresholdValue >= 0.1 &&
-    Number.isFinite(autoSupportSphereRadiusValue) &&
-    autoSupportSphereRadiusValue >= 0.1 &&
     Number.isInteger(autoSupportMaxSupportsPerIslandValue) &&
     autoSupportMaxSupportsPerIslandValue >= 1 &&
     autoSupportMaxSupportsPerIslandValue <= 64 &&
     Number.isFinite(autoSupportResinStrengthValue) &&
     autoSupportResinStrengthValue >= 0.1 &&
-    autoSupportResinStrengthValue <= 10 &&
-    Number.isFinite(autoSupportResinDensityValue) &&
-    autoSupportResinDensityValue >= 0.1 &&
-    autoSupportResinDensityValue <= 10 &&
-    Number.isFinite(autoSupportPeelForceMultiplierValue) &&
-    autoSupportPeelForceMultiplierValue >= 0.01 &&
-    autoSupportPeelForceMultiplierValue <= 5 &&
-    Number.isFinite(autoSupportMicroTipRadiusValue) &&
-    autoSupportMicroTipRadiusValue >= 0.1 &&
-    autoSupportMicroTipRadiusValue <= 3 &&
     Number.isFinite(autoSupportLightTipRadiusValue) &&
     autoSupportLightTipRadiusValue >= 0.1 &&
     autoSupportLightTipRadiusValue <= 5 &&
@@ -531,28 +512,7 @@ export default function SettingsPage() {
     autoSupportMediumTipRadiusValue <= 7 &&
     Number.isFinite(autoSupportHeavyTipRadiusValue) &&
     autoSupportHeavyTipRadiusValue >= 0.1 &&
-    autoSupportHeavyTipRadiusValue <= 10 &&
-    Number.isFinite(autoSupportV2VoxelSizeValue) &&
-    autoSupportV2VoxelSizeValue >= 0.1 &&
-    autoSupportV2VoxelSizeValue <= 10 &&
-    Number.isFinite(autoSupportV2CoarseVoxelSizeValue) &&
-    autoSupportV2CoarseVoxelSizeValue >= 0.1 &&
-    autoSupportV2CoarseVoxelSizeValue <= 10 &&
-    Number.isFinite(autoSupportV2FineVoxelSizeValue) &&
-    autoSupportV2FineVoxelSizeValue >= 0.1 &&
-    autoSupportV2FineVoxelSizeValue <= autoSupportV2CoarseVoxelSizeValue &&
-    Number.isFinite(autoSupportV2RefinementMarginValue) &&
-    autoSupportV2RefinementMarginValue >= 0.1 &&
-    autoSupportV2RefinementMarginValue <= 20 &&
-    Number.isFinite(autoSupportV2RefinementMaxRegionsValue) &&
-    autoSupportV2RefinementMaxRegionsValue >= 1 &&
-    autoSupportV2RefinementMaxRegionsValue <= 128 &&
-    Number.isFinite(autoSupportV2RiskForceMarginRatioValue) &&
-    autoSupportV2RiskForceMarginRatioValue >= 0 &&
-    autoSupportV2RiskForceMarginRatioValue <= 1 &&
-    Number.isFinite(autoSupportV2MinRegionVolumeMm3Value) &&
-    autoSupportV2MinRegionVolumeMm3Value >= 0.1 &&
-    autoSupportV2MinRegionVolumeMm3Value <= 10000;
+    autoSupportHeavyTipRadiusValue <= 10;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -717,8 +677,7 @@ export default function SettingsPage() {
                 </Stack>
                 <Typography variant="h6">Auto support preview tuning</Typography>
                 <Typography color="text.secondary">
-                  These values control how aggressively support-point spheres are generated for
-                  unsupported models.
+                  These values control method 3 auto-support generation.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -769,7 +728,7 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
-                    label="Min support distance (mm)"
+                    label="Support spacing threshold (mm)"
                     value={autoSupportMergeDistanceMm}
                     onChange={(e) => setAutoSupportMergeDistanceMm(e.target.value)}
                   />
@@ -789,27 +748,6 @@ export default function SettingsPage() {
                   <TextField
                     size="small"
                     type="number"
-                    label="Max support distance (mm)"
-                    value={autoSupportMaxSupportDistanceMm}
-                    onChange={(e) => setAutoSupportMaxSupportDistanceMm(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Pull-force threshold (legacy)"
-                    value={autoSupportPullForceThreshold}
-                    onChange={(e) => setAutoSupportPullForceThreshold(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Marker sphere radius (mm, legacy)"
-                    value={autoSupportSphereRadiusMm}
-                    onChange={(e) => setAutoSupportSphereRadiusMm(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
                     label="Max supports per island"
                     value={autoSupportMaxSupportsPerIsland}
                     onChange={(e) => setAutoSupportMaxSupportsPerIsland(e.target.value)}
@@ -817,9 +755,7 @@ export default function SettingsPage() {
                 </Stack>
                 <Typography variant="h6">Support tip sizing</Typography>
                 <Typography color="text.secondary">
-                  Per-size tip radii control the contact area of each support type. Pull force
-                  capacity is computed as pi * radius^2 * resin strength. Supports near the model
-                  base automatically use heavy tips.
+                  Tip radii and resin strength control per-support force capacity for method 3.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -833,13 +769,6 @@ export default function SettingsPage() {
                     value={autoSupportResinStrength}
                     onChange={(e) => setAutoSupportResinStrength(e.target.value)}
                     helperText="Dimensionless multiplier (default 1.0)"
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Micro tip radius (mm)"
-                    value={autoSupportMicroTipRadiusMm}
-                    onChange={(e) => setAutoSupportMicroTipRadiusMm(e.target.value)}
                   />
                   <TextField
                     size="small"
@@ -861,142 +790,6 @@ export default function SettingsPage() {
                     label="Heavy tip radius (mm)"
                     value={autoSupportHeavyTipRadiusMm}
                     onChange={(e) => setAutoSupportHeavyTipRadiusMm(e.target.value)}
-                  />
-                </Stack>
-                <Typography variant="h6">Method 2 settings</Typography>
-                <Typography color="text.secondary">
-                  Settings specific to the force-based voxel algorithm (method 2). Smaller voxels
-                  improve detail capture but increase processing cost.
-                </Typography>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1}
-                  className={styles.addRow}
-                >
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Voxel size (mm)"
-                    value={autoSupportV2VoxelSizeMm}
-                    onChange={(e) => setAutoSupportV2VoxelSizeMm(e.target.value)}
-                    helperText="Resolution of the voxel grid for method 2 (0.1 to 10, default 2)"
-                  />
-                </Stack>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={autoSupportV2OptimizationEnabled}
-                      onChange={(e) => setAutoSupportV2OptimizationEnabled(e.target.checked)}
-                    />
-                  }
-                  label="Two-stage optimization"
-                />
-                <Typography color="text.secondary">
-                  When enabled, uses a coarse pass to identify problem regions, then refines only
-                  those areas at higher resolution. Improves performance on large models.
-                </Typography>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1}
-                  className={styles.addRow}
-                >
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Coarse voxel size (mm)"
-                    value={autoSupportV2CoarseVoxelSizeMm}
-                    onChange={(e) => setAutoSupportV2CoarseVoxelSizeMm(e.target.value)}
-                    helperText="Voxel size for the initial coarse pass (0.1 to 10, default 4)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Fine voxel size (mm)"
-                    value={autoSupportV2FineVoxelSizeMm}
-                    onChange={(e) => setAutoSupportV2FineVoxelSizeMm(e.target.value)}
-                    helperText="Voxel size for regional refinement (0.1 to coarse size, default 0.5)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Refinement margin (mm)"
-                    value={autoSupportV2RefinementMarginMm}
-                    onChange={(e) => setAutoSupportV2RefinementMarginMm(e.target.value)}
-                    helperText="Margin around detected problem regions (0.1 to 20, default 2)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                </Stack>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1}
-                  className={styles.addRow}
-                >
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Max refinement regions"
-                    value={autoSupportV2RefinementMaxRegions}
-                    onChange={(e) => setAutoSupportV2RefinementMaxRegions(e.target.value)}
-                    helperText="Maximum number of regions to refine (1 to 128, default 12)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Risk force margin ratio"
-                    value={autoSupportV2RiskForceMarginRatio}
-                    onChange={(e) => setAutoSupportV2RiskForceMarginRatio(e.target.value)}
-                    helperText="Force margin ratio for risk detection (0 to 1, default 0.2)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Min region volume (mm3)"
-                    value={autoSupportV2MinRegionVolumeMm3}
-                    onChange={(e) => setAutoSupportV2MinRegionVolumeMm3(e.target.value)}
-                    helperText="Minimum volume for a refinement region (0.1 to 10000, default 8)"
-                    disabled={!autoSupportV2OptimizationEnabled}
-                  />
-                </Stack>
-                <Typography variant="h6">Cumulative force settings</Typography>
-                <Typography color="text.secondary">
-                  Controls how resin weight and peel forces accumulate across layers. Higher density
-                  or peel multiplier values increase per-support loads, triggering more or heavier
-                  supports.
-                </Typography>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1}
-                  className={styles.addRow}
-                >
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Unsupported volume threshold (mm^3)"
-                    value={autoSupportUnsupportedIslandVolumeThresholdMm3}
-                    onChange={(e) =>
-                      setAutoSupportUnsupportedIslandVolumeThresholdMm3(e.target.value)
-                    }
-                    helperText="Place support once unsupported cumulative volume exceeds this"
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Resin density (g/ml)"
-                    value={autoSupportResinDensityGPerMl}
-                    onChange={(e) => setAutoSupportResinDensityGPerMl(e.target.value)}
-                    helperText="Default 1.25 (1000g per 800ml)"
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Peel force multiplier"
-                    value={autoSupportPeelForceMultiplier}
-                    onChange={(e) => setAutoSupportPeelForceMultiplier(e.target.value)}
-                    helperText="Scales cross-sectional area to peel force (default 0.15)"
                   />
                 </Stack>
                 <Stack direction="row" spacing={1}>

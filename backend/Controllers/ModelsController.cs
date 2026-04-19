@@ -261,13 +261,12 @@ public class ModelsController(
     }
 
     [HttpPost("{id:guid}/auto-support/jobs")]
-    public async Task<IActionResult> CreateAutoSupportJob(Guid id, [FromBody] CreateAutoSupportJobRequest? request, CancellationToken ct)
+    public async Task<IActionResult> CreateAutoSupportJob(Guid id, CancellationToken ct)
     {
         var model = await modelService.GetModelAsync(id);
         if (model == null) return NotFound();
 
-        var method = request?.Method is 1 or 2 or 3 ? request.Method : 1;
-        var job = await autoSupportJobService.CreateJobAsync(id, method, ct);
+        var job = await autoSupportJobService.CreateJobAsync(id, ct);
         if (job == null) return NotFound();
 
         return Accepted(job);

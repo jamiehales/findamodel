@@ -1,6 +1,8 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -22,10 +24,12 @@ function ModelAutoSupportPage() {
   const decodedId = decodeURIComponent(id ?? '');
 
   const [autoSupportJobId, setAutoSupportJobId] = React.useState<string | null>(null);
+  const [showForceMarkers, setShowForceMarkers] = React.useState(true);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setAutoSupportJobId(null);
+    setShowForceMarkers(true);
   }, [decodedId]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
@@ -93,41 +97,24 @@ function ModelAutoSupportPage() {
             variant="contained"
             disabled={isGeneratingAutoSupport}
             onClick={() =>
-              generateAutoSupport(1, {
+              generateAutoSupport(undefined, {
                 onSuccess: (job) => setAutoSupportJobId(job.jobId),
               })
             }
           >
             {isGeneratingAutoSupport
               ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-              : 'Generate autosupport (method 1)'}
+              : 'Generate autosupport'}
           </Button>
-          <Button
-            variant="contained"
-            disabled={isGeneratingAutoSupport}
-            onClick={() =>
-              generateAutoSupport(2, {
-                onSuccess: (job) => setAutoSupportJobId(job.jobId),
-              })
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showForceMarkers}
+                onChange={(event) => setShowForceMarkers(event.target.checked)}
+              />
             }
-          >
-            {isGeneratingAutoSupport
-              ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-              : 'Generate autosupport (method 2)'}
-          </Button>
-          <Button
-            variant="contained"
-            disabled={isGeneratingAutoSupport}
-            onClick={() =>
-              generateAutoSupport(3, {
-                onSuccess: (job) => setAutoSupportJobId(job.jobId),
-              })
-            }
-          >
-            {isGeneratingAutoSupport
-              ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-              : 'Generate autosupport (method 3)'}
-          </Button>
+            label="Show force markers"
+          />
         </Stack>
 
         <Box className={styles.viewerBox}>
@@ -141,6 +128,7 @@ function ModelAutoSupportPage() {
               splitGeometryOverride={autoSupportGeometry}
               supportPointsOverride={autoSupportJob?.supportPoints ?? null}
               islandsOverride={autoSupportJob?.islands ?? null}
+              showForceMarkers={showForceMarkers}
             />
           ) : (
             <Box className={styles.placeholderBox}>

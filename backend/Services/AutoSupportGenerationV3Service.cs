@@ -5,8 +5,9 @@ namespace findamodel.Services;
 /// <summary>
 /// Method 3: Island-tip detection auto-support generation.
 /// Slices the model layer by layer, detects 2-D connected islands at every layer,
-/// then places one support at the centroid of each island that does not continue
-/// into the next layer (i.e. the topmost extent of each connected 3-D feature).
+/// then places/reinforces supports at overhang starts (first appearance from below).
+/// Reinforcement considers island top-layer area force vs support tip capacity and
+/// adds supports where spacing/force is worst.
 /// Only support spheres are returned for visualisation - island outlines are omitted.
 /// </summary>
 public sealed class AutoSupportGenerationV3Service
@@ -94,18 +95,30 @@ public sealed class AutoSupportGenerationV3Service
 
             foreach (var island in layerIslands[layerIndex])
             {
-                // Island is an overhang tip when no pixel exists in the layer below
-                var isTip = prevPixels == null || !island.PixelCoords.Any(p => prevPixels.Contains(p));
-                if (!isTip)
+                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                if (unsupportedPixels.Count == 0)
                     continue;
 
+                var centroid = ComputePixelCentroidMm(unsupportedPixels, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight);
+
                 supportPoints.Add(new SupportPoint(
-                    new Vec3(island.CentroidX, island.SliceHeightMm, island.CentroidZ),
-                    tuning.LightTipRadiusMm,
+                    new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
+                    GetTipRadiusMm(SupportSize.Light, tuning),
                     new Vec3(0f, 0f, 0f),
                     SupportSize.Light));
             }
         }
+
+        ReinforceSupportsByForceAndSpacing(
+            layerIslands,
+            prevLayerPixels,
+            supportPoints,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm,
+            tuning);
 
         var supportTriangles = BuildSupportSphereMesh(supportPoints);
 
@@ -194,7 +207,8 @@ public sealed class AutoSupportGenerationV3Service
                     pixelCoords,
                     sumX / pixelCoords.Count,
                     sumZ / pixelCoords.Count,
-                    sliceHeightMm));
+                    sliceHeightMm,
+                    pixelCoords.Count * pixelAreaMm2));
             }
         }
 
@@ -214,6 +228,211 @@ public sealed class AutoSupportGenerationV3Service
 
     private static float RowToZ(int row, float bedDepthMm, int height)
         => (bedDepthMm * 0.5f) - (((row + 0.5f) / height) * bedDepthMm);
+
+    private static void ReinforceSupportsByForceAndSpacing(
+        List<TipIsland>[] layerIslands,
+        HashSet<(int Column, int Row)>?[] prevLayerPixels,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        V3Tuning tuning)
+    {
+        for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
+        {
+            var prevPixels = prevLayerPixels[layerIndex];
+            foreach (var island in layerIslands[layerIndex])
+            {
+                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                if (unsupportedPixels.Count == 0)
+                    continue;
+
+                var maxIterations = Math.Max(1, tuning.MaxSupportsPerIsland);
+                for (var i = 0; i < maxIterations; i++)
+                {
+                    var supportIndices = FindSupportingSupportsForPixels(
+                        unsupportedPixels,
+                        island.SliceHeightMm,
+                        supportPoints,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight,
+                        layerHeightMm);
+
+                    if (supportIndices.Count == 0)
+                    {
+                        var centroid = ComputePixelCentroidMm(unsupportedPixels, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight);
+                        supportPoints.Add(new SupportPoint(
+                            new Vec3(centroid.XMm, island.SliceHeightMm, centroid.ZMm),
+                            GetTipRadiusMm(SupportSize.Light, tuning),
+                            new Vec3(0f, 0f, 0f),
+                            SupportSize.Light));
+                        continue;
+                    }
+
+                    var furthest = FindFurthestPixelFromSupports(
+                        unsupportedPixels,
+                        supportIndices,
+                        supportPoints,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight);
+
+                    var combinedCapacity = supportIndices.Sum(index => ComputeCapacity(supportPoints[index], tuning));
+                    var force = island.TopLayerAreaMm2;
+                    var isOverloaded = force > combinedCapacity;
+                    var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
+
+                    if (!isOverloaded && !exceedsSpacing)
+                        break;
+
+                    var overloadRatio = combinedCapacity <= 0f ? 2f : force / combinedCapacity;
+                    var newSize = overloadRatio > 1.8f
+                        ? SupportSize.Heavy
+                        : overloadRatio > 1.25f
+                            ? SupportSize.Medium
+                            : SupportSize.Light;
+
+                    supportPoints.Add(new SupportPoint(
+                        new Vec3(furthest.XMm, island.SliceHeightMm, furthest.ZMm),
+                        GetTipRadiusMm(newSize, tuning),
+                        new Vec3(0f, 0f, 0f),
+                        newSize));
+                }
+            }
+        }
+    }
+
+    private static List<(int X, int Y)> GetUnsupportedPixels(
+        TipIsland island,
+        HashSet<(int Column, int Row)>? prevPixels)
+    {
+        if (prevPixels == null)
+            return island.PixelCoords;
+
+        var unsupported = new List<(int X, int Y)>();
+        foreach (var pixel in island.PixelCoords)
+        {
+            if (!prevPixels.Contains(pixel))
+                unsupported.Add(pixel);
+        }
+
+        return unsupported;
+    }
+
+    private static PixelCentroid ComputePixelCentroidMm(
+        List<(int X, int Y)> pixels,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        var sumX = 0f;
+        var sumZ = 0f;
+        foreach (var (x, y) in pixels)
+        {
+            sumX += ColumnToX(x, bedWidthMm, pixelWidth);
+            sumZ += RowToZ(y, bedDepthMm, pixelHeight);
+        }
+
+        return new PixelCentroid(sumX / pixels.Count, sumZ / pixels.Count);
+    }
+
+    private static List<int> FindSupportingSupportsForPixels(
+        List<(int X, int Y)> unsupportedPixels,
+        float sliceHeightMm,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm)
+    {
+        var indices = new List<int>();
+        var maxY = sliceHeightMm + (layerHeightMm * 0.5f);
+        var pixelSet = unsupportedPixels.ToHashSet();
+
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            var support = supportPoints[i];
+            if (support.Position.Y > maxY)
+                continue;
+
+            if (IsSupportInsidePixelSet(support.Position, pixelSet, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight))
+                indices.Add(i);
+        }
+
+        return indices;
+    }
+
+    private static bool IsSupportInsidePixelSet(
+        Vec3 supportPosition,
+        HashSet<(int X, int Y)> pixelSet,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        var col = (int)MathF.Floor(((supportPosition.X + (bedWidthMm * 0.5f)) / bedWidthMm) * pixelWidth);
+        var row = (int)MathF.Floor((((bedDepthMm * 0.5f) - supportPosition.Z) / bedDepthMm) * pixelHeight);
+
+        for (var dy = -1; dy <= 1; dy++)
+        {
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                if (pixelSet.Contains((col + dx, row + dy)))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static FurthestPointCandidate FindFurthestPixelFromSupports(
+        List<(int X, int Y)> pixels,
+        List<int> supportIndices,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        var bestDist = -1f;
+        var bestX = 0f;
+        var bestZ = 0f;
+
+        foreach (var (x, y) in pixels)
+        {
+            var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+            var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+            var nearest = float.MaxValue;
+
+            foreach (var supportIndex in supportIndices)
+            {
+                var support = supportPoints[supportIndex];
+                var dx = support.Position.X - xMm;
+                var dz = support.Position.Z - zMm;
+                var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                nearest = MathF.Min(nearest, d);
+            }
+
+            if (nearest > bestDist)
+            {
+                bestDist = nearest;
+                bestX = xMm;
+                bestZ = zMm;
+            }
+        }
+
+        return new FurthestPointCandidate(bestX, bestZ, bestDist);
+    }
+
+    private static float ComputeCapacity(SupportPoint point, V3Tuning tuning)
+        => MathF.PI * point.RadiusMm * point.RadiusMm * tuning.ResinStrength;
 
     private static List<VoxelRect> ExtractVoxelRects(SliceBitmap bitmap)
     {
@@ -475,7 +694,12 @@ public sealed class AutoSupportGenerationV3Service
             MinLayerHeightMm: config?.AutoSupportMinLayerHeightMm ?? AppConfigService.DefaultAutoSupportMinLayerHeightMm,
             MaxLayerHeightMm: config?.AutoSupportMaxLayerHeightMm ?? AppConfigService.DefaultAutoSupportMaxLayerHeightMm,
             MinIslandAreaMm2: config?.AutoSupportMinIslandAreaMm2 ?? AppConfigService.DefaultAutoSupportMinIslandAreaMm2,
-            LightTipRadiusMm: config?.AutoSupportLightTipRadiusMm ?? AppConfigService.DefaultAutoSupportLightTipRadiusMm);
+            SupportSpacingThresholdMm: config?.AutoSupportMergeDistanceMm ?? 3f,
+            MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland,
+            ResinStrength: config?.AutoSupportResinStrength ?? AppConfigService.DefaultAutoSupportResinStrength,
+            LightTipRadiusMm: config?.AutoSupportLightTipRadiusMm ?? AppConfigService.DefaultAutoSupportLightTipRadiusMm,
+            MediumTipRadiusMm: config?.AutoSupportMediumTipRadiusMm ?? AppConfigService.DefaultAutoSupportMediumTipRadiusMm,
+            HeavyTipRadiusMm: config?.AutoSupportHeavyTipRadiusMm ?? AppConfigService.DefaultAutoSupportHeavyTipRadiusMm);
     }
 
     private sealed record V3Tuning(
@@ -485,15 +709,32 @@ public sealed class AutoSupportGenerationV3Service
         float MinLayerHeightMm,
         float MaxLayerHeightMm,
         float MinIslandAreaMm2,
-        float LightTipRadiusMm);
+        float SupportSpacingThresholdMm,
+        int MaxSupportsPerIsland,
+        float ResinStrength,
+        float LightTipRadiusMm,
+        float MediumTipRadiusMm,
+        float HeavyTipRadiusMm);
+
+    private static float GetTipRadiusMm(SupportSize size, V3Tuning tuning) => size switch
+    {
+        SupportSize.Heavy => tuning.HeavyTipRadiusMm,
+        SupportSize.Medium => tuning.MediumTipRadiusMm,
+        _ => tuning.LightTipRadiusMm,
+    };
 
     private sealed record TipIsland(
         List<(int X, int Y)> PixelCoords,
         float CentroidX,
         float CentroidZ,
-        float SliceHeightMm);
+        float SliceHeightMm,
+        float TopLayerAreaMm2);
 
     private sealed record VoxelRect(int X, int Y, int Width, int Height);
 
     private sealed record VoxelRectKey(int X, int Y, int Width, int Height);
+
+    private sealed record FurthestPointCandidate(float XMm, float ZMm, float DistanceMm);
+
+    private sealed record PixelCentroid(float XMm, float ZMm);
 }

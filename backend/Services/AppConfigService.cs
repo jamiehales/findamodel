@@ -415,7 +415,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (request.AutoSupportMaxSupportsPerIsland < 1 || request.AutoSupportMaxSupportsPerIsland > 64)
             throw new ArgumentException("Auto support max supports per island must be between 1 and 64.", nameof(request.AutoSupportMaxSupportsPerIsland));
 
-        ValidateFiniteRange(request.AutoSupportResinStrength, 0.1f, 10f, nameof(request.AutoSupportResinStrength));
+        ValidateFiniteMinimum(request.AutoSupportResinStrength, 0.1f, nameof(request.AutoSupportResinStrength));
         ValidateFiniteRange(request.AutoSupportResinDensityGPerMl, 0.1f, 10f, nameof(request.AutoSupportResinDensityGPerMl));
         ValidateFiniteRange(request.AutoSupportPeelForceMultiplier, 0.01f, 5f, nameof(request.AutoSupportPeelForceMultiplier));
         ValidateFiniteRange(request.AutoSupportMicroTipRadiusMm, 0.1f, 3f, nameof(request.AutoSupportMicroTipRadiusMm));
@@ -436,6 +436,12 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     {
         if (!float.IsFinite(value) || value < min || value > max)
             throw new ArgumentException($"{paramName} must be a finite number between {min} and {max}.", paramName);
+    }
+
+    private static void ValidateFiniteMinimum(float value, float min, string paramName)
+    {
+        if (!float.IsFinite(value) || value < min)
+            throw new ArgumentException($"{paramName} must be a finite number greater than or equal to {min}.", paramName);
     }
 
     private static int NormalizeMinimumPreviewGenerationVersion(int minimumPreviewGenerationVersion) =>

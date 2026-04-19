@@ -20,15 +20,15 @@ public class AutoSupportGenerationV3ServiceTests
     }
 
     [Fact]
-    public void GenerateSupportPreview_SingleBox_PlacesExactlyOneTipSupport()
+    public void GenerateSupportPreview_SingleBox_PlacesAtLeastOneSupport()
     {
-        // A single box has one connected top face - exactly one tip support should appear at the top
+        // A single box should always get support(s) at the overhang start layer.
         var geometry = CreateGeometry(
             MakeBox(centerX: 0f, centerZ: 0f, width: 6f, depth: 6f, height: 6f));
 
         var result = sut.GenerateSupportPreview(geometry);
 
-        Assert.Single(result.SupportPoints);
+        Assert.NotEmpty(result.SupportPoints);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class AutoSupportGenerationV3ServiceTests
     }
 
     [Fact]
-    public void GenerateSupportPreview_AllSupportsUseLightSize()
+    public void GenerateSupportPreview_AssignsValidSupportSizes()
     {
         var geometry = CreateGeometry(
             MakeBox(centerX: 0f, centerZ: 0f, width: 6f, depth: 6f, height: 6f));
@@ -88,7 +88,15 @@ public class AutoSupportGenerationV3ServiceTests
         var result = sut.GenerateSupportPreview(geometry);
 
         Assert.NotEmpty(result.SupportPoints);
-        Assert.All(result.SupportPoints, p => Assert.Equal(SupportSize.Light, p.Size));
+        Assert.All(result.SupportPoints, point =>
+        {
+            Assert.True(
+                point.Size == SupportSize.Micro ||
+                point.Size == SupportSize.Light ||
+                point.Size == SupportSize.Medium ||
+                point.Size == SupportSize.Heavy);
+            Assert.True(point.RadiusMm > 0f);
+        });
     }
 
     [Fact]
