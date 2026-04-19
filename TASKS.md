@@ -4,6 +4,18 @@
 
 --
 
+Now, iterate through all layers in support v3, and calculate force exerted on each support. Force is based on the total area of the top layer of that island. If the forces on all the supports supporting that island (taking into account the support tip size) exceed the strength of the resin, add a new support in the place that would reduce the force on the existing supports the most.
+
+If there's more than 3mm (configurable) in the x/y direction from the last support, add a support int he location that is at the furthest distance from existing supports while not exceeding the distance require
+
+* If forces are negative vertically, towards the build plate, that indicates need more of a support
+
+* Take into account total weight of the current area
+* Make sure overhangs are supported properly
+* Add a final pass that moves the supports to the closest piece of the actual mesh
+
+--
+
 * Add note to AI to ignore orange parts of the image, or somehow filter them out before passing it over? Or render previews both with and without supports?
 
 * Add the ability to duplicate a list, or copy models into another list? Something for better list item management (staging lists, combining plates, etc...)
@@ -39,6 +51,16 @@ Now implement all the methods you suggested, as pngzip_<method>, making sure to 
 --
 
 Add an auto supporting algorithm, calculating the pull forces at each layer as it calculates the mesh, determining where an additional support may be needed.
+
+Add an autosupports configuration preview on the autosupports settings screen - when the values are changed allow a button to be pressed that regenerates and shows the generated supports on the following shapes - each in it's own viewport
+* A thin plane (2mm) of 40x40mm parallel to the build plate
+* A thin plane (2mm) of 40x40mm at a 30 degree angle offset from the build plate
+* A sphere of diameter 40mm
+* A cube of diameter 40mm
+* A cube of diameter 40mm rotated by 45 degrees
+* An upside down cone (point facing downwards) of diameter 40mm and height 80mm
+* Support for some hardcoded stls, not yet provided - implement a list that can be populated (in code for now), and will automatically add new viewports and support generation for each of them
+
 
 To calculate pull forces, research your own algorithms to determine the best, but take into account this one:
 * Voxelize the mesh (at a lower resolution than the printer) and calculate the forces on each support using it

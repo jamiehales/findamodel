@@ -6,8 +6,9 @@ namespace findamodel.Services;
 /// Method 3: Island-tip detection auto-support generation.
 /// Slices the model layer by layer, detects 2-D connected islands at every layer,
 /// then places/reinforces supports at overhang starts (first appearance from below).
-/// Reinforcement considers island top-layer area force vs support tip capacity and
-/// adds supports where spacing/force is worst.
+/// Reinforcement considers peel-force load, compressive crush load, and angular
+/// stability so wide planes can gain edge supports even when center pull capacity
+/// is sufficient.
 /// Only support spheres are returned for visualisation - island outlines are omitted.
 /// </summary>
 public sealed class AutoSupportGenerationV3Service
@@ -110,6 +111,17 @@ public sealed class AutoSupportGenerationV3Service
         }
 
         ReinforceSupportsByForceAndSpacing(
+            layerIslands,
+            prevLayerPixels,
+            supportPoints,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm,
+            tuning);
+
+        PopulateSupportForces(
             layerIslands,
             prevLayerPixels,
             supportPoints,
@@ -282,15 +294,32 @@ public sealed class AutoSupportGenerationV3Service
                         pixelWidth,
                         pixelHeight);
 
+                    var supportForces = EvaluateSupportForces(
+                        unsupportedPixels,
+                        supportIndices,
+                        supportPoints,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight,
+                        tuning);
+
                     var combinedCapacity = supportIndices.Sum(index => ComputeCapacity(supportPoints[index], tuning));
-                    var force = island.TopLayerAreaMm2;
-                    var isOverloaded = force > combinedCapacity;
+                    var verticalPullForce = supportForces.Sum(metric => metric.VerticalPullForce);
+                    var maxCompressiveForce = supportForces.Max(metric => metric.CompressiveForce);
+                    var maxAngularForce = supportForces.Max(metric => metric.AngularForce);
+                    var isOverloaded = verticalPullForce > combinedCapacity;
+                    var exceedsCrushForce = maxCompressiveForce > tuning.CrushForceThreshold;
+                    var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
 
-                    if (!isOverloaded && !exceedsSpacing)
+                    if (!isOverloaded && !exceedsCrushForce && !exceedsAngularForce && !exceedsSpacing)
                         break;
 
-                    var overloadRatio = combinedCapacity <= 0f ? 2f : force / combinedCapacity;
+                    var loadRatio = combinedCapacity <= 0f ? 2f : verticalPullForce / combinedCapacity;
+                    var crushRatio = maxCompressiveForce / MathF.Max(tuning.CrushForceThreshold, 0.1f);
+                    var angularRatio = maxAngularForce / MathF.Max(tuning.MaxAngularForce, 0.1f);
+                    var overloadRatio = MathF.Max(loadRatio, MathF.Max(crushRatio, angularRatio));
                     var newSize = overloadRatio > 1.8f
                         ? SupportSize.Heavy
                         : overloadRatio > 1.25f
@@ -305,6 +334,60 @@ public sealed class AutoSupportGenerationV3Service
                 }
             }
         }
+    }
+
+    private static void PopulateSupportForces(
+        List<TipIsland>[] layerIslands,
+        HashSet<(int Column, int Row)>?[] prevLayerPixels,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        V3Tuning tuning)
+    {
+        var accumulatedForces = new Vec3[supportPoints.Count];
+
+        for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
+        {
+            var prevPixels = prevLayerPixels[layerIndex];
+            foreach (var island in layerIslands[layerIndex])
+            {
+                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                if (unsupportedPixels.Count == 0)
+                    continue;
+
+                var supportIndices = FindSupportingSupportsForPixels(
+                    unsupportedPixels,
+                    island.SliceHeightMm,
+                    supportPoints,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    layerHeightMm);
+
+                if (supportIndices.Count == 0)
+                    continue;
+
+                var supportForces = EvaluateSupportForces(
+                    unsupportedPixels,
+                    supportIndices,
+                    supportPoints,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    tuning);
+
+                foreach (var metric in supportForces)
+                    accumulatedForces[metric.SupportIndex] = accumulatedForces[metric.SupportIndex] + metric.PullVector;
+            }
+        }
+
+        for (var i = 0; i < supportPoints.Count; i++)
+            supportPoints[i] = supportPoints[i] with { PullForce = accumulatedForces[i] };
     }
 
     private static List<(int X, int Y)> GetUnsupportedPixels(
@@ -340,6 +423,78 @@ public sealed class AutoSupportGenerationV3Service
         }
 
         return new PixelCentroid(sumX / pixels.Count, sumZ / pixels.Count);
+    }
+
+    private static List<SupportForceMetric> EvaluateSupportForces(
+        List<(int X, int Y)> unsupportedPixels,
+        List<int> supportIndices,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        V3Tuning tuning)
+    {
+        var pixelAreaMm2 = (bedWidthMm / pixelWidth) * (bedDepthMm / pixelHeight);
+        var pixelForce = pixelAreaMm2 * tuning.PeelForceMultiplier;
+        var accumulators = supportIndices.ToDictionary(index => index, _ => new SupportForceAccumulator());
+
+        foreach (var (x, y) in unsupportedPixels)
+        {
+            var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+            var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+            var nearestSupportIndex = supportIndices[0];
+            var nearestDistanceSq = float.MaxValue;
+
+            foreach (var supportIndex in supportIndices)
+            {
+                var support = supportPoints[supportIndex];
+                var dx = xMm - support.Position.X;
+                var dz = zMm - support.Position.Z;
+                var distanceSq = (dx * dx) + (dz * dz);
+                if (distanceSq < nearestDistanceSq)
+                {
+                    nearestDistanceSq = distanceSq;
+                    nearestSupportIndex = supportIndex;
+                }
+            }
+
+            var accumulator = accumulators[nearestSupportIndex];
+            accumulator.PixelCount++;
+            accumulator.SumX += xMm;
+            accumulator.SumZ += zMm;
+            accumulator.AngularForce += pixelForce * MathF.Sqrt(nearestDistanceSq);
+        }
+
+        var metrics = new List<SupportForceMetric>(supportIndices.Count);
+        foreach (var supportIndex in supportIndices)
+        {
+            var accumulator = accumulators[supportIndex];
+            if (accumulator.PixelCount == 0)
+            {
+                metrics.Add(new SupportForceMetric(supportIndex, new Vec3(0f, 0f, 0f), 0f, 0f, 0f));
+                continue;
+            }
+
+            var support = supportPoints[supportIndex];
+            var verticalPullForce = accumulator.PixelCount * pixelForce;
+            var centroidX = accumulator.SumX / accumulator.PixelCount;
+            var centroidZ = accumulator.SumZ / accumulator.PixelCount;
+            var lateralX = (centroidX - support.Position.X) * 0.35f * MathF.Sqrt(MathF.Max(verticalPullForce, 0.01f));
+            var lateralZ = (centroidZ - support.Position.Z) * 0.35f * MathF.Sqrt(MathF.Max(verticalPullForce, 0.01f));
+            var crushForce = accumulator.AngularForce / MathF.Max(support.RadiusMm, 0.1f);
+            var signedVerticalForce = verticalPullForce - crushForce;
+            var compressiveForce = MathF.Max(0f, -signedVerticalForce);
+
+            metrics.Add(new SupportForceMetric(
+                supportIndex,
+                new Vec3(lateralX, signedVerticalForce, lateralZ),
+                verticalPullForce,
+                compressiveForce,
+                accumulator.AngularForce));
+        }
+
+        return metrics;
     }
 
     private static List<int> FindSupportingSupportsForPixels(
@@ -697,6 +852,9 @@ public sealed class AutoSupportGenerationV3Service
             SupportSpacingThresholdMm: config?.AutoSupportMergeDistanceMm ?? 3f,
             MaxSupportsPerIsland: config?.AutoSupportMaxSupportsPerIsland ?? AppConfigService.DefaultAutoSupportMaxSupportsPerIsland,
             ResinStrength: config?.AutoSupportResinStrength ?? AppConfigService.DefaultAutoSupportResinStrength,
+            CrushForceThreshold: config?.AutoSupportCrushForceThreshold ?? AppConfigService.DefaultAutoSupportCrushForceThreshold,
+            MaxAngularForce: config?.AutoSupportMaxAngularForce ?? AppConfigService.DefaultAutoSupportMaxAngularForce,
+            PeelForceMultiplier: config?.AutoSupportPeelForceMultiplier ?? AppConfigService.DefaultAutoSupportPeelForceMultiplier,
             LightTipRadiusMm: config?.AutoSupportLightTipRadiusMm ?? AppConfigService.DefaultAutoSupportLightTipRadiusMm,
             MediumTipRadiusMm: config?.AutoSupportMediumTipRadiusMm ?? AppConfigService.DefaultAutoSupportMediumTipRadiusMm,
             HeavyTipRadiusMm: config?.AutoSupportHeavyTipRadiusMm ?? AppConfigService.DefaultAutoSupportHeavyTipRadiusMm);
@@ -712,6 +870,9 @@ public sealed class AutoSupportGenerationV3Service
         float SupportSpacingThresholdMm,
         int MaxSupportsPerIsland,
         float ResinStrength,
+        float CrushForceThreshold,
+        float MaxAngularForce,
+        float PeelForceMultiplier,
         float LightTipRadiusMm,
         float MediumTipRadiusMm,
         float HeavyTipRadiusMm);
@@ -737,4 +898,19 @@ public sealed class AutoSupportGenerationV3Service
     private sealed record FurthestPointCandidate(float XMm, float ZMm, float DistanceMm);
 
     private sealed record PixelCentroid(float XMm, float ZMm);
+
+    private sealed class SupportForceAccumulator
+    {
+        public int PixelCount { get; set; }
+        public float SumX { get; set; }
+        public float SumZ { get; set; }
+        public float AngularForce { get; set; }
+    }
+
+    private sealed record SupportForceMetric(
+        int SupportIndex,
+        Vec3 PullVector,
+        float VerticalPullForce,
+        float CompressiveForce,
+        float AngularForce);
 }

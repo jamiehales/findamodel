@@ -1,4 +1,8 @@
+using findamodel.Data;
+using findamodel.Models;
 using findamodel.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -7,6 +11,76 @@ namespace findamodel.Tests;
 public class AutoSupportGenerationV3ServiceTests
 {
     private readonly AutoSupportGenerationV3Service sut = new(NullLoggerFactory.Instance);
+
+    private static AppConfigService CreateConfiguredAppConfigService(
+        string dbName,
+        Func<UpdateAppConfigRequest, UpdateAppConfigRequest>? configure = null)
+    {
+        var options = new DbContextOptionsBuilder<ModelCacheContext>()
+            .UseInMemoryDatabase(dbName)
+            .Options;
+        var factory = new InMemoryDbContextFactory(options);
+        var service = new AppConfigService(
+            factory,
+            new ConfigurationBuilder().AddInMemoryCollection().Build());
+        var current = service.GetAsync().GetAwaiter().GetResult();
+        var request = new UpdateAppConfigRequest(
+            DefaultRaftHeightMm: current.DefaultRaftHeightMm,
+            Theme: current.Theme,
+            GeneratePreviewsEnabled: current.GeneratePreviewsEnabled,
+            MinimumPreviewGenerationVersion: current.MinimumPreviewGenerationVersion,
+            TagGenerationEnabled: current.TagGenerationEnabled,
+            AiDescriptionEnabled: current.AiDescriptionEnabled,
+            TagGenerationProvider: current.TagGenerationProvider,
+            TagGenerationEndpoint: current.TagGenerationEndpoint,
+            TagGenerationModel: current.TagGenerationModelOverride,
+            TagGenerationTimeoutMs: current.TagGenerationTimeoutMs,
+            TagGenerationMaxTags: current.TagGenerationMaxTags,
+            TagGenerationMinConfidence: current.TagGenerationMinConfidence,
+            TagGenerationPromptTemplate: current.TagGenerationPromptTemplateOverride,
+            DescriptionGenerationPromptTemplate: current.DescriptionGenerationPromptTemplateOverride,
+            AutoSupportBedMarginMm: current.AutoSupportBedMarginMm,
+            AutoSupportMinVoxelSizeMm: current.AutoSupportMinVoxelSizeMm,
+            AutoSupportMaxVoxelSizeMm: current.AutoSupportMaxVoxelSizeMm,
+            AutoSupportMinLayerHeightMm: current.AutoSupportMinLayerHeightMm,
+            AutoSupportMaxLayerHeightMm: current.AutoSupportMaxLayerHeightMm,
+            AutoSupportMergeDistanceMm: current.AutoSupportMergeDistanceMm,
+            AutoSupportPullForceThreshold: current.AutoSupportPullForceThreshold,
+            AutoSupportSphereRadiusMm: current.AutoSupportSphereRadiusMm,
+            AutoSupportMaxSupportsPerIsland: current.AutoSupportMaxSupportsPerIsland,
+            AutoSupportMinIslandAreaMm2: current.AutoSupportMinIslandAreaMm2,
+            AutoSupportMaxSupportDistanceMm: current.AutoSupportMaxSupportDistanceMm,
+            AutoSupportUnsupportedIslandVolumeThresholdMm3: current.AutoSupportUnsupportedIslandVolumeThresholdMm3,
+            AutoSupportResinStrength: current.AutoSupportResinStrength,
+            AutoSupportCrushForceThreshold: current.AutoSupportCrushForceThreshold,
+            AutoSupportMaxAngularForce: current.AutoSupportMaxAngularForce,
+            AutoSupportResinDensityGPerMl: current.AutoSupportResinDensityGPerMl,
+            AutoSupportPeelForceMultiplier: current.AutoSupportPeelForceMultiplier,
+            AutoSupportMicroTipRadiusMm: current.AutoSupportMicroTipRadiusMm,
+            AutoSupportLightTipRadiusMm: current.AutoSupportLightTipRadiusMm,
+            AutoSupportMediumTipRadiusMm: current.AutoSupportMediumTipRadiusMm,
+            AutoSupportHeavyTipRadiusMm: current.AutoSupportHeavyTipRadiusMm,
+            AutoSupportV2VoxelSizeMm: current.AutoSupportV2VoxelSizeMm,
+            AutoSupportV2OptimizationEnabled: current.AutoSupportV2OptimizationEnabled,
+            AutoSupportV2CoarseVoxelSizeMm: current.AutoSupportV2CoarseVoxelSizeMm,
+            AutoSupportV2FineVoxelSizeMm: current.AutoSupportV2FineVoxelSizeMm,
+            AutoSupportV2RefinementMarginMm: current.AutoSupportV2RefinementMarginMm,
+            AutoSupportV2RefinementMaxRegions: current.AutoSupportV2RefinementMaxRegions,
+            AutoSupportV2RiskForceMarginRatio: current.AutoSupportV2RiskForceMarginRatio,
+            AutoSupportV2MinRegionVolumeMm3: current.AutoSupportV2MinRegionVolumeMm3);
+
+        request = configure?.Invoke(request) ?? request;
+        service.UpdateAsync(request).GetAwaiter().GetResult();
+        return service;
+    }
+
+    private sealed class InMemoryDbContextFactory(DbContextOptions<ModelCacheContext> options)
+        : IDbContextFactory<ModelCacheContext>
+    {
+        public ModelCacheContext CreateDbContext() => new(options);
+        public Task<ModelCacheContext> CreateDbContextAsync(CancellationToken ct = default)
+            => Task.FromResult(CreateDbContext());
+    }
 
     [Fact]
     public void GenerateSupportPreview_EmptyGeometry_ReturnsEmptyResult()
@@ -134,6 +208,76 @@ public class AutoSupportGenerationV3ServiceTests
 
         Assert.NotEmpty(result.SupportPoints);
         Assert.All(result.SupportPoints, p => Assert.True(p.RadiusMm > 0f));
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_WideBox_ReportsNegativeYForceForCompressedSupport()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_WideBox_ReportsNegativeYForceForCompressedSupport),
+            request => request with
+            {
+                AutoSupportMergeDistanceMm = 25f,
+                AutoSupportMaxSupportDistanceMm = 30f,
+                AutoSupportMaxSupportsPerIsland = 1,
+                AutoSupportResinStrength = 1000f,
+                AutoSupportCrushForceThreshold = 10000f,
+                AutoSupportMaxAngularForce = 10000f,
+            });
+        var configuredSut = new AutoSupportGenerationV3Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 4f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        var support = Assert.Single(result.SupportPoints);
+        Assert.True(support.PullForce.Y < 0f, $"Expected compressive negative Y force, got {support.PullForce.Y:F3}");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_WideBox_AddsSupportsWhenAngularForceExceeded()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_WideBox_AddsSupportsWhenAngularForceExceeded),
+            request => request with
+            {
+                AutoSupportMergeDistanceMm = 25f,
+                AutoSupportMaxSupportDistanceMm = 30f,
+                AutoSupportMaxSupportsPerIsland = 4,
+                AutoSupportResinStrength = 1000f,
+                AutoSupportCrushForceThreshold = 10000f,
+                AutoSupportMaxAngularForce = 20f,
+            });
+        var configuredSut = new AutoSupportGenerationV3Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 4f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.True(result.SupportPoints.Count >= 2, $"Expected angular force reinforcement, got {result.SupportPoints.Count} supports.");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_WideBox_AddsSupportsWhenCrushForceExceeded()
+    {
+        var config = CreateConfiguredAppConfigService(
+            nameof(GenerateSupportPreview_WideBox_AddsSupportsWhenCrushForceExceeded),
+            request => request with
+            {
+                AutoSupportMergeDistanceMm = 25f,
+                AutoSupportMaxSupportDistanceMm = 30f,
+                AutoSupportMaxSupportsPerIsland = 4,
+                AutoSupportResinStrength = 1000f,
+                AutoSupportCrushForceThreshold = 5f,
+                AutoSupportMaxAngularForce = 10000f,
+            });
+        var configuredSut = new AutoSupportGenerationV3Service(config, NullLoggerFactory.Instance);
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 6f, height: 4f));
+
+        var result = configuredSut.GenerateSupportPreview(geometry);
+
+        Assert.True(result.SupportPoints.Count >= 2, $"Expected crush-force reinforcement, got {result.SupportPoints.Count} supports.");
     }
 
     [Fact]

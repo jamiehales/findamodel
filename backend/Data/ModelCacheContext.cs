@@ -150,6 +150,14 @@ public class ModelCacheContext(DbContextOptions<ModelCacheContext> options) : Db
             .HasDefaultValue(AppConfigService.DefaultAutoSupportResinStrength);
 
         modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportCrushForceThreshold)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportCrushForceThreshold);
+
+        modelBuilder.Entity<AppConfig>()
+            .Property(c => c.AutoSupportMaxAngularForce)
+            .HasDefaultValue(AppConfigService.DefaultAutoSupportMaxAngularForce);
+
+        modelBuilder.Entity<AppConfig>()
             .Property(c => c.AutoSupportResinDensityGPerMl)
             .HasDefaultValue(AppConfigService.DefaultAutoSupportResinDensityGPerMl);
 

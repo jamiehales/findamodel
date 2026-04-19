@@ -33,6 +33,8 @@ public class AppConfig
     public int AutoSupportMaxSupportsPerIsland { get; set; } = 6;
 
     public float AutoSupportResinStrength { get; set; } = 1f;
+    public float AutoSupportCrushForceThreshold { get; set; } = 20f;
+    public float AutoSupportMaxAngularForce { get; set; } = 40f;
     public float AutoSupportResinDensityGPerMl { get; set; } = 1.25f;
     public float AutoSupportPeelForceMultiplier { get; set; } = 0.15f;
     public float AutoSupportMicroTipRadiusMm { get; set; } = 0.4f;

@@ -34,6 +34,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportSphereRadiusMm = 1.2f;
     public const int DefaultAutoSupportMaxSupportsPerIsland = 6;
     public const float DefaultAutoSupportResinStrength = 1f;
+    public const float DefaultAutoSupportCrushForceThreshold = 20f;
+    public const float DefaultAutoSupportMaxAngularForce = 40f;
     public const float DefaultAutoSupportResinDensityGPerMl = 1.25f;
     public const float DefaultAutoSupportPeelForceMultiplier = 0.15f;
     public const float DefaultAutoSupportMicroTipRadiusMm = 0.4f;
@@ -139,6 +141,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportSphereRadiusMm = request.AutoSupportSphereRadiusMm;
         config.AutoSupportMaxSupportsPerIsland = request.AutoSupportMaxSupportsPerIsland;
         config.AutoSupportResinStrength = request.AutoSupportResinStrength;
+        config.AutoSupportCrushForceThreshold = request.AutoSupportCrushForceThreshold;
+        config.AutoSupportMaxAngularForce = request.AutoSupportMaxAngularForce;
         config.AutoSupportResinDensityGPerMl = request.AutoSupportResinDensityGPerMl;
         config.AutoSupportPeelForceMultiplier = request.AutoSupportPeelForceMultiplier;
         config.AutoSupportMicroTipRadiusMm = request.AutoSupportMicroTipRadiusMm;
@@ -301,6 +305,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportMaxSupportDistanceMm,
             config.AutoSupportUnsupportedIslandVolumeThresholdMm3,
             config.AutoSupportResinStrength,
+            config.AutoSupportCrushForceThreshold,
+            config.AutoSupportMaxAngularForce,
             config.AutoSupportResinDensityGPerMl,
             config.AutoSupportPeelForceMultiplier,
             config.AutoSupportMicroTipRadiusMm,
@@ -358,6 +364,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportSphereRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportSphereRadiusMm") ?? DefaultAutoSupportSphereRadiusMm,
             AutoSupportMaxSupportsPerIsland = configuration.GetValue<int?>("AppConfig:AutoSupportMaxSupportsPerIsland") ?? DefaultAutoSupportMaxSupportsPerIsland,
             AutoSupportResinStrength = configuration.GetValue<float?>("AppConfig:AutoSupportResinStrength") ?? DefaultAutoSupportResinStrength,
+            AutoSupportCrushForceThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportCrushForceThreshold") ?? DefaultAutoSupportCrushForceThreshold,
+            AutoSupportMaxAngularForce = configuration.GetValue<float?>("AppConfig:AutoSupportMaxAngularForce") ?? DefaultAutoSupportMaxAngularForce,
             AutoSupportResinDensityGPerMl = configuration.GetValue<float?>("AppConfig:AutoSupportResinDensityGPerMl") ?? DefaultAutoSupportResinDensityGPerMl,
             AutoSupportPeelForceMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportPeelForceMultiplier") ?? DefaultAutoSupportPeelForceMultiplier,
             AutoSupportMicroTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMicroTipRadiusMm") ?? DefaultAutoSupportMicroTipRadiusMm,
@@ -416,6 +424,8 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             throw new ArgumentException("Auto support max supports per island must be between 1 and 64.", nameof(request.AutoSupportMaxSupportsPerIsland));
 
         ValidateFiniteMinimum(request.AutoSupportResinStrength, 0.1f, nameof(request.AutoSupportResinStrength));
+        ValidateFiniteMinimum(request.AutoSupportCrushForceThreshold, 0.1f, nameof(request.AutoSupportCrushForceThreshold));
+        ValidateFiniteMinimum(request.AutoSupportMaxAngularForce, 0.1f, nameof(request.AutoSupportMaxAngularForce));
         ValidateFiniteRange(request.AutoSupportResinDensityGPerMl, 0.1f, 10f, nameof(request.AutoSupportResinDensityGPerMl));
         ValidateFiniteRange(request.AutoSupportPeelForceMultiplier, 0.01f, 5f, nameof(request.AutoSupportPeelForceMultiplier));
         ValidateFiniteRange(request.AutoSupportMicroTipRadiusMm, 0.1f, 3f, nameof(request.AutoSupportMicroTipRadiusMm));

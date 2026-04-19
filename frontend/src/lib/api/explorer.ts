@@ -128,6 +128,8 @@ export interface AppConfig {
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
   autoSupportResinStrength: number;
+  autoSupportCrushForceThreshold: number;
+  autoSupportMaxAngularForce: number;
   autoSupportResinDensityGPerMl: number;
   autoSupportPeelForceMultiplier: number;
   autoSupportMicroTipRadiusMm: number;
@@ -192,6 +194,8 @@ export interface UpdateAppConfigRequest {
   autoSupportSphereRadiusMm: number;
   autoSupportMaxSupportsPerIsland: number;
   autoSupportResinStrength: number;
+  autoSupportCrushForceThreshold: number;
+  autoSupportMaxAngularForce: number;
   autoSupportResinDensityGPerMl: number;
   autoSupportPeelForceMultiplier: number;
   autoSupportMicroTipRadiusMm: number;

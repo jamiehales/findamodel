@@ -308,6 +308,8 @@ export default function SettingsPage() {
   const [autoSupportSphereRadiusMm, setAutoSupportSphereRadiusMm] = useState('1.2');
   const [autoSupportMaxSupportsPerIsland, setAutoSupportMaxSupportsPerIsland] = useState('6');
   const [autoSupportResinStrength, setAutoSupportResinStrength] = useState('1');
+  const [autoSupportCrushForceThreshold, setAutoSupportCrushForceThreshold] = useState('20');
+  const [autoSupportMaxAngularForce, setAutoSupportMaxAngularForce] = useState('40');
   const [autoSupportResinDensityGPerMl, setAutoSupportResinDensityGPerMl] = useState('1.25');
   const [autoSupportPeelForceMultiplier, setAutoSupportPeelForceMultiplier] = useState('0.15');
   const [autoSupportMicroTipRadiusMm, setAutoSupportMicroTipRadiusMm] = useState('0.4');
@@ -389,6 +391,8 @@ export default function SettingsPage() {
       setAutoSupportSphereRadiusMm(String(appConfig.autoSupportSphereRadiusMm));
       setAutoSupportMaxSupportsPerIsland(String(appConfig.autoSupportMaxSupportsPerIsland));
       setAutoSupportResinStrength(String(appConfig.autoSupportResinStrength));
+      setAutoSupportCrushForceThreshold(String(appConfig.autoSupportCrushForceThreshold));
+      setAutoSupportMaxAngularForce(String(appConfig.autoSupportMaxAngularForce));
       setAutoSupportResinDensityGPerMl(String(appConfig.autoSupportResinDensityGPerMl));
       setAutoSupportPeelForceMultiplier(String(appConfig.autoSupportPeelForceMultiplier));
       setAutoSupportMicroTipRadiusMm(String(appConfig.autoSupportMicroTipRadiusMm));
@@ -451,6 +455,8 @@ export default function SettingsPage() {
   const autoSupportSphereRadiusValue = Number(autoSupportSphereRadiusMm);
   const autoSupportMaxSupportsPerIslandValue = Number(autoSupportMaxSupportsPerIsland);
   const autoSupportResinStrengthValue = Number(autoSupportResinStrength);
+  const autoSupportCrushForceThresholdValue = Number(autoSupportCrushForceThreshold);
+  const autoSupportMaxAngularForceValue = Number(autoSupportMaxAngularForce);
   const autoSupportResinDensityValue = Number(autoSupportResinDensityGPerMl);
   const autoSupportPeelForceMultiplierValue = Number(autoSupportPeelForceMultiplier);
   const autoSupportMicroTipRadiusValue = Number(autoSupportMicroTipRadiusMm);
@@ -504,6 +510,10 @@ export default function SettingsPage() {
     autoSupportMaxSupportsPerIslandValue <= 64 &&
     Number.isFinite(autoSupportResinStrengthValue) &&
     autoSupportResinStrengthValue >= 0.1 &&
+    Number.isFinite(autoSupportCrushForceThresholdValue) &&
+    autoSupportCrushForceThresholdValue >= 0.1 &&
+    Number.isFinite(autoSupportMaxAngularForceValue) &&
+    autoSupportMaxAngularForceValue >= 0.1 &&
     Number.isFinite(autoSupportLightTipRadiusValue) &&
     autoSupportLightTipRadiusValue >= 0.1 &&
     autoSupportLightTipRadiusValue <= 5 &&
@@ -567,6 +577,8 @@ export default function SettingsPage() {
       autoSupportSphereRadiusMm: autoSupportSphereRadiusValue,
       autoSupportMaxSupportsPerIsland: autoSupportMaxSupportsPerIslandValue,
       autoSupportResinStrength: autoSupportResinStrengthValue,
+      autoSupportCrushForceThreshold: autoSupportCrushForceThresholdValue,
+      autoSupportMaxAngularForce: autoSupportMaxAngularForceValue,
       autoSupportResinDensityGPerMl: autoSupportResinDensityValue,
       autoSupportPeelForceMultiplier: autoSupportPeelForceMultiplierValue,
       autoSupportMicroTipRadiusMm: autoSupportMicroTipRadiusValue,
@@ -755,7 +767,8 @@ export default function SettingsPage() {
                 </Stack>
                 <Typography variant="h6">Support tip sizing</Typography>
                 <Typography color="text.secondary">
-                  Tip radii and resin strength control per-support force capacity for method 3.
+                  Tip radii, resin strength, crush force, and angular force control method 3 support
+                  capacity and stability checks.
                 </Typography>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -769,6 +782,20 @@ export default function SettingsPage() {
                     value={autoSupportResinStrength}
                     onChange={(e) => setAutoSupportResinStrength(e.target.value)}
                     helperText="Dimensionless multiplier (default 1.0)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Crush force threshold"
+                    value={autoSupportCrushForceThreshold}
+                    onChange={(e) => setAutoSupportCrushForceThreshold(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Max angular force"
+                    value={autoSupportMaxAngularForce}
+                    onChange={(e) => setAutoSupportMaxAngularForce(e.target.value)}
                   />
                   <TextField
                     size="small"
