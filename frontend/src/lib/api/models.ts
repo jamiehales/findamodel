@@ -377,6 +377,15 @@ export interface AutoSupportSettingsPreviewTuningRequest {
   lightTipRadiusMm: number;
   mediumTipRadiusMm: number;
   heavyTipRadiusMm: number;
+  suctionMultiplier?: number;
+  areaGrowthThreshold?: number;
+  areaGrowthMultiplier?: number;
+  gravityEnabled?: boolean;
+  resinDensityGPerMl?: number;
+  dragCoefficientMultiplier?: number;
+  minFeatureWidthMm?: number;
+  shrinkagePercent?: number;
+  shrinkageEdgeBias?: number;
 }
 
 export interface AutoSupportSettingsPreviewScenario {

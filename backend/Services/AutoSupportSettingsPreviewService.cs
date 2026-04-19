@@ -230,7 +230,16 @@ public sealed class AutoSupportSettingsPreviewService(
             tuning.PeelForceMultiplier,
             tuning.LightTipRadiusMm,
             tuning.MediumTipRadiusMm,
-            tuning.HeavyTipRadiusMm);
+            tuning.HeavyTipRadiusMm,
+            tuning.SuctionMultiplier,
+            tuning.AreaGrowthThreshold,
+            tuning.AreaGrowthMultiplier,
+            tuning.GravityEnabled,
+            tuning.ResinDensityGPerMl,
+            tuning.DragCoefficientMultiplier,
+            tuning.MinFeatureWidthMm,
+            tuning.ShrinkagePercent,
+            tuning.ShrinkageEdgeBias);
 
     private void CleanupExpiredPreviews()
     {

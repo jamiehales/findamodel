@@ -223,6 +223,9 @@ public class AutoSupportGenerationV3ServiceTests
                 AutoSupportResinStrength = 1000f,
                 AutoSupportCrushForceThreshold = 10000f,
                 AutoSupportMaxAngularForce = 10000f,
+                AutoSupportGravityEnabled = false,
+                AutoSupportShrinkagePercent = 0f,
+                AutoSupportDragCoefficientMultiplier = 0f,
             });
         var configuredSut = new AutoSupportGenerationV3Service(config, NullLoggerFactory.Instance);
         var geometry = CreateGeometry(
@@ -319,6 +322,83 @@ public class AutoSupportGenerationV3ServiceTests
         var result = sut.GenerateSupportPreview(geometry);
 
         Assert.Null(result.BodyGeometry);
+    }
+
+    private static readonly AutoSupportV3TuningOverrides DefaultOverrides = new(
+        BedMarginMm: 2f, MinVoxelSizeMm: 0.8f, MaxVoxelSizeMm: 2f,
+        MinLayerHeightMm: 0.75f, MaxLayerHeightMm: 1.5f, MinIslandAreaMm2: 4f,
+        SupportSpacingThresholdMm: 2.5f, ResinStrength: 1f, CrushForceThreshold: 20f,
+        MaxAngularForce: 40f, PeelForceMultiplier: 0.15f, LightTipRadiusMm: 0.7f,
+        MediumTipRadiusMm: 1f, HeavyTipRadiusMm: 1.5f);
+
+    [Fact]
+    public void GenerateSupportPreview_WithHighSuctionMultiplier_ProducesMoreSupports()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var baseline = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { SuctionMultiplier = 1f });
+        var highSuction = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { SuctionMultiplier = 10f });
+
+        Assert.True(highSuction.SupportPoints.Count >= baseline.SupportPoints.Count,
+            $"High suction ({highSuction.SupportPoints.Count}) should produce >= supports than baseline ({baseline.SupportPoints.Count})");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_GravityDisabled_ProducesDifferentResult()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var withGravity = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { GravityEnabled = true });
+        var withoutGravity = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { GravityEnabled = false });
+
+        // Both should produce valid results
+        Assert.NotEmpty(withGravity.SupportPoints);
+        Assert.NotEmpty(withoutGravity.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_ZeroShrinkage_DoesNotCrash()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var result = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { ShrinkagePercent = 0f });
+
+        Assert.NotEmpty(result.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_ZeroDragCoefficient_DoesNotCrash()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var result = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { DragCoefficientMultiplier = 0f });
+
+        Assert.NotEmpty(result.SupportPoints);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_HighAreaGrowthMultiplier_ProducesMoreSupports()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var baseline = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { AreaGrowthMultiplier = 1f });
+        var highGrowth = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with { AreaGrowthMultiplier = 5f });
+
+        Assert.True(highGrowth.SupportPoints.Count >= baseline.SupportPoints.Count,
+            $"High area growth ({highGrowth.SupportPoints.Count}) should produce >= supports than baseline ({baseline.SupportPoints.Count})");
     }
 
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)

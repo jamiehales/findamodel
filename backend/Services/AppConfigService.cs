@@ -42,6 +42,14 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportLightTipRadiusMm = 0.7f;
     public const float DefaultAutoSupportMediumTipRadiusMm = 1f;
     public const float DefaultAutoSupportHeavyTipRadiusMm = 1.5f;
+    public const float DefaultAutoSupportSuctionMultiplier = 3f;
+    public const float DefaultAutoSupportAreaGrowthThreshold = 0.5f;
+    public const float DefaultAutoSupportAreaGrowthMultiplier = 1.5f;
+    public const bool DefaultAutoSupportGravityEnabled = true;
+    public const float DefaultAutoSupportDragCoefficientMultiplier = 0.5f;
+    public const float DefaultAutoSupportMinFeatureWidthMm = 1f;
+    public const float DefaultAutoSupportShrinkagePercent = 5f;
+    public const float DefaultAutoSupportShrinkageEdgeBias = 0.7f;
     public const float DefaultAutoSupportV2VoxelSizeMm = 2f;
     public const bool DefaultAutoSupportV2OptimizationEnabled = true;
     public const float DefaultAutoSupportV2CoarseVoxelSizeMm = 4f;
@@ -149,6 +157,14 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportLightTipRadiusMm = request.AutoSupportLightTipRadiusMm;
         config.AutoSupportMediumTipRadiusMm = request.AutoSupportMediumTipRadiusMm;
         config.AutoSupportHeavyTipRadiusMm = request.AutoSupportHeavyTipRadiusMm;
+        config.AutoSupportSuctionMultiplier = request.AutoSupportSuctionMultiplier;
+        config.AutoSupportAreaGrowthThreshold = request.AutoSupportAreaGrowthThreshold;
+        config.AutoSupportAreaGrowthMultiplier = request.AutoSupportAreaGrowthMultiplier;
+        config.AutoSupportGravityEnabled = request.AutoSupportGravityEnabled;
+        config.AutoSupportDragCoefficientMultiplier = request.AutoSupportDragCoefficientMultiplier;
+        config.AutoSupportMinFeatureWidthMm = request.AutoSupportMinFeatureWidthMm;
+        config.AutoSupportShrinkagePercent = request.AutoSupportShrinkagePercent;
+        config.AutoSupportShrinkageEdgeBias = request.AutoSupportShrinkageEdgeBias;
         config.AutoSupportV2VoxelSizeMm = request.AutoSupportV2VoxelSizeMm;
         config.AutoSupportV2OptimizationEnabled = request.AutoSupportV2OptimizationEnabled;
         config.AutoSupportV2CoarseVoxelSizeMm = request.AutoSupportV2CoarseVoxelSizeMm;
@@ -313,6 +329,14 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportLightTipRadiusMm,
             config.AutoSupportMediumTipRadiusMm,
             config.AutoSupportHeavyTipRadiusMm,
+            config.AutoSupportSuctionMultiplier,
+            config.AutoSupportAreaGrowthThreshold,
+            config.AutoSupportAreaGrowthMultiplier,
+            config.AutoSupportGravityEnabled,
+            config.AutoSupportDragCoefficientMultiplier,
+            config.AutoSupportMinFeatureWidthMm,
+            config.AutoSupportShrinkagePercent,
+            config.AutoSupportShrinkageEdgeBias,
             config.AutoSupportV2VoxelSizeMm,
             config.AutoSupportV2OptimizationEnabled,
             config.AutoSupportV2CoarseVoxelSizeMm,
@@ -372,6 +396,14 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportLightTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportLightTipRadiusMm") ?? DefaultAutoSupportLightTipRadiusMm,
             AutoSupportMediumTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportMediumTipRadiusMm") ?? DefaultAutoSupportMediumTipRadiusMm,
             AutoSupportHeavyTipRadiusMm = configuration.GetValue<float?>("AppConfig:AutoSupportHeavyTipRadiusMm") ?? DefaultAutoSupportHeavyTipRadiusMm,
+            AutoSupportSuctionMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportSuctionMultiplier") ?? DefaultAutoSupportSuctionMultiplier,
+            AutoSupportAreaGrowthThreshold = configuration.GetValue<float?>("AppConfig:AutoSupportAreaGrowthThreshold") ?? DefaultAutoSupportAreaGrowthThreshold,
+            AutoSupportAreaGrowthMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportAreaGrowthMultiplier") ?? DefaultAutoSupportAreaGrowthMultiplier,
+            AutoSupportGravityEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportGravityEnabled") ?? DefaultAutoSupportGravityEnabled,
+            AutoSupportDragCoefficientMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportDragCoefficientMultiplier") ?? DefaultAutoSupportDragCoefficientMultiplier,
+            AutoSupportMinFeatureWidthMm = configuration.GetValue<float?>("AppConfig:AutoSupportMinFeatureWidthMm") ?? DefaultAutoSupportMinFeatureWidthMm,
+            AutoSupportShrinkagePercent = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkagePercent") ?? DefaultAutoSupportShrinkagePercent,
+            AutoSupportShrinkageEdgeBias = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkageEdgeBias") ?? DefaultAutoSupportShrinkageEdgeBias,
             AutoSupportV2VoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2VoxelSizeMm") ?? DefaultAutoSupportV2VoxelSizeMm,
             AutoSupportV2OptimizationEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportV2OptimizationEnabled") ?? DefaultAutoSupportV2OptimizationEnabled,
             AutoSupportV2CoarseVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2CoarseVoxelSizeMm") ?? DefaultAutoSupportV2CoarseVoxelSizeMm,
@@ -432,6 +464,13 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportLightTipRadiusMm, 0.1f, 5f, nameof(request.AutoSupportLightTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportMediumTipRadiusMm, 0.1f, 7f, nameof(request.AutoSupportMediumTipRadiusMm));
         ValidateFiniteRange(request.AutoSupportHeavyTipRadiusMm, 0.1f, 10f, nameof(request.AutoSupportHeavyTipRadiusMm));
+        ValidateFiniteRange(request.AutoSupportSuctionMultiplier, 1f, 10f, nameof(request.AutoSupportSuctionMultiplier));
+        ValidateFiniteRange(request.AutoSupportAreaGrowthThreshold, 0.1f, 5f, nameof(request.AutoSupportAreaGrowthThreshold));
+        ValidateFiniteRange(request.AutoSupportAreaGrowthMultiplier, 1f, 5f, nameof(request.AutoSupportAreaGrowthMultiplier));
+        ValidateFiniteRange(request.AutoSupportDragCoefficientMultiplier, 0f, 5f, nameof(request.AutoSupportDragCoefficientMultiplier));
+        ValidateFiniteRange(request.AutoSupportMinFeatureWidthMm, 0.1f, 10f, nameof(request.AutoSupportMinFeatureWidthMm));
+        ValidateFiniteRange(request.AutoSupportShrinkagePercent, 0f, 15f, nameof(request.AutoSupportShrinkagePercent));
+        ValidateFiniteRange(request.AutoSupportShrinkageEdgeBias, 0f, 1f, nameof(request.AutoSupportShrinkageEdgeBias));
         ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2CoarseVoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2CoarseVoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2FineVoxelSizeMm, 0.1f, request.AutoSupportV2CoarseVoxelSizeMm, nameof(request.AutoSupportV2FineVoxelSizeMm));

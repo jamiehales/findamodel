@@ -1,7 +1,9 @@
 using System.IO.Compression;
+using System.Diagnostics;
 using findamodel.Auth;
 using findamodel.Data;
 using findamodel.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
@@ -178,19 +180,38 @@ using (var scope = app.Services.CreateScope())
     var previewService = scope.ServiceProvider.GetRequiredService<findamodel.Services.ModelPreviewService>();
     previewService.SetCacheDirectory(cacheRendersPath);
 
+    Log.Information("Startup DB preflight beginning for {DbPath}", dbPath);
+    EnsureDatabaseUnlockedOrFailFast(dbPath);
+    Log.Information("Startup DB preflight complete for {DbPath}", dbPath);
+
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ModelCacheContext>>();
+    Log.Information("Creating ModelCacheContext for {DbPath}", dbPath);
     using var db = dbFactory.CreateDbContext();
     db.Database.SetCommandTimeout(TimeSpan.FromSeconds(60));
 
     try
     {
-        db.Database.Migrate();
+        Log.Information("Starting database migration for {DbPath}", dbPath);
+        using var migrateCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await db.Database.MigrateAsync(migrateCts.Token);
+        Log.Information("Database migration complete for {DbPath}", dbPath);
+
+        Log.Information("Applying SQLite pragmas for {DbPath}", dbPath);
         db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
         db.Database.ExecuteSqlRaw("PRAGMA busy_timeout=10000;");
+        Log.Information("SQLite pragmas applied for {DbPath}", dbPath);
 
         var setupConfig = db.AppConfigs.AsNoTracking().FirstOrDefault(c => c.Id == 1);
         if (setupConfig?.SetupCompleted == true && !string.IsNullOrWhiteSpace(setupConfig.ModelsDirectoryPath))
             app.Configuration["Models:DirectoryPath"] = setupConfig.ModelsDirectoryPath;
+    }
+    catch (OperationCanceledException ex)
+    {
+        var message =
+            $"Database migration timed out after 30 seconds for {dbPath}. " +
+            "This is usually caused by a locked or busy SQLite database.";
+        Log.Fatal(ex, message);
+        throw new InvalidOperationException(message, ex);
     }
     catch (Exception ex)
     {
@@ -264,3 +285,133 @@ app.MapControllers();
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+static void EnsureDatabaseUnlockedOrFailFast(string dbPath)
+{
+    if (!IsSqliteDatabaseLocked(dbPath, out var initialLockError))
+        return;
+
+    var holderPids = GetPotentialLockHolderPids(dbPath);
+    var killedPids = new List<int>();
+    var currentPid = Environment.ProcessId;
+
+    foreach (var pid in holderPids.Where(pid => pid != currentPid))
+    {
+        if (TryKillProcess(pid, out var killError))
+        {
+            killedPids.Add(pid);
+            Log.Warning("Killed process {Pid} while clearing SQLite lock on {DbPath}", pid, dbPath);
+        }
+        else if (!string.IsNullOrWhiteSpace(killError))
+        {
+            Log.Warning("Failed to kill process {Pid} while clearing SQLite lock on {DbPath}: {Error}", pid, dbPath, killError);
+        }
+    }
+
+    if (killedPids.Count > 0)
+        Thread.Sleep(400);
+
+    if (!IsSqliteDatabaseLocked(dbPath, out var retryLockError))
+    {
+        Log.Warning("SQLite lock cleared for {DbPath}. Startup continuing.", dbPath);
+        return;
+    }
+
+    var pidText = holderPids.Count > 0
+        ? string.Join(", ", holderPids)
+        : "unknown";
+
+    var message =
+        $"Database file is locked and startup cannot continue. " +
+        $"DbPath: {dbPath}. " +
+        $"Lock holders: {pidText}. " +
+        $"Lock error: {retryLockError ?? initialLockError ?? "unknown"}";
+
+    Log.Fatal(message);
+    throw new InvalidOperationException(message);
+}
+
+static bool IsSqliteDatabaseLocked(string dbPath, out string? lockError)
+{
+    lockError = null;
+
+    try
+    {
+        using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadWriteCreate;Pooling=False");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA busy_timeout=250; BEGIN IMMEDIATE; ROLLBACK;";
+        command.ExecuteNonQuery();
+        return false;
+    }
+    catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6)
+    {
+        lockError = ex.Message;
+        return true;
+    }
+}
+
+static List<int> GetPotentialLockHolderPids(string dbPath)
+{
+    try
+    {
+        var candidates = new[] { dbPath, $"{dbPath}-wal", $"{dbPath}-shm" }
+            .Where(File.Exists)
+            .ToList();
+
+        if (candidates.Count == 0)
+            return [];
+
+        var lsofPath = File.Exists("/usr/sbin/lsof") ? "/usr/sbin/lsof" : "lsof";
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = lsofPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        startInfo.ArgumentList.Add("-t");
+        foreach (var path in candidates)
+            startInfo.ArgumentList.Add(path);
+
+        using var process = Process.Start(startInfo);
+        if (process == null)
+            return [];
+
+        var output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit(2000);
+
+        return output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => int.TryParse(line.Trim(), out var pid) ? pid : (int?)null)
+            .Where(pid => pid.HasValue)
+            .Select(pid => pid!.Value)
+            .Distinct()
+            .ToList();
+    }
+    catch
+    {
+        return [];
+    }
+}
+
+static bool TryKillProcess(int pid, out string? error)
+{
+    error = null;
+
+    try
+    {
+        var process = Process.GetProcessById(pid);
+        process.Kill(entireProcessTree: true);
+        process.WaitForExit(3000);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        error = ex.Message;
+        return false;
+    }
+}

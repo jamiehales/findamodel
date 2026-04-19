@@ -181,6 +181,79 @@ determines the contact area where the support meets the model surface.
   assigned when the reinforcement loop detects severe overload (overload ratio above 1.8).
   They leave the largest mark but carry roughly 4.6 times the load of a Light support.
 
+### Advanced Force Model Parameters
+
+These settings control additional physical forces beyond basic peel force that improve
+support placement accuracy for complex geometries.
+
+#### Suction Force
+
+Enclosed regions (cups, hollows) create vacuum during FEP separation, requiring extra
+support. The algorithm detects enclosed pixels using BFS flood-fill from bitmap edges -
+any lit pixel not reachable from the edge is considered enclosed.
+
+- **Suction multiplier** (1-10, default 3.0) - force multiplier applied to supports covering
+  enclosed (cupped) regions. When an island has enclosed pixels (detected via flood-fill),
+  supports assigned to those pixels receive this multiplier on their pull force. Higher
+  values place more supports inside cups and hollows. A value of 1 disables the suction
+  boost.
+
+#### Area Growth Force
+
+Rapidly expanding cross-sections create higher peel forces because more resin cures per
+layer. The algorithm tracks total lit area per layer and computes the growth ratio between
+consecutive layers.
+
+- **Area growth threshold** (0.1-5.0, default 0.5) - the minimum layer-to-layer area increase
+  ratio that triggers additional force. A ratio of 0.5 means the layer area must grow by 50%
+  compared to the previous layer. Lower values trigger more aggressively on smaller expansions.
+
+- **Area growth multiplier** (1-5, default 1.5) - force multiplier applied to supports on
+  layers where area growth exceeds the threshold. The multiplier scales with how much the
+  growth ratio exceeds the threshold. This causes the algorithm to add more supports on
+  flared or mushroom-shaped geometry.
+
+#### Gravity Loading
+
+Accumulated part weight above each support creates compressive force. The algorithm walks
+layers bottom-up, accumulating resin mass per support based on assigned pixel area and
+resin density.
+
+- **Gravity loading enabled** (default: on) - enables the gravity accumulation pass after
+  the main reinforcement loop. When enabled, supports that accumulate too much weight are
+  upgraded to larger tip sizes. When disabled, only peel and lateral forces determine
+  support sizing.
+
+#### Hydrodynamic Drag
+
+Thin, narrow features experience lateral forces during FEP separation as resin flows
+around them. The algorithm identifies islands whose minimum bounding-box width is below
+the configured threshold and applies a lateral drag force.
+
+- **Drag coefficient multiplier** (0-5, default 0.5) - scales the lateral drag force applied
+  to narrow features. Higher values generate more supports on thin walls and fins. A value
+  of 0 disables drag force entirely.
+
+- **Min feature width (mm)** (0.1-10mm, default 1.0) - features narrower than this threshold
+  receive drag force. The width is the smaller dimension of the island's axis-aligned
+  bounding box converted to mm. Increasing this value applies drag to wider features.
+
+#### Thermal Shrinkage
+
+UV-cured resin shrinks as it polymerizes, pulling inward from edges. Large flat areas are
+most affected because shrinkage stress accumulates across the span. The algorithm identifies
+large flat islands (area > 25mm2, low perimeter-to-area ratio) and places additional
+supports biased toward edges.
+
+- **Shrinkage percent** (0-15%, default 5.0) - volumetric shrinkage of the resin. Higher
+  values cause the algorithm to add more edge supports on large flat areas. A value of 0
+  disables shrinkage-based support placement entirely.
+
+- **Shrinkage edge bias** (0-1, default 0.7) - controls how strongly additional shrinkage
+  supports are biased toward island edges versus interior. A value of 1.0 places all
+  shrinkage supports on the perimeter. A value of 0.0 distributes them evenly. The default
+  of 0.7 places most supports near edges where shrinkage stress is highest.
+
 ### How the reinforcement loop uses these settings together
 
 For each island of unsupported pixels:

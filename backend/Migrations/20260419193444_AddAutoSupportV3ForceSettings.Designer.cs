@@ -11,8 +11,8 @@ using findamodel.Data;
 namespace findamodel.Migrations
 {
     [DbContext(typeof(ModelCacheContext))]
-    [Migration("20260419174039_AddAutoSupportCrushAndAngularForceConfig")]
-    partial class AddAutoSupportCrushAndAngularForceConfig
+    [Migration("20260419193444_AddAutoSupportV3ForceSettings")]
+    partial class AddAutoSupportV3ForceSettings
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -31,6 +31,12 @@ namespace findamodel.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(false);
 
+                    b.Property<float>("AutoSupportAreaGrowthMultiplier")
+                        .HasColumnType("REAL");
+
+                    b.Property<float>("AutoSupportAreaGrowthThreshold")
+                        .HasColumnType("REAL");
+
                     b.Property<float>("AutoSupportBedMarginMm")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
@@ -40,6 +46,12 @@ namespace findamodel.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
                         .HasDefaultValue(20f);
+
+                    b.Property<float>("AutoSupportDragCoefficientMultiplier")
+                        .HasColumnType("REAL");
+
+                    b.Property<bool>("AutoSupportGravityEnabled")
+                        .HasColumnType("INTEGER");
 
                     b.Property<float>("AutoSupportHeavyTipRadiusMm")
                         .ValueGeneratedOnAdd()
@@ -91,6 +103,9 @@ namespace findamodel.Migrations
                         .HasColumnType("REAL")
                         .HasDefaultValue(0.4f);
 
+                    b.Property<float>("AutoSupportMinFeatureWidthMm")
+                        .HasColumnType("REAL");
+
                     b.Property<float>("AutoSupportMinIslandAreaMm2")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
@@ -126,10 +141,19 @@ namespace findamodel.Migrations
                         .HasColumnType("REAL")
                         .HasDefaultValue(1f);
 
+                    b.Property<float>("AutoSupportShrinkageEdgeBias")
+                        .HasColumnType("REAL");
+
+                    b.Property<float>("AutoSupportShrinkagePercent")
+                        .HasColumnType("REAL");
+
                     b.Property<float>("AutoSupportSphereRadiusMm")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")
                         .HasDefaultValue(1.2f);
+
+                    b.Property<float>("AutoSupportSuctionMultiplier")
+                        .HasColumnType("REAL");
 
                     b.Property<float>("AutoSupportUnsupportedIslandVolumeThresholdMm3")
                         .ValueGeneratedOnAdd()

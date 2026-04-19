@@ -41,6 +41,15 @@ public class AppConfig
     public float AutoSupportLightTipRadiusMm { get; set; } = 0.7f;
     public float AutoSupportMediumTipRadiusMm { get; set; } = 1f;
     public float AutoSupportHeavyTipRadiusMm { get; set; } = 1.5f;
+    public float AutoSupportSuctionMultiplier { get; set; } = 3f;
+    public float AutoSupportAreaGrowthThreshold { get; set; } = 0.5f;
+    public float AutoSupportAreaGrowthMultiplier { get; set; } = 1.5f;
+    public bool AutoSupportGravityEnabled { get; set; } = true;
+    public float AutoSupportDragCoefficientMultiplier { get; set; } = 0.5f;
+    public float AutoSupportMinFeatureWidthMm { get; set; } = 1f;
+    public float AutoSupportShrinkagePercent { get; set; } = 5f;
+    public float AutoSupportShrinkageEdgeBias { get; set; } = 0.7f;
+
     public float AutoSupportV2VoxelSizeMm { get; set; } = 2f;
 
     public bool AutoSupportV2OptimizationEnabled { get; set; } = true;

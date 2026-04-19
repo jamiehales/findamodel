@@ -477,6 +477,15 @@ export default function SettingsPage() {
   const [autoSupportLightTipRadiusMm, setAutoSupportLightTipRadiusMm] = useState('0.7');
   const [autoSupportMediumTipRadiusMm, setAutoSupportMediumTipRadiusMm] = useState('1');
   const [autoSupportHeavyTipRadiusMm, setAutoSupportHeavyTipRadiusMm] = useState('1.5');
+  const [autoSupportSuctionMultiplier, setAutoSupportSuctionMultiplier] = useState('3');
+  const [autoSupportAreaGrowthThreshold, setAutoSupportAreaGrowthThreshold] = useState('0.5');
+  const [autoSupportAreaGrowthMultiplier, setAutoSupportAreaGrowthMultiplier] = useState('1.5');
+  const [autoSupportGravityEnabled, setAutoSupportGravityEnabled] = useState(true);
+  const [autoSupportDragCoefficientMultiplier, setAutoSupportDragCoefficientMultiplier] =
+    useState('0.5');
+  const [autoSupportMinFeatureWidthMm, setAutoSupportMinFeatureWidthMm] = useState('1');
+  const [autoSupportShrinkagePercent, setAutoSupportShrinkagePercent] = useState('5');
+  const [autoSupportShrinkageEdgeBias, setAutoSupportShrinkageEdgeBias] = useState('0.7');
   const [autoSupportV2VoxelSizeMm, setAutoSupportV2VoxelSizeMm] = useState('2');
   const [autoSupportV2OptimizationEnabled, setAutoSupportV2OptimizationEnabled] = useState(true);
   const [autoSupportV2CoarseVoxelSizeMm, setAutoSupportV2CoarseVoxelSizeMm] = useState('4');
@@ -559,6 +568,16 @@ export default function SettingsPage() {
       setAutoSupportLightTipRadiusMm(String(appConfig.autoSupportLightTipRadiusMm));
       setAutoSupportMediumTipRadiusMm(String(appConfig.autoSupportMediumTipRadiusMm));
       setAutoSupportHeavyTipRadiusMm(String(appConfig.autoSupportHeavyTipRadiusMm));
+      setAutoSupportSuctionMultiplier(String(appConfig.autoSupportSuctionMultiplier));
+      setAutoSupportAreaGrowthThreshold(String(appConfig.autoSupportAreaGrowthThreshold));
+      setAutoSupportAreaGrowthMultiplier(String(appConfig.autoSupportAreaGrowthMultiplier));
+      setAutoSupportGravityEnabled(appConfig.autoSupportGravityEnabled);
+      setAutoSupportDragCoefficientMultiplier(
+        String(appConfig.autoSupportDragCoefficientMultiplier),
+      );
+      setAutoSupportMinFeatureWidthMm(String(appConfig.autoSupportMinFeatureWidthMm));
+      setAutoSupportShrinkagePercent(String(appConfig.autoSupportShrinkagePercent));
+      setAutoSupportShrinkageEdgeBias(String(appConfig.autoSupportShrinkageEdgeBias));
       setAutoSupportV2VoxelSizeMm(String(appConfig.autoSupportV2VoxelSizeMm));
       setAutoSupportV2OptimizationEnabled(appConfig.autoSupportV2OptimizationEnabled);
       setAutoSupportV2CoarseVoxelSizeMm(String(appConfig.autoSupportV2CoarseVoxelSizeMm));
@@ -622,6 +641,13 @@ export default function SettingsPage() {
   const autoSupportLightTipRadiusValue = Number(autoSupportLightTipRadiusMm);
   const autoSupportMediumTipRadiusValue = Number(autoSupportMediumTipRadiusMm);
   const autoSupportHeavyTipRadiusValue = Number(autoSupportHeavyTipRadiusMm);
+  const autoSupportSuctionMultiplierValue = Number(autoSupportSuctionMultiplier);
+  const autoSupportAreaGrowthThresholdValue = Number(autoSupportAreaGrowthThreshold);
+  const autoSupportAreaGrowthMultiplierValue = Number(autoSupportAreaGrowthMultiplier);
+  const autoSupportDragCoefficientMultiplierValue = Number(autoSupportDragCoefficientMultiplier);
+  const autoSupportMinFeatureWidthValue = Number(autoSupportMinFeatureWidthMm);
+  const autoSupportShrinkagePercentValue = Number(autoSupportShrinkagePercent);
+  const autoSupportShrinkageEdgeBiasValue = Number(autoSupportShrinkageEdgeBias);
   const autoSupportV2VoxelSizeValue = Number(autoSupportV2VoxelSizeMm);
   const autoSupportV2CoarseVoxelSizeValue = Number(autoSupportV2CoarseVoxelSizeMm);
   const autoSupportV2FineVoxelSizeValue = Number(autoSupportV2FineVoxelSizeMm);
@@ -663,7 +689,28 @@ export default function SettingsPage() {
     autoSupportMediumTipRadiusValue <= 7 &&
     Number.isFinite(autoSupportHeavyTipRadiusValue) &&
     autoSupportHeavyTipRadiusValue >= 0.1 &&
-    autoSupportHeavyTipRadiusValue <= 10;
+    autoSupportHeavyTipRadiusValue <= 10 &&
+    Number.isFinite(autoSupportSuctionMultiplierValue) &&
+    autoSupportSuctionMultiplierValue >= 1 &&
+    autoSupportSuctionMultiplierValue <= 10 &&
+    Number.isFinite(autoSupportAreaGrowthThresholdValue) &&
+    autoSupportAreaGrowthThresholdValue >= 0.1 &&
+    autoSupportAreaGrowthThresholdValue <= 5 &&
+    Number.isFinite(autoSupportAreaGrowthMultiplierValue) &&
+    autoSupportAreaGrowthMultiplierValue >= 1 &&
+    autoSupportAreaGrowthMultiplierValue <= 5 &&
+    Number.isFinite(autoSupportDragCoefficientMultiplierValue) &&
+    autoSupportDragCoefficientMultiplierValue >= 0 &&
+    autoSupportDragCoefficientMultiplierValue <= 5 &&
+    Number.isFinite(autoSupportMinFeatureWidthValue) &&
+    autoSupportMinFeatureWidthValue >= 0.1 &&
+    autoSupportMinFeatureWidthValue <= 10 &&
+    Number.isFinite(autoSupportShrinkagePercentValue) &&
+    autoSupportShrinkagePercentValue >= 0 &&
+    autoSupportShrinkagePercentValue <= 15 &&
+    Number.isFinite(autoSupportShrinkageEdgeBiasValue) &&
+    autoSupportShrinkageEdgeBiasValue >= 0 &&
+    autoSupportShrinkageEdgeBiasValue <= 1;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
@@ -747,6 +794,14 @@ export default function SettingsPage() {
       autoSupportLightTipRadiusMm: autoSupportLightTipRadiusValue,
       autoSupportMediumTipRadiusMm: autoSupportMediumTipRadiusValue,
       autoSupportHeavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
+      autoSupportSuctionMultiplier: autoSupportSuctionMultiplierValue,
+      autoSupportAreaGrowthThreshold: autoSupportAreaGrowthThresholdValue,
+      autoSupportAreaGrowthMultiplier: autoSupportAreaGrowthMultiplierValue,
+      autoSupportGravityEnabled: autoSupportGravityEnabled,
+      autoSupportDragCoefficientMultiplier: autoSupportDragCoefficientMultiplierValue,
+      autoSupportMinFeatureWidthMm: autoSupportMinFeatureWidthValue,
+      autoSupportShrinkagePercent: autoSupportShrinkagePercentValue,
+      autoSupportShrinkageEdgeBias: autoSupportShrinkageEdgeBiasValue,
       autoSupportV2VoxelSizeMm: autoSupportV2VoxelSizeValue,
       autoSupportV2OptimizationEnabled: autoSupportV2OptimizationEnabled,
       autoSupportV2CoarseVoxelSizeMm: autoSupportV2CoarseVoxelSizeValue,
@@ -775,6 +830,15 @@ export default function SettingsPage() {
           lightTipRadiusMm: autoSupportLightTipRadiusValue,
           mediumTipRadiusMm: autoSupportMediumTipRadiusValue,
           heavyTipRadiusMm: autoSupportHeavyTipRadiusValue,
+          suctionMultiplier: autoSupportSuctionMultiplierValue,
+          areaGrowthThreshold: autoSupportAreaGrowthThresholdValue,
+          areaGrowthMultiplier: autoSupportAreaGrowthMultiplierValue,
+          gravityEnabled: autoSupportGravityEnabled,
+          resinDensityGPerMl: autoSupportResinDensityValue,
+          dragCoefficientMultiplier: autoSupportDragCoefficientMultiplierValue,
+          minFeatureWidthMm: autoSupportMinFeatureWidthValue,
+          shrinkagePercent: autoSupportShrinkagePercentValue,
+          shrinkageEdgeBias: autoSupportShrinkageEdgeBiasValue,
         },
         scenarioId: activePreviewScenarioId,
       },
@@ -1056,6 +1120,94 @@ export default function SettingsPage() {
                     label="Heavy tip radius (mm)"
                     value={autoSupportHeavyTipRadiusMm}
                     onChange={(e) => setAutoSupportHeavyTipRadiusMm(e.target.value)}
+                  />
+                </Stack>
+                <Typography variant="h6">Advanced force models</Typography>
+                <Typography color="text.secondary">
+                  Additional physical forces for more accurate support placement: suction, area
+                  growth, gravity, hydrodynamic drag, and thermal shrinkage.
+                </Typography>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Suction multiplier"
+                    value={autoSupportSuctionMultiplier}
+                    onChange={(e) => setAutoSupportSuctionMultiplier(e.target.value)}
+                    helperText="Force multiplier for enclosed regions (1-10, default 3)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Area growth threshold"
+                    value={autoSupportAreaGrowthThreshold}
+                    onChange={(e) => setAutoSupportAreaGrowthThreshold(e.target.value)}
+                    helperText="Layer area increase ratio to trigger (0.1-5, default 0.5)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Area growth multiplier"
+                    value={autoSupportAreaGrowthMultiplier}
+                    onChange={(e) => setAutoSupportAreaGrowthMultiplier(e.target.value)}
+                    helperText="Force multiplier when growth exceeds threshold (1-5, default 1.5)"
+                  />
+                </Stack>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={autoSupportGravityEnabled}
+                        onChange={(event) => setAutoSupportGravityEnabled(event.target.checked)}
+                      />
+                    }
+                    label="Gravity loading enabled"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Drag coefficient multiplier"
+                    value={autoSupportDragCoefficientMultiplier}
+                    onChange={(e) => setAutoSupportDragCoefficientMultiplier(e.target.value)}
+                    helperText="Lateral drag on thin features (0-5, default 0.5)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min feature width (mm)"
+                    value={autoSupportMinFeatureWidthMm}
+                    onChange={(e) => setAutoSupportMinFeatureWidthMm(e.target.value)}
+                    helperText="Features narrower than this get drag force (0.1-10, default 1)"
+                  />
+                </Stack>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  className={styles.addRow}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Shrinkage percent"
+                    value={autoSupportShrinkagePercent}
+                    onChange={(e) => setAutoSupportShrinkagePercent(e.target.value)}
+                    helperText="Resin volumetric shrinkage (0-15%, default 5)"
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Shrinkage edge bias"
+                    value={autoSupportShrinkageEdgeBias}
+                    onChange={(e) => setAutoSupportShrinkageEdgeBias(e.target.value)}
+                    helperText="How much to bias edge support placement (0-1, default 0.7)"
                   />
                 </Stack>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
