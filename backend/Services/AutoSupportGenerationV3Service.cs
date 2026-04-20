@@ -660,7 +660,8 @@ public sealed class AutoSupportGenerationV3Service
                     bedDepthMm,
                     pixelWidth,
                     pixelHeight,
-                    tuning);
+                    tuning,
+                    island);
 
                 foreach (var metric in supportForces)
                     accumulatedForces[metric.SupportIndex] = accumulatedForces[metric.SupportIndex] + metric.PullVector;
@@ -739,6 +740,20 @@ public sealed class AutoSupportGenerationV3Service
             dragLateralForce = heightEstimateMm * island.MinWidthMm * tuning.DragCoefficientMultiplier;
         }
 
+        var islandCenterX = island?.CentroidX ?? 0f;
+        var islandCenterZ = island?.CentroidZ ?? 0f;
+        if (island == null && unsupportedPixels.Count > 0)
+        {
+            var fallbackCenter = ComputePixelCentroidMm(
+                unsupportedPixels,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight);
+            islandCenterX = fallbackCenter.XMm;
+            islandCenterZ = fallbackCenter.ZMm;
+        }
+
         var effectivePixelForce = pixelForce * suctionMultiplier * areaGrowthMultiplier;
         var accumulators = supportIndices.ToDictionary(index => index, _ => new SupportForceAccumulator());
 
@@ -766,7 +781,10 @@ public sealed class AutoSupportGenerationV3Service
             accumulator.PixelCount++;
             accumulator.SumX += xMm;
             accumulator.SumZ += zMm;
-            accumulator.AngularForce += effectivePixelForce * MathF.Sqrt(nearestDistanceSq);
+            var leverDx = xMm - islandCenterX;
+            var leverDz = zMm - islandCenterZ;
+            var leverArm = MathF.Sqrt((leverDx * leverDx) + (leverDz * leverDz));
+            accumulator.AngularForce += effectivePixelForce * leverArm;
         }
 
         var metrics = new List<SupportForceMetric>(supportIndices.Count);

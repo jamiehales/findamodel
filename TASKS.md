@@ -63,6 +63,7 @@ Add an autosupports configuration preview on the autosupports settings screen - 
 
 * Remove the v3 from all autosupport settings, this is now the only algorithm
 * Add support for items 6-10 in the support generation algorithm document (SUPPORT-ALGORITHM-RESEARCH.md), adding settings to the model and settings page where recommended, as well as docs in the docs page
+* Multithread the autosupport where possible
 
 * When finalizing support positions, place the support tip at the closest x,y,z position which meets the mesh within the voxel bounds, at the lowermost y position
 * Add the reason the support was generated when you click on a support tip in the autosupport window - e.g. large island, fixing pull force/crush force, etc... also add a toggle to render a number by each support based on the order they were created
