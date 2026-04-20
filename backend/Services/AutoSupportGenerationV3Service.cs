@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace findamodel.Services;
 
@@ -85,8 +86,9 @@ public sealed class AutoSupportGenerationV3Service
                 if (enclosedPixels == null)
                     return;
 
-                foreach (var island in layerIslands[layerIndex])
+                for (var islandIndex = 0; islandIndex < layerIslands[layerIndex].Count; islandIndex++)
                 {
+                    var island = layerIslands[layerIndex][islandIndex];
                     var enclosedCount = 0;
                     foreach (var (x, y) in island.PixelCoords)
                     {
@@ -97,8 +99,7 @@ public sealed class AutoSupportGenerationV3Service
                     if (enclosedCount > 0)
                     {
                         var ratio = (float)enclosedCount / island.PixelCoords.Count;
-                        var idx = layerIslands[layerIndex].IndexOf(island);
-                        layerIslands[layerIndex][idx] = island with
+                        layerIslands[layerIndex][islandIndex] = island with
                         {
                             HasEnclosedRegion = true,
                             EnclosureRatio = ratio,
@@ -130,6 +131,7 @@ public sealed class AutoSupportGenerationV3Service
         // Build per-layer pixel sets once so each algorithm can re-evaluate support decisions
         // against all currently placed supports from lower layers.
         var layerPixelSets = new HashSet<(int Column, int Row)>?[layerCount];
+        var lowestLayerByPixel = new Dictionary<(int Column, int Row), int>();
         for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
         {
             var islands = layerIslands[layerIndex];
@@ -139,7 +141,11 @@ public sealed class AutoSupportGenerationV3Service
             var set = new HashSet<(int Column, int Row)>();
             foreach (var island in islands)
                 foreach (var pixel in island.PixelCoords)
+                {
                     set.Add(pixel);
+                    if (!lowestLayerByPixel.ContainsKey(pixel))
+                        lowestLayerByPixel[pixel] = layerIndex;
+                }
             layerPixelSets[layerIndex] = set;
         }
 
@@ -154,10 +160,16 @@ public sealed class AutoSupportGenerationV3Service
         for (var solverPass = 0; solverPass < MaxSolverPasses; solverPass++)
         {
             var changed = false;
+            var passStopwatch = Stopwatch.StartNew();
+            var supportCountAtPassStart = supportPoints.Count;
+
+            var reinforceStart = Stopwatch.GetTimestamp();
+            var supportCountBeforeReinforce = supportPoints.Count;
 
             changed |= ReinforceSupportsByForceAndSpacing(
                 layerIslands,
                 layerPixelSets,
+                lowestLayerByPixel,
                 prevLayerPixels,
                 supportPoints,
                 bedWidthMm,
@@ -168,11 +180,20 @@ public sealed class AutoSupportGenerationV3Service
                 layerAreaGrowthRatio,
                 tuning);
 
+            var reinforceElapsedMs = Stopwatch.GetElapsedTime(reinforceStart).TotalMilliseconds;
+            var reinforceAdded = supportPoints.Count - supportCountBeforeReinforce;
+
+            var shrinkageElapsedMs = 0d;
+            var shrinkageAdded = 0;
+
             if (tuning.ShrinkagePercent > 0f)
             {
+                var shrinkageStart = Stopwatch.GetTimestamp();
+                var supportCountBeforeShrinkage = supportPoints.Count;
                 changed |= ApplyShrinkageEdgeSupports(
                     layerIslands,
                     layerPixelSets,
+                    lowestLayerByPixel,
                     prevLayerPixels,
                     supportPoints,
                     bedWidthMm,
@@ -181,10 +202,15 @@ public sealed class AutoSupportGenerationV3Service
                     pixelHeight,
                     layerHeightMm,
                     tuning);
+                shrinkageElapsedMs = Stopwatch.GetElapsedTime(shrinkageStart).TotalMilliseconds;
+                shrinkageAdded = supportPoints.Count - supportCountBeforeShrinkage;
             }
 
+            var gravityElapsedMs = 0d;
+            var upgradedByGravity = 0;
             if (tuning.GravityEnabled)
             {
+                var gravityStart = Stopwatch.GetTimestamp();
                 changed |= ApplyGravityLoading(
                     layerIslands,
                     prevLayerPixels,
@@ -194,8 +220,27 @@ public sealed class AutoSupportGenerationV3Service
                     pixelWidth,
                     pixelHeight,
                     layerHeightMm,
-                    tuning);
+                    tuning,
+                    out upgradedByGravity);
+                gravityElapsedMs = Stopwatch.GetElapsedTime(gravityStart).TotalMilliseconds;
             }
+
+            passStopwatch.Stop();
+            logger.LogDebug(
+                "V3 solver pass {Pass}/{MaxPasses}: changed={Changed}, supports +{SupportDelta} ({SupportsStart}->{SupportsEnd}), reinforce={ReinforceMs:F1}ms (+{ReinforceAdded}), shrinkage={ShrinkageMs:F1}ms (+{ShrinkageAdded}), gravity={GravityMs:F1}ms (upgraded={GravityUpgrades}), total={PassMs:F1}ms",
+                solverPass + 1,
+                MaxSolverPasses,
+                changed,
+                supportPoints.Count - supportCountAtPassStart,
+                supportCountAtPassStart,
+                supportPoints.Count,
+                reinforceElapsedMs,
+                reinforceAdded,
+                shrinkageElapsedMs,
+                shrinkageAdded,
+                gravityElapsedMs,
+                upgradedByGravity,
+                passStopwatch.Elapsed.TotalMilliseconds);
 
             if (!changed)
                 break;
@@ -357,6 +402,7 @@ public sealed class AutoSupportGenerationV3Service
     private static bool ReinforceSupportsByForceAndSpacing(
         List<TipIsland>[] layerIslands,
         HashSet<(int Column, int Row)>?[] layerPixelSets,
+        IReadOnlyDictionary<(int Column, int Row), int> lowestLayerByPixel,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
         List<SupportPoint> supportPoints,
         float bedWidthMm,
@@ -374,14 +420,15 @@ public sealed class AutoSupportGenerationV3Service
             var prevPixels = prevLayerPixels[layerIndex];
             foreach (var island in layerIslands[layerIndex])
             {
+                var islandPixelSet = island.PixelCoords.ToHashSet();
                 var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
                 if (unsupportedPixels.Count == 0)
                     continue;
 
                 for (var i = 0; i < MaxReinforcementIterationsPerIsland; i++)
                 {
-                    var supportIndices = FindSupportingSupportsForPixels(
-                        island.PixelCoords,
+                    var supportIndices = FindSupportingSupportsForPixelSet(
+                        islandPixelSet,
                         island.SliceHeightMm,
                         supportPoints,
                         bedWidthMm,
@@ -397,6 +444,7 @@ public sealed class AutoSupportGenerationV3Service
                             supportPoints,
                             island.PixelCoords,
                             layerPixelSets,
+                            lowestLayerByPixel,
                             layerIndex,
                             centroid.XMm,
                             centroid.ZMm,
@@ -440,8 +488,8 @@ public sealed class AutoSupportGenerationV3Service
                     var exceedsCrushForce = maxCompressiveForce > tuning.CrushForceThreshold;
                     var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
-                    var strictSupportIndices = FindSupportingSupportsForPixels(
-                        island.PixelCoords,
+                    var strictSupportIndices = FindSupportingSupportsForPixelSet(
+                        islandPixelSet,
                         island.SliceHeightMm,
                         supportPoints,
                         bedWidthMm,
@@ -464,6 +512,7 @@ public sealed class AutoSupportGenerationV3Service
                             supportPoints,
                             island.PixelCoords,
                             layerPixelSets,
+                            lowestLayerByPixel,
                             layerIndex,
                             centroid.XMm,
                             centroid.ZMm,
@@ -495,6 +544,7 @@ public sealed class AutoSupportGenerationV3Service
                         supportPoints,
                         island.PixelCoords,
                         layerPixelSets,
+                        lowestLayerByPixel,
                         layerIndex,
                         furthest.XMm,
                         furthest.ZMm,
@@ -517,6 +567,7 @@ public sealed class AutoSupportGenerationV3Service
         List<SupportPoint> supportPoints,
         List<(int X, int Y)> candidatePixels,
         HashSet<(int Column, int Row)>?[] layerPixelSets,
+        IReadOnlyDictionary<(int Column, int Row), int> lowestLayerByPixel,
         int currentLayerIndex,
         float targetXMm,
         float targetZMm,
@@ -537,7 +588,9 @@ public sealed class AutoSupportGenerationV3Service
 
         foreach (var pixel in candidatePixels)
         {
-            var candidateLayer = FindLowestLayerContainingPixel(layerPixelSets, currentLayerIndex, pixel);
+            var candidateLayer = lowestLayerByPixel.TryGetValue(pixel, out var cachedLayer)
+                ? Math.Min(cachedLayer, currentLayerIndex)
+                : currentLayerIndex;
             var xMm = ColumnToX(pixel.X, bedWidthMm, pixelWidth);
             var zMm = RowToZ(pixel.Y, bedDepthMm, pixelHeight);
             var dx = xMm - targetXMm;
@@ -563,21 +616,6 @@ public sealed class AutoSupportGenerationV3Service
             size));
     }
 
-    private static int FindLowestLayerContainingPixel(
-        HashSet<(int Column, int Row)>?[] layerPixelSets,
-        int currentLayerIndex,
-        (int X, int Y) pixel)
-    {
-        for (var layerIndex = 0; layerIndex <= currentLayerIndex; layerIndex++)
-        {
-            var set = layerPixelSets[layerIndex];
-            if (set != null && set.Contains((pixel.X, pixel.Y)))
-                return layerIndex;
-        }
-
-        return currentLayerIndex;
-    }
-
     private static void PopulateSupportForces(
         List<TipIsland>[] layerIslands,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
@@ -599,9 +637,10 @@ public sealed class AutoSupportGenerationV3Service
                 var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
                 if (unsupportedPixels.Count == 0)
                     continue;
+                var unsupportedPixelSet = unsupportedPixels.ToHashSet();
 
-                var supportIndices = FindSupportingSupportsForPixels(
-                    unsupportedPixels,
+                var supportIndices = FindSupportingSupportsForPixelSet(
+                    unsupportedPixelSet,
                     island.SliceHeightMm,
                     supportPoints,
                     bedWidthMm,
@@ -789,9 +828,32 @@ public sealed class AutoSupportGenerationV3Service
         float layerHeightMm,
         bool includeNeighborPixels = true)
     {
+        var pixelSet = unsupportedPixels.ToHashSet();
+        return FindSupportingSupportsForPixelSet(
+            pixelSet,
+            sliceHeightMm,
+            supportPoints,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm,
+            includeNeighborPixels);
+    }
+
+    private static List<int> FindSupportingSupportsForPixelSet(
+        HashSet<(int X, int Y)> pixelSet,
+        float sliceHeightMm,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        bool includeNeighborPixels = true)
+    {
         var indices = new List<int>();
         var maxY = sliceHeightMm + (layerHeightMm * 0.5f);
-        var pixelSet = unsupportedPixels.ToHashSet();
 
         for (var i = 0; i < supportPoints.Count; i++)
         {
@@ -1329,8 +1391,10 @@ public sealed class AutoSupportGenerationV3Service
         int pixelWidth,
         int pixelHeight,
         float layerHeightMm,
-        V3Tuning tuning)
+        V3Tuning tuning,
+        out int upgradedCount)
     {
+        upgradedCount = 0;
         var cumulativeWeightPerSupport = ComputeCumulativeWeightPerSupport(
             layerIslands,
             prevLayerPixels,
@@ -1364,6 +1428,7 @@ public sealed class AutoSupportGenerationV3Service
             {
                 supportPoints[i] = support with { Size = newSize, RadiusMm = GetTipRadiusMm(newSize, tuning) };
                 changed = true;
+                upgradedCount++;
             }
         }
 
@@ -1395,9 +1460,10 @@ public sealed class AutoSupportGenerationV3Service
                 var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
                 if (unsupportedPixels.Count == 0)
                     continue;
+                var islandPixelSet = island.PixelCoords.ToHashSet();
 
-                var supportIndices = FindSupportingSupportsForPixels(
-                    island.PixelCoords,
+                var supportIndices = FindSupportingSupportsForPixelSet(
+                    islandPixelSet,
                     island.SliceHeightMm,
                     supportPoints,
                     bedWidthMm,
@@ -1428,6 +1494,7 @@ public sealed class AutoSupportGenerationV3Service
     private static bool ApplyShrinkageEdgeSupports(
         List<TipIsland>[] layerIslands,
         HashSet<(int Column, int Row)>?[] layerPixelSets,
+        IReadOnlyDictionary<(int Column, int Row), int> lowestLayerByPixel,
         HashSet<(int Column, int Row)>?[] prevLayerPixels,
         List<SupportPoint> supportPoints,
         float bedWidthMm,
@@ -1518,6 +1585,7 @@ public sealed class AutoSupportGenerationV3Service
                         supportPoints,
                         island.PixelCoords,
                         layerPixelSets,
+                        lowestLayerByPixel,
                         layerIndex,
                         xMm,
                         zMm,

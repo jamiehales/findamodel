@@ -239,6 +239,16 @@ const DEFAULT_AUTO_SUPPORT_PREVIEW_SCENARIOS: AutoSupportSettingsPreviewScenario
     supportPoints: null,
     islands: null,
   },
+  {
+    scenarioId: 'donut-40',
+    name: 'Donut 40mm diameter',
+    source: 'builtin',
+    status: 'not-generated',
+    supportCount: 0,
+    errorMessage: null,
+    supportPoints: null,
+    islands: null,
+  },
 ];
 
 const AUTO_SUPPORT_PREVIEW_ORDER = new Map(
@@ -374,7 +384,18 @@ function AutoSupportPreviewViewport({
         </Typography>
       )}
       {scenario.status === 'completed' && (
-        <Typography color="text.secondary">Supports generated: {scenario.supportCount}</Typography>
+        <Stack spacing={0.5}>
+          <Typography color="text.secondary">
+            Supports generated: {scenario.supportCount}
+          </Typography>
+          {scenario.totalMs != null && (
+            <Typography color="text.secondary">
+              Timing: {scenario.totalMs.toFixed(0)} ms total
+              {scenario.generateMs != null ? `, ${scenario.generateMs.toFixed(0)} ms generate` : ''}
+              {scenario.encodeMs != null ? `, ${scenario.encodeMs.toFixed(0)} ms encode` : ''}
+            </Typography>
+          )}
+        </Stack>
       )}
       {scenario.status === 'not-generated' && (
         <Typography color="text.secondary">This preview has not been generated yet.</Typography>

@@ -417,6 +417,24 @@ public class AutoSupportGenerationV3ServiceTests
         });
     }
 
+    [Fact]
+    public void GenerateSupportPreview_TwoDonutsWithSuction_DoesNotThrow()
+    {
+        var leftDonut = TranslateTriangles(MakeTorus(majorRadius: 6f, minorRadius: 2f, centerY: 8f), offsetX: -12f, offsetZ: 0f);
+        var rightDonut = TranslateTriangles(MakeTorus(majorRadius: 6f, minorRadius: 2f, centerY: 8f), offsetX: 12f, offsetZ: 0f);
+        var geometry = CreateGeometry(leftDonut, rightDonut);
+
+        var result = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                SuctionMultiplier = 5f,
+                MinVoxelSizeMm = 0.4f,
+                MinLayerHeightMm = 0.4f,
+            });
+
+        Assert.NotNull(result);
+    }
+
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
     {
         var triangles = parts.SelectMany(x => x).ToList();
@@ -507,4 +525,13 @@ public class AutoSupportGenerationV3ServiceTests
             centerY + (minorRadius * sinV),
             ringRadius * sinU);
     }
+
+    private static List<Triangle3D> TranslateTriangles(IEnumerable<Triangle3D> triangles, float offsetX, float offsetZ)
+        => triangles
+            .Select(triangle => new Triangle3D(
+                new Vec3(triangle.V0.X + offsetX, triangle.V0.Y, triangle.V0.Z + offsetZ),
+                new Vec3(triangle.V1.X + offsetX, triangle.V1.Y, triangle.V1.Z + offsetZ),
+                new Vec3(triangle.V2.X + offsetX, triangle.V2.Y, triangle.V2.Z + offsetZ),
+                triangle.Normal))
+            .ToList();
 }

@@ -37,8 +37,13 @@ public sealed record AutoSupportSettingsPreviewScenarioDto(
     int SupportCount,
     string? ErrorMessage,
     IReadOnlyList<AutoSupportPointDto>? SupportPoints = null,
-    IReadOnlyList<AutoSupportIslandDto>? Islands = null);
+    IReadOnlyList<AutoSupportIslandDto>? Islands = null,
+    double? GenerateMs = null,
+    double? EncodeMs = null,
+    double? WriteMs = null,
+    double? TotalMs = null);
 
 public sealed record AutoSupportSettingsPreviewDto(
     Guid PreviewId,
-    IReadOnlyList<AutoSupportSettingsPreviewScenarioDto> Scenarios);
+    IReadOnlyList<AutoSupportSettingsPreviewScenarioDto> Scenarios,
+    double? TotalMs = null);

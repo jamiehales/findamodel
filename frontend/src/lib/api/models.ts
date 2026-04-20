@@ -397,11 +397,16 @@ export interface AutoSupportSettingsPreviewScenario {
   errorMessage: string | null;
   supportPoints: AutoSupportPoint[] | null;
   islands: AutoSupportIsland[] | null;
+  generateMs?: number | null;
+  encodeMs?: number | null;
+  writeMs?: number | null;
+  totalMs?: number | null;
 }
 
 export interface AutoSupportSettingsPreviewResponse {
   previewId: string;
   scenarios: AutoSupportSettingsPreviewScenario[];
+  totalMs?: number | null;
 }
 
 export interface AutoSupportSettingsPreviewRequest {

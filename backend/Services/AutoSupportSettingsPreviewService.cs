@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using findamodel.Models;
 
 namespace findamodel.Services;
@@ -28,6 +29,7 @@ public sealed class AutoSupportSettingsPreviewService(
         AutoSupportSettingsPreviewRequest request,
         CancellationToken cancellationToken = default)
     {
+        var requestStopwatch = Stopwatch.StartNew();
         cancellationToken.ThrowIfCancellationRequested();
         CleanupExpiredPreviews();
 
@@ -85,14 +87,32 @@ public sealed class AutoSupportSettingsPreviewService(
 
             try
             {
+                var scenarioStopwatch = Stopwatch.StartNew();
+                var generateStart = Stopwatch.GetTimestamp();
                 var preview = autoSupportGenerationV3Service.GenerateSupportPreview(scenario.Geometry, tuning);
+                var generateElapsedMs = Stopwatch.GetElapsedTime(generateStart).TotalMilliseconds;
+
+                var encodeStart = Stopwatch.GetTimestamp();
                 var bodyPayload = meshTransferService.Encode(scenario.Geometry);
                 var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
                 var envelope = BuildEnvelope(bodyPayload, supportPayload);
+                var encodeElapsedMs = Stopwatch.GetElapsedTime(encodeStart).TotalMilliseconds;
 
+                var writeStart = Stopwatch.GetTimestamp();
                 var cacheFilePath = Path.Combine(cacheDirectory, $"{previewId:N}-{scenario.ScenarioId}.bin");
                 await File.WriteAllBytesAsync(cacheFilePath, envelope, cancellationToken);
+                var writeElapsedMs = Stopwatch.GetElapsedTime(writeStart).TotalMilliseconds;
                 previewFiles[scenario.ScenarioId] = cacheFilePath;
+
+                scenarioStopwatch.Stop();
+                logger.LogInformation(
+                    "Autosupport settings preview scenario {ScenarioId}: supports={SupportCount}, generate={GenerateMs:F1}ms, encode={EncodeMs:F1}ms, write={WriteMs:F1}ms, total={TotalMs:F1}ms",
+                    scenario.ScenarioId,
+                    preview.SupportPoints.Count,
+                    generateElapsedMs,
+                    encodeElapsedMs,
+                    writeElapsedMs,
+                    scenarioStopwatch.Elapsed.TotalMilliseconds);
 
                 scenarioDtos.Add(new AutoSupportSettingsPreviewScenarioDto(
                     scenario.ScenarioId,
@@ -113,7 +133,11 @@ public sealed class AutoSupportSettingsPreviewService(
                         island.CentroidZ,
                         island.SliceHeightMm,
                         island.AreaMm2,
-                        island.RadiusMm))]));
+                        island.RadiusMm))],
+                    generateElapsedMs,
+                    encodeElapsedMs,
+                    writeElapsedMs,
+                    scenarioStopwatch.Elapsed.TotalMilliseconds));
             }
             catch (Exception ex)
             {
@@ -126,13 +150,24 @@ public sealed class AutoSupportSettingsPreviewService(
                     0,
                     ex.Message,
                     [],
-                    []));
+                    [],
+                    null,
+                    null,
+                    null,
+                    null));
             }
         }
 
         previews[previewId] = new PreviewCacheEntry(DateTime.UtcNow, previewFiles);
+        requestStopwatch.Stop();
+        logger.LogInformation(
+            "Autosupport settings preview request completed: requestedScenario={RequestedScenarioId}, generated={GeneratedCount}/{ScenarioCount}, total={TotalMs:F1}ms",
+            requestedScenarioId ?? "all",
+            scenarioDtos.Count(s => string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase)),
+            scenarioDtos.Count,
+            requestStopwatch.Elapsed.TotalMilliseconds);
 
-        return new AutoSupportSettingsPreviewDto(previewId, scenarioDtos);
+        return new AutoSupportSettingsPreviewDto(previewId, scenarioDtos, requestStopwatch.Elapsed.TotalMilliseconds);
     }
 
     public byte[]? GetScenarioEnvelope(Guid previewId, string scenarioId)
