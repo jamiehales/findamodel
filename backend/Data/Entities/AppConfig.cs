@@ -49,6 +49,7 @@ public class AppConfig
     public float AutoSupportMinFeatureWidthMm { get; set; } = 1f;
     public float AutoSupportShrinkagePercent { get; set; } = 5f;
     public float AutoSupportShrinkageEdgeBias { get; set; } = 0.7f;
+    public float AutoSupportModelLiftMm { get; set; } = 10f;
 
     public float AutoSupportV2VoxelSizeMm { get; set; } = 2f;
 

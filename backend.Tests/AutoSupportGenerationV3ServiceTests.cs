@@ -115,9 +115,11 @@ public class AutoSupportGenerationV3ServiceTests
         var result = sut.GenerateSupportPreview(geometry);
 
         Assert.NotEmpty(result.SupportPoints);
-        // Supports for a box resting on the bed appear at the first layer (near Y=0)
-        Assert.All(result.SupportPoints, p => Assert.True(p.Position.Y <= height * 0.2f,
-            $"Support Y={p.Position.Y:F2} should be near the bottom (<= {height * 0.2f:F2})"));
+        // Supports for a box resting on the bed appear at the first layer (near Y=0),
+        // plus the default ModelLiftMm=10f offset applied to output positions.
+        var liftMm = 10f;
+        Assert.All(result.SupportPoints, p => Assert.True(p.Position.Y <= height * 0.2f + liftMm,
+            $"Support Y={p.Position.Y:F2} should be near the bottom of the lifted model (<= {height * 0.2f + liftMm:F2})"));
     }
 
     [Fact]
@@ -858,5 +860,364 @@ public class AutoSupportGenerationV3ServiceTests
                 new Vec3(triangle.V2.X, triangle.V2.Y + offsetY, triangle.V2.Z),
                 triangle.Normal))
             .ToList();
+    }
+
+    // Shared tuning for all Voronoi-placement quality tests.
+    // These values are kept identical across all shape tests so a single
+    // parameter change cannot fix one test without breaking another.
+    private static readonly AutoSupportV3TuningOverrides PlacementTestOverrides = new(
+        BedMarginMm: 2f,
+        MinVoxelSizeMm: 0.8f,
+        MaxVoxelSizeMm: 2f,
+        MinLayerHeightMm: 0.75f,
+        MaxLayerHeightMm: 1.5f,
+        MinIslandAreaMm2: 4f,
+        SupportSpacingThresholdMm: 5f,
+        ResinStrength: 1f,
+        CrushForceThreshold: 20f,
+        MaxAngularForce: 40f,
+        PeelForceMultiplier: 0.15f,
+        LightTipRadiusMm: 0.7f,
+        MediumTipRadiusMm: 1f,
+        HeavyTipRadiusMm: 1.5f,
+        SuctionMultiplier: 3f,
+        AreaGrowthThreshold: 0.5f,
+        AreaGrowthMultiplier: 1.5f,
+        GravityEnabled: true,
+        ResinDensityGPerMl: 1.25f,
+        DragCoefficientMultiplier: 0.5f,
+        MinFeatureWidthMm: 1f,
+        ShrinkagePercent: 5f,
+        ShrinkageEdgeBias: 0.7f);
+
+    private const float PlacementSpacingMm = 5f;
+
+    // Measures Voronoi distribution quality: given a set of sample points (XZ only),
+    // returns the maximum distance from any sample to its nearest support.
+    private static float ComputeMaxVoronoiGapMm(
+        IEnumerable<(float X, float Z)> samplePoints,
+        IReadOnlyList<SupportPoint> supports)
+    {
+        var maxGap = 0f;
+        foreach (var (sx, sz) in samplePoints)
+        {
+            var nearest = float.MaxValue;
+            foreach (var sp in supports)
+            {
+                var dx = sp.Position.X - sx;
+                var dz = sp.Position.Z - sz;
+                var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                if (d < nearest) nearest = d;
+            }
+            if (nearest < float.MaxValue && nearest > maxGap)
+                maxGap = nearest;
+        }
+        return maxGap;
+    }
+
+    // Returns the minimum pairwise XZ distance between any two supports.
+    private static float ComputeMinSupportSpacingMm(IReadOnlyList<SupportPoint> supports)
+    {
+        var minDist = float.MaxValue;
+        for (var i = 0; i < supports.Count; i++)
+        {
+            for (var j = i + 1; j < supports.Count; j++)
+            {
+                var dx = supports[i].Position.X - supports[j].Position.X;
+                var dz = supports[i].Position.Z - supports[j].Position.Z;
+                var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                if (d < minDist) minDist = d;
+            }
+        }
+        return minDist < float.MaxValue ? minDist : 0f;
+    }
+
+    [Fact]
+    public void PlacementQuality_Sphere_VoronoiDistributionOnLowerHemisphere()
+    {
+        // A sphere resting on (or near) the bed should receive supports distributed
+        // across the lower hemisphere in a Voronoi-like pattern.
+        // Expected properties:
+        //   - At least one support per major sector of the hemisphere footprint
+        //   - Max gap from any lower-hemisphere XZ sample to nearest support < 2x spacing
+        //   - No two supports closer than 40% of spacing (not clustered)
+        //   - Supports span at least 60% of the sphere diameter in X and Z
+        var radius = 15f;
+        var geometry = CreateGeometry(MakeSphere(radius, centerY: radius));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // Voronoi gap - sample lower hemisphere XZ points in a circle
+        var sampleGrid = new List<(float X, float Z)>();
+        for (var angle = 0f; angle < MathF.PI * 2f; angle += MathF.PI / 8f)
+        {
+            for (var r = radius * 0.25f; r <= radius * 0.9f; r += radius * 0.25f)
+                sampleGrid.Add((r * MathF.Cos(angle), r * MathF.Sin(angle)));
+        }
+
+        var maxGap = ComputeMaxVoronoiGapMm(sampleGrid, result.SupportPoints);
+        Assert.True(maxGap <= PlacementSpacingMm * 2.5f,
+            $"Sphere: max Voronoi gap {maxGap:F2}mm exceeds 2.5x spacing ({PlacementSpacingMm * 2.5f:F2}mm). Supports are not distributed across the footprint.");
+
+        // No clustering - min pairwise distance should be well above zero
+        if (result.SupportPoints.Count >= 2)
+        {
+            var minSpacing = ComputeMinSupportSpacingMm(result.SupportPoints);
+            Assert.True(minSpacing >= PlacementSpacingMm * 0.4f,
+                $"Sphere: supports too close together: min spacing {minSpacing:F2}mm < {PlacementSpacingMm * 0.4f:F2}mm.");
+        }
+
+        // Spread - supports should cover most of the diameter in X and Z
+        var xMin = result.SupportPoints.Min(s => s.Position.X);
+        var xMax = result.SupportPoints.Max(s => s.Position.X);
+        var zMin = result.SupportPoints.Min(s => s.Position.Z);
+        var zMax = result.SupportPoints.Max(s => s.Position.Z);
+        var xSpread = xMax - xMin;
+        var zSpread = zMax - zMin;
+        Assert.True(xSpread >= radius * 1.0f,
+            $"Sphere: support X spread {xSpread:F2}mm is too narrow; expected >= {radius * 1.0f:F2}mm.");
+        Assert.True(zSpread >= radius * 1.0f,
+            $"Sphere: support Z spread {zSpread:F2}mm is too narrow; expected >= {radius * 1.0f:F2}mm.");
+    }
+
+    [Fact]
+    public void PlacementQuality_AxisAlignedCube_SupportsDistributedAcrossFace()
+    {
+        // A cube sitting on the build plate should receive supports distributed
+        // across its face - not clustered at a single corner or centre.
+        // Expected properties:
+        //   - Multiple supports
+        //   - Supports cover most of the face width and depth
+        //   - No clustering (min spacing respected)
+        var side = 20f;
+        var geometry = CreateGeometry(MakeBox(centerX: 0f, centerZ: 0f, width: side, depth: side, height: side));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        if (result.SupportPoints.Count >= 2)
+        {
+            var minSpacing = ComputeMinSupportSpacingMm(result.SupportPoints);
+            Assert.True(minSpacing >= PlacementSpacingMm * 0.4f,
+                $"Cube: supports too close: min spacing {minSpacing:F2}mm < {PlacementSpacingMm * 0.4f:F2}mm.");
+        }
+
+        // Supports should span at least half of each face dimension
+        var xMin = result.SupportPoints.Min(s => s.Position.X);
+        var xMax = result.SupportPoints.Max(s => s.Position.X);
+        var zMin = result.SupportPoints.Min(s => s.Position.Z);
+        var zMax = result.SupportPoints.Max(s => s.Position.Z);
+        Assert.True(xMax - xMin >= side * 0.4f,
+            $"Cube: support X spread {xMax - xMin:F2}mm; expected >= {side * 0.4f:F2}mm.");
+        Assert.True(zMax - zMin >= side * 0.4f,
+            $"Cube: support Z spread {zMax - zMin:F2}mm; expected >= {side * 0.4f:F2}mm.");
+    }
+
+    [Fact]
+    public void PlacementQuality_RotatedCube_SupportsDistributedMultipleHeightsAndSpread()
+    {
+        // A cube rotated 45 degrees around X exposes sloping surfaces that must be
+        // supported across the whole silhouette at multiple heights, not just the
+        // lowest overhang layer.
+        var cube = MakeBox(centerX: 0f, centerZ: 0f, width: 24f, depth: 24f, height: 24f);
+        var rotated = RotateTrianglesAroundX(cube, MathF.PI / 4f, pivotY: 12f);
+        var onBed = LiftTrianglesToBed(rotated);
+        var geometry = CreateGeometryFromTriangles(onBed);
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // Must cover multiple distinct heights
+        var distinctHeights = result.SupportPoints
+            .Select(s => MathF.Round(s.Position.Y, 1))
+            .Distinct()
+            .Count();
+        Assert.True(distinctHeights >= 3,
+            $"Rotated cube: expected supports at >= 3 distinct heights, got {distinctHeights}.");
+
+        // Supports should not all cluster at the bottom
+        var minY = result.SupportPoints.Min(s => s.Position.Y);
+        var maxY = result.SupportPoints.Max(s => s.Position.Y);
+        var heightSpread = maxY - minY;
+        Assert.True(heightSpread >= geometry.DimensionYMm * 0.35f,
+            $"Rotated cube: height spread {heightSpread:F2}mm; expected >= {geometry.DimensionYMm * 0.35f:F2}mm.");
+
+        // XZ spread - should cover the footprint
+        var xSpread = result.SupportPoints.Max(s => s.Position.X) - result.SupportPoints.Min(s => s.Position.X);
+        var zSpread = result.SupportPoints.Max(s => s.Position.Z) - result.SupportPoints.Min(s => s.Position.Z);
+        Assert.True(xSpread >= 10f,
+            $"Rotated cube: X spread {xSpread:F2}mm too narrow; expected >= 10mm.");
+        Assert.True(zSpread >= 10f,
+            $"Rotated cube: Z spread {zSpread:F2}mm too narrow; expected >= 10mm.");
+
+        // No clustering
+        if (result.SupportPoints.Count >= 2)
+        {
+            var minSpacing = ComputeMinSupportSpacingMm(result.SupportPoints);
+            Assert.True(minSpacing >= PlacementSpacingMm * 0.4f,
+                $"Rotated cube: supports too close: min spacing {minSpacing:F2}mm < {PlacementSpacingMm * 0.4f:F2}mm.");
+        }
+    }
+
+    [Fact]
+    public void PlacementQuality_FlatPlane_SupportsTileAcrossLargeArea()
+    {
+        // A large flat plate (40x40mm, 3mm thick) resting on the bed must receive
+        // supports distributed across its face in a Voronoi-like tiling.
+        // We test that max gap from plate interior sample to nearest support is bounded.
+        var plateWidth = 40f;
+        var plateDepth = 40f;
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: plateWidth, depth: plateDepth, height: 3f));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+        Assert.True(result.SupportPoints.Count >= 4,
+            $"Flat plane: expected >= 4 supports for a 40x40mm plate, got {result.SupportPoints.Count}.");
+
+        // Sample the interior of the plate and check coverage
+        var samplePoints = new List<(float X, float Z)>();
+        for (var x = -plateWidth * 0.4f; x <= plateWidth * 0.4f; x += plateWidth * 0.2f)
+            for (var z = -plateDepth * 0.4f; z <= plateDepth * 0.4f; z += plateDepth * 0.2f)
+                samplePoints.Add((x, z));
+
+        var maxGap = ComputeMaxVoronoiGapMm(samplePoints, result.SupportPoints);
+        Assert.True(maxGap <= PlacementSpacingMm * 2.5f,
+            $"Flat plane: max Voronoi gap {maxGap:F2}mm exceeds 2.5x spacing ({PlacementSpacingMm * 2.5f:F2}mm). Supports are not well distributed.");
+
+        if (result.SupportPoints.Count >= 2)
+        {
+            var minSpacing = ComputeMinSupportSpacingMm(result.SupportPoints);
+            Assert.True(minSpacing >= PlacementSpacingMm * 0.4f,
+                $"Flat plane: supports too close: min spacing {minSpacing:F2}mm < {PlacementSpacingMm * 0.4f:F2}mm.");
+        }
+    }
+
+    [Fact]
+    public void PlacementQuality_Donut_SupportsOnRingNotInHole()
+    {
+        // A torus should receive supports distributed around the ring.
+        // Key checks:
+        //   - At least one support outside the hole (radial distance > minorRadius)
+        //   - No support placed inside the hole centre (radial distance < holeRadius)
+        //   - Supports span multiple angular sectors of the ring
+        var majorRadius = 12f;
+        var minorRadius = 3.5f;
+        var holeRadius = majorRadius - minorRadius - 1f; // inner edge of tube
+
+        var geometry = CreateGeometry(
+            MakeTorus(majorRadius, minorRadius, centerY: majorRadius));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // All supports should be outside the hole
+        Assert.All(result.SupportPoints, sp =>
+        {
+            var radial = MathF.Sqrt((sp.Position.X * sp.Position.X) + (sp.Position.Z * sp.Position.Z));
+            Assert.True(radial >= holeRadius,
+                $"Donut: support at ({sp.Position.X:F2}, {sp.Position.Z:F2}) is inside the hole (radial={radial:F2}mm, hole edge={holeRadius:F2}mm).");
+        });
+
+        // Supports should span the ring - at least 3 different angular sectors (each 90 deg)
+        var sectors = new HashSet<int>();
+        foreach (var sp in result.SupportPoints)
+        {
+            var angle = MathF.Atan2(sp.Position.Z, sp.Position.X);
+            var sector = (int)MathF.Floor(((angle + MathF.PI) / (MathF.PI * 2f)) * 4f) % 4;
+            sectors.Add(sector);
+        }
+
+        Assert.True(sectors.Count >= 3,
+            $"Donut: supports only in {sectors.Count}/4 angular sectors of the ring; expected >= 3.");
+
+        // No clustering
+        if (result.SupportPoints.Count >= 2)
+        {
+            var minSpacing = ComputeMinSupportSpacingMm(result.SupportPoints);
+            Assert.True(minSpacing >= PlacementSpacingMm * 0.4f,
+                $"Donut: supports too close: min spacing {minSpacing:F2}mm < {PlacementSpacingMm * 0.4f:F2}mm.");
+        }
+    }
+
+    [Fact]
+    public void PlacementQuality_AxisAlignedBox_AllSupportsOnBottomLayer()
+    {
+        // A rectangular box (non-cubic proportions) sitting flat on the build plate has no
+        // overhangs - every cross-section is identical to the one below it.
+        // All supports should therefore be placed at the very first (bottom) layer only.
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 30f, depth: 15f, height: 15f));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // Bottom layer Y = layerHeightMm * 0.5 + ModelLiftMm.
+        // With MaxLayerHeightMm=1.5 and ModelLiftMm=10, the max first-layer Y is 11.5mm.
+        var maxBottomLayerY = PlacementTestOverrides.ModelLiftMm + PlacementTestOverrides.MaxLayerHeightMm;
+        Assert.All(result.SupportPoints, p => Assert.True(
+            p.Position.Y <= maxBottomLayerY,
+            $"Box: support at Y={p.Position.Y:F2}mm is above the first layer (max {maxBottomLayerY:F2}mm). " +
+            "An upright unrotated box should only need supports at the bottom layer."));
+    }
+
+    [Fact]
+    public void PlacementQuality_AxisAlignedCube_AllSupportsOnBottomLayer()
+    {
+        // A cube sitting flat on the build plate has no overhangs - all supports should be
+        // placed at the very first (bottom) layer only.
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 20f, depth: 20f, height: 20f));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        var maxBottomLayerY = PlacementTestOverrides.ModelLiftMm + PlacementTestOverrides.MaxLayerHeightMm;
+        Assert.All(result.SupportPoints, p => Assert.True(
+            p.Position.Y <= maxBottomLayerY,
+            $"Cube: support at Y={p.Position.Y:F2}mm is above the first layer (max {maxBottomLayerY:F2}mm). " +
+            "An upright unrotated cube should only need supports at the bottom layer."));
+    }
+
+    [Fact]
+    public void PlacementQuality_30DegRotatedBox_SupportsNotHeavilyWeightedOneSide()
+    {
+        // A cube rotated 30 degrees around the X axis has a sloping underside.
+        // Because the model is symmetric around X=0, supports must be balanced across
+        // both X halves - neither side should dominate.
+        var cube = MakeBox(centerX: 0f, centerZ: 0f, width: 24f, depth: 24f, height: 24f);
+        var rotated = RotateTrianglesAroundX(cube, MathF.PI / 6f, pivotY: 12f);
+        var onBed = LiftTrianglesToBed(rotated);
+        var geometry = CreateGeometryFromTriangles(onBed);
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // Model is symmetric around X=0 - centroid of supports should be near X=0.
+        var meanX = result.SupportPoints.Average(s => s.Position.X);
+        var halfWidthMm = 12f;
+        Assert.True(
+            MathF.Abs(meanX) <= halfWidthMm * 0.3f,
+            $"30-deg rotated box: support X centroid {meanX:F2}mm deviates too far from 0 (> {halfWidthMm * 0.3f:F2}mm). " +
+            "Supports are skewed to one X side.");
+
+        // Both X halves should have supports - neither half should hold > 70% of the total.
+        var total = result.SupportPoints.Count;
+        var leftCount = result.SupportPoints.Count(s => s.Position.X < 0f);
+        var rightCount = result.SupportPoints.Count(s => s.Position.X > 0f);
+        var maxAllowed = (int)MathF.Ceiling(total * 0.7f);
+        Assert.True(
+            leftCount <= maxAllowed && rightCount <= maxAllowed,
+            $"30-deg rotated box: distribution too skewed - left={leftCount}, right={rightCount}, total={total}. " +
+            $"Neither half should exceed 70% ({maxAllowed}) of supports.");
     }
 }

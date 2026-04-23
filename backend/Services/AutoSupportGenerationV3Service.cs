@@ -276,6 +276,7 @@ public sealed class AutoSupportGenerationV3Service
         RedistributeSupportHeights(
             supportPoints,
             layerPixelSets,
+            prevLayerPixels,
             bedWidthMm,
             bedDepthMm,
             pixelWidth,
@@ -300,6 +301,22 @@ public sealed class AutoSupportGenerationV3Service
             pixelHeight,
             layerHeightMm,
             tuning);
+
+        // Apply model lift: offset all support Y positions to reflect that the model
+        // sits above the bed by the configured amount.
+        if (tuning.ModelLiftMm > 0f)
+        {
+            for (var i = 0; i < supportPoints.Count; i++)
+            {
+                supportPoints[i] = supportPoints[i] with
+                {
+                    Position = supportPoints[i].Position with
+                    {
+                        Y = supportPoints[i].Position.Y + tuning.ModelLiftMm,
+                    },
+                };
+            }
+        }
 
         var supportTriangles = BuildSupportSphereMesh(supportPoints);
 
@@ -542,7 +559,6 @@ public sealed class AutoSupportGenerationV3Service
                             pixelHeight,
                             layerHeightMm,
                             tuning.SupportSpacingThresholdMm,
-                            localSupportMinY,
                             tuning);
                         if (addResult == SupportPlacementResult.CapReached)
                             return changed;
@@ -641,7 +657,6 @@ public sealed class AutoSupportGenerationV3Service
                             pixelHeight,
                             layerHeightMm,
                             tuning.SupportSpacingThresholdMm,
-                            localSupportMinY,
                             tuning);
                         if (addResult == SupportPlacementResult.CapReached)
                             return changed;
@@ -685,7 +700,6 @@ public sealed class AutoSupportGenerationV3Service
                         pixelHeight,
                         layerHeightMm,
                         minimumPlacementDistanceMm,
-                        localSupportMinY,
                         tuning);
                     if (reinforceAddResult == SupportPlacementResult.CapReached)
                         return changed;
@@ -717,7 +731,6 @@ public sealed class AutoSupportGenerationV3Service
         int pixelHeight,
         float layerHeightMm,
         float minimumPlacementDistanceMm,
-        float minimumSpacingSupportY,
         V3Tuning tuning)
     {
         if (candidatePixels.Count == 0)
@@ -740,8 +753,7 @@ public sealed class AutoSupportGenerationV3Service
             var nearestSupportDistSq = ComputeNearestSupportDistanceSq(
                 supportPoints,
                 xMm,
-                zMm,
-                minimumSpacingSupportY);
+                zMm);
             var satisfiesSpacing = minimumPlacementDistanceMm <= 0f || nearestSupportDistSq >= minimumSpacingSq;
 
             if (satisfiesSpacing)
@@ -789,7 +801,6 @@ public sealed class AutoSupportGenerationV3Service
         int pixelHeight,
         float layerHeightMm,
         float minimumPlacementDistanceMm,
-        float minimumSpacingSupportY,
         V3Tuning tuning)
     {
         if (supportPoints.Count >= maxSupportPoints)
@@ -810,17 +821,15 @@ public sealed class AutoSupportGenerationV3Service
             pixelHeight,
             layerHeightMm,
             minimumPlacementDistanceMm,
-                minimumSpacingSupportY,
-                tuning)
-                ? SupportPlacementResult.Added
-                : SupportPlacementResult.NoValidPlacement;
+            tuning)
+            ? SupportPlacementResult.Added
+            : SupportPlacementResult.NoValidPlacement;
     }
 
     private static float ComputeNearestSupportDistanceSq(
         IReadOnlyList<SupportPoint> supportPoints,
         float xMm,
-        float zMm,
-        float minimumSupportY)
+        float zMm)
     {
         if (supportPoints.Count == 0)
             return float.MaxValue;
@@ -828,9 +837,6 @@ public sealed class AutoSupportGenerationV3Service
         var nearestDistSq = float.MaxValue;
         foreach (var support in supportPoints)
         {
-            if (support.Position.Y < minimumSupportY)
-                continue;
-
             var dx = support.Position.X - xMm;
             var dz = support.Position.Z - zMm;
             var distSq = (dx * dx) + (dz * dz);
@@ -844,6 +850,7 @@ public sealed class AutoSupportGenerationV3Service
     private static void RedistributeSupportHeights(
         List<SupportPoint> supportPoints,
         HashSet<(int Column, int Row)>?[] layerPixelSets,
+        HashSet<(int Column, int Row)>?[] prevLayerPixels,
         float bedWidthMm,
         float bedDepthMm,
         int pixelWidth,
@@ -853,6 +860,27 @@ public sealed class AutoSupportGenerationV3Service
     {
         if (supportPoints.Count < 12 || layerCount <= 1)
             return;
+
+        // Precompute which layers have at least one pixel that is new relative to the
+        // layer below (a "tip pixel"). Redistribution should only target these layers -
+        // promoting a support into a layer with no new overhangs would place it inside
+        // the solid interior of an upright body, which is incorrect.
+        var layerHasTipPixels = new bool[layerCount];
+        for (var l = 1; l < layerCount; l++)
+        {
+            var lPixels = layerPixelSets[l];
+            var lPrev = prevLayerPixels[l];
+            if (lPixels == null || lPrev == null)
+                continue;
+            foreach (var px in lPixels)
+            {
+                if (!lPrev.Contains(px))
+                {
+                    layerHasTipPixels[l] = true;
+                    break;
+                }
+            }
+        }
 
         var bottomQuarterLayer = Math.Max(1, layerCount / 4);
         var bottomThresholdY = bottomQuarterLayer * layerHeightMm;
@@ -882,6 +910,14 @@ public sealed class AutoSupportGenerationV3Service
             var targetLayer = -1;
             for (var layer = maxPromotionLayer; layer > currentLayer; layer--)
             {
+                // Only redistribute to layers that have genuine overhang activity -
+                // layers whose cross-section contains pixels that did not exist in the
+                // layer below. This prevents moving supports into the solid interior of
+                // an upright model (e.g. an axis-aligned box) while still allowing
+                // redistribution for models with sloping or expanding geometry.
+                if (!layerHasTipPixels[layer])
+                    continue;
+
                 var pixels = layerPixelSets[layer];
                 if (pixels != null
                     && pixels.Contains((col, row))
@@ -1832,7 +1868,8 @@ public sealed class AutoSupportGenerationV3Service
                 DragCoefficientMultiplier: tuningOverrides.DragCoefficientMultiplier,
                 MinFeatureWidthMm: tuningOverrides.MinFeatureWidthMm,
                 ShrinkagePercent: tuningOverrides.ShrinkagePercent,
-                ShrinkageEdgeBias: tuningOverrides.ShrinkageEdgeBias);
+                ShrinkageEdgeBias: tuningOverrides.ShrinkageEdgeBias,
+                ModelLiftMm: tuningOverrides.ModelLiftMm);
         }
 
         var config = appConfigService?.GetAsync().GetAwaiter().GetResult();
@@ -1859,7 +1896,8 @@ public sealed class AutoSupportGenerationV3Service
             DragCoefficientMultiplier: config?.AutoSupportDragCoefficientMultiplier ?? AppConfigService.DefaultAutoSupportDragCoefficientMultiplier,
             MinFeatureWidthMm: config?.AutoSupportMinFeatureWidthMm ?? AppConfigService.DefaultAutoSupportMinFeatureWidthMm,
             ShrinkagePercent: config?.AutoSupportShrinkagePercent ?? AppConfigService.DefaultAutoSupportShrinkagePercent,
-            ShrinkageEdgeBias: config?.AutoSupportShrinkageEdgeBias ?? AppConfigService.DefaultAutoSupportShrinkageEdgeBias);
+            ShrinkageEdgeBias: config?.AutoSupportShrinkageEdgeBias ?? AppConfigService.DefaultAutoSupportShrinkageEdgeBias,
+            ModelLiftMm: config?.AutoSupportModelLiftMm ?? AppConfigService.DefaultAutoSupportModelLiftMm);
     }
 
     private sealed record V3Tuning(
@@ -1885,7 +1923,8 @@ public sealed class AutoSupportGenerationV3Service
         float DragCoefficientMultiplier,
         float MinFeatureWidthMm,
         float ShrinkagePercent,
-        float ShrinkageEdgeBias);
+        float ShrinkageEdgeBias,
+        float ModelLiftMm);
 
     private static float GetTipRadiusMm(SupportSize size, V3Tuning tuning) => size switch
     {
@@ -2253,7 +2292,6 @@ public sealed class AutoSupportGenerationV3Service
                         pixelHeight,
                         layerHeightMm,
                         tuning.SupportSpacingThresholdMm,
-                        island.SliceHeightMm - MathF.Max(tuning.SupportSpacingThresholdMm, layerHeightMm),
                         tuning);
                     if (shrinkageAddResult == SupportPlacementResult.CapReached)
                         return changed;

@@ -13,6 +13,10 @@ color_scheme: dark
 # Navigation
 nav_sort: order
 
+# Mermaid diagrams
+mermaid:
+  version: "10.9.0"
+
 # Search
 search_enabled: true
 search:

@@ -50,6 +50,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportMinFeatureWidthMm = 1f;
     public const float DefaultAutoSupportShrinkagePercent = 5f;
     public const float DefaultAutoSupportShrinkageEdgeBias = 0.7f;
+    public const float DefaultAutoSupportModelLiftMm = 10f;
     public const float DefaultAutoSupportV2VoxelSizeMm = 2f;
     public const bool DefaultAutoSupportV2OptimizationEnabled = true;
     public const float DefaultAutoSupportV2CoarseVoxelSizeMm = 4f;
@@ -165,6 +166,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportMinFeatureWidthMm = request.AutoSupportMinFeatureWidthMm;
         config.AutoSupportShrinkagePercent = request.AutoSupportShrinkagePercent;
         config.AutoSupportShrinkageEdgeBias = request.AutoSupportShrinkageEdgeBias;
+        config.AutoSupportModelLiftMm = request.AutoSupportModelLiftMm;
         config.AutoSupportV2VoxelSizeMm = request.AutoSupportV2VoxelSizeMm;
         config.AutoSupportV2OptimizationEnabled = request.AutoSupportV2OptimizationEnabled;
         config.AutoSupportV2CoarseVoxelSizeMm = request.AutoSupportV2CoarseVoxelSizeMm;
@@ -337,6 +339,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportMinFeatureWidthMm,
             config.AutoSupportShrinkagePercent,
             config.AutoSupportShrinkageEdgeBias,
+            config.AutoSupportModelLiftMm,
             config.AutoSupportV2VoxelSizeMm,
             config.AutoSupportV2OptimizationEnabled,
             config.AutoSupportV2CoarseVoxelSizeMm,
@@ -404,6 +407,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportMinFeatureWidthMm = configuration.GetValue<float?>("AppConfig:AutoSupportMinFeatureWidthMm") ?? DefaultAutoSupportMinFeatureWidthMm,
             AutoSupportShrinkagePercent = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkagePercent") ?? DefaultAutoSupportShrinkagePercent,
             AutoSupportShrinkageEdgeBias = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkageEdgeBias") ?? DefaultAutoSupportShrinkageEdgeBias,
+            AutoSupportModelLiftMm = configuration.GetValue<float?>("AppConfig:AutoSupportModelLiftMm") ?? DefaultAutoSupportModelLiftMm,
             AutoSupportV2VoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2VoxelSizeMm") ?? DefaultAutoSupportV2VoxelSizeMm,
             AutoSupportV2OptimizationEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportV2OptimizationEnabled") ?? DefaultAutoSupportV2OptimizationEnabled,
             AutoSupportV2CoarseVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2CoarseVoxelSizeMm") ?? DefaultAutoSupportV2CoarseVoxelSizeMm,
@@ -471,6 +475,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportMinFeatureWidthMm, 0.1f, 10f, nameof(request.AutoSupportMinFeatureWidthMm));
         ValidateFiniteRange(request.AutoSupportShrinkagePercent, 0f, 15f, nameof(request.AutoSupportShrinkagePercent));
         ValidateFiniteRange(request.AutoSupportShrinkageEdgeBias, 0f, 1f, nameof(request.AutoSupportShrinkageEdgeBias));
+        ValidateFiniteRange(request.AutoSupportModelLiftMm, 0f, 100f, nameof(request.AutoSupportModelLiftMm));
         ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2CoarseVoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2CoarseVoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2FineVoxelSizeMm, 0.1f, request.AutoSupportV2CoarseVoxelSizeMm, nameof(request.AutoSupportV2FineVoxelSizeMm));

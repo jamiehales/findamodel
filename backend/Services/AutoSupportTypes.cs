@@ -27,7 +27,8 @@ public sealed record AutoSupportV3TuningOverrides(
     float DragCoefficientMultiplier = 0.5f,
     float MinFeatureWidthMm = 1f,
     float ShrinkagePercent = 5f,
-    float ShrinkageEdgeBias = 0.7f);
+    float ShrinkageEdgeBias = 0.7f,
+    float ModelLiftMm = 10f);
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,

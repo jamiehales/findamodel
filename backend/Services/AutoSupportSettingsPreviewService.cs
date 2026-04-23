@@ -275,7 +275,8 @@ public sealed class AutoSupportSettingsPreviewService(
             tuning.DragCoefficientMultiplier,
             tuning.MinFeatureWidthMm,
             tuning.ShrinkagePercent,
-            tuning.ShrinkageEdgeBias);
+            tuning.ShrinkageEdgeBias,
+            tuning.ModelLiftMm);
 
     private void CleanupExpiredPreviews()
     {
