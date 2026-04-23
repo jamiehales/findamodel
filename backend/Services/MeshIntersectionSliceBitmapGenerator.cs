@@ -13,13 +13,20 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
         var rowIntersections = new List<ScanlineIntersection>?[pixelHeight];
 
-        foreach (var triangle in triangles)
+        for (var triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
         {
+            if ((triangleIndex & 255) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
+            var triangle = triangles[triangleIndex];
             var minY = MathF.Min(triangle.V0.Y, MathF.Min(triangle.V1.Y, triangle.V2.Y));
             var maxY = MathF.Max(triangle.V0.Y, MathF.Max(triangle.V1.Y, triangle.V2.Y));
             if (sliceHeightMm < minY - Epsilon || sliceHeightMm > maxY + Epsilon)
@@ -34,6 +41,9 @@ public sealed class MeshIntersectionSliceBitmapGenerator : IPlateSliceBitmapGene
 
         for (var row = 0; row < pixelHeight; row++)
         {
+            if ((row & 127) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             var intersections = rowIntersections[row];
             if (intersections == null || intersections.Count < 2)
                 continue;

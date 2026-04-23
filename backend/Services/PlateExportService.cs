@@ -26,6 +26,7 @@ public sealed record PlateSlicePreviewData(
     float BedDepthMm,
     int ResolutionX,
     int ResolutionY,
+    float ResolutionScale,
     float LayerHeightMm,
     int LayerCount,
     PngSliceExportMethod Method,
@@ -80,6 +81,18 @@ public sealed class PlateExportService(
         "pngzip_mesh" => PngSliceExportMethod.MeshIntersection,
         _ => PlateSliceRasterService.DefaultZipDownloadMethod,
     };
+
+    public static float NormalizePreviewResolutionScale(float? resolutionScale)
+    {
+        var candidate = resolutionScale ?? 0.25f;
+
+        if (MathF.Abs(candidate - 0.125f) < 0.0001f) return 0.125f;
+        if (MathF.Abs(candidate - 0.25f) < 0.0001f) return 0.25f;
+        if (MathF.Abs(candidate - 0.5f) < 0.0001f) return 0.5f;
+        if (MathF.Abs(candidate - 1f) < 0.0001f) return 1f;
+
+        throw new ArgumentException("Unsupported preview resolution scale. Supported: 0.125, 0.25, 0.5, 1.0.");
+    }
 
     public async Task<PlateExportFileResult> GeneratePlateAsync(
         GeneratePlateRequest request,
@@ -136,9 +149,11 @@ public sealed class PlateExportService(
     public async Task<PlateSlicePreviewData> BuildSlicePreviewDataAsync(
         GeneratePlateRequest request,
         string? method = null,
+        float? resolutionScale = null,
         CancellationToken cancellationToken = default)
     {
         var selectedMethod = ResolveSlicePreviewMethod(method);
+        var selectedResolutionScale = NormalizePreviewResolutionScale(resolutionScale);
         var resolvedData = await ResolvePlateDataAsync(request, progressReporter: null, cancellationToken);
 
         var printer = request.PrinterConfigId.HasValue
@@ -174,14 +189,18 @@ public sealed class PlateExportService(
             triangleGroups,
             printer.BedWidthMm,
             printer.BedDepthMm,
-            printer.PixelWidth,
-            printer.PixelHeight,
+            ScaleResolution(printer.PixelWidth, selectedResolutionScale),
+            ScaleResolution(printer.PixelHeight, selectedResolutionScale),
+            selectedResolutionScale,
             layerHeightMm,
             layerCount,
             selectedMethod,
             resolvedData.Warning,
             resolvedData.SkippedModels);
     }
+
+    private static int ScaleResolution(int nativeResolution, float scale)
+        => Math.Max(1, (int)MathF.Round(nativeResolution * scale, MidpointRounding.AwayFromZero));
 
     private async Task<ResolvedPlateData> ResolvePlateDataAsync(
         GeneratePlateRequest request,

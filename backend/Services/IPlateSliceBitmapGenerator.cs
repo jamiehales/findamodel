@@ -11,7 +11,8 @@ public interface IPlateSliceBitmapGenerator
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm);
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IBatchPlateSliceBitmapGenerator : IPlateSliceBitmapGenerator
@@ -23,5 +24,6 @@ public interface IBatchPlateSliceBitmapGenerator : IPlateSliceBitmapGenerator
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm);
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default);
 }

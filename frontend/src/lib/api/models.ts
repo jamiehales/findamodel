@@ -613,6 +613,7 @@ export interface PlateSlicePreviewSession {
   bedDepthMm: number;
   resolutionX: number;
   resolutionY: number;
+  resolutionScale: number;
   layerHeightMm: number;
   layerCount: number;
   method: string;
@@ -626,11 +627,12 @@ export async function createPlateSlicePreview(
   placements: PlatePlacement[],
   printerConfigId?: string | null,
   method: 'mesh' | 'orthographic' = 'mesh',
+  resolutionScale = 0.25,
 ): Promise<PlateSlicePreviewSession> {
   const r = await apiFetch('/api/plate/slice-preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ placements, printerConfigId, method }),
+    body: JSON.stringify({ placements, printerConfigId, method, resolutionScale }),
   });
 
   if (!r.ok) {
@@ -649,6 +651,19 @@ export async function fetchPlateSlicePreview(previewId: string): Promise<PlateSl
 
 export function getPlateSlicePreviewLayerUrl(previewId: string, layerIndex: number): string {
   return apiUrl(`/api/plate/slice-preview/${previewId}/layer/${layerIndex}.png`);
+}
+
+export async function fetchPlateSlicePreviewLayerBlob(
+  previewId: string,
+  layerIndex: number,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const r = await apiFetch(`/api/plate/slice-preview/${previewId}/layer/${layerIndex}.png`, {
+    signal,
+  });
+
+  if (!r.ok) throw new Error('Failed to fetch plate slice preview layer');
+  return r.blob();
 }
 
 export async function generatePlate(

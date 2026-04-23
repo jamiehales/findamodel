@@ -16,7 +16,8 @@ public record CreatePlateSlicePreviewRequest(
     IReadOnlyList<PlacementDto> Placements,
     Guid? PrinterConfigId = null,
     string? Method = null,
-    string? Format = null);
+    string? Format = null,
+    float? ResolutionScale = null);
 
 public record PlateSlicePreviewSessionDto(
     Guid PreviewId,
@@ -24,6 +25,7 @@ public record PlateSlicePreviewSessionDto(
     float BedDepthMm,
     int ResolutionX,
     int ResolutionY,
+    float ResolutionScale,
     float LayerHeightMm,
     int LayerCount,
     string Method,

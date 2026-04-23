@@ -393,6 +393,30 @@ public class PlateSliceRasterServiceTests
             $"Expected concurrent layer rendering for non-batch generators, observed {trackingGenerator.MaxObservedConcurrency}.");
     }
 
+    [Fact]
+    public void RenderLayerBitmap_WhenCancellationRequested_ThrowsOperationCanceledException()
+    {
+        var sut = new PlateSliceRasterService(
+        [
+            new MeshIntersectionSliceBitmapGenerator(),
+            new OrthographicProjectionSliceBitmapGenerator(),
+        ]);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => sut.RenderLayerBitmap(
+            CreateTetrahedron(),
+            sliceHeightMm: 1.5f,
+            bedWidthMm: 20,
+            bedDepthMm: 20,
+            resolutionX: 256,
+            resolutionY: 256,
+            method: PngSliceExportMethod.OrthographicProjection,
+            layerHeightMm: 1f,
+            cancellationToken: cts.Token));
+    }
+
     [Theory]
     [InlineData(PngSliceExportMethod.MeshIntersection)]
     [InlineData(PngSliceExportMethod.OrthographicProjection)]
@@ -959,8 +983,11 @@ public class PlateSliceRasterServiceTests
             float bedDepthMm,
             int pixelWidth,
             int pixelHeight,
-            float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
+            float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var concurrency = System.Threading.Interlocked.Increment(ref currentConcurrency);
             UpdateMaxConcurrency(concurrency);
 

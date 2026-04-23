@@ -692,6 +692,7 @@ export function useCreatePlateSlicePreview() {
       placements,
       printerConfigId,
       method,
+      resolutionScale,
     }: {
       placements: {
         modelId: string;
@@ -702,7 +703,8 @@ export function useCreatePlateSlicePreview() {
       }[];
       printerConfigId?: string | null;
       method?: 'mesh' | 'orthographic';
-    }) => createPlateSlicePreview(placements, printerConfigId, method),
+      resolutionScale?: number;
+    }) => createPlateSlicePreview(placements, printerConfigId, method, resolutionScale),
   });
 }
 

@@ -24,8 +24,9 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         int resolutionX,
         int resolutionY,
         PngSliceExportMethod method,
-        float layerHeightMm = DefaultLayerHeightMm)
-        => RenderLayerBitmap([triangles], sliceHeightMm, bedWidthMm, bedDepthMm, resolutionX, resolutionY, method, layerHeightMm);
+        float layerHeightMm = DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default)
+        => RenderLayerBitmap([triangles], sliceHeightMm, bedWidthMm, bedDepthMm, resolutionX, resolutionY, method, layerHeightMm, cancellationToken);
 
     public SliceBitmap RenderLayerBitmap(
         IReadOnlyList<IReadOnlyList<Triangle3D>> triangleGroups,
@@ -35,9 +36,11 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
         int resolutionX,
         int resolutionY,
         PngSliceExportMethod method,
-        float layerHeightMm = DefaultLayerHeightMm)
+        float layerHeightMm = DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default)
     {
         ValidateInputs(bedWidthMm, bedDepthMm, resolutionX, resolutionY, layerHeightMm);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var generator = GetGenerator(method);
         var nonEmptyGroups = triangleGroups.Where(group => group.Count > 0).ToArray();
@@ -52,11 +55,13 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                 bedDepthMm,
                 resolutionX,
                 resolutionY,
-                layerHeightMm);
+                layerHeightMm,
+                cancellationToken);
 
         var composed = new SliceBitmap(resolutionX, resolutionY);
         foreach (var group in nonEmptyGroups)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var bitmap = generator.RenderLayerBitmap(
                 group,
                 sliceHeightMm,
@@ -64,7 +69,8 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                 bedDepthMm,
                 resolutionX,
                 resolutionY,
-                layerHeightMm);
+                layerHeightMm,
+                cancellationToken);
             OrInto(composed, bitmap);
         }
 
@@ -270,7 +276,8 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                     bedDepthMm,
                     resolutionX,
                     resolutionY,
-                    layerHeightMm);
+                    layerHeightMm,
+                    cancellationToken);
             }
             else if (parallelizeGroups)
             {
@@ -282,13 +289,18 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                         bedDepthMm,
                         resolutionX,
                         resolutionY,
-                        layerHeightMm))
+                        layerHeightMm,
+                        cancellationToken))
                     .ToArray();
             }
             else
             {
                 var results = new SliceBitmap[batchLength];
-                Parallel.For(0, batchLength, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, offset =>
+                Parallel.For(0, batchLength, new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Environment.ProcessorCount,
+                    CancellationToken = cancellationToken,
+                }, offset =>
                 {
                     results[offset] = generator.RenderLayerBitmap(
                         batchTriangles[offset],
@@ -297,7 +309,8 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
                         bedDepthMm,
                         resolutionX,
                         resolutionY,
-                        layerHeightMm);
+                        layerHeightMm,
+                        cancellationToken);
                 });
                 renderedPerGroup[groupIndex] = results;
             }
@@ -305,12 +318,19 @@ public sealed class PlateSliceRasterService(IEnumerable<IPlateSliceBitmapGenerat
 
         if (parallelizeGroups)
         {
-            Parallel.For(0, activeGroups.Count, new ParallelOptions { MaxDegreeOfParallelism = maxGroupParallelism }, groupAction);
+            Parallel.For(0, activeGroups.Count, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxGroupParallelism,
+                CancellationToken = cancellationToken,
+            }, groupAction);
         }
         else
         {
             for (var i = 0; i < activeGroups.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 groupAction(i);
+            }
         }
 
         foreach (var rendered in renderedPerGroup)

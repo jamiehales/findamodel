@@ -23,6 +23,7 @@ public sealed class PlateSlicePreviewService(
         var previewData = await plateExportService.BuildSlicePreviewDataAsync(
             new GeneratePlateRequest(request.Placements, request.Format, request.PrinterConfigId),
             request.Method,
+            request.ResolutionScale,
             cancellationToken);
 
         var now = DateTime.UtcNow;
@@ -35,6 +36,7 @@ public sealed class PlateSlicePreviewService(
             previewData.BedDepthMm,
             previewData.ResolutionX,
             previewData.ResolutionY,
+            previewData.ResolutionScale,
             previewData.LayerHeightMm,
             previewData.LayerCount,
             previewData.Method,
@@ -60,7 +62,10 @@ public sealed class PlateSlicePreviewService(
         return session.ToDto();
     }
 
-    public byte[]? RenderLayerPng(Guid previewId, int layerIndex)
+    public async Task<byte[]?> RenderLayerPngAsync(
+        Guid previewId,
+        int layerIndex,
+        CancellationToken cancellationToken = default)
     {
         CleanupExpired();
         if (!sessions.TryGetValue(previewId, out var session))
@@ -75,22 +80,42 @@ public sealed class PlateSlicePreviewService(
         if (layerIndex < 0 || layerIndex >= session.LayerCount)
             return null;
 
-        var sliceHeightMm = (layerIndex * session.LayerHeightMm) + (session.LayerHeightMm * 0.5f);
-        var bitmap = sliceRasterService.RenderLayerBitmap(
-            session.TriangleGroups,
-            sliceHeightMm,
-            session.BedWidthMm,
-            session.BedDepthMm,
-            session.ResolutionX,
-            session.ResolutionY,
-            session.Method,
-            session.LayerHeightMm);
+        if (session.LayerPngCache.TryGetValue(layerIndex, out var cachedPng))
+            return cachedPng;
 
-        using var stream = new MemoryStream();
-        using (var image = Image.LoadPixelData<L8>(bitmap.Pixels, bitmap.Width, bitmap.Height))
-            image.Save(stream, new PngEncoder());
+        var layerGate = session.LayerRenderLocks.GetOrAdd(layerIndex, _ => new SemaphoreSlim(1, 1));
+        await layerGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (session.LayerPngCache.TryGetValue(layerIndex, out cachedPng))
+                return cachedPng;
 
-        return stream.ToArray();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var sliceHeightMm = (layerIndex * session.LayerHeightMm) + (session.LayerHeightMm * 0.5f);
+            var bitmap = sliceRasterService.RenderLayerBitmap(
+                session.TriangleGroups,
+                sliceHeightMm,
+                session.BedWidthMm,
+                session.BedDepthMm,
+                session.ResolutionX,
+                session.ResolutionY,
+                session.Method,
+                session.LayerHeightMm,
+                cancellationToken);
+
+            using var stream = new MemoryStream();
+            using (var image = Image.LoadPixelData<L8>(bitmap.Pixels, bitmap.Width, bitmap.Height))
+                image.Save(stream, new PngEncoder());
+
+            var pngBytes = stream.ToArray();
+            session.LayerPngCache[layerIndex] = pngBytes;
+            return pngBytes;
+        }
+        finally
+        {
+            layerGate.Release();
+        }
     }
 
     private void CleanupExpired()
@@ -114,18 +139,23 @@ public sealed class PlateSlicePreviewService(
         float BedDepthMm,
         int ResolutionX,
         int ResolutionY,
+        float ResolutionScale,
         float LayerHeightMm,
         int LayerCount,
         PngSliceExportMethod Method,
         string? Warning,
         IReadOnlyList<string> SkippedModels)
     {
+        public ConcurrentDictionary<int, byte[]> LayerPngCache { get; } = new();
+        public ConcurrentDictionary<int, SemaphoreSlim> LayerRenderLocks { get; } = new();
+
         public PlateSlicePreviewSessionDto ToDto() => new(
             PreviewId,
             BedWidthMm,
             BedDepthMm,
             ResolutionX,
             ResolutionY,
+            ResolutionScale,
             LayerHeightMm,
             LayerCount,
             Method.ToString(),

@@ -9,7 +9,11 @@ import {
   Alert,
   LinearProgress,
   Slider,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useEffect, useMemo, useState } from 'react';
@@ -45,6 +49,14 @@ import PageLayout from '../components/layouts/PageLayout';
 import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import styles from './PrintingListPage.module.css';
 
+const SLICE_PREVIEW_RESOLUTION_OPTIONS = [
+  { label: '1/8', value: 0.125 },
+  { label: '1/4', value: 0.25 },
+  { label: '1/2', value: 0.5 },
+  { label: '1x', value: 1 },
+] as const;
+const SLICE_PREVIEW_LAYER_DEBOUNCE_MS = 90;
+
 function PrintingListPage() {
   const { listId = 'active' } = useParams<{ listId: string }>();
 
@@ -77,6 +89,8 @@ function PrintingListPage() {
   const [slicePreviewLoading, setSlicePreviewLoading] = useState(false);
   const [slicePreviewError, setSlicePreviewError] = useState<string | null>(null);
   const [selectedSliceLayerIndex, setSelectedSliceLayerIndex] = useState(0);
+  const [debouncedSliceLayerIndex, setDebouncedSliceLayerIndex] = useState(0);
+  const [slicePreviewResolutionScale, setSlicePreviewResolutionScale] = useState<number>(0.25);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -95,6 +109,18 @@ function PrintingListPage() {
   const plateBusy = savingPlate || plateInProgress || plateDownloading;
   const plateIsSliceJob =
     (plateJob?.format?.startsWith('pngzip') ?? false) || plateJob?.format === 'ctb';
+
+  useEffect(() => {
+    if (selectedSliceLayerIndex === debouncedSliceLayerIndex) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSliceLayerIndex(selectedSliceLayerIndex);
+    }, SLICE_PREVIEW_LAYER_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [debouncedSliceLayerIndex, selectedSliceLayerIndex]);
 
   useEffect(() => {
     if (!archiveJob || (archiveJob.status !== 'queued' && archiveJob.status !== 'running')) return;
@@ -345,13 +371,16 @@ function PrintingListPage() {
     }
   }
 
-  async function handleCreateSlicePreview() {
+  async function handleCreateSlicePreview(resolutionScaleOverride?: number) {
     if (!list) return;
+
+    const effectiveResolutionScale = resolutionScaleOverride ?? slicePreviewResolutionScale;
 
     setSlicePreviewError(null);
     setSlicePreviewLoading(true);
     setSlicePreviewSession(null);
     setSelectedSliceLayerIndex(0);
+    setDebouncedSliceLayerIndex(0);
 
     try {
       const placements = readLayoutPlacements();
@@ -359,6 +388,7 @@ function PrintingListPage() {
         placements,
         printerConfigId: list.printer?.id ?? null,
         method: 'mesh',
+        resolutionScale: effectiveResolutionScale,
       });
       setSlicePreviewSession(session);
     } catch (error) {
@@ -696,18 +726,50 @@ function PrintingListPage() {
               <Typography variant="h6" className={styles.slicePreviewTitle}>
                 3D Slice Preview
               </Typography>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  void handleCreateSlicePreview();
-                }}
-                disabled={slicePreviewLoading || !simulationPaused}
-                startIcon={
-                  slicePreviewLoading ? <CircularProgress size={16} color="inherit" /> : null
-                }
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                className={styles.slicePreviewActions}
               >
-                {slicePreviewLoading ? 'Building slices…' : 'Generate slice view'}
-              </Button>
+                <FormControl size="small" className={styles.slicePreviewResolutionControl}>
+                  <InputLabel id="slice-preview-resolution-label">Resolution</InputLabel>
+                  <Select
+                    labelId="slice-preview-resolution-label"
+                    value={slicePreviewResolutionScale.toString()}
+                    label="Resolution"
+                    onChange={(event: SelectChangeEvent) => {
+                      const nextScale = Number.parseFloat(event.target.value);
+                      if (!Number.isFinite(nextScale)) return;
+                      if (nextScale === slicePreviewResolutionScale) return;
+                      setSlicePreviewResolutionScale(nextScale);
+
+                      if (slicePreviewSession && simulationPaused && !slicePreviewLoading) {
+                        void handleCreateSlicePreview(nextScale);
+                      }
+                    }}
+                    disabled={slicePreviewLoading}
+                  >
+                    {SLICE_PREVIEW_RESOLUTION_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value.toString()}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    void handleCreateSlicePreview();
+                  }}
+                  disabled={slicePreviewLoading || !simulationPaused}
+                  startIcon={
+                    slicePreviewLoading ? <CircularProgress size={16} color="inherit" /> : null
+                  }
+                >
+                  {slicePreviewLoading ? 'Building slices…' : 'Generate slice view'}
+                </Button>
+              </Stack>
             </Stack>
 
             {slicePreviewSession ? (
@@ -718,7 +780,12 @@ function PrintingListPage() {
                     selectedSliceLayerIndex * slicePreviewSession.layerHeightMm +
                     slicePreviewSession.layerHeightMm * 0.5
                   ).toFixed(2)}{' '}
-                  mm)
+                  mm,{' '}
+                  {slicePreviewSession.resolutionScale
+                    .toFixed(3)
+                    .replace(/0+$/, '')
+                    .replace(/\.$/, '')}
+                  x)
                 </Typography>
                 <Slider
                   min={0}
@@ -738,7 +805,7 @@ function PrintingListPage() {
                 />
                 <PlateSliceViewer
                   session={slicePreviewSession}
-                  selectedLayerIndex={selectedSliceLayerIndex}
+                  selectedLayerIndex={debouncedSliceLayerIndex}
                 />
               </>
             ) : (

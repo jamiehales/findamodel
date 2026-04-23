@@ -25,23 +25,60 @@ function SlicePlane({ textureUrl, bedWidthMm, bedDepthMm, sliceHeightMm }: Slice
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     const loader = new THREE.TextureLoader();
-    loader.load(textureUrl, (loadedTexture) => {
-      if (cancelled) return;
+    let objectUrl: string | null = null;
 
-      loadedTexture.minFilter = THREE.NearestFilter;
-      loadedTexture.magFilter = THREE.NearestFilter;
-      loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
-      loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
-      loadedTexture.flipY = false;
-      loadedTexture.needsUpdate = true;
+    const loadTexture = async () => {
+      try {
+        const response = await fetch(textureUrl, { signal: abortController.signal });
+        if (!response.ok) return;
+        const blob = await response.blob();
 
-      textureCache.set(textureUrl, loadedTexture);
-      setTexture(loadedTexture);
-    });
+        if (cancelled) return;
+
+        objectUrl = URL.createObjectURL(blob);
+        loader.load(
+          objectUrl,
+          (loadedTexture) => {
+            if (cancelled) return;
+
+            loadedTexture.minFilter = THREE.NearestFilter;
+            loadedTexture.magFilter = THREE.NearestFilter;
+            loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
+            loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+            loadedTexture.flipY = false;
+            loadedTexture.needsUpdate = true;
+
+            textureCache.set(textureUrl, loadedTexture);
+            setTexture(loadedTexture);
+          },
+          undefined,
+          () => {
+            if (objectUrl) {
+              URL.revokeObjectURL(objectUrl);
+              objectUrl = null;
+            }
+          },
+        );
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          // Ignore load errors here - page-level preview errors are handled at session creation.
+          console.error(error);
+        }
+      }
+    };
+
+    void loadTexture();
 
     return () => {
       cancelled = true;
+      abortController.abort();
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
     };
   }, [textureUrl]);
 

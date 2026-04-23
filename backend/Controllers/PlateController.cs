@@ -100,9 +100,12 @@ public class PlateController(
     }
 
     [HttpGet("slice-preview/{previewId:guid}/layer/{layerIndex:int}.png")]
-    public IActionResult GetSlicePreviewLayer(Guid previewId, int layerIndex)
+    public async Task<IActionResult> GetSlicePreviewLayer(
+        Guid previewId,
+        int layerIndex,
+        CancellationToken cancellationToken = default)
     {
-        var png = plateSlicePreviewService.RenderLayerPng(previewId, layerIndex);
+        var png = await plateSlicePreviewService.RenderLayerPngAsync(previewId, layerIndex, cancellationToken);
         if (png == null)
             return NotFound();
 

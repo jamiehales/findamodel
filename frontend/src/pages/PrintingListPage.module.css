@@ -21,6 +21,15 @@
   font-size: 0.92rem !important;
 }
 
+.slicePreviewActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.slicePreviewResolutionControl {
+  min-width: 8.5rem;
+}
+
 .archiveStatusCard {
   display: flex;
   flex-direction: column;

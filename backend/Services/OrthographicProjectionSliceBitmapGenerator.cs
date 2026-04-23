@@ -37,8 +37,11 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var gpuBitmap = TryRenderGpuBatch(
             [triangles],
             [sliceHeightMm],
@@ -46,7 +49,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             bedDepthMm,
             pixelWidth,
             pixelHeight,
-            layerThicknessMm);
+            layerThicknessMm,
+            cancellationToken);
 
         if (gpuBitmap is { Count: > 0 })
         {
@@ -61,7 +65,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             bedDepthMm,
             pixelWidth,
             pixelHeight,
-            layerThicknessMm);
+            layerThicknessMm,
+            cancellationToken);
     }
 
     public IReadOnlyList<SliceBitmap> RenderLayerBitmaps(
@@ -71,8 +76,11 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm)
+        float layerThicknessMm = PlateSliceRasterService.DefaultLayerHeightMm,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (trianglesByLayer.Count != sliceHeightsMm.Count)
             throw new ArgumentException("Layer triangle count and slice height count must match.");
 
@@ -88,6 +96,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
             pixelWidth,
             pixelHeight,
             layerThicknessMm,
+            cancellationToken,
             onBitmapReady: bitmap => cleanupTasks.Add(
                 Task.Run(() => bitmap.RemoveUnsupportedHorizontalPixels())));
 
@@ -103,6 +112,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         {
             for (var index = 0; index < trianglesByLayer.Count; index++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 bitmaps[index] = RenderLayerBitmapCpu(
                     trianglesByLayer[index],
                     sliceHeightsMm[index],
@@ -110,7 +120,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                     bedDepthMm,
                     pixelWidth,
                     pixelHeight,
-                    layerThicknessMm);
+                    layerThicknessMm,
+                    cancellationToken);
             }
         }
         else
@@ -123,7 +134,11 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                     precomputedCache[triangles] = BuildPrecomputedTriangles(triangles);
             }
 
-            Parallel.For(0, trianglesByLayer.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, index =>
+            Parallel.For(0, trianglesByLayer.Count, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Environment.ProcessorCount,
+                CancellationToken = cancellationToken,
+            }, index =>
             {
                 bitmaps[index] = RenderLayerBitmapCpuSerialWithPrecomputed(
                     trianglesByLayer[index],
@@ -133,7 +148,8 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                     bedDepthMm,
                     pixelWidth,
                     pixelHeight,
-                    layerThicknessMm);
+                    layerThicknessMm,
+                    cancellationToken);
             });
         }
 
@@ -148,6 +164,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         int pixelWidth,
         int pixelHeight,
         float layerThicknessMm,
+        CancellationToken cancellationToken,
         Action<SliceBitmap>? onBitmapReady = null)
     {
         if (!EnableGpuSliceProjection || gpuContext is null || !gpuContext.IsAvailable)
@@ -155,6 +172,7 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             List<Triangle3D> activeTriangles;
             if (trianglesByLayer.Count == 1)
             {
@@ -162,13 +180,19 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
                     trianglesByLayer[0],
                     sliceHeightsMm[0],
                     layerThicknessMm,
-                    maxTriangleCount: 2_000_000);
+                    maxTriangleCount: 2_000_000,
+                    cancellationToken);
             }
             else
             {
                 var minSlice = sliceHeightsMm.Min() - (layerThicknessMm * 0.5f);
                 var maxSlice = sliceHeightsMm.Max() + (layerThicknessMm * 0.5f);
-                activeTriangles = BuildBatchTriangles(trianglesByLayer, minSlice, maxSlice, maxTriangleCount: 2_000_000);
+                activeTriangles = BuildBatchTriangles(
+                    trianglesByLayer,
+                    minSlice,
+                    maxSlice,
+                    maxTriangleCount: 2_000_000,
+                    cancellationToken);
             }
 
             if (activeTriangles.Count == 0)
@@ -194,14 +218,21 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         IReadOnlyList<IReadOnlyList<Triangle3D>> trianglesByLayer,
         float sliceMinMm,
         float sliceMaxMm,
-        int maxTriangleCount)
+        int maxTriangleCount,
+        CancellationToken cancellationToken)
     {
         var uniqueTriangles = new HashSet<Triangle3D>();
 
-        foreach (var triangles in trianglesByLayer)
+        for (var layerIndex = 0; layerIndex < trianglesByLayer.Count; layerIndex++)
         {
-            foreach (var triangle in triangles)
+            cancellationToken.ThrowIfCancellationRequested();
+            var triangles = trianglesByLayer[layerIndex];
+            for (var triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
             {
+                if ((triangleIndex & 255) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                var triangle = triangles[triangleIndex];
                 if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
                     continue;
 
@@ -221,11 +252,20 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm)
+        float layerThicknessMm,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
         var precomputed = BuildPrecomputedTriangles(triangles);
-        var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
+        var candidatesByRow = BuildRowCandidates(
+            triangles,
+            sliceHeightMm,
+            layerThicknessMm,
+            bedDepthMm,
+            pixelHeight,
+            cancellationToken);
 
         // Collect non-empty rows to avoid Parallel.For overhead on empty rows
         var activeRows = new List<int>(pixelHeight / 4);
@@ -239,7 +279,11 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         {
             Parallel.ForEach(
                 Partitioner.Create(0, activeRows.Count),
-                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Environment.ProcessorCount,
+                    CancellationToken = cancellationToken,
+                },
                 range =>
                 {
                     for (var i = range.Item1; i < range.Item2; i++)
@@ -264,11 +308,20 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm)
+        float layerThicknessMm,
+        CancellationToken cancellationToken)
     {
         var precomputed = BuildPrecomputedTriangles(triangles);
         return RenderLayerBitmapCpuSerialWithPrecomputed(
-            triangles, precomputed, sliceHeightMm, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight, layerThicknessMm);
+            triangles,
+            precomputed,
+            sliceHeightMm,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerThicknessMm,
+            cancellationToken);
     }
 
     private static SliceBitmap RenderLayerBitmapCpuSerialWithPrecomputed(
@@ -279,13 +332,25 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float bedDepthMm,
         int pixelWidth,
         int pixelHeight,
-        float layerThicknessMm)
+        float layerThicknessMm,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var bitmap = new SliceBitmap(pixelWidth, pixelHeight);
-        var candidatesByRow = BuildRowCandidates(triangles, sliceHeightMm, layerThicknessMm, bedDepthMm, pixelHeight);
+        var candidatesByRow = BuildRowCandidates(
+            triangles,
+            sliceHeightMm,
+            layerThicknessMm,
+            bedDepthMm,
+            pixelHeight,
+            cancellationToken);
 
         for (var row = 0; row < pixelHeight; row++)
         {
+            if ((row & 127) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             var candidates = candidatesByRow[row];
             if (candidates == null || candidates.Count == 0)
                 continue;
@@ -303,14 +368,19 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         IReadOnlyList<Triangle3D> triangles,
         float sliceHeightMm,
         float layerThicknessMm,
-        int maxTriangleCount)
+        int maxTriangleCount,
+        CancellationToken cancellationToken)
     {
         var sliceMinMm = sliceHeightMm - (layerThicknessMm * 0.5f);
         var sliceMaxMm = sliceHeightMm + (layerThicknessMm * 0.5f);
         var active = new List<Triangle3D>(Math.Min(triangles.Count, maxTriangleCount));
 
-        foreach (var triangle in triangles)
+        for (var triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
         {
+            if ((triangleIndex & 255) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
+            var triangle = triangles[triangleIndex];
             if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
                 continue;
 
@@ -334,14 +404,20 @@ public sealed class OrthographicProjectionSliceBitmapGenerator : IBatchPlateSlic
         float sliceHeightMm,
         float layerThicknessMm,
         float bedDepthMm,
-        int pixelHeight)
+        int pixelHeight,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var sliceMinMm = sliceHeightMm - (layerThicknessMm * 0.5f);
         var sliceMaxMm = sliceHeightMm + (layerThicknessMm * 0.5f);
         var byRow = new List<int>?[pixelHeight];
 
         for (var index = 0; index < triangles.Count; index++)
         {
+            if ((index & 255) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
             var triangle = triangles[index];
             if (!IntersectsSliceRange(triangle, sliceMinMm, sliceMaxMm))
                 continue;
