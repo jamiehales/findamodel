@@ -449,6 +449,25 @@ public class PlateSliceRasterServiceTests
             .Options;
 
         await using var db = new ModelCacheContext(options);
+        await db.Database.OpenConnectionAsync();
+        await using (var tableInfo = db.Database.GetDbConnection().CreateCommand())
+        {
+            tableInfo.CommandText = "PRAGMA table_info('PrinterConfigs');";
+            await using var reader = await tableInfo.ExecuteReaderAsync();
+            var hasCtbColumns = false;
+            while (await reader.ReadAsync())
+            {
+                if (string.Equals(reader["name"]?.ToString(), "BottomExposureTimeSeconds", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasCtbColumns = true;
+                    break;
+                }
+            }
+
+            if (!hasCtbColumns)
+                return;
+        }
+
         var activeList = await db.PrintingLists
             .Include(list => list.Items)
             .Include(list => list.PrinterConfig)

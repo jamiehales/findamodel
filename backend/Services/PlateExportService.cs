@@ -20,11 +20,24 @@ public sealed record PlateExportFileResult(
     string? Warning,
     IReadOnlyList<string> SkippedModels);
 
+public sealed record PlateSlicePreviewData(
+    IReadOnlyList<IReadOnlyList<Triangle3D>> TriangleGroups,
+    float BedWidthMm,
+    float BedDepthMm,
+    int ResolutionX,
+    int ResolutionY,
+    float LayerHeightMm,
+    int LayerCount,
+    PngSliceExportMethod Method,
+    string? Warning,
+    IReadOnlyList<string> SkippedModels);
+
 public sealed class PlateExportService(
     ModelService modelService,
-    ModelLoaderService loaderService,
+    PlateModelGeometryCacheService geometryCacheService,
     ModelSaverService saverService,
     PlateSliceRasterService sliceRasterService,
+    CtbExportService ctbExportService,
     PrinterService printerService,
     IConfiguration config)
 {
@@ -34,12 +47,18 @@ public sealed class PlateExportService(
         new(StringComparer.OrdinalIgnoreCase) { "lys", "lyt", "ctb" };
 
     private readonly record struct ExportPlacement(Guid ModelId, double XMm, double YMm, double AngleRad);
+    private readonly record struct ResolvedPlateData(
+        IReadOnlyList<ExportPlacement> ExportPlacements,
+        IReadOnlyDictionary<Guid, LoadedGeometry> GeometryByModelId,
+        IReadOnlyDictionary<Guid, int> ObjectIdByModelId,
+        string? Warning,
+        IReadOnlyList<string> SkippedModels);
 
     public static string NormalizeFormat(string? format)
     {
         var normalized = (format ?? "3mf").ToLowerInvariant();
-        if (normalized is not ("3mf" or "stl" or "glb" or "pngzip" or "pngzip_mesh" or "pngzip_orthographic"))
-            throw new ArgumentException($"Unsupported format '{format}'. Supported: 3mf, stl, glb, pngzip, pngzip_mesh, pngzip_orthographic");
+        if (normalized is not ("3mf" or "stl" or "glb" or "ctb" or "pngzip" or "pngzip_mesh" or "pngzip_orthographic"))
+            throw new ArgumentException($"Unsupported format '{format}'. Supported: 3mf, stl, glb, ctb, pngzip, pngzip_mesh, pngzip_orthographic");
 
         return normalized;
     }
@@ -48,6 +67,7 @@ public sealed class PlateExportService(
     {
         "stl" => "plate.stl",
         "glb" => "plate.glb",
+        "ctb" => "plate.ctb",
         "pngzip_mesh" => "plate-slices-mesh.zip",
         "pngzip_orthographic" => "plate-slices-orthographic.zip",
         "pngzip" => "plate-slices.zip",
@@ -66,11 +86,111 @@ public sealed class PlateExportService(
         IPlateGenerationProgressReporter? progressReporter = null,
         CancellationToken cancellationToken = default)
     {
+        var format = NormalizeFormat(request.Format);
+        var resolvedData = await ResolvePlateDataAsync(request, progressReporter, cancellationToken);
+
+        var result = format switch
+        {
+            "3mf" => new PlateExportFileResult(
+                Generate3mf(resolvedData.ExportPlacements, resolvedData.GeometryByModelId.ToDictionary(), resolvedData.ObjectIdByModelId.ToDictionary()),
+                "application/vnd.ms-3mf",
+                GetFileName(format),
+                resolvedData.Warning,
+                resolvedData.SkippedModels),
+            "stl" => new PlateExportFileResult(
+                GenerateStl(resolvedData.ExportPlacements, resolvedData.GeometryByModelId.ToDictionary()),
+                "model/stl",
+                GetFileName(format),
+                resolvedData.Warning,
+                resolvedData.SkippedModels),
+            "glb" => new PlateExportFileResult(
+                GenerateGlb(resolvedData.ExportPlacements, resolvedData.GeometryByModelId.ToDictionary(), resolvedData.ObjectIdByModelId.ToDictionary()),
+                "model/gltf-binary",
+                GetFileName(format),
+                resolvedData.Warning,
+                resolvedData.SkippedModels),
+            "ctb" => await GenerateCtbAsync(
+                request,
+                format,
+                resolvedData.ExportPlacements,
+                resolvedData.GeometryByModelId.ToDictionary(),
+                resolvedData.Warning,
+                resolvedData.SkippedModels,
+                progressReporter,
+                cancellationToken),
+            "pngzip" or "pngzip_mesh" or "pngzip_orthographic" => await GeneratePngZipAsync(
+                request,
+                format,
+                resolvedData.ExportPlacements,
+                resolvedData.GeometryByModelId.ToDictionary(),
+                resolvedData.Warning,
+                resolvedData.SkippedModels,
+                progressReporter,
+                cancellationToken),
+            _ => throw new NotImplementedException($"Unhandled format '{format}'"),
+        };
+
+        return result;
+    }
+
+    public async Task<PlateSlicePreviewData> BuildSlicePreviewDataAsync(
+        GeneratePlateRequest request,
+        string? method = null,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedMethod = ResolveSlicePreviewMethod(method);
+        var resolvedData = await ResolvePlateDataAsync(request, progressReporter: null, cancellationToken);
+
+        var printer = request.PrinterConfigId.HasValue
+            ? await printerService.GetByIdAsync(request.PrinterConfigId.Value)
+            : await printerService.GetDefaultAsync();
+
+        if (printer == null)
+            throw new InvalidOperationException("A printer configuration is required for plate slice preview.");
+
+        var normalizedPlacements = resolvedData.ExportPlacements
+            .Select(p => new ExportPlacement(
+                p.ModelId,
+                p.XMm - (printer.BedWidthMm / 2f),
+                (printer.BedDepthMm / 2f) - p.YMm,
+                p.AngleRad))
+            .ToList();
+
+        var triangleGroups = GeneratePlacedTriangleGroups(
+            normalizedPlacements,
+            resolvedData.GeometryByModelId.ToDictionary(),
+            convertToZUp: false);
+
+        var layerHeightMm = printer.LayerHeightMm > 0
+            ? printer.LayerHeightMm
+            : PlateSliceRasterService.DefaultLayerHeightMm;
+
+        var maxY = triangleGroups.Count == 0
+            ? 0f
+            : triangleGroups.Max(group => group.Max(t => MathF.Max(t.V0.Y, MathF.Max(t.V1.Y, t.V2.Y))));
+        var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(0f, maxY) / layerHeightMm));
+
+        return new PlateSlicePreviewData(
+            triangleGroups,
+            printer.BedWidthMm,
+            printer.BedDepthMm,
+            printer.PixelWidth,
+            printer.PixelHeight,
+            layerHeightMm,
+            layerCount,
+            selectedMethod,
+            resolvedData.Warning,
+            resolvedData.SkippedModels);
+    }
+
+    private async Task<ResolvedPlateData> ResolvePlateDataAsync(
+        GeneratePlateRequest request,
+        IPlateGenerationProgressReporter? progressReporter,
+        CancellationToken cancellationToken)
+    {
         var modelsPath = config["Models:DirectoryPath"];
         if (string.IsNullOrWhiteSpace(modelsPath))
             throw new InvalidOperationException("Models:DirectoryPath not configured");
-
-        var format = NormalizeFormat(request.Format);
 
         var requestedModelIds = new HashSet<Guid>();
         var requestPlacements = new List<(PlacementDto Placement, Guid ModelId)>(request.Placements.Count);
@@ -120,6 +240,9 @@ public sealed class PlateExportService(
             uniqueGeometryModelIds.Add(modelId);
         }
 
+        if (exportPlacements.Count == 0)
+            throw new PlateExportUnprocessableException("No geometry-based models were included in the export request.");
+
         var objectIdByModelId = uniqueGeometryModelIds
             .Select((modelId, index) => (modelId, objectId: index + 1))
             .ToDictionary(x => x.modelId, x => x.objectId);
@@ -142,9 +265,12 @@ public sealed class PlateExportService(
                 if (!File.Exists(fullPath))
                     throw new FileNotFoundException($"Model file not found on disk: {modelInfo.FileName}", fullPath);
 
-                var geometry = await loaderService.LoadModelAsync(fullPath, modelInfo.FileType);
-                if (geometry == null)
-                    throw new InvalidOperationException($"Failed to parse geometry for: {modelInfo.FileName}");
+                var geometry = await geometryCacheService.GetOrLoadAsync(
+                    modelId,
+                    modelInfo.Checksum,
+                    fullPath,
+                    modelInfo.FileType,
+                    cancellationToken);
 
                 progressReporter?.MarkEntryCompleted();
                 return (ModelId: modelId, Geometry: geometry);
@@ -155,48 +281,28 @@ public sealed class PlateExportService(
             }
         }));
 
-        var geometryByModelId = geometryResults.ToDictionary(x => x.ModelId, x => x.Geometry);
-
-        if (exportPlacements.Count == 0)
-            throw new PlateExportUnprocessableException("No geometry-based models were included in the export request.");
-
         var warning = skippedModelNames.Count > 0
             ? "Some models were skipped because they do not contain exportable geometry (LYS/LYT/CTB)."
             : null;
 
-        var result = format switch
-        {
-            "3mf" => new PlateExportFileResult(
-                Generate3mf(exportPlacements, geometryByModelId, objectIdByModelId),
-                "application/vnd.ms-3mf",
-                GetFileName(format),
-                warning,
-                skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList()),
-            "stl" => new PlateExportFileResult(
-                GenerateStl(exportPlacements, geometryByModelId),
-                "model/stl",
-                GetFileName(format),
-                warning,
-                skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList()),
-            "glb" => new PlateExportFileResult(
-                GenerateGlb(exportPlacements, geometryByModelId, objectIdByModelId),
-                "model/gltf-binary",
-                GetFileName(format),
-                warning,
-                skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList()),
-            "pngzip" or "pngzip_mesh" or "pngzip_orthographic" => await GeneratePngZipAsync(
-                request,
-                format,
-                exportPlacements,
-                geometryByModelId,
-                warning,
-                skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(),
-                progressReporter,
-                cancellationToken),
-            _ => throw new NotImplementedException($"Unhandled format '{format}'"),
-        };
+        return new ResolvedPlateData(
+            exportPlacements,
+            geometryResults.ToDictionary(x => x.ModelId, x => x.Geometry),
+            objectIdByModelId,
+            warning,
+            skippedModelNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList());
+    }
 
-        return result;
+    private static PngSliceExportMethod ResolveSlicePreviewMethod(string? method)
+    {
+        var normalized = method?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "mesh" => PngSliceExportMethod.MeshIntersection,
+            "orthographic" => PngSliceExportMethod.OrthographicProjection,
+            null or "" => PlateSliceRasterService.DefaultZipDownloadMethod,
+            _ => throw new ArgumentException($"Unsupported slice preview method '{method}'. Supported: mesh, orthographic"),
+        };
     }
 
     private byte[] Generate3mf(
@@ -271,6 +377,9 @@ public sealed class PlateExportService(
             .ToList();
 
         var placedTriangleGroups = GeneratePlacedTriangleGroups(normalizedPlacements, geometryByModelId, convertToZUp: false);
+        var layerHeightMm = printer.LayerHeightMm > 0
+            ? printer.LayerHeightMm
+            : PlateSliceRasterService.DefaultLayerHeightMm;
         var content = sliceRasterService.GenerateSliceArchive(
             placedTriangleGroups,
             printer.BedWidthMm,
@@ -278,12 +387,51 @@ public sealed class PlateExportService(
             printer.PixelWidth,
             printer.PixelHeight,
             ResolvePngSliceMethod(format),
+            layerHeightMm,
             progressReporter: progressReporter,
             cancellationToken: cancellationToken);
 
         return new PlateExportFileResult(
             content,
             "application/zip",
+            GetFileName(format),
+            warning,
+            skippedModels);
+    }
+
+    private async Task<PlateExportFileResult> GenerateCtbAsync(
+        GeneratePlateRequest request,
+        string format,
+        IReadOnlyList<ExportPlacement> placements,
+        Dictionary<Guid, LoadedGeometry> geometryByModelId,
+        string? warning,
+        IReadOnlyList<string> skippedModels,
+        IPlateGenerationProgressReporter? progressReporter,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var printer = request.PrinterConfigId.HasValue
+            ? await printerService.GetByIdAsync(request.PrinterConfigId.Value)
+            : await printerService.GetDefaultAsync();
+
+        if (printer == null)
+            throw new InvalidOperationException("A printer configuration is required for CTB export.");
+
+        var normalizedPlacements = placements
+            .Select(p => new ExportPlacement(
+                p.ModelId,
+                p.XMm - (printer.BedWidthMm / 2f),
+                (printer.BedDepthMm / 2f) - p.YMm,
+                p.AngleRad))
+            .ToList();
+
+        var placedTriangleGroups = GeneratePlacedTriangleGroups(normalizedPlacements, geometryByModelId, convertToZUp: false);
+        var content = ctbExportService.GenerateFile(placedTriangleGroups, printer, progressReporter, cancellationToken);
+
+        return new PlateExportFileResult(
+            content,
+            "application/octet-stream",
             GetFileName(format),
             warning,
             skippedModels);

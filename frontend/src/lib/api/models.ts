@@ -596,7 +596,7 @@ export interface PlateGenerationResult {
 export interface PlateGenerationJob {
   jobId: string;
   fileName: string;
-  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic';
+  format: '3mf' | 'stl' | 'glb' | 'ctb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic';
   status: 'queued' | 'running' | 'completed' | 'failed';
   totalEntries: number;
   completedEntries: number;
@@ -607,9 +607,53 @@ export interface PlateGenerationJob {
   skippedModels: string[];
 }
 
+export interface PlateSlicePreviewSession {
+  previewId: string;
+  bedWidthMm: number;
+  bedDepthMm: number;
+  resolutionX: number;
+  resolutionY: number;
+  layerHeightMm: number;
+  layerCount: number;
+  method: string;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  warning: string | null;
+  skippedModels: string[];
+}
+
+export async function createPlateSlicePreview(
+  placements: PlatePlacement[],
+  printerConfigId?: string | null,
+  method: 'mesh' | 'orthographic' = 'mesh',
+): Promise<PlateSlicePreviewSession> {
+  const r = await apiFetch('/api/plate/slice-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ placements, printerConfigId, method }),
+  });
+
+  if (!r.ok) {
+    const message = await r.text();
+    throw new Error(message || 'Failed to create plate slice preview');
+  }
+
+  return r.json();
+}
+
+export async function fetchPlateSlicePreview(previewId: string): Promise<PlateSlicePreviewSession> {
+  const r = await apiFetch(`/api/plate/slice-preview/${previewId}`);
+  if (!r.ok) throw new Error('Failed to fetch plate slice preview');
+  return r.json();
+}
+
+export function getPlateSlicePreviewLayerUrl(previewId: string, layerIndex: number): string {
+  return apiUrl(`/api/plate/slice-preview/${previewId}/layer/${layerIndex}.png`);
+}
+
 export async function generatePlate(
   placements: PlatePlacement[],
-  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+  format: '3mf' | 'stl' | 'glb' | 'ctb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
   printerConfigId?: string | null,
 ): Promise<PlateGenerationResult> {
   const r = await apiFetch('/api/plate/generate', {
@@ -640,7 +684,7 @@ export async function generatePlate(
 
 export async function createPlateGenerationJob(
   placements: PlatePlacement[],
-  format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+  format: '3mf' | 'stl' | 'glb' | 'ctb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
   printerConfigId?: string | null,
 ): Promise<PlateGenerationJob> {
   const r = await apiFetch('/api/plate/jobs', {

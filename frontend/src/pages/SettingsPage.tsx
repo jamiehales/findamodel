@@ -38,6 +38,7 @@ import type {
   AutoSupportSettingsPreviewScenario,
   InstanceStats,
   MetadataDictionaryField,
+  PrinterCtbSettings,
 } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
@@ -478,6 +479,181 @@ function AutoSupportPreviewViewport({
   );
 }
 
+type PrinterCtbSettingsDraft = Record<keyof PrinterCtbSettings, string>;
+
+const DEFAULT_PRINTER_CTB_SETTINGS_DRAFT: PrinterCtbSettingsDraft = {
+  layerHeightMm: '0.05',
+  bottomLayerCount: '4',
+  transitionLayerCount: '0',
+  exposureTimeSeconds: '2.5',
+  bottomExposureTimeSeconds: '30',
+  bottomLiftHeightMm: '6',
+  bottomLiftSpeedMmPerMinute: '65',
+  liftHeightMm: '6',
+  liftSpeedMmPerMinute: '80',
+  retractSpeedMmPerMinute: '150',
+  bottomLightOffDelaySeconds: '0',
+  lightOffDelaySeconds: '0',
+  waitTimeBeforeCureSeconds: '0',
+  waitTimeAfterCureSeconds: '0',
+  waitTimeAfterLiftSeconds: '0',
+  lightPwm: '255',
+  bottomLightPwm: '255',
+};
+
+const PRINTER_CTB_FIELDS: Array<{
+  key: keyof PrinterCtbSettings;
+  label: string;
+  min: number;
+  step?: string;
+}> = [
+  { key: 'layerHeightMm', label: 'Layer Height (mm)', min: 0.001, step: '0.01' },
+  { key: 'bottomLayerCount', label: 'Bottom Layers', min: 0, step: '1' },
+  { key: 'transitionLayerCount', label: 'Transition Layers', min: 0, step: '1' },
+  { key: 'exposureTimeSeconds', label: 'Exposure (s)', min: 0.001, step: '0.1' },
+  { key: 'bottomExposureTimeSeconds', label: 'Bottom Exposure (s)', min: 0.001, step: '0.1' },
+  { key: 'bottomLiftHeightMm', label: 'Bottom Lift Height (mm)', min: 0, step: '0.1' },
+  { key: 'bottomLiftSpeedMmPerMinute', label: 'Bottom Lift Speed (mm/min)', min: 0.001, step: '1' },
+  { key: 'liftHeightMm', label: 'Lift Height (mm)', min: 0, step: '0.1' },
+  { key: 'liftSpeedMmPerMinute', label: 'Lift Speed (mm/min)', min: 0.001, step: '1' },
+  { key: 'retractSpeedMmPerMinute', label: 'Retract Speed (mm/min)', min: 0.001, step: '1' },
+  { key: 'bottomLightOffDelaySeconds', label: 'Bottom Light-Off Delay (s)', min: 0, step: '0.1' },
+  { key: 'lightOffDelaySeconds', label: 'Light-Off Delay (s)', min: 0, step: '0.1' },
+  { key: 'waitTimeBeforeCureSeconds', label: 'Wait Before Cure (s)', min: 0, step: '0.1' },
+  { key: 'waitTimeAfterCureSeconds', label: 'Wait After Cure (s)', min: 0, step: '0.1' },
+  { key: 'waitTimeAfterLiftSeconds', label: 'Wait After Lift (s)', min: 0, step: '0.1' },
+  { key: 'lightPwm', label: 'Light PWM', min: 1, step: '1' },
+  { key: 'bottomLightPwm', label: 'Bottom Light PWM', min: 1, step: '1' },
+];
+
+function toPrinterCtbSettingsDraft(printer: PrinterCtbSettings): PrinterCtbSettingsDraft {
+  return {
+    layerHeightMm: String(printer.layerHeightMm),
+    bottomLayerCount: String(printer.bottomLayerCount),
+    transitionLayerCount: String(printer.transitionLayerCount),
+    exposureTimeSeconds: String(printer.exposureTimeSeconds),
+    bottomExposureTimeSeconds: String(printer.bottomExposureTimeSeconds),
+    bottomLiftHeightMm: String(printer.bottomLiftHeightMm),
+    bottomLiftSpeedMmPerMinute: String(printer.bottomLiftSpeedMmPerMinute),
+    liftHeightMm: String(printer.liftHeightMm),
+    liftSpeedMmPerMinute: String(printer.liftSpeedMmPerMinute),
+    retractSpeedMmPerMinute: String(printer.retractSpeedMmPerMinute),
+    bottomLightOffDelaySeconds: String(printer.bottomLightOffDelaySeconds),
+    lightOffDelaySeconds: String(printer.lightOffDelaySeconds),
+    waitTimeBeforeCureSeconds: String(printer.waitTimeBeforeCureSeconds),
+    waitTimeAfterCureSeconds: String(printer.waitTimeAfterCureSeconds),
+    waitTimeAfterLiftSeconds: String(printer.waitTimeAfterLiftSeconds),
+    lightPwm: String(printer.lightPwm),
+    bottomLightPwm: String(printer.bottomLightPwm),
+  };
+}
+
+function parsePrinterCtbSettingsDraft(draft: PrinterCtbSettingsDraft): PrinterCtbSettings | null {
+  const layerHeightMm = Number(draft.layerHeightMm);
+  const bottomLayerCount = Number(draft.bottomLayerCount);
+  const transitionLayerCount = Number(draft.transitionLayerCount);
+  const exposureTimeSeconds = Number(draft.exposureTimeSeconds);
+  const bottomExposureTimeSeconds = Number(draft.bottomExposureTimeSeconds);
+  const bottomLiftHeightMm = Number(draft.bottomLiftHeightMm);
+  const bottomLiftSpeedMmPerMinute = Number(draft.bottomLiftSpeedMmPerMinute);
+  const liftHeightMm = Number(draft.liftHeightMm);
+  const liftSpeedMmPerMinute = Number(draft.liftSpeedMmPerMinute);
+  const retractSpeedMmPerMinute = Number(draft.retractSpeedMmPerMinute);
+  const bottomLightOffDelaySeconds = Number(draft.bottomLightOffDelaySeconds);
+  const lightOffDelaySeconds = Number(draft.lightOffDelaySeconds);
+  const waitTimeBeforeCureSeconds = Number(draft.waitTimeBeforeCureSeconds);
+  const waitTimeAfterCureSeconds = Number(draft.waitTimeAfterCureSeconds);
+  const waitTimeAfterLiftSeconds = Number(draft.waitTimeAfterLiftSeconds);
+  const lightPwm = Number(draft.lightPwm);
+  const bottomLightPwm = Number(draft.bottomLightPwm);
+
+  const valid =
+    Number.isFinite(layerHeightMm) &&
+    layerHeightMm > 0 &&
+    Number.isFinite(bottomLayerCount) &&
+    Number.isInteger(bottomLayerCount) &&
+    bottomLayerCount >= 0 &&
+    Number.isFinite(transitionLayerCount) &&
+    Number.isInteger(transitionLayerCount) &&
+    transitionLayerCount >= 0 &&
+    Number.isFinite(exposureTimeSeconds) &&
+    exposureTimeSeconds > 0 &&
+    Number.isFinite(bottomExposureTimeSeconds) &&
+    bottomExposureTimeSeconds > 0 &&
+    Number.isFinite(bottomLiftHeightMm) &&
+    bottomLiftHeightMm >= 0 &&
+    Number.isFinite(bottomLiftSpeedMmPerMinute) &&
+    bottomLiftSpeedMmPerMinute > 0 &&
+    Number.isFinite(liftHeightMm) &&
+    liftHeightMm >= 0 &&
+    Number.isFinite(liftSpeedMmPerMinute) &&
+    liftSpeedMmPerMinute > 0 &&
+    Number.isFinite(retractSpeedMmPerMinute) &&
+    retractSpeedMmPerMinute > 0 &&
+    Number.isFinite(bottomLightOffDelaySeconds) &&
+    bottomLightOffDelaySeconds >= 0 &&
+    Number.isFinite(lightOffDelaySeconds) &&
+    lightOffDelaySeconds >= 0 &&
+    Number.isFinite(waitTimeBeforeCureSeconds) &&
+    waitTimeBeforeCureSeconds >= 0 &&
+    Number.isFinite(waitTimeAfterCureSeconds) &&
+    waitTimeAfterCureSeconds >= 0 &&
+    Number.isFinite(waitTimeAfterLiftSeconds) &&
+    waitTimeAfterLiftSeconds >= 0 &&
+    Number.isFinite(lightPwm) &&
+    Number.isInteger(lightPwm) &&
+    lightPwm >= 1 &&
+    lightPwm <= 255 &&
+    Number.isFinite(bottomLightPwm) &&
+    Number.isInteger(bottomLightPwm) &&
+    bottomLightPwm >= 1 &&
+    bottomLightPwm <= 255;
+
+  if (!valid) return null;
+
+  return {
+    layerHeightMm,
+    bottomLayerCount,
+    transitionLayerCount,
+    exposureTimeSeconds,
+    bottomExposureTimeSeconds,
+    bottomLiftHeightMm,
+    bottomLiftSpeedMmPerMinute,
+    liftHeightMm,
+    liftSpeedMmPerMinute,
+    retractSpeedMmPerMinute,
+    bottomLightOffDelaySeconds,
+    lightOffDelaySeconds,
+    waitTimeBeforeCureSeconds,
+    waitTimeAfterCureSeconds,
+    waitTimeAfterLiftSeconds,
+    lightPwm,
+    bottomLightPwm,
+  };
+}
+
+function printerCtbSettingsEqual(a: PrinterCtbSettings, b: PrinterCtbSettings): boolean {
+  return (
+    a.layerHeightMm === b.layerHeightMm &&
+    a.bottomLayerCount === b.bottomLayerCount &&
+    a.transitionLayerCount === b.transitionLayerCount &&
+    a.exposureTimeSeconds === b.exposureTimeSeconds &&
+    a.bottomExposureTimeSeconds === b.bottomExposureTimeSeconds &&
+    a.bottomLiftHeightMm === b.bottomLiftHeightMm &&
+    a.bottomLiftSpeedMmPerMinute === b.bottomLiftSpeedMmPerMinute &&
+    a.liftHeightMm === b.liftHeightMm &&
+    a.liftSpeedMmPerMinute === b.liftSpeedMmPerMinute &&
+    a.retractSpeedMmPerMinute === b.retractSpeedMmPerMinute &&
+    a.bottomLightOffDelaySeconds === b.bottomLightOffDelaySeconds &&
+    a.lightOffDelaySeconds === b.lightOffDelaySeconds &&
+    a.waitTimeBeforeCureSeconds === b.waitTimeBeforeCureSeconds &&
+    a.waitTimeAfterCureSeconds === b.waitTimeAfterCureSeconds &&
+    a.waitTimeAfterLiftSeconds === b.waitTimeAfterLiftSeconds &&
+    a.lightPwm === b.lightPwm &&
+    a.bottomLightPwm === b.bottomLightPwm
+  );
+}
+
 export default function SettingsPage() {
   const location = useLocation();
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
@@ -558,6 +734,9 @@ export default function SettingsPage() {
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
   const [newPrinterPixelWidth, setNewPrinterPixelWidth] = useState('7680');
   const [newPrinterPixelHeight, setNewPrinterPixelHeight] = useState('4320');
+  const [newPrinterCtbSettings, setNewPrinterCtbSettings] = useState<PrinterCtbSettingsDraft>(
+    DEFAULT_PRINTER_CTB_SETTINGS_DRAFT,
+  );
   const [printerEdits, setPrinterEdits] = useState<
     Record<
       string,
@@ -567,6 +746,7 @@ export default function SettingsPage() {
         bedDepthMm: string;
         pixelWidth: string;
         pixelHeight: string;
+        ctbSettings: PrinterCtbSettingsDraft;
       }
     >
   >({});
@@ -658,6 +838,7 @@ export default function SettingsPage() {
           bedDepthMm: string;
           pixelWidth: string;
           pixelHeight: string;
+          ctbSettings: PrinterCtbSettingsDraft;
         }
       > = {};
       for (const printer of printers) {
@@ -667,6 +848,7 @@ export default function SettingsPage() {
           bedDepthMm: String(printer.bedDepthMm),
           pixelWidth: String(printer.pixelWidth),
           pixelHeight: String(printer.pixelHeight),
+          ctbSettings: toPrinterCtbSettingsDraft(printer),
         };
       }
       return next;
@@ -1355,11 +1537,13 @@ export default function SettingsPage() {
                       bedDepthMm: String(printer.bedDepthMm),
                       pixelWidth: String(printer.pixelWidth),
                       pixelHeight: String(printer.pixelHeight),
+                      ctbSettings: toPrinterCtbSettingsDraft(printer),
                     };
                     const width = Number(edit.bedWidthMm);
                     const depth = Number(edit.bedDepthMm);
                     const pixelWidth = Number(edit.pixelWidth);
                     const pixelHeight = Number(edit.pixelHeight);
+                    const ctbSettings = parsePrinterCtbSettingsDraft(edit.ctbSettings);
                     const canSaveCustom =
                       !printer.isBuiltIn &&
                       edit.name.trim().length > 0 &&
@@ -1371,11 +1555,13 @@ export default function SettingsPage() {
                       pixelWidth > 0 &&
                       Number.isFinite(pixelHeight) &&
                       pixelHeight > 0 &&
+                      ctbSettings !== null &&
                       (edit.name.trim() !== printer.name ||
                         width !== printer.bedWidthMm ||
                         depth !== printer.bedDepthMm ||
                         pixelWidth !== printer.pixelWidth ||
-                        pixelHeight !== printer.pixelHeight);
+                        pixelHeight !== printer.pixelHeight ||
+                        !printerCtbSettingsEqual(ctbSettings, printer));
 
                     return (
                       <Stack
@@ -1463,6 +1649,29 @@ export default function SettingsPage() {
                             }))
                           }
                         />
+                        {PRINTER_CTB_FIELDS.map((field) => (
+                          <TextField
+                            key={`${printer.id}-${field.key}`}
+                            size="small"
+                            type="number"
+                            label={field.label}
+                            value={edit.ctbSettings[field.key]}
+                            disabled={printer.isBuiltIn}
+                            onChange={(e) =>
+                              setPrinterEdits((current) => ({
+                                ...current,
+                                [printer.id]: {
+                                  ...edit,
+                                  ctbSettings: {
+                                    ...edit.ctbSettings,
+                                    [field.key]: e.target.value,
+                                  },
+                                },
+                              }))
+                            }
+                            inputProps={{ min: field.min, step: field.step }}
+                          />
+                        ))}
                         <Stack direction="row" spacing={1}>
                           {!printer.isBuiltIn && (
                             <Button
@@ -1476,6 +1685,7 @@ export default function SettingsPage() {
                                   bedDepthMm: Number(edit.bedDepthMm),
                                   pixelWidth: Number(edit.pixelWidth),
                                   pixelHeight: Number(edit.pixelHeight),
+                                  ctbSettings: ctbSettings!,
                                 })
                               }
                             >
@@ -1544,6 +1754,22 @@ export default function SettingsPage() {
                     value={newPrinterPixelHeight}
                     onChange={(e) => setNewPrinterPixelHeight(e.target.value)}
                   />
+                  {PRINTER_CTB_FIELDS.map((field) => (
+                    <TextField
+                      key={`new-printer-${field.key}`}
+                      size="small"
+                      type="number"
+                      label={field.label}
+                      value={newPrinterCtbSettings[field.key]}
+                      onChange={(e) =>
+                        setNewPrinterCtbSettings((current) => ({
+                          ...current,
+                          [field.key]: e.target.value,
+                        }))
+                      }
+                      inputProps={{ min: field.min, step: field.step }}
+                    />
+                  ))}
                   <Button
                     variant="contained"
                     disabled={
@@ -1552,9 +1778,14 @@ export default function SettingsPage() {
                       Number(newPrinterWidthMm) <= 0 ||
                       Number(newPrinterDepthMm) <= 0 ||
                       Number(newPrinterPixelWidth) <= 0 ||
-                      Number(newPrinterPixelHeight) <= 0
+                      Number(newPrinterPixelHeight) <= 0 ||
+                      parsePrinterCtbSettingsDraft(newPrinterCtbSettings) === null
                     }
                     onClick={() => {
+                      const parsedNewPrinterCtbSettings =
+                        parsePrinterCtbSettingsDraft(newPrinterCtbSettings);
+                      if (!parsedNewPrinterCtbSettings) return;
+
                       createPrinterMutation.mutate(
                         {
                           name: newPrinterName.trim(),
@@ -1562,10 +1793,12 @@ export default function SettingsPage() {
                           bedDepthMm: Number(newPrinterDepthMm),
                           pixelWidth: Number(newPrinterPixelWidth),
                           pixelHeight: Number(newPrinterPixelHeight),
+                          ctbSettings: parsedNewPrinterCtbSettings,
                         },
                         {
                           onSuccess: () => {
                             setNewPrinterName('');
+                            setNewPrinterCtbSettings(DEFAULT_PRINTER_CTB_SETTINGS_DRAFT);
                           },
                         },
                       );

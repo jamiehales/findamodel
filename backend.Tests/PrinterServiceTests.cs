@@ -29,7 +29,29 @@ public class PrinterServiceTests
     {
         var sut = new PrinterService(CreateFactory(nameof(CreateAsync_CreatesCustomPrinter)));
 
-        var (dto, error) = await sut.CreateAsync(new("Saturn 4 Ultra", 218, 123, 11520, 5120));
+        var (dto, error) = await sut.CreateAsync(new(
+            "Saturn 4 Ultra",
+            218,
+            123,
+            11520,
+            5120,
+            PrinterConfig.DefaultLayerHeightMm,
+            PrinterConfig.DefaultBottomLayerCount,
+            PrinterConfig.DefaultTransitionLayerCount,
+            PrinterConfig.DefaultExposureTimeSeconds,
+            PrinterConfig.DefaultBottomExposureTimeSeconds,
+            PrinterConfig.DefaultBottomLiftHeightMm,
+            PrinterConfig.DefaultBottomLiftSpeedMmPerMinute,
+            PrinterConfig.DefaultLiftHeightMm,
+            PrinterConfig.DefaultLiftSpeedMmPerMinute,
+            PrinterConfig.DefaultRetractSpeedMmPerMinute,
+            PrinterConfig.DefaultBottomLightOffDelaySeconds,
+            PrinterConfig.DefaultLightOffDelaySeconds,
+            PrinterConfig.DefaultWaitTimeBeforeCureSeconds,
+            PrinterConfig.DefaultWaitTimeAfterCureSeconds,
+            PrinterConfig.DefaultWaitTimeAfterLiftSeconds,
+            PrinterConfig.DefaultLightPwm,
+            PrinterConfig.DefaultBottomLightPwm));
 
         Assert.Null(error);
         Assert.NotNull(dto);

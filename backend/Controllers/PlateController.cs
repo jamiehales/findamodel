@@ -8,7 +8,8 @@ namespace findamodel.Controllers;
 [Route("api/[controller]")]
 public class PlateController(
     PlateExportService plateExportService,
-    PlateGenerationJobService plateGenerationJobService) : ControllerBase
+    PlateGenerationJobService plateGenerationJobService,
+    PlateSlicePreviewService plateSlicePreviewService) : ControllerBase
 {
     [HttpPost("generate")]
     public async Task<IActionResult> GeneratePlate(
@@ -64,11 +65,49 @@ public class PlateController(
         {
             ".stl" => "model/stl",
             ".glb" => "model/gltf-binary",
+            ".ctb" => "application/octet-stream",
             ".zip" => "application/zip",
             _ => "application/vnd.ms-3mf",
         };
 
         return PhysicalFile(file.Value.Path, contentType, file.Value.FileName);
+    }
+
+    [HttpPost("slice-preview")]
+    public async Task<IActionResult> CreateSlicePreview(
+        [FromBody] CreatePlateSlicePreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var session = await plateSlicePreviewService.CreateAsync(request, cancellationToken);
+            return Ok(session);
+        }
+        catch (Exception ex)
+        {
+            return MapGenerationException(ex);
+        }
+    }
+
+    [HttpGet("slice-preview/{previewId:guid}")]
+    public IActionResult GetSlicePreview(Guid previewId)
+    {
+        var session = plateSlicePreviewService.GetSession(previewId);
+        if (session == null)
+            return NotFound();
+
+        return Ok(session);
+    }
+
+    [HttpGet("slice-preview/{previewId:guid}/layer/{layerIndex:int}.png")]
+    public IActionResult GetSlicePreviewLayer(Guid previewId, int layerIndex)
+    {
+        var png = plateSlicePreviewService.RenderLayerPng(previewId, layerIndex);
+        if (png == null)
+            return NotFound();
+
+        Response.Headers.CacheControl = "public, max-age=60";
+        return File(png, "image/png");
     }
 
     private void AppendWarningHeaders(string? warning, IReadOnlyList<string> skippedModels)

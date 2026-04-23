@@ -31,6 +31,7 @@ import {
   renamePrintingList,
   deletePrintingList,
   activatePrintingList,
+  createPlateSlicePreview,
   updatePrintingListSettings,
   updatePrintingListPrinter,
   upsertPrintingListItem,
@@ -685,6 +686,26 @@ export function useUpdatePrintingListPrinter() {
   });
 }
 
+export function useCreatePlateSlicePreview() {
+  return useMutation({
+    mutationFn: ({
+      placements,
+      printerConfigId,
+      method,
+    }: {
+      placements: {
+        modelId: string;
+        instanceIndex: number;
+        xMm: number;
+        yMm: number;
+        angleRad: number;
+      }[];
+      printerConfigId?: string | null;
+      method?: 'mesh' | 'orthographic';
+    }) => createPlateSlicePreview(placements, printerConfigId, method),
+  });
+}
+
 export function useUpsertPrintingListItem() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -736,6 +757,7 @@ export function useUpdatePrinter() {
       bedDepthMm,
       pixelWidth,
       pixelHeight,
+      ctbSettings,
     }: {
       id: string;
       name: string;
@@ -743,7 +765,26 @@ export function useUpdatePrinter() {
       bedDepthMm: number;
       pixelWidth: number;
       pixelHeight: number;
-    }) => updatePrinter(id, { name, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight }),
+      ctbSettings?: {
+        layerHeightMm: number;
+        bottomLayerCount: number;
+        transitionLayerCount: number;
+        exposureTimeSeconds: number;
+        bottomExposureTimeSeconds: number;
+        bottomLiftHeightMm: number;
+        bottomLiftSpeedMmPerMinute: number;
+        liftHeightMm: number;
+        liftSpeedMmPerMinute: number;
+        retractSpeedMmPerMinute: number;
+        bottomLightOffDelaySeconds: number;
+        lightOffDelaySeconds: number;
+        waitTimeBeforeCureSeconds: number;
+        waitTimeAfterCureSeconds: number;
+        waitTimeAfterLiftSeconds: number;
+        lightPwm: number;
+        bottomLightPwm: number;
+      };
+    }) => updatePrinter(id, { name, bedWidthMm, bedDepthMm, pixelWidth, pixelHeight, ctbSettings }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.printers });
       queryClient.invalidateQueries({ queryKey: queryKeys.printingLists });

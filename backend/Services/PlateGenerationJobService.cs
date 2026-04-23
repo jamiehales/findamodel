@@ -36,7 +36,7 @@ public sealed class PlateGenerationJobService
         var tempDirectory = Path.Combine(Path.GetTempPath(), "findamodel", "plate-exports");
         Directory.CreateDirectory(tempDirectory);
 
-        var initialTotalEntries = format.StartsWith("pngzip", StringComparison.Ordinal)
+        var initialTotalEntries = (format.StartsWith("pngzip", StringComparison.Ordinal) || string.Equals(format, "ctb", StringComparison.Ordinal))
             ? 0
             : request.Placements.Count;
 

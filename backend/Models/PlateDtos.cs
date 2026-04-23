@@ -7,9 +7,30 @@ namespace findamodel.Models;
 /// <param name="AngleRad">Rotation around the vertical axis in radians (counter-clockwise when viewed from above).</param>
 public record PlacementDto(string ModelId, int InstanceIndex, double XMm, double YMm, double AngleRad);
 
-/// <param name="Format">Output format: 3mf (default), stl, glb, pngzip, pngzip_mesh, or pngzip_orthographic.</param>
+/// <param name="Format">Output format: 3mf (default), stl, glb, ctb, pngzip, pngzip_mesh, or pngzip_orthographic.</param>
 /// <param name="PrinterConfigId">Optional printer profile to use for raster slice export.</param>
 public record GeneratePlateRequest(IReadOnlyList<PlacementDto> Placements, string? Format = null, Guid? PrinterConfigId = null);
+
+/// <param name="Method">Slice renderer method: mesh (default) or orthographic.</param>
+public record CreatePlateSlicePreviewRequest(
+    IReadOnlyList<PlacementDto> Placements,
+    Guid? PrinterConfigId = null,
+    string? Method = null,
+    string? Format = null);
+
+public record PlateSlicePreviewSessionDto(
+    Guid PreviewId,
+    float BedWidthMm,
+    float BedDepthMm,
+    int ResolutionX,
+    int ResolutionY,
+    float LayerHeightMm,
+    int LayerCount,
+    string Method,
+    DateTime CreatedAtUtc,
+    DateTime ExpiresAtUtc,
+    string? Warning,
+    IReadOnlyList<string> SkippedModels);
 
 public record PlateGenerationJobDto(
     Guid JobId,

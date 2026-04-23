@@ -8,6 +8,7 @@ import {
   MenuItem,
   Alert,
   LinearProgress,
+  Slider,
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
@@ -33,11 +34,13 @@ import {
   useUpdatePrintingListSettings,
   usePrinters,
   useUpdatePrintingListPrinter,
+  useCreatePlateSlicePreview,
 } from '../lib/queries';
 import ModelCard from '../components/ModelCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
+import PlateSliceViewer from '../components/PlateSliceViewer';
 import PageLayout from '../components/layouts/PageLayout';
 import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
 import styles from './PrintingListPage.module.css';
@@ -55,6 +58,7 @@ function PrintingListPage() {
   const { mutate: activateList } = useActivatePrintingList();
   const { mutate: updateSettings } = useUpdatePrintingListSettings();
   const { mutate: updatePrinter } = useUpdatePrintingListPrinter();
+  const { mutateAsync: createSlicePreviewSession } = useCreatePlateSlicePreview();
   const { data: printers = [] } = usePrinters();
   const [savingPlate, setSavingPlate] = useState(false);
   const [simulationPaused, setSimulationPaused] = useState(false);
@@ -67,6 +71,12 @@ function PrintingListPage() {
   const [plateDownloading, setPlateDownloading] = useState(false);
   const [plateWarning, setPlateWarning] = useState<string | null>(null);
   const [plateError, setPlateError] = useState<string | null>(null);
+  const [slicePreviewSession, setSlicePreviewSession] = useState<
+    import('../lib/api').PlateSlicePreviewSession | null
+  >(null);
+  const [slicePreviewLoading, setSlicePreviewLoading] = useState(false);
+  const [slicePreviewError, setSlicePreviewError] = useState<string | null>(null);
+  const [selectedSliceLayerIndex, setSelectedSliceLayerIndex] = useState(0);
 
   const items = useMemo<Record<string, number>>(
     () => (list ? Object.fromEntries(list.items.map((i) => [i.modelId, i.quantity])) : {}),
@@ -83,7 +93,8 @@ function PrintingListPage() {
   const plateInProgress =
     plateJob != null && plateJob.status !== 'failed' && plateJob.status !== 'completed';
   const plateBusy = savingPlate || plateInProgress || plateDownloading;
-  const plateIsSliceJob = plateJob?.format?.startsWith('pngzip') ?? false;
+  const plateIsSliceJob =
+    (plateJob?.format?.startsWith('pngzip') ?? false) || plateJob?.format === 'ctb';
 
   useEffect(() => {
     if (!archiveJob || (archiveJob.status !== 'queued' && archiveJob.status !== 'running')) return;
@@ -273,52 +284,89 @@ function PrintingListPage() {
     if (!list) return;
     localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
     updatePrinter({ id: list.id, printerConfigId: printerId });
+    setSlicePreviewSession(null);
+  }
+
+  function readLayoutPlacements(): {
+    modelId: string;
+    instanceIndex: number;
+    xMm: number;
+    yMm: number;
+    angleRad: number;
+  }[] {
+    try {
+      const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
+      if (!raw) return [];
+
+      const layout = JSON.parse(raw) as {
+        positions: {
+          modelId: string;
+          instanceIndex: number;
+          xMm: number;
+          yMm: number;
+          angle: number;
+        }[];
+      };
+
+      return layout.positions.map((p) => ({
+        modelId: p.modelId,
+        instanceIndex: p.instanceIndex,
+        xMm: p.xMm,
+        yMm: p.yMm,
+        angleRad: p.angle,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   async function handleSavePlate(
-    format: '3mf' | 'stl' | 'glb' | 'pngzip' | 'pngzip_mesh' | 'pngzip_orthographic' = '3mf',
+    format:
+      | '3mf'
+      | 'stl'
+      | 'glb'
+      | 'ctb'
+      | 'pngzip'
+      | 'pngzip_mesh'
+      | 'pngzip_orthographic' = '3mf',
   ) {
     setPlateWarning(null);
     setPlateError(null);
     setPlateJob(null);
     setSavingPlate(true);
     try {
-      let placements: {
-        modelId: string;
-        instanceIndex: number;
-        xMm: number;
-        yMm: number;
-        angleRad: number;
-      }[] = [];
-      try {
-        const raw = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
-        if (raw) {
-          const layout = JSON.parse(raw) as {
-            positions: {
-              modelId: string;
-              instanceIndex: number;
-              xMm: number;
-              yMm: number;
-              angle: number;
-            }[];
-          };
-          placements = layout.positions.map((p) => ({
-            modelId: p.modelId,
-            instanceIndex: p.instanceIndex,
-            xMm: p.xMm,
-            yMm: p.yMm,
-            angleRad: p.angle,
-          }));
-        }
-      } catch {
-        /* proceed with empty placements */
-      }
+      const placements = readLayoutPlacements();
 
       const job = await createPlateGenerationJob(placements, format, list?.printer?.id ?? null);
       setPlateJob(job);
     } catch (error) {
       setPlateError(error instanceof Error ? error.message : 'Failed to generate plate');
       setSavingPlate(false);
+    }
+  }
+
+  async function handleCreateSlicePreview() {
+    if (!list) return;
+
+    setSlicePreviewError(null);
+    setSlicePreviewLoading(true);
+    setSlicePreviewSession(null);
+    setSelectedSliceLayerIndex(0);
+
+    try {
+      const placements = readLayoutPlacements();
+      const session = await createSlicePreviewSession({
+        placements,
+        printerConfigId: list.printer?.id ?? null,
+        method: 'mesh',
+      });
+      setSlicePreviewSession(session);
+    } catch (error) {
+      setSlicePreviewError(
+        error instanceof Error ? error.message : 'Failed to create slice preview',
+      );
+    } finally {
+      setSlicePreviewLoading(false);
     }
   }
 
@@ -487,6 +535,14 @@ function PrintingListPage() {
           <MenuItem
             onClick={() => {
               setFormatMenuAnchor(null);
+              handleSavePlate('ctb');
+            }}
+          >
+            Export as CTB
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setFormatMenuAnchor(null);
               handleSavePlate('pngzip');
             }}
           >
@@ -588,6 +644,15 @@ function PrintingListPage() {
         </Alert>
       )}
 
+      {(slicePreviewError || slicePreviewSession?.warning) && (
+        <Alert
+          severity={slicePreviewError ? 'error' : 'warning'}
+          onClose={() => setSlicePreviewError(null)}
+        >
+          {slicePreviewError ?? slicePreviewSession?.warning}
+        </Alert>
+      )}
+
       {isPending ? (
         <LoadingView />
       ) : listedModels.length === 0 ? (
@@ -625,6 +690,64 @@ function PrintingListPage() {
               onPausedChange={setSimulationPaused}
             />
           </Box>
+
+          <Stack direction="column" spacing={1.5} className={styles.slicePreviewCard}>
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+              <Typography variant="h6" className={styles.slicePreviewTitle}>
+                3D Slice Preview
+              </Typography>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  void handleCreateSlicePreview();
+                }}
+                disabled={slicePreviewLoading || !simulationPaused}
+                startIcon={
+                  slicePreviewLoading ? <CircularProgress size={16} color="inherit" /> : null
+                }
+              >
+                {slicePreviewLoading ? 'Building slices…' : 'Generate slice view'}
+              </Button>
+            </Stack>
+
+            {slicePreviewSession ? (
+              <>
+                <Typography className={styles.slicePreviewMeta}>
+                  Layer {selectedSliceLayerIndex + 1} of {slicePreviewSession.layerCount} (
+                  {(
+                    selectedSliceLayerIndex * slicePreviewSession.layerHeightMm +
+                    slicePreviewSession.layerHeightMm * 0.5
+                  ).toFixed(2)}{' '}
+                  mm)
+                </Typography>
+                <Slider
+                  min={0}
+                  max={Math.max(slicePreviewSession.layerCount - 1, 0)}
+                  value={Math.min(
+                    Math.max(selectedSliceLayerIndex, 0),
+                    Math.max(slicePreviewSession.layerCount - 1, 0),
+                  )}
+                  onChange={(_, value) => {
+                    const nextValue = Array.isArray(value) ? value[0] : value;
+                    setSelectedSliceLayerIndex(nextValue);
+                  }}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(value) =>
+                    `L${value + 1} ${(value * slicePreviewSession.layerHeightMm + slicePreviewSession.layerHeightMm * 0.5).toFixed(2)}mm`
+                  }
+                />
+                <PlateSliceViewer
+                  session={slicePreviewSession}
+                  selectedLayerIndex={selectedSliceLayerIndex}
+                />
+              </>
+            ) : (
+              <Typography className={styles.slicePreviewMeta}>
+                Generate a slice view to inspect each build-plate layer in 3D without loading model
+                meshes.
+              </Typography>
+            )}
+          </Stack>
         </>
       )}
 
