@@ -435,6 +435,53 @@ public class AutoSupportGenerationV3ServiceTests
         Assert.NotNull(result);
     }
 
+    [Fact]
+    public void GenerateSupportPreview_RepeatedRuns_ProduceStableSupportLayout()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: -7f, centerZ: 0f, width: 8f, depth: 8f, height: 10f),
+            MakeBox(centerX: 8f, centerZ: 1f, width: 10f, depth: 6f, height: 12f),
+            MakeTorus(majorRadius: 4f, minorRadius: 1.25f, centerY: 9f));
+
+        var first = sut.GenerateSupportPreview(geometry, DefaultOverrides with
+        {
+            SuctionMultiplier = 3f,
+            AreaGrowthMultiplier = 2f,
+            GravityEnabled = true,
+            ShrinkagePercent = 1.5f,
+        });
+        var second = sut.GenerateSupportPreview(geometry, DefaultOverrides with
+        {
+            SuctionMultiplier = 3f,
+            AreaGrowthMultiplier = 2f,
+            GravityEnabled = true,
+            ShrinkagePercent = 1.5f,
+        });
+
+        Assert.Equal(first.SupportPoints.Count, second.SupportPoints.Count);
+        Assert.Equal(first.SupportGeometry.Triangles.Count, second.SupportGeometry.Triangles.Count);
+
+        var firstOrdered = first.SupportPoints
+            .OrderBy(point => point.Position.X)
+            .ThenBy(point => point.Position.Y)
+            .ThenBy(point => point.Position.Z)
+            .ToList();
+        var secondOrdered = second.SupportPoints
+            .OrderBy(point => point.Position.X)
+            .ThenBy(point => point.Position.Y)
+            .ThenBy(point => point.Position.Z)
+            .ToList();
+
+        for (var i = 0; i < firstOrdered.Count; i++)
+        {
+            Assert.Equal(firstOrdered[i].Size, secondOrdered[i].Size);
+            Assert.Equal(firstOrdered[i].RadiusMm, secondOrdered[i].RadiusMm, 5);
+            Assert.Equal(firstOrdered[i].Position.X, secondOrdered[i].Position.X, 5);
+            Assert.Equal(firstOrdered[i].Position.Y, secondOrdered[i].Position.Y, 5);
+            Assert.Equal(firstOrdered[i].Position.Z, secondOrdered[i].Position.Z, 5);
+        }
+    }
+
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
     {
         var triangles = parts.SelectMany(x => x).ToList();

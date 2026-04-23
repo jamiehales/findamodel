@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace findamodel.Services;
 
@@ -18,6 +20,10 @@ public sealed class AutoSupportGenerationV3Service
     private const int MaxPreviewVoxelTriangles = 2_000_000;
     private const int MaxReinforcementIterationsPerIsland = 32;
     private const int MaxSolverPasses = 8;
+    private static readonly ParallelOptions FullCoreParallelOptions = new()
+    {
+        MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
+    };
 
     private readonly ILogger logger;
     private readonly OrthographicProjectionSliceBitmapGenerator slicer = new();
@@ -54,32 +60,37 @@ public sealed class AutoSupportGenerationV3Service
 
         var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(geometry.DimensionYMm, layerHeightMm) / layerHeightMm));
 
-        // Render all layers in parallel, collect 2-D islands and 2-D voxel rectangles per layer.
-        // Each layer is independent so Parallel.For is safe here.
+        // Render all layers in one batch so the slicer can parallelize across layers efficiently.
         var layerIslands = new List<TipIsland>[layerCount];
         var layerVoxelRects = new List<VoxelRect>[layerCount];
-        var layerBitmaps = new SliceBitmap[layerCount];
-        Parallel.For(0, layerCount, layerIndex =>
+        var sliceHeightsMm = new float[layerCount];
+        var trianglesByLayer = new IReadOnlyList<Triangle3D>[layerCount];
+        for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
         {
-            var sliceHeightMm = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
-            var bitmap = slicer.RenderLayerBitmap(
-                geometry.Triangles,
-                sliceHeightMm,
-                bedWidthMm,
-                bedDepthMm,
-                pixelWidth,
-                pixelHeight,
-                layerHeightMm);
+            sliceHeightsMm[layerIndex] = (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
+            trianglesByLayer[layerIndex] = geometry.Triangles;
+        }
 
-            layerBitmaps[layerIndex] = bitmap;
-            layerIslands[layerIndex] = FindTipIslands(bitmap, bedWidthMm, bedDepthMm, sliceHeightMm, tuning.MinIslandAreaMm2);
+        var layerBitmaps = slicer.RenderLayerBitmaps(
+            trianglesByLayer,
+            sliceHeightsMm,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm);
+
+        Parallel.For(0, layerCount, FullCoreParallelOptions, layerIndex =>
+        {
+            var bitmap = layerBitmaps[layerIndex];
+            layerIslands[layerIndex] = FindTipIslands(bitmap, bedWidthMm, bedDepthMm, sliceHeightsMm[layerIndex], tuning.MinIslandAreaMm2);
             layerVoxelRects[layerIndex] = ExtractVoxelRects(bitmap);
         });
 
         // Detect suction (enclosed regions) per island via edge flood-fill on bitmaps
         if (tuning.SuctionMultiplier > 1f)
         {
-            Parallel.For(0, layerCount, layerIndex =>
+            Parallel.For(0, layerCount, FullCoreParallelOptions, layerIndex =>
             {
                 var bitmap = layerBitmaps[layerIndex];
                 var enclosedPixels = DetectEnclosedPixels(bitmap);
@@ -111,22 +122,22 @@ public sealed class AutoSupportGenerationV3Service
 
         // Compute per-layer total pixel area for area-growth detection
         var layerTotalArea = new float[layerCount];
-        for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+        Parallel.For(0, layerCount, FullCoreParallelOptions, layerIndex =>
         {
             var sum = 0f;
             foreach (var island in layerIslands[layerIndex])
                 sum += island.TopLayerAreaMm2;
             layerTotalArea[layerIndex] = sum;
-        }
+        });
 
         // Compute per-layer area growth ratio for delta-area force
         var layerAreaGrowthRatio = new float[layerCount];
-        for (var layerIndex = 1; layerIndex < layerCount; layerIndex++)
+        Parallel.For(1, layerCount, FullCoreParallelOptions, layerIndex =>
         {
             var prevArea = layerTotalArea[layerIndex - 1];
             if (prevArea > 0.01f)
                 layerAreaGrowthRatio[layerIndex] = (layerTotalArea[layerIndex] - prevArea) / prevArea;
-        }
+        });
 
         // Build per-layer pixel sets once so each algorithm can re-evaluate support decisions
         // against all currently placed supports from lower layers.
@@ -627,46 +638,67 @@ public sealed class AutoSupportGenerationV3Service
         float layerHeightMm,
         V3Tuning tuning)
     {
+        if (supportPoints.Count == 0)
+            return;
+
         var accumulatedForces = new Vec3[supportPoints.Count];
+        var mergeLock = new object();
 
-        for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
-        {
-            var prevPixels = prevLayerPixels[layerIndex];
-            foreach (var island in layerIslands[layerIndex])
+        Parallel.ForEach(
+            Partitioner.Create(0, layerIslands.Length),
+            FullCoreParallelOptions,
+            () => new Vec3[supportPoints.Count],
+            (range, _, localForces) =>
             {
-                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
-                if (unsupportedPixels.Count == 0)
-                    continue;
-                var unsupportedPixelSet = unsupportedPixels.ToHashSet();
+                for (var layerIndex = range.Item1; layerIndex < range.Item2; layerIndex++)
+                {
+                    var prevPixels = prevLayerPixels[layerIndex];
+                    foreach (var island in layerIslands[layerIndex])
+                    {
+                        var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                        if (unsupportedPixels.Count == 0)
+                            continue;
+                        var unsupportedPixelSet = unsupportedPixels.ToHashSet();
 
-                var supportIndices = FindSupportingSupportsForPixelSet(
-                    unsupportedPixelSet,
-                    island.SliceHeightMm,
-                    supportPoints,
-                    bedWidthMm,
-                    bedDepthMm,
-                    pixelWidth,
-                    pixelHeight,
-                    layerHeightMm);
+                        var supportIndices = FindSupportingSupportsForPixelSet(
+                            unsupportedPixelSet,
+                            island.SliceHeightMm,
+                            supportPoints,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight,
+                            layerHeightMm);
 
-                if (supportIndices.Count == 0)
-                    continue;
+                        if (supportIndices.Count == 0)
+                            continue;
 
-                var supportForces = EvaluateSupportForces(
-                    unsupportedPixels,
-                    supportIndices,
-                    supportPoints,
-                    bedWidthMm,
-                    bedDepthMm,
-                    pixelWidth,
-                    pixelHeight,
-                    tuning,
-                    island);
+                        var supportForces = EvaluateSupportForces(
+                            unsupportedPixels,
+                            supportIndices,
+                            supportPoints,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight,
+                            tuning,
+                            island);
 
-                foreach (var metric in supportForces)
-                    accumulatedForces[metric.SupportIndex] = accumulatedForces[metric.SupportIndex] + metric.PullVector;
-            }
-        }
+                        foreach (var metric in supportForces)
+                            localForces[metric.SupportIndex] = localForces[metric.SupportIndex] + metric.PullVector;
+                    }
+                }
+
+                return localForces;
+            },
+            localForces =>
+            {
+                lock (mergeLock)
+                {
+                    for (var i = 0; i < localForces.Length; i++)
+                        accumulatedForces[i] = accumulatedForces[i] + localForces[i];
+                }
+            });
 
         for (var i = 0; i < supportPoints.Count; i++)
             supportPoints[i] = supportPoints[i] with { PullForce = accumulatedForces[i] };
@@ -755,52 +787,132 @@ public sealed class AutoSupportGenerationV3Service
         }
 
         var effectivePixelForce = pixelForce * suctionMultiplier * areaGrowthMultiplier;
-        var accumulators = supportIndices.ToDictionary(index => index, _ => new SupportForceAccumulator());
+        var supportSlotCount = supportIndices.Count;
+        var supportSlots = new SupportPoint[supportSlotCount];
+        for (var slot = 0; slot < supportSlotCount; slot++)
+            supportSlots[slot] = supportPoints[supportIndices[slot]];
 
-        foreach (var (x, y) in unsupportedPixels)
+        var pixelCountBySlot = new int[supportSlotCount];
+        var sumXBySlot = new float[supportSlotCount];
+        var sumZBySlot = new float[supportSlotCount];
+        var angularBySlot = new float[supportSlotCount];
+
+        var shouldParallelize = unsupportedPixels.Count >= 256 && supportSlotCount > 1;
+        if (shouldParallelize)
         {
-            var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
-            var zMm = RowToZ(y, bedDepthMm, pixelHeight);
-            var nearestSupportIndex = supportIndices[0];
-            var nearestDistanceSq = float.MaxValue;
+            var ranges = BuildWorkRanges(unsupportedPixels.Count);
+            var localPixelCounts = new int[ranges.Length][];
+            var localSumX = new float[ranges.Length][];
+            var localSumZ = new float[ranges.Length][];
+            var localAngular = new float[ranges.Length][];
 
-            foreach (var supportIndex in supportIndices)
+            Parallel.For(0, ranges.Length, FullCoreParallelOptions, rangeIndex =>
             {
-                var support = supportPoints[supportIndex];
-                var dx = xMm - support.Position.X;
-                var dz = zMm - support.Position.Z;
-                var distanceSq = (dx * dx) + (dz * dz);
-                if (distanceSq < nearestDistanceSq)
+                var localCounts = new int[supportSlotCount];
+                var localX = new float[supportSlotCount];
+                var localZ = new float[supportSlotCount];
+                var localAngle = new float[supportSlotCount];
+
+                var (start, end) = ranges[rangeIndex];
+                for (var pixelIndex = start; pixelIndex < end; pixelIndex++)
                 {
-                    nearestDistanceSq = distanceSq;
-                    nearestSupportIndex = supportIndex;
+                    var (x, y) = unsupportedPixels[pixelIndex];
+                    var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+                    var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+                    var nearestSlot = 0;
+                    var nearestDistanceSq = float.MaxValue;
+
+                    for (var slot = 0; slot < supportSlotCount; slot++)
+                    {
+                        var support = supportSlots[slot];
+                        var dx = xMm - support.Position.X;
+                        var dz = zMm - support.Position.Z;
+                        var distanceSq = (dx * dx) + (dz * dz);
+                        if (distanceSq < nearestDistanceSq)
+                        {
+                            nearestDistanceSq = distanceSq;
+                            nearestSlot = slot;
+                        }
+                    }
+
+                    localCounts[nearestSlot]++;
+                    localX[nearestSlot] += xMm;
+                    localZ[nearestSlot] += zMm;
+                    var leverDx = xMm - islandCenterX;
+                    var leverDz = zMm - islandCenterZ;
+                    var leverArm = MathF.Sqrt((leverDx * leverDx) + (leverDz * leverDz));
+                    localAngle[nearestSlot] += effectivePixelForce * leverArm;
+                }
+
+                localPixelCounts[rangeIndex] = localCounts;
+                localSumX[rangeIndex] = localX;
+                localSumZ[rangeIndex] = localZ;
+                localAngular[rangeIndex] = localAngle;
+            });
+
+            for (var rangeIndex = 0; rangeIndex < ranges.Length; rangeIndex++)
+            {
+                var localCounts = localPixelCounts[rangeIndex];
+                var localX = localSumX[rangeIndex];
+                var localZ = localSumZ[rangeIndex];
+                var localAngle = localAngular[rangeIndex];
+                for (var slot = 0; slot < supportSlotCount; slot++)
+                {
+                    pixelCountBySlot[slot] += localCounts[slot];
+                    sumXBySlot[slot] += localX[slot];
+                    sumZBySlot[slot] += localZ[slot];
+                    angularBySlot[slot] += localAngle[slot];
                 }
             }
+        }
+        else
+        {
+            for (var pixelIndex = 0; pixelIndex < unsupportedPixels.Count; pixelIndex++)
+            {
+                var (x, y) = unsupportedPixels[pixelIndex];
+                var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+                var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+                var nearestSlot = 0;
+                var nearestDistanceSq = float.MaxValue;
 
-            var accumulator = accumulators[nearestSupportIndex];
-            accumulator.PixelCount++;
-            accumulator.SumX += xMm;
-            accumulator.SumZ += zMm;
-            var leverDx = xMm - islandCenterX;
-            var leverDz = zMm - islandCenterZ;
-            var leverArm = MathF.Sqrt((leverDx * leverDx) + (leverDz * leverDz));
-            accumulator.AngularForce += effectivePixelForce * leverArm;
+                for (var slot = 0; slot < supportSlotCount; slot++)
+                {
+                    var support = supportSlots[slot];
+                    var dx = xMm - support.Position.X;
+                    var dz = zMm - support.Position.Z;
+                    var distanceSq = (dx * dx) + (dz * dz);
+                    if (distanceSq < nearestDistanceSq)
+                    {
+                        nearestDistanceSq = distanceSq;
+                        nearestSlot = slot;
+                    }
+                }
+
+                pixelCountBySlot[nearestSlot]++;
+                sumXBySlot[nearestSlot] += xMm;
+                sumZBySlot[nearestSlot] += zMm;
+                var leverDx = xMm - islandCenterX;
+                var leverDz = zMm - islandCenterZ;
+                var leverArm = MathF.Sqrt((leverDx * leverDx) + (leverDz * leverDz));
+                angularBySlot[nearestSlot] += effectivePixelForce * leverArm;
+            }
         }
 
         var metrics = new List<SupportForceMetric>(supportIndices.Count);
-        foreach (var supportIndex in supportIndices)
+        for (var slot = 0; slot < supportSlotCount; slot++)
         {
-            var accumulator = accumulators[supportIndex];
-            if (accumulator.PixelCount == 0)
+            var supportIndex = supportIndices[slot];
+            var pixelCount = pixelCountBySlot[slot];
+            if (pixelCount == 0)
             {
                 metrics.Add(new SupportForceMetric(supportIndex, new Vec3(0f, 0f, 0f), 0f, 0f, 0f));
                 continue;
             }
 
             var support = supportPoints[supportIndex];
-            var verticalPullForce = accumulator.PixelCount * effectivePixelForce;
-            var centroidX = accumulator.SumX / accumulator.PixelCount;
-            var centroidZ = accumulator.SumZ / accumulator.PixelCount;
+            var verticalPullForce = pixelCount * effectivePixelForce;
+            var centroidX = sumXBySlot[slot] / pixelCount;
+            var centroidZ = sumZBySlot[slot] / pixelCount;
             var baseLateralX = (centroidX - support.Position.X) * 0.35f * MathF.Sqrt(MathF.Max(verticalPullForce, 0.01f));
             var baseLateralZ = (centroidZ - support.Position.Z) * 0.35f * MathF.Sqrt(MathF.Max(verticalPullForce, 0.01f));
 
@@ -820,7 +932,7 @@ public sealed class AutoSupportGenerationV3Service
                 }
             }
 
-            var crushForce = accumulator.AngularForce / MathF.Max(support.RadiusMm, 0.1f);
+            var crushForce = angularBySlot[slot] / MathF.Max(support.RadiusMm, 0.1f);
             var signedVerticalForce = verticalPullForce - crushForce;
             var compressiveForce = MathF.Max(0f, -signedVerticalForce);
 
@@ -829,7 +941,7 @@ public sealed class AutoSupportGenerationV3Service
                 new Vec3(lateralX, signedVerticalForce, lateralZ),
                 verticalPullForce,
                 compressiveForce,
-                accumulator.AngularForce));
+                angularBySlot[slot]));
         }
 
         return metrics;
@@ -873,20 +985,55 @@ public sealed class AutoSupportGenerationV3Service
         var indices = new List<int>();
         var maxY = sliceHeightMm + (layerHeightMm * 0.5f);
 
-        for (var i = 0; i < supportPoints.Count; i++)
+        var shouldParallelize = supportPoints.Count >= 1024;
+        if (!shouldParallelize)
         {
-            var support = supportPoints[i];
-            if (support.Position.Y > maxY)
-                continue;
+            for (var i = 0; i < supportPoints.Count; i++)
+            {
+                var support = supportPoints[i];
+                if (support.Position.Y > maxY)
+                    continue;
 
-            if (IsSupportInsidePixelSet(
-                support.Position,
-                pixelSet,
-                bedWidthMm,
-                bedDepthMm,
-                pixelWidth,
-                pixelHeight,
-                includeNeighborPixels))
+                if (IsSupportInsidePixelSet(
+                    support.Position,
+                    pixelSet,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    includeNeighborPixels))
+                    indices.Add(i);
+            }
+
+            return indices;
+        }
+
+        var matched = new bool[supportPoints.Count];
+        var ranges = BuildWorkRanges(supportPoints.Count);
+        Parallel.For(0, ranges.Length, FullCoreParallelOptions, rangeIndex =>
+        {
+            var (start, end) = ranges[rangeIndex];
+            for (var i = start; i < end; i++)
+            {
+                var support = supportPoints[i];
+                if (support.Position.Y > maxY)
+                    continue;
+
+                if (IsSupportInsidePixelSet(
+                    support.Position,
+                    pixelSet,
+                    bedWidthMm,
+                    bedDepthMm,
+                    pixelWidth,
+                    pixelHeight,
+                    includeNeighborPixels))
+                    matched[i] = true;
+            }
+        });
+
+        for (var i = 0; i < matched.Length; i++)
+        {
+            if (matched[i])
                 indices.Add(i);
         }
 
@@ -929,34 +1076,121 @@ public sealed class AutoSupportGenerationV3Service
         int pixelWidth,
         int pixelHeight)
     {
+        if (pixels.Count == 0)
+            return new FurthestPointCandidate(0f, 0f, 0f);
+
+        if (pixels.Count < 256 || supportIndices.Count < 2)
+        {
+            var bestDistSerial = -1f;
+            var bestXSerial = 0f;
+            var bestZSerial = 0f;
+
+            foreach (var (x, y) in pixels)
+            {
+                var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+                var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+                var nearest = float.MaxValue;
+
+                foreach (var supportIndex in supportIndices)
+                {
+                    var support = supportPoints[supportIndex];
+                    var dx = support.Position.X - xMm;
+                    var dz = support.Position.Z - zMm;
+                    var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                    nearest = MathF.Min(nearest, d);
+                }
+
+                if (nearest > bestDistSerial)
+                {
+                    bestDistSerial = nearest;
+                    bestXSerial = xMm;
+                    bestZSerial = zMm;
+                }
+            }
+
+            return new FurthestPointCandidate(bestXSerial, bestZSerial, bestDistSerial);
+        }
+
+        var ranges = BuildWorkRanges(pixels.Count);
+        var bestDistByRange = new float[ranges.Length];
+        var bestXByRange = new float[ranges.Length];
+        var bestZByRange = new float[ranges.Length];
+
+        Parallel.For(0, ranges.Length, FullCoreParallelOptions, rangeIndex =>
+        {
+            var localBestDist = -1f;
+            var localBestX = 0f;
+            var localBestZ = 0f;
+            var (start, end) = ranges[rangeIndex];
+
+            for (var pixelIndex = start; pixelIndex < end; pixelIndex++)
+            {
+                var (x, y) = pixels[pixelIndex];
+                var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
+                var zMm = RowToZ(y, bedDepthMm, pixelHeight);
+                var nearest = float.MaxValue;
+
+                foreach (var supportIndex in supportIndices)
+                {
+                    var support = supportPoints[supportIndex];
+                    var dx = support.Position.X - xMm;
+                    var dz = support.Position.Z - zMm;
+                    var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                    nearest = MathF.Min(nearest, d);
+                }
+
+                if (nearest > localBestDist)
+                {
+                    localBestDist = nearest;
+                    localBestX = xMm;
+                    localBestZ = zMm;
+                }
+            }
+
+            bestDistByRange[rangeIndex] = localBestDist;
+            bestXByRange[rangeIndex] = localBestX;
+            bestZByRange[rangeIndex] = localBestZ;
+        });
+
         var bestDist = -1f;
         var bestX = 0f;
         var bestZ = 0f;
 
-        foreach (var (x, y) in pixels)
+        for (var rangeIndex = 0; rangeIndex < ranges.Length; rangeIndex++)
         {
-            var xMm = ColumnToX(x, bedWidthMm, pixelWidth);
-            var zMm = RowToZ(y, bedDepthMm, pixelHeight);
-            var nearest = float.MaxValue;
-
-            foreach (var supportIndex in supportIndices)
+            var candidateDist = bestDistByRange[rangeIndex];
+            if (candidateDist > bestDist)
             {
-                var support = supportPoints[supportIndex];
-                var dx = support.Position.X - xMm;
-                var dz = support.Position.Z - zMm;
-                var d = MathF.Sqrt((dx * dx) + (dz * dz));
-                nearest = MathF.Min(nearest, d);
-            }
-
-            if (nearest > bestDist)
-            {
-                bestDist = nearest;
-                bestX = xMm;
-                bestZ = zMm;
+                bestDist = candidateDist;
+                bestX = bestXByRange[rangeIndex];
+                bestZ = bestZByRange[rangeIndex];
             }
         }
 
         return new FurthestPointCandidate(bestX, bestZ, bestDist);
+    }
+
+    private static (int Start, int End)[] BuildWorkRanges(int itemCount)
+    {
+        if (itemCount <= 0)
+            return [];
+
+        var targetRangeCount = Math.Max(1, Environment.ProcessorCount * 4);
+        var rangeCount = Math.Min(itemCount, targetRangeCount);
+        var baseSize = itemCount / rangeCount;
+        var remainder = itemCount % rangeCount;
+        var ranges = new (int Start, int End)[rangeCount];
+        var start = 0;
+
+        for (var i = 0; i < rangeCount; i++)
+        {
+            var size = baseSize + (i < remainder ? 1 : 0);
+            var end = start + size;
+            ranges[i] = (start, end);
+            start = end;
+        }
+
+        return ranges;
     }
 
     private static float ComputeCapacity(SupportPoint point, V3Tuning tuning)
@@ -1159,8 +1393,21 @@ public sealed class AutoSupportGenerationV3Service
     private static List<Triangle3D> BuildSupportSphereMesh(IReadOnlyList<SupportPoint> supportPoints)
     {
         var triangles = new List<Triangle3D>(supportPoints.Count * 144);
-        foreach (var support in supportPoints)
-            AppendSphere(triangles, support.Position, support.RadiusMm, latSegments: 8, lonSegments: 12);
+        if (supportPoints.Count == 0)
+            return triangles;
+
+        var trianglesBySupport = new List<Triangle3D>[supportPoints.Count];
+        Parallel.For(0, supportPoints.Count, FullCoreParallelOptions, supportIndex =>
+        {
+            var support = supportPoints[supportIndex];
+            var localTriangles = new List<Triangle3D>(144);
+            AppendSphere(localTriangles, support.Position, support.RadiusMm, latSegments: 8, lonSegments: 12);
+            trianglesBySupport[supportIndex] = localTriangles;
+        });
+
+        for (var supportIndex = 0; supportIndex < trianglesBySupport.Length; supportIndex++)
+            triangles.AddRange(trianglesBySupport[supportIndex]);
+
         return triangles;
     }
 
@@ -1424,33 +1671,46 @@ public sealed class AutoSupportGenerationV3Service
             layerHeightMm,
             tuning);
 
-        var changed = false;
+        var changedFlag = 0;
+        var upgrades = 0;
+        var newSizes = new SupportSize[supportPoints.Count];
 
-        // Upgrade supports that are overloaded by gravity
-        for (var i = 0; i < supportPoints.Count; i++)
+        Parallel.For(0, supportPoints.Count, FullCoreParallelOptions, i =>
         {
             var support = supportPoints[i];
+            var newSize = support.Size;
             var capacity = ComputeCapacity(support, tuning);
             var gravityLoad = cumulativeWeightPerSupport[i];
 
-            if (gravityLoad <= capacity * 0.5f)
-                continue;
+            if (gravityLoad > capacity * 0.5f)
+            {
+                if (gravityLoad > capacity * 1.5f)
+                    newSize = SupportSize.Heavy;
+                else if (gravityLoad > capacity)
+                    newSize = support.Size == SupportSize.Light ? SupportSize.Medium : support.Size;
+            }
 
-            var newSize = support.Size;
-            if (gravityLoad > capacity * 1.5f)
-                newSize = SupportSize.Heavy;
-            else if (gravityLoad > capacity)
-                newSize = support.Size == SupportSize.Light ? SupportSize.Medium : support.Size;
+            newSizes[i] = newSize;
 
             if (newSize != support.Size)
             {
-                supportPoints[i] = support with { Size = newSize, RadiusMm = GetTipRadiusMm(newSize, tuning) };
-                changed = true;
-                upgradedCount++;
+                Interlocked.Exchange(ref changedFlag, 1);
+                Interlocked.Increment(ref upgrades);
             }
+        });
+
+        for (var i = 0; i < supportPoints.Count; i++)
+        {
+            var support = supportPoints[i];
+            var newSize = newSizes[i];
+            if (newSize == support.Size)
+                continue;
+            supportPoints[i] = support with { Size = newSize, RadiusMm = GetTipRadiusMm(newSize, tuning) };
         }
 
-        return changed;
+        upgradedCount = upgrades;
+
+        return Volatile.Read(ref changedFlag) == 1;
     }
 
     private static float[] ComputeCumulativeWeightPerSupport(
@@ -1468,42 +1728,63 @@ public sealed class AutoSupportGenerationV3Service
         var voxelVolumeMm3 = pixelAreaMm2 * layerHeightMm;
         var gravitationalAcceleration = 9.81f;
         var cumulativeWeightPerSupport = new float[supportPoints.Count];
+        if (supportPoints.Count == 0)
+            return cumulativeWeightPerSupport;
 
-        // Bottom-up pass: assign each layer's volume to its supporting supports
-        for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
-        {
-            var prevPixels = prevLayerPixels[layerIndex];
-            foreach (var island in layerIslands[layerIndex])
+        var mergeLock = new object();
+
+        // Bottom-up pass: assign each layer's volume to its supporting supports.
+        Parallel.ForEach(
+            Partitioner.Create(0, layerIslands.Length),
+            FullCoreParallelOptions,
+            () => new float[supportPoints.Count],
+            (range, _, localWeights) =>
             {
-                var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
-                if (unsupportedPixels.Count == 0)
-                    continue;
-                var islandPixelSet = island.PixelCoords.ToHashSet();
-
-                var supportIndices = FindSupportingSupportsForPixelSet(
-                    islandPixelSet,
-                    island.SliceHeightMm,
-                    supportPoints,
-                    bedWidthMm,
-                    bedDepthMm,
-                    pixelWidth,
-                    pixelHeight,
-                    layerHeightMm);
-
-                if (supportIndices.Count == 0)
-                    continue;
-
-                var layerMassG = island.PixelCoords.Count * voxelVolumeMm3 * (tuning.ResinDensityGPerMl / 1000f);
-                var layerWeightN = layerMassG * gravitationalAcceleration;
-                var perSupportWeight = layerWeightN / supportIndices.Count;
-
-                foreach (var idx in supportIndices)
+                for (var layerIndex = range.Item1; layerIndex < range.Item2; layerIndex++)
                 {
-                    if (idx < cumulativeWeightPerSupport.Length)
-                        cumulativeWeightPerSupport[idx] += perSupportWeight;
+                    var prevPixels = prevLayerPixels[layerIndex];
+                    foreach (var island in layerIslands[layerIndex])
+                    {
+                        var unsupportedPixels = GetUnsupportedPixels(island, prevPixels);
+                        if (unsupportedPixels.Count == 0)
+                            continue;
+                        var islandPixelSet = island.PixelCoords.ToHashSet();
+
+                        var supportIndices = FindSupportingSupportsForPixelSet(
+                            islandPixelSet,
+                            island.SliceHeightMm,
+                            supportPoints,
+                            bedWidthMm,
+                            bedDepthMm,
+                            pixelWidth,
+                            pixelHeight,
+                            layerHeightMm);
+
+                        if (supportIndices.Count == 0)
+                            continue;
+
+                        var layerMassG = island.PixelCoords.Count * voxelVolumeMm3 * (tuning.ResinDensityGPerMl / 1000f);
+                        var layerWeightN = layerMassG * gravitationalAcceleration;
+                        var perSupportWeight = layerWeightN / supportIndices.Count;
+
+                        foreach (var idx in supportIndices)
+                        {
+                            if (idx < localWeights.Length)
+                                localWeights[idx] += perSupportWeight;
+                        }
+                    }
                 }
-            }
-        }
+
+                return localWeights;
+            },
+            localWeights =>
+            {
+                lock (mergeLock)
+                {
+                    for (var i = 0; i < localWeights.Length; i++)
+                        cumulativeWeightPerSupport[i] += localWeights[i];
+                }
+            });
 
         return cumulativeWeightPerSupport;
     }
