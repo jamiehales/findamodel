@@ -1,3 +1,9 @@
+* Fix models before using for slicing/support calculation, etc... (See RUNEBRACE.md)
+* The force generation seems incorrect when shown at the end - investigate how it's generated
+* Add slider to side of preview generation that allows the slices to be slid through, show that slice rendered in the viewport, and show the supports up until that point with the calculated force for that specific slice (inc gravity, peel, rotation - each of these should be shown as separate force vectors)
+
+--
+
 * By default use small tips, and increase them in size if the pull force gets too much and the support density vs the size of the contact face (based on the rough surface area to the normal of the contact point within a given - configurable - flatness) exceeds a configurable ratio
 * Only use larger tips if the area which will be supported is relatively flat, and the support is a small portion of the contact area
 * Implement optimizations

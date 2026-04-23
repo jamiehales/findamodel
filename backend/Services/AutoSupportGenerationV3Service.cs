@@ -546,7 +546,7 @@ public sealed class AutoSupportGenerationV3Service
                         var addResult = TryAddSupportAtBestLayer(
                             supportPoints,
                             maxSupportPoints,
-                            island.PixelCoords,
+                            unsupportedPixels,
                             layerPixelSets,
                             lowestLayerByPixel,
                             layerIndex,
@@ -600,6 +600,42 @@ public sealed class AutoSupportGenerationV3Service
                     var exceedsCrushForce = maxCompressiveForce > tuning.CrushForceThreshold;
                     var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
+
+                    // For balanced force placement: identify the most overloaded support
+                    // and prefer placing the new support to relieve it.
+                    var balancedPlacementTarget = furthest;
+                    if (supportIndices.Count >= 2 && supportForces.Count >= 2)
+                    {
+                        var mostOverloadedSlot = -1;
+                        var worstRatio = 0f;
+                        for (var slot = 0; slot < supportForces.Count; slot++)
+                        {
+                            var metric = supportForces[slot];
+                            var capacity = ComputeCapacity(supportPoints[supportForces[slot].SupportIndex], tuning);
+                            var peelRatio = capacity > 0f ? metric.VerticalPullForce / capacity : 0f;
+                            var crushRatio2 = tuning.CrushForceThreshold > 0f ? metric.CompressiveForce / tuning.CrushForceThreshold : 0f;
+                            var angularRatio2 = tuning.MaxAngularForce > 0f ? metric.AngularForce / tuning.MaxAngularForce : 0f;
+                            var ratio = MathF.Max(peelRatio, MathF.Max(crushRatio2, angularRatio2));
+                            if (ratio > worstRatio)
+                            {
+                                worstRatio = ratio;
+                                mostOverloadedSlot = slot;
+                            }
+                        }
+
+                        if (mostOverloadedSlot >= 0 && worstRatio > 0.5f)
+                        {
+                            var overloadedSupportIndex = supportForces[mostOverloadedSlot].SupportIndex;
+                            balancedPlacementTarget = FindFurthestPixelFromSupports(
+                                unsupportedPixels,
+                                [overloadedSupportIndex],
+                                supportPoints,
+                                bedWidthMm,
+                                bedDepthMm,
+                                pixelWidth,
+                                pixelHeight);
+                        }
+                    }
                     var strictSupportIndices = FindSupportingSupportsForPixelSet(
                         islandPixelSet,
                         island.SliceHeightMm,
@@ -644,7 +680,7 @@ public sealed class AutoSupportGenerationV3Service
                         var addResult = TryAddSupportAtBestLayer(
                             supportPoints,
                             maxSupportPoints,
-                            island.PixelCoords,
+                            unsupportedPixels,
                             layerPixelSets,
                             lowestLayerByPixel,
                             layerIndex,
@@ -682,17 +718,21 @@ public sealed class AutoSupportGenerationV3Service
 
                     var minimumPlacementDistanceMm = exceedsSpacing
                         ? tuning.SupportSpacingThresholdMm
-                        : tuning.SupportSpacingThresholdMm * 0.25f;
+                        : Math.Min(tuning.SupportSpacingThresholdMm * 0.5f, 4f);
+
+                    // Use spacing-driven target (furthest from all) for pure spacing violations;
+                    // use force-balanced target otherwise to reduce peak forces.
+                    var placementTarget = exceedsSpacing ? furthest : balancedPlacementTarget;
 
                     var reinforceAddResult = TryAddSupportAtBestLayer(
                         supportPoints,
                         maxSupportPoints,
-                        island.PixelCoords,
+                        unsupportedPixels,
                         layerPixelSets,
                         lowestLayerByPixel,
                         layerIndex,
-                        furthest.XMm,
-                        furthest.ZMm,
+                        placementTarget.XMm,
+                        placementTarget.ZMm,
                         newSize,
                         bedWidthMm,
                         bedDepthMm,
@@ -921,7 +961,7 @@ public sealed class AutoSupportGenerationV3Service
                 var pixels = layerPixelSets[layer];
                 if (pixels != null
                     && pixels.Contains((col, row))
-                    && IsNearBoundaryPixel(pixels, col, row))
+                    && IsBoundaryPixel(pixels, col, row))
                 {
                     targetLayer = layer;
                     break;
@@ -2279,7 +2319,7 @@ public sealed class AutoSupportGenerationV3Service
                     var shrinkageAddResult = TryAddSupportAtBestLayer(
                         supportPoints,
                         maxSupportPoints,
-                        island.PixelCoords,
+                        edgePixels,
                         layerPixelSets,
                         lowestLayerByPixel,
                         layerIndex,

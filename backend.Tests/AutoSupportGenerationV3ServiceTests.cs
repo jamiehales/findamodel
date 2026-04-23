@@ -327,8 +327,8 @@ public class AutoSupportGenerationV3ServiceTests
     }
 
     private static readonly AutoSupportV3TuningOverrides DefaultOverrides = new(
-        BedMarginMm: 2f, MinVoxelSizeMm: 0.8f, MaxVoxelSizeMm: 2f,
-        MinLayerHeightMm: 0.75f, MaxLayerHeightMm: 1.5f, MinIslandAreaMm2: 4f,
+        BedMarginMm: 2f, MinVoxelSizeMm: 0.25f, MaxVoxelSizeMm: 0.25f,
+        MinLayerHeightMm: 0.25f, MaxLayerHeightMm: 0.25f, MinIslandAreaMm2: 4f,
         SupportSpacingThresholdMm: 2.5f, ResinStrength: 1f, CrushForceThreshold: 20f,
         MaxAngularForce: 40f, PeelForceMultiplier: 0.15f, LightTipRadiusMm: 0.7f,
         MediumTipRadiusMm: 1f, HeavyTipRadiusMm: 1.5f);
@@ -533,8 +533,6 @@ public class AutoSupportGenerationV3ServiceTests
             DefaultOverrides with
             {
                 SuctionMultiplier = 5f,
-                MinVoxelSizeMm = 0.4f,
-                MinLayerHeightMm = 0.4f,
             });
 
         Assert.NotNull(result);
@@ -867,10 +865,10 @@ public class AutoSupportGenerationV3ServiceTests
     // parameter change cannot fix one test without breaking another.
     private static readonly AutoSupportV3TuningOverrides PlacementTestOverrides = new(
         BedMarginMm: 2f,
-        MinVoxelSizeMm: 0.8f,
-        MaxVoxelSizeMm: 2f,
-        MinLayerHeightMm: 0.75f,
-        MaxLayerHeightMm: 1.5f,
+        MinVoxelSizeMm: 0.25f,
+        MaxVoxelSizeMm: 0.25f,
+        MinLayerHeightMm: 0.25f,
+        MaxLayerHeightMm: 0.25f,
         MinIslandAreaMm2: 4f,
         SupportSpacingThresholdMm: 5f,
         ResinStrength: 1f,
@@ -1219,5 +1217,92 @@ public class AutoSupportGenerationV3ServiceTests
             leftCount <= maxAllowed && rightCount <= maxAllowed,
             $"30-deg rotated box: distribution too skewed - left={leftCount}, right={rightCount}, total={total}. " +
             $"Neither half should exceed 70% ({maxAllowed}) of supports.");
+    }
+
+    [Fact]
+    public void PlacementQuality_NonRotatedCube_SupportsOnlyOnBottomLayer()
+    {
+        // A cube sitting flat on the build plate has identical cross-sections at every
+        // layer - there are no overhangs above layer 0. All support attachment points
+        // must therefore be at the very first (lowest) slice layer.
+        var side = 20f;
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: side, depth: side, height: side));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        var liftMm = PlacementTestOverrides.ModelLiftMm;
+        var maxFirstLayerY = liftMm + PlacementTestOverrides.MaxLayerHeightMm;
+        Assert.All(result.SupportPoints, p => Assert.True(
+            p.Position.Y <= maxFirstLayerY,
+            $"Non-rotated cube: support at Y={p.Position.Y:F2}mm is above the first layer (max {maxFirstLayerY:F2}mm). " +
+            "All supports for a flat-resting cube must be at the bottom layer only."));
+    }
+
+    [Fact]
+    public void PlacementQuality_Sphere_NoSupportsInsideSphere()
+    {
+        // Supports for a sphere should only attach to the outer surface.
+        // No support position should be inside the sphere's volume.
+        var radius = 15f;
+        var centerY = radius;
+        var geometry = CreateGeometryFromTriangles(MakeSphere(radius, centerY: centerY));
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        // Remove the ModelLiftMm offset to get the model-space Y of each support.
+        var liftMm = PlacementTestOverrides.ModelLiftMm;
+        Assert.All(result.SupportPoints, sp =>
+        {
+            var modelY = sp.Position.Y - liftMm;
+            var dx = sp.Position.X;
+            var dz = sp.Position.Z;
+            var dy = modelY - centerY;
+            var distanceFromCenter = MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            Assert.True(
+                distanceFromCenter >= radius * 0.6f,
+                $"Sphere: support at model-space ({dx:F2}, {modelY:F2}, {dz:F2}) is inside or too close to the sphere centre " +
+                $"(dist={distanceFromCenter:F2}mm, radius={radius:F2}mm). Supports must attach to the outer surface only.");
+        });
+    }
+
+    [Fact]
+    public void PlacementQuality_RotatedCube_SupportsEvenlyDistributedAcrossHeight()
+    {
+        // A cube rotated 45 degrees exposes overhang surfaces across its full height.
+        // Supports must be spread across at least 4 distinct height bands -
+        // no single band should hold more than 50% of all support points.
+        var cube = MakeBox(centerX: 0f, centerZ: 0f, width: 24f, depth: 24f, height: 24f);
+        var rotated = RotateTrianglesAroundX(cube, MathF.PI / 4f, pivotY: 12f);
+        var onBed = LiftTrianglesToBed(rotated);
+        var geometry = CreateGeometryFromTriangles(onBed);
+
+        var result = sut.GenerateSupportPreview(geometry, PlacementTestOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        var minY = result.SupportPoints.Min(s => s.Position.Y);
+        var maxY = result.SupportPoints.Max(s => s.Position.Y);
+        var heightRange = maxY - minY;
+        Assert.True(heightRange >= geometry.DimensionYMm * 0.3f,
+            $"Rotated cube: height range {heightRange:F2}mm is too narrow; expected >= {geometry.DimensionYMm * 0.3f:F2}mm.");
+
+        // Divide the range into 4 bands and check distribution
+        var bandSize = heightRange / 4f;
+        var bandCounts = new int[4];
+        foreach (var sp in result.SupportPoints)
+        {
+            var band = Math.Clamp((int)((sp.Position.Y - minY) / bandSize), 0, 3);
+            bandCounts[band]++;
+        }
+
+        var maxBandRatio = (float)bandCounts.Max() / result.SupportPoints.Count;
+        Assert.True(maxBandRatio <= 0.55f,
+            $"Rotated cube: support distribution too uneven. Band counts: [{string.Join(", ", bandCounts)}] " +
+            $"out of {result.SupportPoints.Count} total. Max band holds {maxBandRatio:P0} (allowed <= 55%).");
     }
 }
