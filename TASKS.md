@@ -1,6 +1,11 @@
 * Fix models before using for slicing/support calculation, etc... (See RUNEBRACE.md)
 * The force generation seems incorrect when shown at the end - investigate how it's generated
-* Add slider to side of preview generation that allows the slices to be slid through, show that slice rendered in the viewport, and show the supports up until that point with the calculated force for that specific slice (inc gravity, peel, rotation - each of these should be shown as separate force vectors)
+* The forces being shown in the render viewport are in the wrong direction - they should be pulling towards the FEP, not crushing forces
+* Stop the supports being pushed too high up the model - add a test to ensure that at each layer sliced all supports existing at that layer result in evenly distributed forces. If they do not, redistribute the positions of those supports. Supports that were created in another island are not eligable for movement
+* Supports should be assigned their island ID - that is, the island they were originally created at.
+* An island has an id that is a bitmap
+* When islands join, that new island is given a new unique id based on the or of all parents ids (does that logic work?)
+* Support (quarter/half/full resolution) slice preview on the plate page? Might be tricky, as we'd have to load in a large amount of mesh data
 
 --
 

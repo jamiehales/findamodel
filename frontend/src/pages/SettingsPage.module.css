@@ -143,6 +143,22 @@
   overflow: hidden;
 }
 
+.previewViewerLayout {
+  height: 100%;
+}
+
+.previewViewerCanvas {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.previewLayerSlider {
+  border-left: 1px solid var(--mui-palette-divider);
+  padding: 8px;
+  justify-content: center;
+}
+
 .previewPlaceholder {
   align-items: center;
   justify-content: center;
@@ -153,5 +169,20 @@
   .sidebar {
     width: 100%;
     min-width: 0;
+  }
+
+  .previewViewer {
+    height: 420px;
+  }
+
+  .previewViewerLayout {
+    flex-direction: column;
+  }
+
+  .previewLayerSlider {
+    border-left: none;
+    border-top: 1px solid var(--mui-palette-divider);
+    padding: 8px 16px;
+    align-items: center;
   }
 }

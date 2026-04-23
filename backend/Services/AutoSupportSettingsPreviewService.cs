@@ -93,7 +93,7 @@ public sealed class AutoSupportSettingsPreviewService(
                 var generateElapsedMs = Stopwatch.GetElapsedTime(generateStart).TotalMilliseconds;
 
                 var encodeStart = Stopwatch.GetTimestamp();
-                var bodyPayload = meshTransferService.Encode(scenario.Geometry);
+                var bodyPayload = meshTransferService.Encode(preview.BodyGeometry ?? scenario.Geometry);
                 var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
                 var envelope = BuildEnvelope(bodyPayload, supportPayload);
                 var encodeElapsedMs = Stopwatch.GetElapsedTime(encodeStart).TotalMilliseconds;
@@ -127,13 +127,42 @@ public sealed class AutoSupportSettingsPreviewService(
                         point.Position.Z,
                         point.RadiusMm,
                         new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z),
-                        point.Size.ToString().ToLowerInvariant()))],
+                        point.Size.ToString().ToLowerInvariant(),
+                        point.LayerForces == null
+                            ? null
+                            : [.. point.LayerForces.Select(layer => new AutoSupportLayerForceDto(
+                                layer.LayerIndex,
+                                layer.SliceHeightMm,
+                                new AutoSupportVectorDto(layer.Gravity.X, layer.Gravity.Y, layer.Gravity.Z),
+                                new AutoSupportVectorDto(layer.Peel.X, layer.Peel.Y, layer.Peel.Z),
+                                new AutoSupportVectorDto(layer.Rotation.X, layer.Rotation.Y, layer.Rotation.Z),
+                                new AutoSupportVectorDto(layer.Total.X, layer.Total.Y, layer.Total.Z)))]))],
                     [.. preview.Islands.Select(island => new AutoSupportIslandDto(
                         island.CentroidX,
                         island.CentroidZ,
                         island.SliceHeightMm,
                         island.AreaMm2,
-                        island.RadiusMm))],
+                        island.RadiusMm,
+                        island.Boundary == null
+                            ? null
+                            : [.. island.Boundary.Select(vertex => new AutoSupportVectorDto(vertex.X, 0f, vertex.Z))]))],
+                    preview.SliceLayers == null
+                        ? []
+                        : [.. preview.SliceLayers.Select(layer => new AutoSupportSliceLayerDto(
+                            layer.LayerIndex,
+                            layer.SliceHeightMm,
+                            [.. layer.Islands.Select(island => new AutoSupportIslandDto(
+                                island.CentroidX,
+                                island.CentroidZ,
+                                island.SliceHeightMm,
+                                island.AreaMm2,
+                                island.RadiusMm,
+                                island.Boundary == null
+                                    ? null
+                                    : [.. island.Boundary.Select(vertex => new AutoSupportVectorDto(vertex.X, 0f, vertex.Z))]))],
+                            layer.BedWidthMm,
+                            layer.BedDepthMm,
+                            layer.SliceMaskPngBase64))],
                     generateElapsedMs,
                     encodeElapsedMs,
                     writeElapsedMs,
@@ -149,6 +178,7 @@ public sealed class AutoSupportSettingsPreviewService(
                     "failed",
                     0,
                     ex.Message,
+                    [],
                     [],
                     [],
                     null,

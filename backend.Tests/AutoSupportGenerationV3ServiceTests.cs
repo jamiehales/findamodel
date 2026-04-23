@@ -176,15 +176,36 @@ public class AutoSupportGenerationV3ServiceTests
     }
 
     [Fact]
-    public void GenerateSupportPreview_IslandsListAlwaysEmpty()
+    public void GenerateSupportPreview_ReturnsSliceLayerIslands()
     {
-        // Method 3 intentionally omits island outlines from the result
         var geometry = CreateGeometry(
             MakeBox(centerX: 0f, centerZ: 0f, width: 6f, depth: 6f, height: 6f));
 
         var result = sut.GenerateSupportPreview(geometry);
 
-        Assert.Empty(result.Islands);
+        Assert.NotEmpty(result.SliceLayers ?? []);
+        Assert.NotEmpty(result.Islands);
+        Assert.Contains(result.Islands, island => island.Boundary is { Count: > 2 });
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_SupportsIncludePerLayerForceComponents()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 10f, depth: 10f, height: 10f));
+
+        var result = sut.GenerateSupportPreview(geometry);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var supportWithLayers = result.SupportPoints.FirstOrDefault(point => point.LayerForces is { Count: > 0 });
+        Assert.NotNull(supportWithLayers);
+        Assert.Contains(supportWithLayers!.LayerForces!, layer => layer.Peel.Y > 0f);
+        Assert.Contains(supportWithLayers.LayerForces!, layer => layer.Gravity.Y < 0f);
+        Assert.All(supportWithLayers.LayerForces!, layer =>
+            Assert.True(
+                Math.Abs(layer.Total.X - (layer.Gravity.X + layer.Peel.X + layer.Rotation.X)) < 0.0001f
+                && Math.Abs(layer.Total.Y - (layer.Gravity.Y + layer.Peel.Y + layer.Rotation.Y)) < 0.0001f
+                && Math.Abs(layer.Total.Z - (layer.Gravity.Z + layer.Peel.Z + layer.Rotation.Z)) < 0.0001f));
     }
 
     [Fact]

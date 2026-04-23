@@ -41,6 +41,7 @@ import type {
 } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
+import AutoSupportLayerSlider from '../components/AutoSupportLayerSlider';
 import ModelViewer from '../components/ModelViewer';
 import PageLayout from '../components/layouts/PageLayout';
 import { useApplicationLogs } from '../lib/queries';
@@ -372,6 +373,23 @@ function AutoSupportPreviewViewport({
     scenario.status === 'completed' && !!previewId,
   );
 
+  const [selectedLayerIndex, setSelectedLayerIndex] = useState(Number.MAX_SAFE_INTEGER);
+  const sliceLayers = scenario.sliceLayers ?? [];
+  const hasSliceLayers = sliceLayers.length > 0;
+  const clampedLayerIndex = hasSliceLayers
+    ? Math.min(Math.max(selectedLayerIndex, 0), sliceLayers.length - 1)
+    : 0;
+  const selectedSliceLayer = hasSliceLayers ? sliceLayers[clampedLayerIndex] : null;
+
+  useEffect(() => {
+    if (!hasSliceLayers) {
+      setSelectedLayerIndex(Number.MAX_SAFE_INTEGER);
+      return;
+    }
+
+    setSelectedLayerIndex((current) => Math.min(Math.max(current, 0), sliceLayers.length - 1));
+  }, [hasSliceLayers, sliceLayers.length, scenario.scenarioId]);
+
   return (
     <Stack spacing={1} className={styles.previewCard}>
       <Typography variant="subtitle1">{scenario.name}</Typography>
@@ -388,6 +406,12 @@ function AutoSupportPreviewViewport({
           <Typography color="text.secondary">
             Supports generated: {scenario.supportCount}
           </Typography>
+          {selectedSliceLayer && (
+            <Typography color="text.secondary">
+              Layer {selectedSliceLayer.layerIndex + 1} of {sliceLayers.length} (
+              {selectedSliceLayer.sliceHeightMm.toFixed(2)} mm)
+            </Typography>
+          )}
           {scenario.totalMs != null && (
             <Typography color="text.secondary">
               Timing: {scenario.totalMs.toFixed(0)} ms total
@@ -414,26 +438,40 @@ function AutoSupportPreviewViewport({
             <Typography color="error">Failed to load preview geometry.</Typography>
           </Stack>
         ) : (
-          <ModelViewer
-            modelId="settings-auto-support-preview"
-            modelOverride={{
-              sphereCentreX: splitGeometry.body.sphereCentre.x,
-              sphereCentreY: splitGeometry.body.sphereCentre.y,
-              sphereCentreZ: splitGeometry.body.sphereCentre.z,
-              dimensionXMm: splitGeometry.body.dimensionXMm,
-              dimensionYMm: splitGeometry.body.dimensionYMm,
-              dimensionZMm: splitGeometry.body.dimensionZMm,
-              raftHeightMm: 0,
-            }}
-            convexHull={null}
-            concaveHull={null}
-            convexSansRaftHull={null}
-            supported
-            splitGeometryOverride={splitGeometry}
-            supportPointsOverride={scenario.supportPoints}
-            islandsOverride={scenario.islands}
-            showForceMarkers={showForceMarkers}
-          />
+          <Stack className={styles.previewViewerLayout} direction="row" spacing={0}>
+            <Stack className={styles.previewViewerCanvas}>
+              <ModelViewer
+                modelId="settings-auto-support-preview"
+                modelOverride={{
+                  sphereCentreX: splitGeometry.body.sphereCentre.x,
+                  sphereCentreY: splitGeometry.body.sphereCentre.y,
+                  sphereCentreZ: splitGeometry.body.sphereCentre.z,
+                  dimensionXMm: splitGeometry.body.dimensionXMm,
+                  dimensionYMm: splitGeometry.body.dimensionYMm,
+                  dimensionZMm: splitGeometry.body.dimensionZMm,
+                  raftHeightMm: 0,
+                }}
+                convexHull={null}
+                concaveHull={null}
+                convexSansRaftHull={null}
+                supported
+                splitGeometryOverride={splitGeometry}
+                supportPointsOverride={scenario.supportPoints}
+                islandsOverride={scenario.islands}
+                sliceLayersOverride={sliceLayers}
+                selectedSliceLayerIndex={clampedLayerIndex}
+                selectedSliceHeightMm={selectedSliceLayer?.sliceHeightMm ?? null}
+                slicePreviewEnabled
+                showForceMarkers={showForceMarkers}
+              />
+            </Stack>
+            <AutoSupportLayerSlider
+              className={styles.previewLayerSlider}
+              sliceLayers={sliceLayers}
+              selectedLayerIndex={clampedLayerIndex}
+              onLayerChange={setSelectedLayerIndex}
+            />
+          </Stack>
         )}
       </Stack>
     </Stack>

@@ -2,6 +2,10 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.IO;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Formats.Png;
 
 namespace findamodel.Services;
 
@@ -302,21 +306,15 @@ public sealed class AutoSupportGenerationV3Service
             layerHeightMm,
             tuning);
 
-        // Apply model lift: offset all support Y positions to reflect that the model
-        // sits above the bed by the configured amount.
-        if (tuning.ModelLiftMm > 0f)
-        {
-            for (var i = 0; i < supportPoints.Count; i++)
-            {
-                supportPoints[i] = supportPoints[i] with
-                {
-                    Position = supportPoints[i].Position with
-                    {
-                        Y = supportPoints[i].Position.Y + tuning.ModelLiftMm,
-                    },
-                };
-            }
-        }
+        var sliceLayers = BuildSliceLayers(
+            layerIslands,
+            layerBitmaps,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm);
+        var flattenedIslands = sliceLayers.SelectMany(layer => layer.Islands).ToArray();
 
         var supportTriangles = BuildSupportSphereMesh(supportPoints);
 
@@ -346,8 +344,12 @@ public sealed class AutoSupportGenerationV3Service
             geometry.DimensionZMm,
             voxelTriangles.Count);
 
-        // Islands list is intentionally empty - only the support spheres and voxel body are returned for visualisation
-        return new SupportPreviewResult(supportPoints, CloneGeometry(geometry, supportTriangles), [], voxelGeometry);
+        return new SupportPreviewResult(
+            supportPoints,
+            CloneGeometry(geometry, supportTriangles),
+            flattenedIslands,
+            sliceLayers,
+            voxelGeometry);
     }
 
     private static List<TipIsland> FindTipIslands(
@@ -444,6 +446,121 @@ public sealed class AutoSupportGenerationV3Service
         }
 
         return islands;
+    }
+
+    private static IReadOnlyList<SliceLayerPreview> BuildSliceLayers(
+        IReadOnlyList<TipIsland>[] layerIslands,
+        IReadOnlyList<SliceBitmap> layerBitmaps,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm)
+    {
+        var result = new List<SliceLayerPreview>(layerIslands.Length);
+        for (var layerIndex = 0; layerIndex < layerIslands.Length; layerIndex++)
+        {
+            var islands = layerIslands[layerIndex];
+            var islandPreviews = islands
+                .Select(island =>
+                {
+                    var boundary = ExtractIslandBoundaryMm(
+                        island.PixelCoords,
+                        island.CentroidX,
+                        island.CentroidZ,
+                        bedWidthMm,
+                        bedDepthMm,
+                        pixelWidth,
+                        pixelHeight);
+                    return new IslandPreview(
+                        island.CentroidX,
+                        island.CentroidZ,
+                        island.SliceHeightMm,
+                        island.TopLayerAreaMm2,
+                        MathF.Sqrt(island.TopLayerAreaMm2 / MathF.PI),
+                        boundary);
+                })
+                .ToArray();
+
+            var sliceHeight = islandPreviews.Length > 0
+                ? islandPreviews[0].SliceHeightMm
+                : (layerIndex * layerHeightMm) + (layerHeightMm * 0.5f);
+            var sliceMaskPngBase64 = layerIndex < layerBitmaps.Count
+                ? EncodeSliceMaskPngBase64(layerBitmaps[layerIndex])
+                : null;
+            result.Add(new SliceLayerPreview(
+                layerIndex,
+                sliceHeight,
+                islandPreviews,
+                bedWidthMm,
+                bedDepthMm,
+                sliceMaskPngBase64));
+        }
+
+        return result;
+    }
+
+    private static string EncodeSliceMaskPngBase64(SliceBitmap bitmap)
+    {
+        using var image = new Image<Rgba32>(bitmap.Width, bitmap.Height);
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var index = (y * bitmap.Width) + x;
+                image[x, y] = bitmap.Pixels[index] == 0
+                    ? new Rgba32(0, 0, 0, 0)
+                    : new Rgba32(34, 211, 238, 255);
+            }
+        }
+
+        using var stream = new MemoryStream();
+        image.Save(stream, new PngEncoder());
+        return Convert.ToBase64String(stream.ToArray());
+    }
+
+    private static IReadOnlyList<(float X, float Z)> ExtractIslandBoundaryMm(
+        IReadOnlyList<(int X, int Y)> pixels,
+        float centroidX,
+        float centroidZ,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        if (pixels.Count == 0)
+            return [];
+
+        var pixelSet = pixels.ToHashSet();
+        var boundaryPoints = new List<(float X, float Z)>();
+        foreach (var (x, y) in pixels)
+        {
+            if (!IsBoundaryPixel(pixelSet, x, y))
+                continue;
+
+            boundaryPoints.Add((
+                ColumnToX(x, bedWidthMm, pixelWidth),
+                RowToZ(y, bedDepthMm, pixelHeight)));
+        }
+
+        if (boundaryPoints.Count == 0)
+            return [];
+
+        // Keep vertex counts bounded while preserving shape for viewport overlays.
+        const int maxBoundaryPoints = 128;
+        var ordered = boundaryPoints
+            .OrderBy(point => MathF.Atan2(point.Z - centroidZ, point.X - centroidX))
+            .ToList();
+
+        if (ordered.Count <= maxBoundaryPoints)
+            return ordered;
+
+        var stride = (int)MathF.Ceiling(ordered.Count / (float)maxBoundaryPoints);
+        var reduced = new List<(float X, float Z)>();
+        for (var i = 0; i < ordered.Count; i += stride)
+            reduced.Add(ordered[i]);
+
+        return reduced;
     }
 
     private static IEnumerable<(int X, int Y)> Neighbors(int x, int y)
@@ -1038,13 +1155,20 @@ public sealed class AutoSupportGenerationV3Service
             return;
 
         var accumulatedForces = new Vec3[supportPoints.Count];
+        var layerForceBySupport = new Dictionary<int, MutableLayerForce>[supportPoints.Count];
+        for (var i = 0; i < layerForceBySupport.Length; i++)
+            layerForceBySupport[i] = new Dictionary<int, MutableLayerForce>();
+
         var mergeLock = new object();
+        var pixelAreaMm2 = (bedWidthMm / pixelWidth) * (bedDepthMm / pixelHeight);
+        var voxelVolumeMm3 = pixelAreaMm2 * layerHeightMm;
+        var gravitationalAcceleration = 9.81f;
 
         Parallel.ForEach(
             Partitioner.Create(0, layerIslands.Length),
             FullCoreParallelOptions,
-            () => new Vec3[supportPoints.Count],
-            (range, _, localForces) =>
+            () => new SupportLayerForceAccumulator(supportPoints.Count),
+            (range, _, localState) =>
             {
                 for (var layerIndex = range.Item1; layerIndex < range.Item2; layerIndex++)
                 {
@@ -1069,6 +1193,10 @@ public sealed class AutoSupportGenerationV3Service
                         if (supportIndices.Count == 0)
                             continue;
 
+                        var layerMassG = island.PixelCoords.Count * voxelVolumeMm3 * (tuning.ResinDensityGPerMl / 1000f);
+                        var layerWeightN = layerMassG * gravitationalAcceleration;
+                        var perSupportWeight = layerWeightN / supportIndices.Count;
+
                         var supportForces = EvaluateSupportForces(
                             unsupportedPixels,
                             supportIndices,
@@ -1081,23 +1209,68 @@ public sealed class AutoSupportGenerationV3Service
                             island);
 
                         foreach (var metric in supportForces)
-                            localForces[metric.SupportIndex] = localForces[metric.SupportIndex] + metric.PullVector;
+                        {
+                            localState.AccumulatedForces[metric.SupportIndex] = localState.AccumulatedForces[metric.SupportIndex] + metric.PullVector;
+
+                            if (!localState.LayerForcesBySupport[metric.SupportIndex].TryGetValue(layerIndex, out var layerForce))
+                            {
+                                layerForce = new MutableLayerForce(layerIndex, island.SliceHeightMm);
+                                localState.LayerForcesBySupport[metric.SupportIndex][layerIndex] = layerForce;
+                            }
+
+                            layerForce.Gravity = layerForce.Gravity + new Vec3(0f, -perSupportWeight, 0f);
+                            layerForce.Peel = layerForce.Peel + metric.PeelVector;
+                            layerForce.Rotation = layerForce.Rotation + metric.RotationVector;
+                        }
                     }
                 }
 
-                return localForces;
+                return localState;
             },
-            localForces =>
+            localState =>
             {
                 lock (mergeLock)
                 {
-                    for (var i = 0; i < localForces.Length; i++)
-                        accumulatedForces[i] = accumulatedForces[i] + localForces[i];
+                    for (var i = 0; i < localState.AccumulatedForces.Length; i++)
+                    {
+                        accumulatedForces[i] = accumulatedForces[i] + localState.AccumulatedForces[i];
+
+                        foreach (var entry in localState.LayerForcesBySupport[i])
+                        {
+                            if (!layerForceBySupport[i].TryGetValue(entry.Key, out var mergedLayer))
+                            {
+                                layerForceBySupport[i][entry.Key] = entry.Value;
+                                continue;
+                            }
+
+                            mergedLayer.Gravity = mergedLayer.Gravity + entry.Value.Gravity;
+                            mergedLayer.Peel = mergedLayer.Peel + entry.Value.Peel;
+                            mergedLayer.Rotation = mergedLayer.Rotation + entry.Value.Rotation;
+                        }
+                    }
                 }
             });
 
         for (var i = 0; i < supportPoints.Count; i++)
-            supportPoints[i] = supportPoints[i] with { PullForce = accumulatedForces[i] };
+        {
+            var layerForces = layerForceBySupport[i]
+                .Values
+                .OrderBy(layer => layer.LayerIndex)
+                .Select(layer => new SupportLayerForce(
+                    layer.LayerIndex,
+                    layer.SliceHeightMm,
+                    layer.Gravity,
+                    layer.Peel,
+                    layer.Rotation,
+                    layer.Gravity + layer.Peel + layer.Rotation))
+                .ToArray();
+
+            supportPoints[i] = supportPoints[i] with
+            {
+                PullForce = accumulatedForces[i],
+                LayerForces = layerForces,
+            };
+        }
     }
 
     private static List<(int X, int Y)> GetUnsupportedPixels(
@@ -1324,7 +1497,14 @@ public sealed class AutoSupportGenerationV3Service
             var pixelCount = pixelCountBySlot[slot];
             if (pixelCount == 0)
             {
-                metrics.Add(new SupportForceMetric(supportIndex, new Vec3(0f, 0f, 0f), 0f, 0f, 0f));
+                metrics.Add(new SupportForceMetric(
+                    supportIndex,
+                    new Vec3(0f, 0f, 0f),
+                    new Vec3(0f, 0f, 0f),
+                    new Vec3(0f, 0f, 0f),
+                    0f,
+                    0f,
+                    0f));
                 continue;
             }
 
@@ -1354,10 +1534,15 @@ public sealed class AutoSupportGenerationV3Service
             var crushForce = angularBySlot[slot] / MathF.Max(support.RadiusMm, 0.1f);
             var signedVerticalForce = verticalPullForce - crushForce;
             var compressiveForce = MathF.Max(0f, -signedVerticalForce);
+            var peelVector = new Vec3(0f, verticalPullForce, 0f);
+            var rotationVector = new Vec3(lateralX, -compressiveForce, lateralZ);
+            var pullVector = new Vec3(lateralX, signedVerticalForce, lateralZ);
 
             metrics.Add(new SupportForceMetric(
                 supportIndex,
-                new Vec3(lateralX, signedVerticalForce, lateralZ),
+                pullVector,
+                peelVector,
+                rotationVector,
                 verticalPullForce,
                 compressiveForce,
                 angularBySlot[slot]));
@@ -2365,12 +2550,28 @@ public sealed class AutoSupportGenerationV3Service
 
     private sealed record PixelCentroid(float XMm, float ZMm);
 
-    private sealed class SupportForceAccumulator
+    private sealed class MutableLayerForce(int layerIndex, float sliceHeightMm)
     {
-        public int PixelCount { get; set; }
-        public float SumX { get; set; }
-        public float SumZ { get; set; }
-        public float AngularForce { get; set; }
+        public int LayerIndex { get; } = layerIndex;
+        public float SliceHeightMm { get; } = sliceHeightMm;
+        public Vec3 Gravity { get; set; } = new(0f, 0f, 0f);
+        public Vec3 Peel { get; set; } = new(0f, 0f, 0f);
+        public Vec3 Rotation { get; set; } = new(0f, 0f, 0f);
+    }
+
+    private sealed class SupportLayerForceAccumulator
+    {
+        public SupportLayerForceAccumulator(int supportCount)
+        {
+            AccumulatedForces = new Vec3[supportCount];
+            LayerForcesBySupport = new Dictionary<int, MutableLayerForce>[supportCount];
+            for (var i = 0; i < supportCount; i++)
+                LayerForcesBySupport[i] = new Dictionary<int, MutableLayerForce>();
+        }
+
+        public Vec3[] AccumulatedForces { get; }
+
+        public Dictionary<int, MutableLayerForce>[] LayerForcesBySupport { get; }
     }
 
     private enum SupportPlacementResult
@@ -2383,6 +2584,8 @@ public sealed class AutoSupportGenerationV3Service
     private sealed record SupportForceMetric(
         int SupportIndex,
         Vec3 PullVector,
+        Vec3 PeelVector,
+        Vec3 RotationVector,
         float VerticalPullForce,
         float CompressiveForce,
         float AngularForce);

@@ -12,6 +12,7 @@ import {
   useGenerateAutoSupportJob,
   useModel,
 } from '../lib/queries';
+import AutoSupportLayerSlider from '../components/AutoSupportLayerSlider';
 import ModelViewer from '../components/ModelViewer';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
@@ -25,11 +26,13 @@ function ModelAutoSupportPage() {
 
   const [autoSupportJobId, setAutoSupportJobId] = React.useState<string | null>(null);
   const [showForceMarkers, setShowForceMarkers] = React.useState(true);
+  const [selectedLayerIndex, setSelectedLayerIndex] = React.useState(Number.MAX_SAFE_INTEGER);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setAutoSupportJobId(null);
     setShowForceMarkers(true);
+    setSelectedLayerIndex(Number.MAX_SAFE_INTEGER);
   }, [decodedId]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
@@ -50,6 +53,22 @@ function ModelAutoSupportPage() {
     isGeneratingAutoSupportRequest ||
     autoSupportJob?.status === 'queued' ||
     autoSupportJob?.status === 'running';
+
+  const sliceLayers = autoSupportJob?.sliceLayers ?? [];
+  const hasSliceLayers = sliceLayers.length > 0;
+  const clampedLayerIndex = hasSliceLayers
+    ? Math.min(Math.max(selectedLayerIndex, 0), sliceLayers.length - 1)
+    : 0;
+  const selectedSliceLayer = hasSliceLayers ? sliceLayers[clampedLayerIndex] : null;
+
+  React.useEffect(() => {
+    if (!hasSliceLayers) {
+      setSelectedLayerIndex(Number.MAX_SAFE_INTEGER);
+      return;
+    }
+
+    setSelectedLayerIndex((current) => Math.min(Math.max(current, 0), sliceLayers.length - 1));
+  }, [hasSliceLayers, sliceLayers.length]);
 
   const backButton = (
     <Button variant="back" onClick={() => navigate(`/model/${encodeURIComponent(decodedId)}`)}>
@@ -117,19 +136,49 @@ function ModelAutoSupportPage() {
           />
         </Stack>
 
+        {selectedSliceLayer && (
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Layer {selectedSliceLayer.layerIndex + 1} of {sliceLayers.length} (
+              {selectedSliceLayer.sliceHeightMm.toFixed(2)} mm)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Force vectors: gravity (blue), peel (amber), rotation (red), total (size colour)
+            </Typography>
+          </Stack>
+        )}
+
         <Box className={styles.viewerBox}>
           {autoSupportGeometry ? (
-            <ModelViewer
-              modelId={model.id}
-              convexHull={null}
-              concaveHull={null}
-              convexSansRaftHull={null}
-              supported
-              splitGeometryOverride={autoSupportGeometry}
-              supportPointsOverride={autoSupportJob?.supportPoints ?? null}
-              islandsOverride={autoSupportJob?.islands ?? null}
-              showForceMarkers={showForceMarkers}
-            />
+            <Box className={styles.viewerLayout}>
+              <Box className={styles.viewerCanvas}>
+                <ModelViewer
+                  modelId={model.id}
+                  convexHull={null}
+                  concaveHull={null}
+                  convexSansRaftHull={null}
+                  supported
+                  splitGeometryOverride={autoSupportGeometry}
+                  supportPointsOverride={autoSupportJob?.supportPoints ?? null}
+                  islandsOverride={autoSupportJob?.islands ?? null}
+                  sliceLayersOverride={sliceLayers}
+                  selectedSliceLayerIndex={clampedLayerIndex}
+                  selectedSliceHeightMm={selectedSliceLayer?.sliceHeightMm ?? null}
+                  slicePreviewEnabled
+                  showForceMarkers={showForceMarkers}
+                />
+              </Box>
+              <AutoSupportLayerSlider
+                className={styles.layerSliderWrap}
+                sliceLayers={sliceLayers}
+                selectedLayerIndex={clampedLayerIndex}
+                onLayerChange={setSelectedLayerIndex}
+              />
+            </Box>
           ) : (
             <Box className={styles.placeholderBox}>
               <Typography>

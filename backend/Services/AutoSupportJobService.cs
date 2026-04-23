@@ -111,13 +111,42 @@ public sealed class AutoSupportJobService(
                     point.Position.Z,
                     point.RadiusMm,
                     new AutoSupportVectorDto(point.PullForce.X, point.PullForce.Y, point.PullForce.Z),
-                    point.Size.ToString().ToLowerInvariant()))],
+                    point.Size.ToString().ToLowerInvariant(),
+                    point.LayerForces == null
+                        ? null
+                        : [.. point.LayerForces.Select(layer => new AutoSupportLayerForceDto(
+                            layer.LayerIndex,
+                            layer.SliceHeightMm,
+                            new AutoSupportVectorDto(layer.Gravity.X, layer.Gravity.Y, layer.Gravity.Z),
+                            new AutoSupportVectorDto(layer.Peel.X, layer.Peel.Y, layer.Peel.Z),
+                            new AutoSupportVectorDto(layer.Rotation.X, layer.Rotation.Y, layer.Rotation.Z),
+                            new AutoSupportVectorDto(layer.Total.X, layer.Total.Y, layer.Total.Z)))]))],
                 [.. preview.Islands.Select(island => new AutoSupportIslandDto(
                     island.CentroidX,
                     island.CentroidZ,
                     island.SliceHeightMm,
                     island.AreaMm2,
-                    island.RadiusMm))]);
+                    island.RadiusMm,
+                    island.Boundary == null
+                        ? null
+                        : [.. island.Boundary.Select(vertex => new AutoSupportVectorDto(vertex.X, 0f, vertex.Z))]))],
+                preview.SliceLayers == null
+                    ? []
+                    : [.. preview.SliceLayers.Select(layer => new AutoSupportSliceLayerDto(
+                        layer.LayerIndex,
+                        layer.SliceHeightMm,
+                        [.. layer.Islands.Select(island => new AutoSupportIslandDto(
+                            island.CentroidX,
+                            island.CentroidZ,
+                            island.SliceHeightMm,
+                            island.AreaMm2,
+                            island.RadiusMm,
+                            island.Boundary == null
+                                ? null
+                                : [.. island.Boundary.Select(vertex => new AutoSupportVectorDto(vertex.X, 0f, vertex.Z))]))],
+                        layer.BedWidthMm,
+                        layer.BedDepthMm,
+                        layer.SliceMaskPngBase64))]);
         }
         catch (Exception ex)
         {
@@ -176,6 +205,7 @@ public sealed class AutoSupportJobService(
         private string? errorMessage;
         private IReadOnlyList<AutoSupportPointDto> supportPoints = [];
         private IReadOnlyList<AutoSupportIslandDto> islands = [];
+        private IReadOnlyList<AutoSupportSliceLayerDto> sliceLayers = [];
         private DateTime updatedAtUtc = DateTime.UtcNow;
 
         public Guid JobId { get; } = jobId;
@@ -202,7 +232,11 @@ public sealed class AutoSupportJobService(
             }
         }
 
-        public void MarkCompleted(int generatedSupportCount, IReadOnlyList<AutoSupportPointDto> generatedSupportPoints, IReadOnlyList<AutoSupportIslandDto> generatedIslands)
+        public void MarkCompleted(
+            int generatedSupportCount,
+            IReadOnlyList<AutoSupportPointDto> generatedSupportPoints,
+            IReadOnlyList<AutoSupportIslandDto> generatedIslands,
+            IReadOnlyList<AutoSupportSliceLayerDto> generatedSliceLayers)
         {
             lock (gate)
             {
@@ -211,6 +245,7 @@ public sealed class AutoSupportJobService(
                 supportCount = generatedSupportCount;
                 supportPoints = generatedSupportPoints;
                 islands = generatedIslands;
+                sliceLayers = generatedSliceLayers;
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -224,6 +259,7 @@ public sealed class AutoSupportJobService(
                 errorMessage = message;
                 supportPoints = [];
                 islands = [];
+                sliceLayers = [];
                 updatedAtUtc = DateTime.UtcNow;
             }
         }
@@ -237,7 +273,7 @@ public sealed class AutoSupportJobService(
         public AutoSupportJobDto ToDto()
         {
             lock (gate)
-                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage, supportPoints, islands);
+                return new AutoSupportJobDto(JobId, status, progressPercent, supportCount, errorMessage, supportPoints, islands, sliceLayers);
         }
     }
 }

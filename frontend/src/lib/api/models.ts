@@ -342,6 +342,16 @@ export interface AutoSupportPoint {
   radiusMm: number;
   pullForce: AutoSupportVector;
   size: 'micro' | 'light' | 'medium' | 'heavy';
+  layerForces?: AutoSupportLayerForce[] | null;
+}
+
+export interface AutoSupportLayerForce {
+  layerIndex: number;
+  sliceHeightMm: number;
+  gravity: AutoSupportVector;
+  peel: AutoSupportVector;
+  rotation: AutoSupportVector;
+  total: AutoSupportVector;
 }
 
 export interface AutoSupportIsland {
@@ -350,6 +360,16 @@ export interface AutoSupportIsland {
   sliceHeightMm: number;
   areaMm2: number;
   radiusMm: number;
+  boundary?: AutoSupportVector[] | null;
+}
+
+export interface AutoSupportSliceLayer {
+  layerIndex: number;
+  sliceHeightMm: number;
+  islands: AutoSupportIsland[];
+  bedWidthMm: number;
+  bedDepthMm: number;
+  sliceMaskPngBase64?: string | null;
 }
 
 export interface AutoSupportJob {
@@ -360,6 +380,7 @@ export interface AutoSupportJob {
   errorMessage: string | null;
   supportPoints: AutoSupportPoint[] | null;
   islands: AutoSupportIsland[] | null;
+  sliceLayers?: AutoSupportSliceLayer[] | null;
 }
 
 export interface AutoSupportSettingsPreviewTuningRequest {
@@ -397,6 +418,7 @@ export interface AutoSupportSettingsPreviewScenario {
   errorMessage: string | null;
   supportPoints: AutoSupportPoint[] | null;
   islands: AutoSupportIsland[] | null;
+  sliceLayers?: AutoSupportSliceLayer[] | null;
   generateMs?: number | null;
   encodeMs?: number | null;
   writeMs?: number | null;

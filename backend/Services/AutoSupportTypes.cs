@@ -2,7 +2,20 @@ namespace findamodel.Services;
 
 public enum SupportSize { Micro, Light, Medium, Heavy }
 
-public sealed record SupportPoint(Vec3 Position, float RadiusMm, Vec3 PullForce, SupportSize Size);
+public sealed record SupportLayerForce(
+    int LayerIndex,
+    float SliceHeightMm,
+    Vec3 Gravity,
+    Vec3 Peel,
+    Vec3 Rotation,
+    Vec3 Total);
+
+public sealed record SupportPoint(
+    Vec3 Position,
+    float RadiusMm,
+    Vec3 PullForce,
+    SupportSize Size,
+    IReadOnlyList<SupportLayerForce>? LayerForces = null);
 
 public sealed record AutoSupportV3TuningOverrides(
     float BedMarginMm,
@@ -34,6 +47,7 @@ public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,
     LoadedGeometry SupportGeometry,
     IReadOnlyList<IslandPreview> Islands,
+    IReadOnlyList<SliceLayerPreview>? SliceLayers = null,
     LoadedGeometry? BodyGeometry = null);
 
 public sealed record IslandPreview(
@@ -43,3 +57,11 @@ public sealed record IslandPreview(
     float AreaMm2,
     float RadiusMm,
     IReadOnlyList<(float X, float Z)>? Boundary = null);
+
+public sealed record SliceLayerPreview(
+    int LayerIndex,
+    float SliceHeightMm,
+    IReadOnlyList<IslandPreview> Islands,
+    float BedWidthMm,
+    float BedDepthMm,
+    string? SliceMaskPngBase64 = null);

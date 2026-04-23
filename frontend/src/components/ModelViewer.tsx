@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
@@ -10,6 +10,7 @@ const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
 
 const MODEL_COLOR = '#818cf8';
+const sliceMaskTextureCache = new Map<string, THREE.Texture>();
 
 function SceneBg({ color }: { color: string }) {
   return <color attach="background" args={[color]} />;
@@ -154,6 +155,7 @@ interface GeometryModelProps {
   concaveHull: string | null;
   convexSansRaftHull: string | null;
   raftHeightMm: number;
+  selectedSliceClipHeightMm?: number | null;
 }
 
 function GeometryModel({
@@ -163,6 +165,7 @@ function GeometryModel({
   concaveHull,
   convexSansRaftHull,
   raftHeightMm,
+  selectedSliceClipHeightMm,
 }: GeometryModelProps) {
   const bufferGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -199,10 +202,22 @@ function GeometryModel({
     }
   }, [concaveHull]);
 
+  const clippingPlanes = useMemo(() => {
+    if (selectedSliceClipHeightMm == null) return [];
+    return [new THREE.Plane(new THREE.Vector3(0, -1, 0), selectedSliceClipHeightMm)];
+  }, [selectedSliceClipHeightMm]);
+
   return (
     <group>
       <mesh geometry={bufferGeometry}>
-        <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} flatShading />
+        <meshStandardMaterial
+          color={color}
+          roughness={0.55}
+          metalness={0.15}
+          flatShading
+          clippingPlanes={clippingPlanes}
+          clipShadows
+        />
       </mesh>
       <HullPolygon coordinates={hullCoords} color="#818cf8" />
       <HullLine coordinates={hullCoords} color="#818cf8" />
@@ -221,6 +236,7 @@ function GeometryModel({
 
 interface SupportForceArrowsProps {
   points: import('../lib/api').AutoSupportPoint[] | null;
+  selectedSliceHeightMm?: number | null;
   visible: boolean;
 }
 
@@ -233,41 +249,123 @@ const SIZE_COLORS: Record<string, [string, string]> = {
 
 function SupportForceArrow({
   point,
+  selectedSliceHeightMm,
   maxMagnitude,
 }: {
   point: import('../lib/api').AutoSupportPoint;
+  selectedSliceHeightMm?: number | null;
   maxMagnitude: number;
 }) {
-  const { arrowData, sphereColor } = useMemo(() => {
-    const force = new THREE.Vector3(point.pullForce.x, point.pullForce.y, point.pullForce.z);
-    const magnitude = force.length();
-    const [lowColor, highColor] = SIZE_COLORS[point.size] ?? SIZE_COLORS.medium;
-    const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
-    const color = new THREE.Color().lerpColors(
-      new THREE.Color(lowColor),
-      new THREE.Color(highColor),
-      normalizedMagnitude,
-    );
+  const { arrowData, peelArrowData, rotationArrowData, gravityArrowData, sphereColor } =
+    useMemo(() => {
+      const selectedLayerForce =
+        selectedSliceHeightMm == null || !point.layerForces || point.layerForces.length === 0
+          ? null
+          : point.layerForces.reduce((best, sample) => {
+              if (!best) return sample;
+              const bestDistance = Math.abs(best.sliceHeightMm - selectedSliceHeightMm);
+              const sampleDistance = Math.abs(sample.sliceHeightMm - selectedSliceHeightMm);
+              return sampleDistance < bestDistance ? sample : best;
+            }, point.layerForces[0]);
 
-    if (magnitude < 0.001) return { arrowData: null, sphereColor: color };
+      const activeForce = selectedLayerForce?.total ?? point.pullForce;
+      const force = new THREE.Vector3(activeForce.x, activeForce.y, activeForce.z);
+      const magnitude = force.length();
+      const [lowColor, highColor] = SIZE_COLORS[point.size] ?? SIZE_COLORS.medium;
+      const normalizedMagnitude = maxMagnitude <= 0 ? 0 : magnitude / maxMagnitude;
+      const color = new THREE.Color().lerpColors(
+        new THREE.Color(lowColor),
+        new THREE.Color(highColor),
+        normalizedMagnitude,
+      );
 
-    const start = new THREE.Vector3(point.x, point.y + point.radiusMm * 0.25, point.z);
-    const direction = force.normalize();
-    const length = Math.max(point.radiusMm * 2.2, Math.min(magnitude * 1.2, 18));
-    const headLength = Math.max(point.radiusMm * 1.4, Math.min(length * 0.28, 3));
-    const shaftEnd = start
-      .clone()
-      .addScaledVector(direction, Math.max(length - headLength, point.radiusMm));
-    const coneCenter = shaftEnd.clone().addScaledVector(direction, headLength * 0.5);
-    const coneQuaternion = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      direction,
+      const buildArrow = (vector: THREE.Vector3, arrowColor: THREE.Color) => {
+        const vectorMagnitude = vector.length();
+        if (vectorMagnitude < 0.001) return null;
+
+        const start = new THREE.Vector3(point.x, point.y + point.radiusMm * 0.25, point.z);
+        const direction = vector.clone().normalize();
+        const length = Math.max(point.radiusMm * 2.2, Math.min(vectorMagnitude * 1.2, 18));
+        const headLength = Math.max(point.radiusMm * 1.4, Math.min(length * 0.28, 3));
+        const shaftEnd = start
+          .clone()
+          .addScaledVector(direction, Math.max(length - headLength, point.radiusMm));
+        const coneCenter = shaftEnd.clone().addScaledVector(direction, headLength * 0.5);
+        const coneQuaternion = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          direction,
+        );
+
+        return {
+          coneCenter,
+          coneQuaternion,
+          color: arrowColor,
+          headLength,
+          linePoints: [start, shaftEnd],
+        };
+      };
+
+      const totalArrow = buildArrow(force, color);
+      const peelArrow = selectedLayerForce
+        ? buildArrow(
+            new THREE.Vector3(
+              selectedLayerForce.peel.x,
+              selectedLayerForce.peel.y,
+              selectedLayerForce.peel.z,
+            ),
+            new THREE.Color('#f59e0b'),
+          )
+        : null;
+      const rotationArrow = selectedLayerForce
+        ? buildArrow(
+            new THREE.Vector3(
+              selectedLayerForce.rotation.x,
+              selectedLayerForce.rotation.y,
+              selectedLayerForce.rotation.z,
+            ),
+            new THREE.Color('#ef4444'),
+          )
+        : null;
+      const gravityArrow = selectedLayerForce
+        ? buildArrow(
+            new THREE.Vector3(
+              selectedLayerForce.gravity.x,
+              selectedLayerForce.gravity.y,
+              selectedLayerForce.gravity.z,
+            ),
+            new THREE.Color('#3b82f6'),
+          )
+        : null;
+
+      return {
+        arrowData: totalArrow,
+        peelArrowData: peelArrow,
+        rotationArrowData: rotationArrow,
+        gravityArrowData: gravityArrow,
+        sphereColor: color,
+      };
+    }, [maxMagnitude, point, selectedSliceHeightMm]);
+
+  const renderArrow = (
+    data: {
+      coneCenter: THREE.Vector3;
+      coneQuaternion: THREE.Quaternion;
+      color: THREE.Color;
+      headLength: number;
+      linePoints: THREE.Vector3[];
+    } | null,
+  ) => {
+    if (!data) return null;
+    return (
+      <>
+        <Line points={data.linePoints} color={data.color} lineWidth={1.5} />
+        <mesh position={data.coneCenter} quaternion={data.coneQuaternion}>
+          <coneGeometry args={[Math.max(point.radiusMm * 0.55, 0.25), data.headLength, 10]} />
+          <meshBasicMaterial color={data.color} />
+        </mesh>
+      </>
     );
-    return {
-      arrowData: { coneCenter, coneQuaternion, color, headLength, linePoints: [start, shaftEnd] },
-      sphereColor: color,
-    };
-  }, [maxMagnitude, point]);
+  };
 
   return (
     <group>
@@ -275,40 +373,49 @@ function SupportForceArrow({
         <sphereGeometry args={[point.radiusMm, 12, 8]} />
         <meshStandardMaterial color={sphereColor} roughness={0.4} metalness={0.1} />
       </mesh>
-      {arrowData && (
-        <>
-          <Line points={arrowData.linePoints} color={arrowData.color} lineWidth={1.5} />
-          <mesh position={arrowData.coneCenter} quaternion={arrowData.coneQuaternion}>
-            <coneGeometry
-              args={[Math.max(point.radiusMm * 0.55, 0.25), arrowData.headLength, 10]}
-            />
-            <meshBasicMaterial color={arrowData.color} />
-          </mesh>
-        </>
-      )}
+      {renderArrow(gravityArrowData)}
+      {renderArrow(peelArrowData)}
+      {renderArrow(rotationArrowData)}
+      {renderArrow(arrowData)}
     </group>
   );
 }
 
-function SupportForceArrows({ points, visible }: SupportForceArrowsProps) {
+function SupportForceArrows({ points, selectedSliceHeightMm, visible }: SupportForceArrowsProps) {
+  const visiblePoints = useMemo(() => {
+    if (!points) return null;
+    if (selectedSliceHeightMm == null) return points;
+
+    return points.filter((point) => {
+      if (point.layerForces && point.layerForces.length > 0) {
+        return point.layerForces.some(
+          (layer) => layer.sliceHeightMm <= selectedSliceHeightMm + 1e-3,
+        );
+      }
+
+      return point.y <= selectedSliceHeightMm + 1e-3;
+    });
+  }, [points, selectedSliceHeightMm]);
+
   const maxMagnitude = useMemo(
     () =>
-      points?.reduce(
+      visiblePoints?.reduce(
         (max, point) =>
           Math.max(max, Math.hypot(point.pullForce.x, point.pullForce.y, point.pullForce.z)),
         0,
       ) ?? 0,
-    [points],
+    [visiblePoints],
   );
 
-  if (!visible || !points || points.length === 0) return null;
+  if (!visible || !visiblePoints || visiblePoints.length === 0) return null;
 
   return (
     <group>
-      {points.map((point, index) => (
+      {visiblePoints.map((point, index) => (
         <SupportForceArrow
           key={`${point.x}-${point.y}-${point.z}-${index}`}
           point={point}
+          selectedSliceHeightMm={selectedSliceHeightMm}
           maxMagnitude={maxMagnitude}
         />
       ))}
@@ -323,9 +430,14 @@ interface ErrorBoundaryState {
 interface SupportGeometryMeshProps {
   geometry: import('../lib/api').GeometryResponse | null;
   visible: boolean;
+  selectedSliceClipHeightMm?: number | null;
 }
 
-function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshProps) {
+function SupportGeometryMesh({
+  geometry: data,
+  visible,
+  selectedSliceClipHeightMm,
+}: SupportGeometryMeshProps) {
   const bufferGeometry = useMemo(() => {
     if (!data) return null;
     const geo = new THREE.BufferGeometry();
@@ -334,6 +446,11 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
     geo.computeVertexNormals();
     return geo;
   }, [data]);
+
+  const clippingPlanes = useMemo(() => {
+    if (selectedSliceClipHeightMm == null) return [];
+    return [new THREE.Plane(new THREE.Vector3(0, -1, 0), selectedSliceClipHeightMm)];
+  }, [selectedSliceClipHeightMm]);
 
   if (!data || !bufferGeometry) return null;
 
@@ -347,6 +464,8 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
         opacity={0.5}
         flatShading
         side={THREE.DoubleSide}
+        clippingPlanes={clippingPlanes}
+        clipShadows
       />
     </mesh>
   );
@@ -354,15 +473,24 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
 
 interface IslandHighlightsProps {
   islands: import('../lib/api').AutoSupportIsland[] | null;
+  selectedSliceHeightMm?: number | null;
   visible: boolean;
 }
 
-function IslandHighlights({ islands, visible }: IslandHighlightsProps) {
-  if (!visible || !islands || islands.length === 0) return null;
+function IslandHighlights({ islands, selectedSliceHeightMm, visible }: IslandHighlightsProps) {
+  const visibleIslands = useMemo(() => {
+    if (!islands) return null;
+    if (selectedSliceHeightMm == null) return islands;
+    return islands.filter(
+      (island) => Math.abs(island.sliceHeightMm - selectedSliceHeightMm) <= 0.001,
+    );
+  }, [islands, selectedSliceHeightMm]);
+
+  if (!visible || !visibleIslands || visibleIslands.length === 0) return null;
 
   return (
     <group>
-      {islands.map((island, index) => {
+      {visibleIslands.map((island, index) => {
         const radius = Math.max(island.radiusMm, 0.3);
         return (
           <group
@@ -391,6 +519,128 @@ function IslandHighlights({ islands, visible }: IslandHighlightsProps) {
         );
       })}
     </group>
+  );
+}
+
+function SliceLayerOverlay({
+  islands,
+  sliceLayers,
+  selectedSliceLayerIndex,
+  selectedSliceHeightMm,
+}: {
+  islands: import('../lib/api').AutoSupportIsland[] | null;
+  sliceLayers?: import('../lib/api').AutoSupportSliceLayer[] | null;
+  selectedSliceLayerIndex?: number | null;
+  selectedSliceHeightMm?: number | null;
+}) {
+  if (selectedSliceHeightMm == null) return null;
+
+  const selectedSliceLayer =
+    sliceLayers &&
+    selectedSliceLayerIndex != null &&
+    selectedSliceLayerIndex >= 0 &&
+    selectedSliceLayerIndex < sliceLayers.length
+      ? sliceLayers[selectedSliceLayerIndex]
+      : null;
+
+  if (selectedSliceLayer?.sliceMaskPngBase64) {
+    return (
+      <SliceMaskPlane layer={selectedSliceLayer} selectedSliceHeightMm={selectedSliceHeightMm} />
+    );
+  }
+
+  if (!islands || islands.length === 0) return null;
+
+  const layerIslands = islands.filter(
+    (island) =>
+      Math.abs(island.sliceHeightMm - selectedSliceHeightMm) <= 0.001 &&
+      island.boundary &&
+      island.boundary.length >= 3,
+  );
+
+  if (layerIslands.length === 0) return null;
+
+  return (
+    <group>
+      {layerIslands.map((island, index) => {
+        const coordinates = (island.boundary ?? []).map(
+          (vertex) => [vertex.x, vertex.z] as [number, number],
+        );
+        return (
+          <group key={`slice-layer-${index}`}>
+            <HullPolygon
+              coordinates={coordinates}
+              color="#22d3ee"
+              yOffset={selectedSliceHeightMm}
+              opacity={0.28}
+            />
+            <HullLine coordinates={coordinates} color="#06b6d4" yOffset={selectedSliceHeightMm} />
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function SliceMaskPlane({
+  layer,
+  selectedSliceHeightMm,
+}: {
+  layer: import('../lib/api').AutoSupportSliceLayer;
+  selectedSliceHeightMm: number;
+}) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const sliceMaskUrl = useMemo(
+    () => (layer.sliceMaskPngBase64 ? `data:image/png;base64,${layer.sliceMaskPngBase64}` : null),
+    [layer.sliceMaskPngBase64],
+  );
+
+  useEffect(() => {
+    if (!sliceMaskUrl) {
+      setTexture(null);
+      return;
+    }
+
+    const cachedTexture = sliceMaskTextureCache.get(sliceMaskUrl);
+    if (cachedTexture) {
+      setTexture(cachedTexture);
+      return;
+    }
+
+    let cancelled = false;
+    const loader = new THREE.TextureLoader();
+    loader.load(sliceMaskUrl, (loadedTexture) => {
+      if (cancelled) return;
+
+      loadedTexture.minFilter = THREE.NearestFilter;
+      loadedTexture.magFilter = THREE.NearestFilter;
+      loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
+      loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+      // Slice bitmaps are encoded with row 0 as +Z, so disable default Y flip.
+      loadedTexture.flipY = false;
+      loadedTexture.needsUpdate = true;
+      sliceMaskTextureCache.set(sliceMaskUrl, loadedTexture);
+      setTexture(loadedTexture);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sliceMaskUrl]);
+
+  if (!texture) return null;
+
+  return (
+    <mesh position={[0, selectedSliceHeightMm + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[layer.bedWidthMm, layer.bedDepthMm]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0.75}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
   );
 }
 
@@ -429,6 +679,10 @@ interface ModelViewerProps {
   splitGeometryOverride?: import('../lib/api').SplitGeometryResponse | null;
   supportPointsOverride?: import('../lib/api').AutoSupportPoint[] | null;
   islandsOverride?: import('../lib/api').AutoSupportIsland[] | null;
+  sliceLayersOverride?: import('../lib/api').AutoSupportSliceLayer[] | null;
+  selectedSliceLayerIndex?: number | null;
+  selectedSliceHeightMm?: number | null;
+  slicePreviewEnabled?: boolean;
   showForceMarkers?: boolean;
 }
 
@@ -442,6 +696,10 @@ export default function ModelViewer({
   splitGeometryOverride,
   supportPointsOverride,
   islandsOverride,
+  sliceLayersOverride,
+  selectedSliceLayerIndex,
+  selectedSliceHeightMm,
+  slicePreviewEnabled = false,
   showForceMarkers = true,
 }: ModelViewerProps) {
   const shouldFetchModel = modelOverride == null;
@@ -466,22 +724,98 @@ export default function ModelViewer({
   const color = MODEL_COLOR;
   const theme = useTheme();
   const geometryData = activeSplitData != null ? activeSplitData.body : fullData;
+
+  const geometryBounds = useMemo(() => {
+    if (!geometryData || geometryData.positions.length < 3) return null;
+
+    const positions = geometryData.positions;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      const z = positions[i + 2];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+
+    return {
+      centre: {
+        x: (minX + maxX) * 0.5,
+        y: (minY + maxY) * 0.5,
+        z: (minZ + maxZ) * 0.5,
+      },
+      dimensionX: Math.max(maxX - minX, 0.001),
+      dimensionY: Math.max(maxY - minY, 0.001),
+      dimensionZ: Math.max(maxZ - minZ, 0.001),
+    };
+  }, [geometryData]);
+
+  const frameSphereCentre = geometryBounds?.centre ?? geometryData?.sphereCentre ?? null;
+  const frameDimensionX =
+    geometryBounds?.dimensionX ?? geometryData?.dimensionXMm ?? model?.dimensionXMm ?? 0;
+  const frameDimensionY =
+    geometryBounds?.dimensionY ?? geometryData?.dimensionYMm ?? model?.dimensionYMm ?? 0;
+  const frameDimensionZ =
+    geometryBounds?.dimensionZ ?? geometryData?.dimensionZMm ?? model?.dimensionZMm ?? 0;
+
   const orbitTarget = useMemo<[number, number, number]>(
-    () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
-    [model?.sphereCentreX, model?.sphereCentreY, model?.sphereCentreZ],
+    () => [
+      frameSphereCentre?.x ?? model?.sphereCentreX ?? 0,
+      frameSphereCentre?.y ?? model?.sphereCentreY ?? 0,
+      frameSphereCentre?.z ?? model?.sphereCentreZ ?? 0,
+    ],
+    [
+      frameSphereCentre?.x,
+      frameSphereCentre?.y,
+      frameSphereCentre?.z,
+      model?.sphereCentreX,
+      model?.sphereCentreY,
+      model?.sphereCentreZ,
+    ],
   );
   const halfExtents = useMemo(
-    () =>
-      new THREE.Vector3(
-        (model?.dimensionXMm ?? 0) / 2,
-        (model?.dimensionYMm ?? 0) / 2,
-        (model?.dimensionZMm ?? 0) / 2,
-      ),
-    [model?.dimensionXMm, model?.dimensionYMm, model?.dimensionZMm],
+    () => new THREE.Vector3(frameDimensionX / 2, frameDimensionY / 2, frameDimensionZ / 2),
+    [frameDimensionX, frameDimensionY, frameDimensionZ],
   );
 
   const hasSupportMesh = activeSplitData?.supports != null;
   const shouldShowForceMarkers = showSupports && showForceMarkers;
+  const effectiveSliceHeightMm = slicePreviewEnabled ? selectedSliceHeightMm : null;
+
+  const effectiveSliceClipHeightMm = useMemo(() => {
+    if (!slicePreviewEnabled || effectiveSliceHeightMm == null) return null;
+
+    const layers = sliceLayersOverride ?? [];
+    if (selectedSliceLayerIndex == null || layers.length <= 1) {
+      return effectiveSliceHeightMm;
+    }
+
+    const currentLayer = layers[selectedSliceLayerIndex];
+    if (!currentLayer) return effectiveSliceHeightMm;
+
+    const referenceLayer =
+      selectedSliceLayerIndex + 1 < layers.length
+        ? layers[selectedSliceLayerIndex + 1]
+        : selectedSliceLayerIndex > 0
+          ? layers[selectedSliceLayerIndex - 1]
+          : null;
+    if (!referenceLayer) return effectiveSliceHeightMm;
+
+    const layerHeightMm = Math.abs(referenceLayer.sliceHeightMm - currentLayer.sliceHeightMm);
+    if (layerHeightMm <= 0) return effectiveSliceHeightMm;
+
+    return effectiveSliceHeightMm + layerHeightMm * 0.5;
+  }, [slicePreviewEnabled, effectiveSliceHeightMm, selectedSliceLayerIndex, sliceLayersOverride]);
 
   useEffect(() => {
     setSupportsToggleAvailable(hasSupportMesh);
@@ -533,7 +867,11 @@ export default function ModelViewer({
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <div style={wrapperStyle}>
-        <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
+        <Canvas
+          camera={{ fov: 45 }}
+          gl={{ antialias: true, localClippingEnabled: true }}
+          style={containerStyle}
+        >
           <SceneBg color={theme.palette.background.default} />
           <CameraInit
             target={orbitTarget}
@@ -549,18 +887,33 @@ export default function ModelViewer({
             concaveHull={concaveHull ?? null}
             convexSansRaftHull={convexSansRaftHull ?? null}
             raftHeightMm={model.raftHeightMm}
+            selectedSliceClipHeightMm={effectiveSliceClipHeightMm}
           />
           {hasSupportMesh && (
             <SupportGeometryMesh
               geometry={activeSplitData?.supports ?? null}
               visible={showSupports}
+              selectedSliceClipHeightMm={effectiveSliceClipHeightMm}
             />
           )}
           <SupportForceArrows
             points={supportPointsOverride ?? null}
+            selectedSliceHeightMm={effectiveSliceHeightMm}
             visible={shouldShowForceMarkers}
           />
-          <IslandHighlights islands={islandsOverride ?? null} visible={shouldShowForceMarkers} />
+          {slicePreviewEnabled && (
+            <SliceLayerOverlay
+              islands={islandsOverride ?? null}
+              sliceLayers={sliceLayersOverride ?? null}
+              selectedSliceLayerIndex={selectedSliceLayerIndex}
+              selectedSliceHeightMm={effectiveSliceHeightMm}
+            />
+          )}
+          <IslandHighlights
+            islands={islandsOverride ?? null}
+            selectedSliceHeightMm={effectiveSliceHeightMm}
+            visible={shouldShowForceMarkers}
+          />
           <OrbitControls
             target={orbitTarget}
             enableDamping

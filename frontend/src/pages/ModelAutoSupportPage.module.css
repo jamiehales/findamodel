@@ -12,6 +12,30 @@
   border: 1px solid var(--color-border-subtle);
 }
 
+.viewerLayout {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 72px;
+}
+
+.viewerCanvas {
+  min-width: 0;
+  height: 100%;
+}
+
+.layerSliderWrap {
+  border-left: 1px solid var(--color-border-subtle);
+  padding: 12px 8px;
+  justify-content: center;
+}
+
+.sliderLabelTop,
+.sliderLabelBottom {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .placeholderBox {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -30,6 +54,20 @@
 @media (max-width: 900px) {
   .viewerBox {
     height: 840px;
+  }
+
+  .viewerLayout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 92px;
+  }
+
+  .layerSliderWrap {
+    border-left: none;
+    border-top: 1px solid var(--color-border-subtle);
+    padding: 8px 16px;
+    flex-direction: row;
+    justify-content: center;
+    gap: 12px;
   }
 }
 

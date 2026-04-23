@@ -39,6 +39,7 @@ public sealed record AutoSupportSettingsPreviewScenarioDto(
     string? ErrorMessage,
     IReadOnlyList<AutoSupportPointDto>? SupportPoints = null,
     IReadOnlyList<AutoSupportIslandDto>? Islands = null,
+    IReadOnlyList<AutoSupportSliceLayerDto>? SliceLayers = null,
     double? GenerateMs = null,
     double? EncodeMs = null,
     double? WriteMs = null,
