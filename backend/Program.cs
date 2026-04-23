@@ -91,6 +91,7 @@ builder.Services.AddSingleton<findamodel.Services.IPlateSliceBitmapGenerator, fi
 builder.Services.AddSingleton<findamodel.Services.IPlateSliceBitmapGenerator, findamodel.Services.OrthographicProjectionSliceBitmapGenerator>();
 builder.Services.AddSingleton<findamodel.Services.PlateSliceRasterService>();
 builder.Services.AddSingleton<findamodel.Services.CtbExportService>();
+builder.Services.AddSingleton<findamodel.Services.ModelRepairService>();
 builder.Services.AddSingleton<findamodel.Services.PlateModelGeometryCacheService>();
 builder.Services.AddSingleton<findamodel.Services.PlateExportService>();
 builder.Services.AddSingleton<findamodel.Services.PlateGenerationJobService>();

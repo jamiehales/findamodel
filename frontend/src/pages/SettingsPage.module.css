@@ -165,6 +165,28 @@
   height: 100%;
 }
 
+.printerCard {
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.printerCardHeader {
+  justify-content: space-between;
+}
+
+.printerFieldsRow,
+.printerCtbFieldsRow,
+.printerActionsRow {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.printerField {
+  flex: 1 1 190px;
+  min-width: 190px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     width: 100%;
@@ -184,5 +206,9 @@
     border-top: 1px solid var(--mui-palette-divider);
     padding: 8px 16px;
     align-items: center;
+  }
+
+  .printerField {
+    min-width: 100%;
   }
 }

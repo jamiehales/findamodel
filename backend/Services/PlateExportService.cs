@@ -192,6 +192,8 @@ public sealed class PlateExportService(
         if (string.IsNullOrWhiteSpace(modelsPath))
             throw new InvalidOperationException("Models:DirectoryPath not configured");
 
+        var repairOptions = ModelRepairOptions.Resolve(config);
+
         var requestedModelIds = new HashSet<Guid>();
         var requestPlacements = new List<(PlacementDto Placement, Guid ModelId)>(request.Placements.Count);
         foreach (var placement in request.Placements)
@@ -270,6 +272,7 @@ public sealed class PlateExportService(
                     modelInfo.Checksum,
                     fullPath,
                     modelInfo.FileType,
+                    repairOptions,
                     cancellationToken);
 
                 progressReporter?.MarkEntryCompleted();

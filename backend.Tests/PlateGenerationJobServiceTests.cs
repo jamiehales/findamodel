@@ -359,7 +359,7 @@ public class PlateGenerationJobServiceTests
             var configuration = CreateConfiguration(modelsRoot);
             var plateExportService = new PlateExportService(
                 CreateModelService(configuration, dbFactory),
-                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
                 new ModelSaverService(),
                 new PlateSliceRasterService(
                 [
@@ -455,7 +455,7 @@ public class PlateGenerationJobServiceTests
             var configuration = CreateConfiguration(modelsRoot);
             var plateExportService = new PlateExportService(
                 CreateModelService(configuration, dbFactory),
-                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
                 new ModelSaverService(),
                 new PlateSliceRasterService(
                 [
@@ -527,7 +527,7 @@ public class PlateGenerationJobServiceTests
             var configuration = CreateConfiguration(modelsRoot);
             var plateExportService = new PlateExportService(
                 CreateModelService(configuration, dbFactory),
-                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
                 new ModelSaverService(),
                 new PlateSliceRasterService(
                 [
@@ -646,7 +646,7 @@ public class PlateGenerationJobServiceTests
             var printerService = new PrinterService(dbFactory);
             var plateExportService = new PlateExportService(
                 CreateModelService(configuration, dbFactory),
-                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
                 new ModelSaverService(),
                 sliceRasterService,
                 new CtbExportService(sliceRasterService),
@@ -771,7 +771,7 @@ public class PlateGenerationJobServiceTests
         var printerService = new PrinterService(dbFactory);
         var plateExportService = new PlateExportService(
             CreateModelService(configuration, dbFactory),
-            new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+            new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
             new ModelSaverService(),
             sliceRasterService,
             new CtbExportService(sliceRasterService),
@@ -841,7 +841,7 @@ public class PlateGenerationJobServiceTests
             var configuration = CreateConfiguration(modelsRoot);
             var plateExportService = new PlateExportService(
                 CreateModelService(configuration, dbFactory),
-                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance)),
+                new PlateModelGeometryCacheService(new ModelLoaderService(NullLoggerFactory.Instance), new ModelRepairService(NullLoggerFactory.Instance)),
                 new ModelSaverService(),
                 new PlateSliceRasterService(
                 [

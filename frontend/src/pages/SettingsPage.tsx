@@ -1564,115 +1564,139 @@ export default function SettingsPage() {
                         !printerCtbSettingsEqual(ctbSettings, printer));
 
                     return (
-                      <Stack
-                        key={printer.id}
-                        direction={{ xs: 'column', md: 'row' }}
-                        spacing={1}
-                        alignItems={{ xs: 'stretch', md: 'center' }}
-                      >
-                        <TextField
-                          size="small"
-                          label="Name"
-                          value={edit.name}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                name: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <TextField
-                          size="small"
-                          type="number"
-                          label="Width (mm)"
-                          value={edit.bedWidthMm}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                bedWidthMm: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <TextField
-                          size="small"
-                          type="number"
-                          label="Depth (mm)"
-                          value={edit.bedDepthMm}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                bedDepthMm: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <TextField
-                          size="small"
-                          type="number"
-                          label="Resolution X (px)"
-                          value={edit.pixelWidth}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                pixelWidth: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <TextField
-                          size="small"
-                          type="number"
-                          label="Resolution Y (px)"
-                          value={edit.pixelHeight}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                pixelHeight: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        {PRINTER_CTB_FIELDS.map((field) => (
+                      <Stack key={printer.id} spacing={1.5} className={styles.printerCard}>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          className={styles.printerCardHeader}
+                        >
+                          <Typography variant="subtitle1">{printer.name}</Typography>
+                          {printer.isBuiltIn && <Chip size="small" label="Built in" />}
+                        </Stack>
+
+                        <Stack
+                          direction={{ xs: 'column', lg: 'row' }}
+                          spacing={1}
+                          className={styles.printerFieldsRow}
+                        >
                           <TextField
-                            key={`${printer.id}-${field.key}`}
                             size="small"
-                            type="number"
-                            label={field.label}
-                            value={edit.ctbSettings[field.key]}
+                            label="Name"
+                            value={edit.name}
                             disabled={printer.isBuiltIn}
+                            className={styles.printerField}
                             onChange={(e) =>
                               setPrinterEdits((current) => ({
                                 ...current,
                                 [printer.id]: {
                                   ...edit,
-                                  ctbSettings: {
-                                    ...edit.ctbSettings,
-                                    [field.key]: e.target.value,
-                                  },
+                                  name: e.target.value,
                                 },
                               }))
                             }
-                            inputProps={{ min: field.min, step: field.step }}
                           />
-                        ))}
-                        <Stack direction="row" spacing={1}>
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Width (mm)"
+                            value={edit.bedWidthMm}
+                            disabled={printer.isBuiltIn}
+                            className={styles.printerField}
+                            onChange={(e) =>
+                              setPrinterEdits((current) => ({
+                                ...current,
+                                [printer.id]: {
+                                  ...edit,
+                                  bedWidthMm: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Depth (mm)"
+                            value={edit.bedDepthMm}
+                            disabled={printer.isBuiltIn}
+                            className={styles.printerField}
+                            onChange={(e) =>
+                              setPrinterEdits((current) => ({
+                                ...current,
+                                [printer.id]: {
+                                  ...edit,
+                                  bedDepthMm: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Resolution X (px)"
+                            value={edit.pixelWidth}
+                            disabled={printer.isBuiltIn}
+                            className={styles.printerField}
+                            onChange={(e) =>
+                              setPrinterEdits((current) => ({
+                                ...current,
+                                [printer.id]: {
+                                  ...edit,
+                                  pixelWidth: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Resolution Y (px)"
+                            value={edit.pixelHeight}
+                            disabled={printer.isBuiltIn}
+                            className={styles.printerField}
+                            onChange={(e) =>
+                              setPrinterEdits((current) => ({
+                                ...current,
+                                [printer.id]: {
+                                  ...edit,
+                                  pixelHeight: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </Stack>
+
+                        <Typography variant="subtitle2" color="text.secondary">
+                          CTB settings
+                        </Typography>
+                        <Stack direction="row" spacing={1} className={styles.printerCtbFieldsRow}>
+                          {PRINTER_CTB_FIELDS.map((field) => (
+                            <TextField
+                              key={`${printer.id}-${field.key}`}
+                              size="small"
+                              type="number"
+                              label={field.label}
+                              value={edit.ctbSettings[field.key]}
+                              disabled={printer.isBuiltIn}
+                              className={styles.printerField}
+                              onChange={(e) =>
+                                setPrinterEdits((current) => ({
+                                  ...current,
+                                  [printer.id]: {
+                                    ...edit,
+                                    ctbSettings: {
+                                      ...edit.ctbSettings,
+                                      [field.key]: e.target.value,
+                                    },
+                                  },
+                                }))
+                              }
+                              inputProps={{ min: field.min, step: field.step }}
+                            />
+                          ))}
+                        </Stack>
+
+                        <Stack direction="row" spacing={1} className={styles.printerActionsRow}>
                           {!printer.isBuiltIn && (
                             <Button
                               variant="contained"
@@ -1708,7 +1732,6 @@ export default function SettingsPage() {
                               Delete
                             </Button>
                           )}
-                          {printer.isBuiltIn && <Chip size="small" label="Built in" />}
                         </Stack>
                       </Stack>
                     );
@@ -1719,93 +1742,114 @@ export default function SettingsPage() {
 
                 <Typography variant="h6">New Printer</Typography>
 
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems="center">
-                  <TextField
-                    size="small"
-                    label="Printer name"
-                    value={newPrinterName}
-                    onChange={(e) => setNewPrinterName(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Width (mm)"
-                    value={newPrinterWidthMm}
-                    onChange={(e) => setNewPrinterWidthMm(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Depth (mm)"
-                    value={newPrinterDepthMm}
-                    onChange={(e) => setNewPrinterDepthMm(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Resolution X (px)"
-                    value={newPrinterPixelWidth}
-                    onChange={(e) => setNewPrinterPixelWidth(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Resolution Y (px)"
-                    value={newPrinterPixelHeight}
-                    onChange={(e) => setNewPrinterPixelHeight(e.target.value)}
-                  />
-                  {PRINTER_CTB_FIELDS.map((field) => (
+                <Stack spacing={1.5} className={styles.printerCard}>
+                  <Stack
+                    direction={{ xs: 'column', lg: 'row' }}
+                    spacing={1}
+                    className={styles.printerFieldsRow}
+                  >
                     <TextField
-                      key={`new-printer-${field.key}`}
+                      size="small"
+                      label="Printer name"
+                      value={newPrinterName}
+                      className={styles.printerField}
+                      onChange={(e) => setNewPrinterName(e.target.value)}
+                    />
+                    <TextField
                       size="small"
                       type="number"
-                      label={field.label}
-                      value={newPrinterCtbSettings[field.key]}
-                      onChange={(e) =>
-                        setNewPrinterCtbSettings((current) => ({
-                          ...current,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      inputProps={{ min: field.min, step: field.step }}
+                      label="Width (mm)"
+                      value={newPrinterWidthMm}
+                      className={styles.printerField}
+                      onChange={(e) => setNewPrinterWidthMm(e.target.value)}
                     />
-                  ))}
-                  <Button
-                    variant="contained"
-                    disabled={
-                      createPrinterMutation.isPending ||
-                      !newPrinterName.trim() ||
-                      Number(newPrinterWidthMm) <= 0 ||
-                      Number(newPrinterDepthMm) <= 0 ||
-                      Number(newPrinterPixelWidth) <= 0 ||
-                      Number(newPrinterPixelHeight) <= 0 ||
-                      parsePrinterCtbSettingsDraft(newPrinterCtbSettings) === null
-                    }
-                    onClick={() => {
-                      const parsedNewPrinterCtbSettings =
-                        parsePrinterCtbSettingsDraft(newPrinterCtbSettings);
-                      if (!parsedNewPrinterCtbSettings) return;
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="Depth (mm)"
+                      value={newPrinterDepthMm}
+                      className={styles.printerField}
+                      onChange={(e) => setNewPrinterDepthMm(e.target.value)}
+                    />
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="Resolution X (px)"
+                      value={newPrinterPixelWidth}
+                      className={styles.printerField}
+                      onChange={(e) => setNewPrinterPixelWidth(e.target.value)}
+                    />
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="Resolution Y (px)"
+                      value={newPrinterPixelHeight}
+                      className={styles.printerField}
+                      onChange={(e) => setNewPrinterPixelHeight(e.target.value)}
+                    />
+                  </Stack>
 
-                      createPrinterMutation.mutate(
-                        {
-                          name: newPrinterName.trim(),
-                          bedWidthMm: Number(newPrinterWidthMm),
-                          bedDepthMm: Number(newPrinterDepthMm),
-                          pixelWidth: Number(newPrinterPixelWidth),
-                          pixelHeight: Number(newPrinterPixelHeight),
-                          ctbSettings: parsedNewPrinterCtbSettings,
-                        },
-                        {
-                          onSuccess: () => {
-                            setNewPrinterName('');
-                            setNewPrinterCtbSettings(DEFAULT_PRINTER_CTB_SETTINGS_DRAFT);
+                  <Typography variant="subtitle2" color="text.secondary">
+                    CTB settings
+                  </Typography>
+                  <Stack direction="row" spacing={1} className={styles.printerCtbFieldsRow}>
+                    {PRINTER_CTB_FIELDS.map((field) => (
+                      <TextField
+                        key={`new-printer-${field.key}`}
+                        size="small"
+                        type="number"
+                        label={field.label}
+                        value={newPrinterCtbSettings[field.key]}
+                        className={styles.printerField}
+                        onChange={(e) =>
+                          setNewPrinterCtbSettings((current) => ({
+                            ...current,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        inputProps={{ min: field.min, step: field.step }}
+                      />
+                    ))}
+                  </Stack>
+
+                  <Stack direction="row" spacing={1} className={styles.printerActionsRow}>
+                    <Button
+                      variant="contained"
+                      disabled={
+                        createPrinterMutation.isPending ||
+                        !newPrinterName.trim() ||
+                        Number(newPrinterWidthMm) <= 0 ||
+                        Number(newPrinterDepthMm) <= 0 ||
+                        Number(newPrinterPixelWidth) <= 0 ||
+                        Number(newPrinterPixelHeight) <= 0 ||
+                        parsePrinterCtbSettingsDraft(newPrinterCtbSettings) === null
+                      }
+                      onClick={() => {
+                        const parsedNewPrinterCtbSettings =
+                          parsePrinterCtbSettingsDraft(newPrinterCtbSettings);
+                        if (!parsedNewPrinterCtbSettings) return;
+
+                        createPrinterMutation.mutate(
+                          {
+                            name: newPrinterName.trim(),
+                            bedWidthMm: Number(newPrinterWidthMm),
+                            bedDepthMm: Number(newPrinterDepthMm),
+                            pixelWidth: Number(newPrinterPixelWidth),
+                            pixelHeight: Number(newPrinterPixelHeight),
+                            ctbSettings: parsedNewPrinterCtbSettings,
                           },
-                        },
-                      );
-                    }}
-                  >
-                    Add printer
-                  </Button>
+                          {
+                            onSuccess: () => {
+                              setNewPrinterName('');
+                              setNewPrinterCtbSettings(DEFAULT_PRINTER_CTB_SETTINGS_DRAFT);
+                            },
+                          },
+                        );
+                      }}
+                    >
+                      Add printer
+                    </Button>
+                  </Stack>
                 </Stack>
               </Stack>
             </Stack>

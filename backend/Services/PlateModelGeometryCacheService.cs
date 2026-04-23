@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
+using findamodel.Models;
 
 namespace findamodel.Services;
 
-public sealed class PlateModelGeometryCacheService(ModelLoaderService loaderService)
+public sealed class PlateModelGeometryCacheService(
+    ModelLoaderService loaderService,
+    ModelRepairService repairService)
 {
     private readonly ConcurrentDictionary<Guid, CacheEntry> cacheByModelId = new();
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> loadGatesByModelId = new();
@@ -12,12 +15,17 @@ public sealed class PlateModelGeometryCacheService(ModelLoaderService loaderServ
         string expectedChecksum,
         string fullPath,
         string fileType,
+        ModelRepairOptions repairOptions,
         CancellationToken cancellationToken)
     {
+        var repairOptionsHash = repairOptions.ComputeDeterministicHash();
+
         if (cacheByModelId.TryGetValue(modelId, out var existing)
             && string.Equals(existing.Checksum, expectedChecksum, StringComparison.Ordinal)
             && string.Equals(existing.FullPath, fullPath, StringComparison.Ordinal)
-            && string.Equals(existing.FileType, fileType, StringComparison.OrdinalIgnoreCase))
+            && string.Equals(existing.FileType, fileType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(existing.RepairVersion, ModelRepairService.CurrentRepairVersion, StringComparison.Ordinal)
+            && string.Equals(existing.RepairOptionsHash, repairOptionsHash, StringComparison.Ordinal))
         {
             return existing.Geometry;
         }
@@ -29,7 +37,9 @@ public sealed class PlateModelGeometryCacheService(ModelLoaderService loaderServ
             if (cacheByModelId.TryGetValue(modelId, out existing)
                 && string.Equals(existing.Checksum, expectedChecksum, StringComparison.Ordinal)
                 && string.Equals(existing.FullPath, fullPath, StringComparison.Ordinal)
-                && string.Equals(existing.FileType, fileType, StringComparison.OrdinalIgnoreCase))
+                && string.Equals(existing.FileType, fileType, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.RepairVersion, ModelRepairService.CurrentRepairVersion, StringComparison.Ordinal)
+                && string.Equals(existing.RepairOptionsHash, repairOptionsHash, StringComparison.Ordinal))
             {
                 return existing.Geometry;
             }
@@ -38,8 +48,17 @@ public sealed class PlateModelGeometryCacheService(ModelLoaderService loaderServ
             if (geometry is null)
                 throw new InvalidOperationException($"Failed to parse geometry for: {Path.GetFileName(fullPath)}");
 
-            cacheByModelId[modelId] = new CacheEntry(expectedChecksum, fullPath, fileType, geometry);
-            return geometry;
+            var repaired = await repairService.RepairForSlicingAsync(geometry, repairOptions, cancellationToken);
+
+            cacheByModelId[modelId] = new CacheEntry(
+                expectedChecksum,
+                fullPath,
+                fileType,
+                repaired.Geometry,
+                ModelRepairService.CurrentRepairVersion,
+                repairOptionsHash);
+
+            return repaired.Geometry;
         }
         finally
         {
@@ -47,5 +66,11 @@ public sealed class PlateModelGeometryCacheService(ModelLoaderService loaderServ
         }
     }
 
-    private sealed record CacheEntry(string Checksum, string FullPath, string FileType, LoadedGeometry Geometry);
+    private sealed record CacheEntry(
+        string Checksum,
+        string FullPath,
+        string FileType,
+        LoadedGeometry Geometry,
+        string RepairVersion,
+        string RepairOptionsHash);
 }

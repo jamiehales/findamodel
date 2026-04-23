@@ -43,4 +43,7 @@ public static class LogChannels
 
     /// <summary>Local LLM provider and inference orchestration.</summary>
     public const string Llm = $"{Root}.Llm";
+
+    /// <summary>Pre-slice mesh repair pipeline.</summary>
+    public const string Repair = $"{Root}.Repair";
 }
