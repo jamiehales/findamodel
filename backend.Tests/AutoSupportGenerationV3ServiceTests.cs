@@ -418,6 +418,109 @@ public class AutoSupportGenerationV3ServiceTests
     }
 
     [Fact]
+    public void GenerateSupportPreview_Sphere_DoesNotHitPreviewSupportCap()
+    {
+        var baseGeometry = CreateGeometry(
+            MakeSphere(radius: 20f, centerY: 20f));
+        var geometry = new LoadedGeometry
+        {
+            Triangles = baseGeometry.Triangles,
+            DimensionXMm = baseGeometry.DimensionXMm,
+            DimensionYMm = 40f,
+            DimensionZMm = baseGeometry.DimensionZMm,
+            SphereCentre = baseGeometry.SphereCentre,
+            SphereRadius = baseGeometry.SphereRadius,
+        };
+
+        var result = sut.GenerateSupportPreview(geometry, DefaultOverrides, maxSupportPoints: 2000);
+
+        Assert.True(result.SupportPoints.Count > 1,
+            $"Sphere preview should place more than one support, got {result.SupportPoints.Count}.");
+        Assert.True(result.SupportPoints.Count < 2000,
+            $"Sphere preview should not exhaust the preview support cap, got {result.SupportPoints.Count} supports.");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_Sphere_SupportsSpanMultipleHeights()
+    {
+        var baseGeometry = CreateGeometry(
+            MakeSphere(radius: 20f, centerY: 20f));
+        var geometry = new LoadedGeometry
+        {
+            Triangles = baseGeometry.Triangles,
+            DimensionXMm = baseGeometry.DimensionXMm,
+            DimensionYMm = 40f,
+            DimensionZMm = baseGeometry.DimensionZMm,
+            SphereCentre = baseGeometry.SphereCentre,
+            SphereRadius = baseGeometry.SphereRadius,
+        };
+
+        var result = sut.GenerateSupportPreview(geometry, DefaultOverrides, maxSupportPoints: 2000);
+
+        var distinctHeights = result.SupportPoints
+            .Select(point => MathF.Round(point.Position.Y, 3))
+            .Distinct()
+            .ToList();
+
+        Assert.True(distinctHeights.Count > 1,
+            $"Expected sphere supports to span multiple slice heights, got {distinctHeights.Count} distinct height(s).");
+
+        var minHeight = result.SupportPoints.Min(point => point.Position.Y);
+        var maxHeight = result.SupportPoints.Max(point => point.Position.Y);
+        var heightSpread = maxHeight - minHeight;
+        Assert.True(heightSpread >= geometry.DimensionYMm * 0.25f,
+            $"Expected sphere supports to span at least a quarter of model height, got spread {heightSpread:F3}mm for model height {geometry.DimensionYMm:F3}mm.");
+
+        var quarterCutoff = minHeight + (geometry.DimensionYMm * 0.25f);
+        var supportsAboveQuarter = result.SupportPoints.Count(point => point.Position.Y >= quarterCutoff);
+        Assert.True(supportsAboveQuarter >= Math.Max(5, result.SupportPoints.Count / 8),
+            $"Expected a meaningful fraction of supports above lower quarter, got {supportsAboveQuarter}/{result.SupportPoints.Count} above Y={quarterCutoff:F3}.");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_SupportsRespectConfiguredSpacingThreshold()
+    {
+        var geometry = CreateGeometry(
+            MakeSphere(radius: 20f, centerY: 20f));
+        var spacingThreshold = 6f;
+
+        var result = sut.GenerateSupportPreview(
+            geometry,
+            DefaultOverrides with
+            {
+                SupportSpacingThresholdMm = spacingThreshold,
+                ResinStrength = 1000f,
+                CrushForceThreshold = 10000f,
+                MaxAngularForce = 10000f,
+                PeelForceMultiplier = 0.01f,
+                GravityEnabled = false,
+                ShrinkagePercent = 0f,
+                DragCoefficientMultiplier = 0f,
+                SuctionMultiplier = 1f,
+                AreaGrowthMultiplier = 1f,
+            },
+            maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+
+        for (var i = 0; i < result.SupportPoints.Count; i++)
+        {
+            for (var j = i + 1; j < result.SupportPoints.Count; j++)
+            {
+                var dy = MathF.Abs(result.SupportPoints[i].Position.Y - result.SupportPoints[j].Position.Y);
+                if (dy > spacingThreshold)
+                    continue;
+
+                var dx = result.SupportPoints[i].Position.X - result.SupportPoints[j].Position.X;
+                var dz = result.SupportPoints[i].Position.Z - result.SupportPoints[j].Position.Z;
+                var planarDistance = MathF.Sqrt((dx * dx) + (dz * dz));
+                Assert.True(planarDistance >= spacingThreshold - 0.01f,
+                    $"Nearby-layer supports were placed {planarDistance:F3}mm apart, below threshold {spacingThreshold:F3}mm.");
+            }
+        }
+    }
+
+    [Fact]
     public void GenerateSupportPreview_TwoDonutsWithSuction_DoesNotThrow()
     {
         var leftDonut = TranslateTriangles(MakeTorus(majorRadius: 6f, minorRadius: 2f, centerY: 8f), offsetX: -12f, offsetZ: 0f);
@@ -433,6 +536,21 @@ public class AutoSupportGenerationV3ServiceTests
             });
 
         Assert.NotNull(result);
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_RespectsSupportCap()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: -10f, centerZ: 0f, width: 4f, depth: 4f, height: 4f),
+            MakeBox(centerX: 10f, centerZ: 0f, width: 4f, depth: 4f, height: 10f));
+
+        var uncapped = sut.GenerateSupportPreview(geometry, DefaultOverrides);
+        Assert.True(uncapped.SupportPoints.Count >= 2, "Expected baseline geometry to produce multiple supports.");
+
+        var capped = sut.GenerateSupportPreview(geometry, DefaultOverrides, maxSupportPoints: 1);
+
+        Assert.Single(capped.SupportPoints);
     }
 
     [Fact]
@@ -482,6 +600,27 @@ public class AutoSupportGenerationV3ServiceTests
         }
     }
 
+    [Fact]
+    public void GenerateSupportPreview_RotatedCube_DoesNotClusterSupportsAtBottom()
+    {
+        var cube = MakeBox(centerX: 0f, centerZ: 0f, width: 24f, depth: 24f, height: 24f);
+        var rotated = RotateTrianglesAroundX(cube, MathF.PI / 4f, pivotY: 12f);
+        var onBed = LiftTrianglesToBed(rotated);
+        var geometry = CreateGeometryFromTriangles(onBed);
+
+        var result = sut.GenerateSupportPreview(geometry, DefaultOverrides, maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var minY = result.SupportPoints.Min(point => point.Position.Y);
+        var maxY = result.SupportPoints.Max(point => point.Position.Y);
+        var bottomBandThreshold = minY + ((maxY - minY) * 0.25f);
+        var bottomBandCount = result.SupportPoints.Count(point => point.Position.Y <= bottomBandThreshold);
+        var bottomBandRatio = (float)bottomBandCount / result.SupportPoints.Count;
+
+        Assert.True(bottomBandRatio < 0.50f,
+            $"Expected rotated-cube supports to distribute above the first quarter band; got {bottomBandCount}/{result.SupportPoints.Count} ({bottomBandRatio:P2}) in bottom band.");
+    }
+
     private static LoadedGeometry CreateGeometry(params List<Triangle3D>[] parts)
     {
         var triangles = parts.SelectMany(x => x).ToList();
@@ -494,6 +633,60 @@ public class AutoSupportGenerationV3ServiceTests
             SphereCentre = new Vec3(0f, 10f, 0f),
             SphereRadius = 25f,
         };
+    }
+
+    private static LoadedGeometry CreateGeometryFromTriangles(List<Triangle3D> triangles)
+    {
+        var minX = float.MaxValue;
+        var minY = float.MaxValue;
+        var minZ = float.MaxValue;
+        var maxX = float.MinValue;
+        var maxY = float.MinValue;
+        var maxZ = float.MinValue;
+
+        foreach (var triangle in triangles)
+        {
+            UpdateBounds(triangle.V0, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+            UpdateBounds(triangle.V1, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+            UpdateBounds(triangle.V2, ref minX, ref minY, ref minZ, ref maxX, ref maxY, ref maxZ);
+        }
+
+        var center = new Vec3(
+            (minX + maxX) * 0.5f,
+            (minY + maxY) * 0.5f,
+            (minZ + maxZ) * 0.5f);
+        var radius = triangles
+            .SelectMany(t => new[] { t.V0, t.V1, t.V2 })
+            .Select(v => (v - center).Length)
+            .DefaultIfEmpty(1f)
+            .Max();
+
+        return new LoadedGeometry
+        {
+            Triangles = triangles,
+            DimensionXMm = maxX - minX,
+            DimensionYMm = maxY - minY,
+            DimensionZMm = maxZ - minZ,
+            SphereCentre = center,
+            SphereRadius = radius,
+        };
+    }
+
+    private static void UpdateBounds(
+        Vec3 point,
+        ref float minX,
+        ref float minY,
+        ref float minZ,
+        ref float maxX,
+        ref float maxY,
+        ref float maxZ)
+    {
+        minX = MathF.Min(minX, point.X);
+        minY = MathF.Min(minY, point.Y);
+        minZ = MathF.Min(minZ, point.Z);
+        maxX = MathF.Max(maxX, point.X);
+        maxY = MathF.Max(maxY, point.Y);
+        maxZ = MathF.Max(maxZ, point.Z);
     }
 
     private static List<Triangle3D> MakeBox(float centerX, float centerZ, float width, float depth, float height)
@@ -559,6 +752,48 @@ public class AutoSupportGenerationV3ServiceTests
         return triangles;
     }
 
+    private static List<Triangle3D> MakeSphere(float radius, float centerY)
+    {
+        const int latSegments = 24;
+        const int lonSegments = 32;
+        var centre = new Vec3(0f, centerY, 0f);
+        var triangles = new List<Triangle3D>(latSegments * lonSegments * 2);
+
+        for (var lat = 0; lat < latSegments; lat++)
+        {
+            var theta0 = MathF.PI * lat / latSegments;
+            var theta1 = MathF.PI * (lat + 1) / latSegments;
+
+            for (var lon = 0; lon < lonSegments; lon++)
+            {
+                var phi0 = (MathF.PI * 2f * lon) / lonSegments;
+                var phi1 = (MathF.PI * 2f * (lon + 1)) / lonSegments;
+
+                var p00 = SpherePoint(centre, radius, theta0, phi0);
+                var p01 = SpherePoint(centre, radius, theta0, phi1);
+                var p10 = SpherePoint(centre, radius, theta1, phi0);
+                var p11 = SpherePoint(centre, radius, theta1, phi1);
+
+                if (lat > 0)
+                    triangles.Add(new Triangle3D(p00, p10, p01, (p10 - p00).Cross(p01 - p00).Normalized));
+
+                if (lat < latSegments - 1)
+                    triangles.Add(new Triangle3D(p01, p10, p11, (p10 - p01).Cross(p11 - p01).Normalized));
+            }
+        }
+
+        return triangles;
+    }
+
+    private static Vec3 SpherePoint(Vec3 centre, float radius, float theta, float phi)
+    {
+        var sinTheta = MathF.Sin(theta);
+        return new Vec3(
+            centre.X + (radius * sinTheta * MathF.Cos(phi)),
+            centre.Y + (radius * MathF.Cos(theta)),
+            centre.Z + (radius * sinTheta * MathF.Sin(phi)));
+    }
+
     private static Vec3 TorusPoint(float majorRadius, float minorRadius, float centerY, float u, float v)
     {
         var cosU = MathF.Cos(u);
@@ -581,4 +816,47 @@ public class AutoSupportGenerationV3ServiceTests
                 new Vec3(triangle.V2.X + offsetX, triangle.V2.Y, triangle.V2.Z + offsetZ),
                 triangle.Normal))
             .ToList();
+
+    private static List<Triangle3D> RotateTrianglesAroundX(IEnumerable<Triangle3D> triangles, float angleRad, float pivotY)
+    {
+        var cos = MathF.Cos(angleRad);
+        var sin = MathF.Sin(angleRad);
+
+        Vec3 Rotate(Vec3 point)
+        {
+            var y = point.Y - pivotY;
+            var z = point.Z;
+            var rotatedY = (y * cos) - (z * sin);
+            var rotatedZ = (y * sin) + (z * cos);
+            return new Vec3(point.X, rotatedY + pivotY, rotatedZ);
+        }
+
+        return triangles
+            .Select(triangle =>
+            {
+                var v0 = Rotate(triangle.V0);
+                var v1 = Rotate(triangle.V1);
+                var v2 = Rotate(triangle.V2);
+                var normal = (v1 - v0).Cross(v2 - v0).Normalized;
+                return new Triangle3D(v0, v1, v2, normal);
+            })
+            .ToList();
+    }
+
+    private static List<Triangle3D> LiftTrianglesToBed(IEnumerable<Triangle3D> triangles)
+    {
+        var minY = triangles
+            .SelectMany(t => new[] { t.V0.Y, t.V1.Y, t.V2.Y })
+            .DefaultIfEmpty(0f)
+            .Min();
+        var offsetY = -minY;
+
+        return triangles
+            .Select(triangle => new Triangle3D(
+                new Vec3(triangle.V0.X, triangle.V0.Y + offsetY, triangle.V0.Z),
+                new Vec3(triangle.V1.X, triangle.V1.Y + offsetY, triangle.V1.Z),
+                new Vec3(triangle.V2.X, triangle.V2.Y + offsetY, triangle.V2.Z),
+                triangle.Normal))
+            .ToList();
+    }
 }
