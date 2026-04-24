@@ -1,11 +1,11 @@
 # Support Algorithm Research - Missing Forces and Functionality
 
 Research into forces and phenomena relevant to resin (MSLA/DLP/SLA) 3D printing support
-generation that are not currently modeled in the V3 auto-support algorithm.
+generation that are not currently modeled in the auto-support algorithm.
 
 ## Current algorithm summary
 
-The V3 algorithm currently models:
+The current algorithm models:
 - **Peel force** (vertical) - proportional to cross-section area per layer via a flat multiplier
 - **Angular/tipping force** - moment arm from off-center pixels
 - **Compressive force** - angular force divided by tip radius

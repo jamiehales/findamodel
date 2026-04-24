@@ -1,14 +1,14 @@
 ---
 layout: default
-title: Auto-Support V3 Algorithm
+title: Auto-Support Algorithm
 parent: Features
 nav_order: 10
 ---
 
-# Auto-Support V3 Algorithm
+# Auto-Support Algorithm
 {: .no_toc }
 
-A detailed technical reference for the island-tip support generation algorithm used by `AutoSupportGenerationV3Service`.
+A detailed technical reference for the island-tip support generation algorithm used by the auto-support generation service.
 {: .fs-6 .fw-300 }
 
 <details open markdown="block">
@@ -22,7 +22,7 @@ A detailed technical reference for the island-tip support generation algorithm u
 
 ## Overview
 
-The V3 algorithm generates support point markers for MSLA/resin printing by treating the model as a stack of horizontal layer bitmaps. It finds regions of freshly-appearing geometry at each layer ("tip islands"), then runs a multi-pass physics-informed solver to place and size support tips.
+The auto-support algorithm generates support point markers for MSLA/resin printing by treating the model as a stack of horizontal layer bitmaps. It finds regions of freshly-appearing geometry at each layer ("tip islands"), then runs a multi-pass physics-informed solver to place and size support tips.
 
 The algorithm models five real-world failure modes:
 
@@ -501,4 +501,4 @@ Work is split into `ProcessorCount * 4` ranges to keep threads busy during irreg
 
 - `SupportPoint` - position, tip radius, pull force vector, size enum
 - `SupportPreviewResult` - support sphere geometry, voxel body geometry, support point list
-- `AutoSupportV3TuningOverrides` - all tunable parameters as nullable fields; null fields fall back to `AppConfigService` values
+- tuning overrides - all tunable parameters as nullable fields; null fields fall back to `AppConfigService` values

@@ -11,7 +11,7 @@ using findamodel.Data;
 namespace findamodel.Migrations
 {
     [DbContext(typeof(ModelCacheContext))]
-    [Migration("20260419193444_AddAutoSupportV3ForceSettings")]
+    [Migration("20260419193444_AddAutoSupportForceSettings")]
     partial class AddAutoSupportForceSettings
     {
         /// <inheritdoc />

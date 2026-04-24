@@ -17,7 +17,7 @@ public sealed record SupportPoint(
     SupportSize Size,
     IReadOnlyList<SupportLayerForce>? LayerForces = null);
 
-public sealed record AutoSupportV3TuningOverrides(
+public sealed record AutoSupportTuningOverrides(
     float BedMarginMm,
     float MinVoxelSizeMm,
     float MaxVoxelSizeMm,

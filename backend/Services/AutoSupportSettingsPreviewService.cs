@@ -6,7 +6,7 @@ using findamodel.Models;
 namespace findamodel.Services;
 
 public sealed class AutoSupportSettingsPreviewService(
-    AutoSupportGenerationV3Service autoSupportGenerationV3Service,
+    AutoSupportGenerationService autoSupportGenerationService,
     ModelLoaderService modelLoaderService,
     MeshTransferService meshTransferService,
     IConfiguration config,
@@ -89,7 +89,7 @@ public sealed class AutoSupportSettingsPreviewService(
             {
                 var scenarioStopwatch = Stopwatch.StartNew();
                 var generateStart = Stopwatch.GetTimestamp();
-                var preview = autoSupportGenerationV3Service.GenerateSupportPreview(scenario.Geometry, tuning);
+                var preview = autoSupportGenerationService.GenerateSupportPreview(scenario.Geometry, tuning);
                 var generateElapsedMs = Stopwatch.GetElapsedTime(generateStart).TotalMilliseconds;
 
                 var encodeStart = Stopwatch.GetTimestamp();
@@ -281,7 +281,7 @@ public sealed class AutoSupportSettingsPreviewService(
 
     }
 
-    private static AutoSupportV3TuningOverrides ToTuningOverrides(AutoSupportSettingsPreviewTuningRequest tuning)
+    private static AutoSupportTuningOverrides ToTuningOverrides(AutoSupportSettingsPreviewTuningRequest tuning)
         => new(
             tuning.BedMarginMm,
             tuning.MinVoxelSizeMm,

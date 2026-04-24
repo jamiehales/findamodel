@@ -82,7 +82,7 @@ builder.Services.AddSingleton<findamodel.Services.DirectoryConfigReader>();
 builder.Services.AddSingleton<findamodel.Services.ModelLoaderService>();
 builder.Services.AddSingleton<findamodel.Services.MeshTransferService>();
 builder.Services.AddSingleton<findamodel.Services.SupportSeparationService>();
-builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationV3Service>();
+builder.Services.AddSingleton<findamodel.Services.AutoSupportGenerationService>();
 builder.Services.AddSingleton<findamodel.Services.AutoSupportJobService>();
 builder.Services.AddSingleton<findamodel.Services.AutoSupportSettingsPreviewService>();
 builder.Services.AddSingleton<findamodel.Services.ModelSaverService>();

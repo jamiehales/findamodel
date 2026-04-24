@@ -10,7 +10,7 @@ island detection, and per-support pull force evaluation with configurable suppor
 
 ### Services
 
-- **AutoSupportGenerationV3Service** - current auto-support algorithm that slices geometry layer-by-layer,
+- **AutoSupportGenerationService** - current auto-support algorithm that slices geometry layer-by-layer,
   detects unsupported overhang pixels against the layer below, and places/reinforces support points.
 - **AutoSupportJobService** - manages asynchronous job lifecycle (queued, running,
   completed, failed) and caches results as binary envelopes.

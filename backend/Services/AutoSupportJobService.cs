@@ -8,7 +8,7 @@ public sealed class AutoSupportJobService(
     ModelService modelService,
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
-    AutoSupportGenerationV3Service autoSupportGenerationV3Service,
+    AutoSupportGenerationService autoSupportGenerationService,
     IConfiguration config,
     ILoggerFactory loggerFactory)
 {
@@ -97,7 +97,7 @@ public sealed class AutoSupportJobService(
                 return;
             }
 
-            var preview = autoSupportGenerationV3Service.GenerateSupportPreview(geometry);
+            var preview = autoSupportGenerationService.GenerateSupportPreview(geometry);
             var bodyPayload = meshTransferService.Encode(preview.BodyGeometry ?? geometry);
             var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
             var envelope = BuildEnvelope(bodyPayload, supportPayload);

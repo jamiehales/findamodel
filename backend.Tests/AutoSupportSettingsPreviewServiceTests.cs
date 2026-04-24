@@ -26,7 +26,7 @@ public sealed class AutoSupportSettingsPreviewServiceTests
 
             var loggerFactory = NullLoggerFactory.Instance;
             var sut = new AutoSupportSettingsPreviewService(
-                new AutoSupportGenerationV3Service(loggerFactory),
+                new AutoSupportGenerationService(loggerFactory),
                 new ModelLoaderService(loggerFactory),
                 new MeshTransferService(),
                 config,
@@ -92,7 +92,7 @@ public sealed class AutoSupportSettingsPreviewServiceTests
 
             var loggerFactory = NullLoggerFactory.Instance;
             var sut = new AutoSupportSettingsPreviewService(
-                new AutoSupportGenerationV3Service(loggerFactory),
+                new AutoSupportGenerationService(loggerFactory),
                 new ModelLoaderService(loggerFactory),
                 new MeshTransferService(),
                 config,
@@ -175,7 +175,7 @@ public sealed class AutoSupportSettingsPreviewServiceTests
 
             var loggerFactory = NullLoggerFactory.Instance;
             var sut = new AutoSupportSettingsPreviewService(
-                new AutoSupportGenerationV3Service(loggerFactory),
+                new AutoSupportGenerationService(loggerFactory),
                 new ModelLoaderService(loggerFactory),
                 new MeshTransferService(),
                 config,

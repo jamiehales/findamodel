@@ -15,7 +15,7 @@
 
 --
 
-Now, iterate through all layers in support v3, and calculate force exerted on each support. Force is based on the total area of the top layer of that island. If the forces on all the supports supporting that island (taking into account the support tip size) exceed the strength of the resin, add a new support in the place that would reduce the force on the existing supports the most.
+Now, iterate through all layers in support generation, and calculate force exerted on each support. Force is based on the total area of the top layer of that island. If the forces on all the supports supporting that island (taking into account the support tip size) exceed the strength of the resin, add a new support in the place that would reduce the force on the existing supports the most.
 
 If there's more than 3mm (configurable) in the x/y direction from the last support, add a support int he location that is at the furthest distance from existing supports while not exceeding the distance require
 
@@ -72,7 +72,7 @@ Add an autosupports configuration preview on the autosupports settings screen - 
 * An upside down cone (point facing downwards) of diameter 40mm and height 80mm
 * Support for some hardcoded stls, not yet provided - implement a list that can be populated (in code for now), and will automatically add new viewports and support generation for each of them
 
-* Remove the v3 from all autosupport settings, this is now the only algorithm
+* Remove versioned naming from all autosupport settings, this is now the only algorithm
 * Add support for items 6-10 in the support generation algorithm document (SUPPORT-ALGORITHM-RESEARCH.md), adding settings to the model and settings page where recommended, as well as docs in the docs page
 * Multithread the autosupport where possible
 
