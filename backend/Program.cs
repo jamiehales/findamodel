@@ -195,6 +195,29 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
+        // If the database was created when the V3-named migration existed, it will have
+        // '20260419193444_AddAutoSupportV3ForceSettings' in __EFMigrationsHistory but not
+        // '20260419193444_AddAutoSupportForceSettings'. EF would then try to run the
+        // non-V3 migration and fail with "duplicate column name". Detect and handle this.
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                INSERT OR IGNORE INTO __EFMigrationsHistory (MigrationId, ProductVersion)
+                SELECT '20260419193444_AddAutoSupportForceSettings', '10.0.6'
+                WHERE EXISTS (
+                    SELECT 1 FROM __EFMigrationsHistory
+                    WHERE MigrationId = '20260419193444_AddAutoSupportV3ForceSettings'
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM __EFMigrationsHistory
+                    WHERE MigrationId = '20260419193444_AddAutoSupportForceSettings'
+                )");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "V3 migration alias check skipped (table may not exist yet)");
+        }
+
         Log.Information("Starting database migration for {DbPath}", dbPath);
         using var migrateCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await db.Database.MigrateAsync(migrateCts.Token);

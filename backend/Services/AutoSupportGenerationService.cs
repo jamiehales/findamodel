@@ -26,6 +26,15 @@ public sealed class AutoSupportGenerationService
     private const int MaxSolverPasses = 8;
     private const int MaxPreviewSupportPoints = 2000;
     private const int MaxTipIslandAddsPerPass = 4;
+    private const float DefaultOverhangSensitivity = 0.65f;
+    private const float DefaultPeelStartMultiplier = 1.3f;
+    private const float DefaultPeelEndMultiplier = 0.9f;
+    private const float DefaultHeightBias = 0.3f;
+    private const float DefaultBridgeReductionFactor = 0.3f;
+    private const float DefaultCantileverMomentMultiplier = 0.4f;
+    private const float DefaultCantileverReferenceLengthMm = 8f;
+    private const float DefaultLayerBondStrengthPerMm2 = 1.2f;
+    private const float DefaultLayerAdhesionSafetyFactor = 1.1f;
     private static readonly ParallelOptions FullCoreParallelOptions = new()
     {
         MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
@@ -277,16 +286,9 @@ public sealed class AutoSupportGenerationService
                 break;
         }
 
-        RedistributeSupportHeights(
-            supportPoints,
-            layerPixelSets,
-            prevLayerPixels,
-            bedWidthMm,
-            bedDepthMm,
-            pixelWidth,
-            pixelHeight,
-            layerHeightMm,
-            layerCount);
+        // Keep generated supports at their selected placement layer. Do not
+        // run post-pass vertical redistribution that can promote supports to
+        // higher layers.
 
         if (supportCapReached)
         {
@@ -305,6 +307,30 @@ public sealed class AutoSupportGenerationService
             pixelHeight,
             layerHeightMm,
             tuning);
+
+        var adhesionAdjusted = ApplyLayerAdhesionReinforcement(
+            layerPixelSets,
+            supportPoints,
+            bedWidthMm,
+            bedDepthMm,
+            pixelWidth,
+            pixelHeight,
+            layerHeightMm,
+            tuning);
+
+        if (adhesionAdjusted)
+        {
+            PopulateSupportForces(
+                layerIslands,
+                prevLayerPixels,
+                supportPoints,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight,
+                layerHeightMm,
+                tuning);
+        }
 
         var sliceLayers = BuildSliceLayers(
             layerIslands,
@@ -612,6 +638,10 @@ public sealed class AutoSupportGenerationService
                 if (unsupportedPixels.Count == 0)
                     continue;
 
+                var layerProgress = layerIslands.Length <= 1
+                    ? 1f
+                    : layerIndex / (float)(layerIslands.Length - 1);
+
                 var localSupportMinY = island.SliceHeightMm - MathF.Max(tuning.SupportSpacingThresholdMm, layerHeightMm);
                 var additionsThisIsland = 0;
 
@@ -707,7 +737,9 @@ public sealed class AutoSupportGenerationService
                         pixelHeight,
                         tuning,
                         island,
-                        layerAreaGrowthRatio[layerIndex]);
+                        layerAreaGrowthRatio[layerIndex],
+                        prevPixels,
+                        layerProgress);
 
                     var combinedCapacity = supportIndices.Sum(index => ComputeCapacity(supportPoints[index], tuning));
                     var verticalPullForce = supportForces.Sum(metric => metric.VerticalPullForce);
@@ -776,12 +808,10 @@ public sealed class AutoSupportGenerationService
                         var baseDesiredSupports = ComputeDesiredSupportsForIslandArea(
                             unsupportedAreaMm2,
                             tuning.SupportSpacingThresholdMm);
-                        var heightRatio = layerIslands.Length <= 1
-                            ? 1f
-                            : layerIndex / (float)(layerIslands.Length - 1);
+                        var heightRiskMultiplier = 1f + (tuning.HeightBias * (1f - layerProgress));
                         var heightScaledDesiredSupports = Math.Max(
                             1,
-                            (int)MathF.Ceiling(baseDesiredSupports * (0.15f + (0.85f * heightRatio))));
+                            (int)MathF.Ceiling(baseDesiredSupports * heightRiskMultiplier));
                         if (supportIndices.Count >= heightScaledDesiredSupports)
                             break;
                     }
@@ -1206,7 +1236,11 @@ public sealed class AutoSupportGenerationService
                             pixelWidth,
                             pixelHeight,
                             tuning,
-                            island);
+                            island,
+                            prevPixels: prevPixels,
+                            layerProgress: layerIslands.Length <= 1
+                                ? 1f
+                                : layerIndex / (float)(layerIslands.Length - 1));
 
                         foreach (var metric in supportForces)
                         {
@@ -1341,7 +1375,9 @@ public sealed class AutoSupportGenerationService
         int pixelHeight,
         AutoSupportTuning tuning,
         TipIsland? island = null,
-        float areaGrowthRatio = 0f)
+        float areaGrowthRatio = 0f,
+        HashSet<(int Column, int Row)>? prevPixels = null,
+        float layerProgress = 1f)
     {
         var pixelAreaMm2 = (bedWidthMm / pixelWidth) * (bedDepthMm / pixelHeight);
         var pixelForce = pixelAreaMm2 * tuning.PeelForceMultiplier;
@@ -1364,6 +1400,44 @@ public sealed class AutoSupportGenerationService
             dragLateralForce = heightEstimateMm * island.MinWidthMm * tuning.DragCoefficientMultiplier;
         }
 
+        // Item 6: Overhang angle sensitivity (bitmap approximation via unsupported ratio)
+        var overhangMultiplier = 1f;
+        if (island != null && island.PixelCoords.Count > 0)
+        {
+            var newPixelRatio = Math.Clamp(unsupportedPixels.Count / (float)island.PixelCoords.Count, 0f, 1f);
+            overhangMultiplier = 1f + (tuning.OverhangSensitivity * newPixelRatio);
+        }
+
+        // Item 17: Dynamic support density by print height (more conservative near base)
+        var clampedProgress = Math.Clamp(layerProgress, 0f, 1f);
+        var heightMultiplier = 1f + (tuning.HeightBias * (1f - clampedProgress));
+
+        // Item 9: Bridge/cantilever topology detection
+        var topologyMultiplier = 1f;
+        if (island != null)
+        {
+            var topology = AnalyzeIslandTopology(
+                unsupportedPixels,
+                prevPixels,
+                bedWidthMm,
+                bedDepthMm,
+                pixelWidth,
+                pixelHeight);
+
+            if (topology.Topology == IslandTopology.Bridge)
+            {
+                topologyMultiplier = MathF.Max(
+                    0.55f,
+                    1f - (tuning.BridgeReductionFactor * topology.AnchoredPerimeterRatio));
+            }
+            else if (topology.Topology == IslandTopology.Cantilever)
+            {
+                var referenceLength = MathF.Max(tuning.CantileverReferenceLengthMm, 0.1f);
+                topologyMultiplier = 1f +
+                    ((topology.CantileverLengthMm / referenceLength) * tuning.CantileverMomentMultiplier);
+            }
+        }
+
         var islandCenterX = island?.CentroidX ?? 0f;
         var islandCenterZ = island?.CentroidZ ?? 0f;
         if (island == null && unsupportedPixels.Count > 0)
@@ -1378,7 +1452,21 @@ public sealed class AutoSupportGenerationService
             islandCenterZ = fallbackCenter.ZMm;
         }
 
-        var effectivePixelForce = pixelForce * suctionMultiplier * areaGrowthMultiplier;
+        // Item 7: Tilt-peel kinematics modeled as a position-dependent gradient.
+        var peelKinematicsMultiplier = ComputePeelKinematicsMultiplier(
+            islandCenterX,
+            islandCenterZ,
+            bedWidthMm,
+            bedDepthMm,
+            tuning);
+
+        var effectivePixelForce = pixelForce
+            * suctionMultiplier
+            * areaGrowthMultiplier
+            * overhangMultiplier
+            * heightMultiplier
+            * topologyMultiplier
+            * peelKinematicsMultiplier;
         var supportSlotCount = supportIndices.Count;
         var supportSlots = new SupportPoint[supportSlotCount];
         for (var slot = 0; slot < supportSlotCount; slot++)
@@ -1803,6 +1891,215 @@ public sealed class AutoSupportGenerationService
     private static float ComputeCapacity(SupportPoint point, AutoSupportTuning tuning)
         => MathF.PI * point.RadiusMm * point.RadiusMm * tuning.ResinStrength;
 
+    private static float ComputePeelKinematicsMultiplier(
+        float islandCenterX,
+        float islandCenterZ,
+        float bedWidthMm,
+        float bedDepthMm,
+        AutoSupportTuning tuning)
+    {
+        var progress = tuning.PeelDirection switch
+        {
+            PeelDirection.XPositive => ((islandCenterX + (bedWidthMm * 0.5f)) / MathF.Max(bedWidthMm, 0.01f)),
+            PeelDirection.XNegative => 1f - ((islandCenterX + (bedWidthMm * 0.5f)) / MathF.Max(bedWidthMm, 0.01f)),
+            PeelDirection.ZPositive => (((bedDepthMm * 0.5f) - islandCenterZ) / MathF.Max(bedDepthMm, 0.01f)),
+            PeelDirection.ZNegative => 1f - (((bedDepthMm * 0.5f) - islandCenterZ) / MathF.Max(bedDepthMm, 0.01f)),
+            _ => 0.5f,
+        };
+
+        progress = Math.Clamp(progress, 0f, 1f);
+        return tuning.PeelStartMultiplier + ((tuning.PeelEndMultiplier - tuning.PeelStartMultiplier) * progress);
+    }
+
+    private static IslandTopologyMetrics AnalyzeIslandTopology(
+        List<(int X, int Y)> unsupportedPixels,
+        HashSet<(int Column, int Row)>? prevPixels,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight)
+    {
+        if (prevPixels == null || unsupportedPixels.Count == 0)
+            return new IslandTopologyMetrics(IslandTopology.Floating, 0f, 0f);
+
+        var anchoredCount = 0;
+        var hasWest = false;
+        var hasEast = false;
+        var hasNorth = false;
+        var hasSouth = false;
+
+        var minX = int.MaxValue;
+        var maxX = int.MinValue;
+        var minY = int.MaxValue;
+        var maxY = int.MinValue;
+        var minAnchorX = int.MaxValue;
+        var maxAnchorX = int.MinValue;
+        var minAnchorY = int.MaxValue;
+        var maxAnchorY = int.MinValue;
+
+        foreach (var (x, y) in unsupportedPixels)
+        {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+
+            var anchored = false;
+            if (prevPixels.Contains((x - 1, y)))
+            {
+                hasWest = true;
+                anchored = true;
+            }
+            if (prevPixels.Contains((x + 1, y)))
+            {
+                hasEast = true;
+                anchored = true;
+            }
+            if (prevPixels.Contains((x, y - 1)))
+            {
+                hasNorth = true;
+                anchored = true;
+            }
+            if (prevPixels.Contains((x, y + 1)))
+            {
+                hasSouth = true;
+                anchored = true;
+            }
+
+            if (!anchored)
+                continue;
+
+            anchoredCount++;
+            if (x < minAnchorX) minAnchorX = x;
+            if (x > maxAnchorX) maxAnchorX = x;
+            if (y < minAnchorY) minAnchorY = y;
+            if (y > maxAnchorY) maxAnchorY = y;
+        }
+
+        if (anchoredCount == 0)
+            return new IslandTopologyMetrics(IslandTopology.Floating, 0f, 0f);
+
+        var sides = 0;
+        if (hasWest) sides++;
+        if (hasEast) sides++;
+        if (hasNorth) sides++;
+        if (hasSouth) sides++;
+
+        var anchoredRatio = anchoredCount / (float)unsupportedPixels.Count;
+        if (sides >= 2)
+            return new IslandTopologyMetrics(IslandTopology.Bridge, anchoredRatio, 0f);
+
+        var pixelWidthMm = bedWidthMm / MathF.Max(1, pixelWidth);
+        var pixelDepthMm = bedDepthMm / MathF.Max(1, pixelHeight);
+
+        var cantileverLengthMm = 0f;
+        if (hasWest)
+            cantileverLengthMm = MathF.Max(0f, (maxX - minAnchorX) * pixelWidthMm);
+        else if (hasEast)
+            cantileverLengthMm = MathF.Max(0f, (maxAnchorX - minX) * pixelWidthMm);
+        else if (hasNorth)
+            cantileverLengthMm = MathF.Max(0f, (maxY - minAnchorY) * pixelDepthMm);
+        else if (hasSouth)
+            cantileverLengthMm = MathF.Max(0f, (maxAnchorY - minY) * pixelDepthMm);
+
+        return new IslandTopologyMetrics(IslandTopology.Cantilever, anchoredRatio, cantileverLengthMm);
+    }
+
+    private static bool ApplyLayerAdhesionReinforcement(
+        HashSet<(int Column, int Row)>?[] layerPixelSets,
+        List<SupportPoint> supportPoints,
+        float bedWidthMm,
+        float bedDepthMm,
+        int pixelWidth,
+        int pixelHeight,
+        float layerHeightMm,
+        AutoSupportTuning tuning)
+    {
+        if (supportPoints.Count == 0 || layerPixelSets.Length == 0)
+            return false;
+
+        var changed = false;
+        var pixelAreaMm2 = (bedWidthMm / pixelWidth) * (bedDepthMm / pixelHeight);
+        var maxLayer = layerPixelSets.Length - 1;
+
+        for (var supportIndex = 0; supportIndex < supportPoints.Count; supportIndex++)
+        {
+            var support = supportPoints[supportIndex];
+            var supportLayerForces = support.LayerForces;
+            var expectedLoadN = MathF.Abs(support.PullForce.Y);
+
+            if (supportLayerForces is { Count: > 0 })
+            {
+                var peelPeak = supportLayerForces.Max(layer => layer.Peel.Y);
+                if (peelPeak > expectedLoadN)
+                    expectedLoadN = peelPeak;
+            }
+
+            if (expectedLoadN <= 0.01f)
+                continue;
+
+            var col = (int)MathF.Floor(((support.Position.X + (bedWidthMm * 0.5f)) / bedWidthMm) * pixelWidth);
+            var row = (int)MathF.Floor((((bedDepthMm * 0.5f) - support.Position.Z) / bedDepthMm) * pixelHeight);
+            if (col < 0 || row < 0 || col >= pixelWidth || row >= pixelHeight)
+                continue;
+
+            var startLayer = Math.Clamp((int)MathF.Floor(support.Position.Y / MathF.Max(layerHeightMm, 0.001f)), 0, maxLayer);
+            var bottleneckAreaMm2 = float.MaxValue;
+
+            for (var layer = startLayer; layer >= 0; layer--)
+            {
+                var pixels = layerPixelSets[layer];
+                if (pixels == null || !pixels.Contains((col, row)))
+                    continue;
+
+                var localCount = 0;
+                for (var dy = -1; dy <= 1; dy++)
+                {
+                    for (var dx = -1; dx <= 1; dx++)
+                    {
+                        if (pixels.Contains((col + dx, row + dy)))
+                            localCount++;
+                    }
+                }
+
+                if (localCount <= 0)
+                    continue;
+
+                var localArea = localCount * pixelAreaMm2;
+                if (localArea < bottleneckAreaMm2)
+                    bottleneckAreaMm2 = localArea;
+            }
+
+            if (float.IsPositiveInfinity(bottleneckAreaMm2) || bottleneckAreaMm2 == float.MaxValue)
+                continue;
+
+            var requiredAreaMm2 = expectedLoadN / MathF.Max(tuning.LayerBondStrengthPerMm2, 0.01f);
+            requiredAreaMm2 *= MathF.Max(1f, tuning.LayerAdhesionSafetyFactor);
+
+            if (bottleneckAreaMm2 >= requiredAreaMm2)
+                continue;
+
+            var upgradedSize = support.Size switch
+            {
+                SupportSize.Light => SupportSize.Medium,
+                SupportSize.Medium => SupportSize.Heavy,
+                _ => support.Size,
+            };
+
+            if (upgradedSize == support.Size)
+                continue;
+
+            supportPoints[supportIndex] = support with
+            {
+                Size = upgradedSize,
+                RadiusMm = GetTipRadiusMm(upgradedSize, tuning),
+            };
+            changed = true;
+        }
+
+        return changed;
+    }
+
     private static List<VoxelRect> ExtractVoxelRects(SliceBitmap bitmap)
     {
         var visited = new bool[bitmap.Pixels.Length];
@@ -2094,7 +2391,17 @@ public sealed class AutoSupportGenerationService
                 MinFeatureWidthMm: tuningOverrides.MinFeatureWidthMm,
                 ShrinkagePercent: tuningOverrides.ShrinkagePercent,
                 ShrinkageEdgeBias: tuningOverrides.ShrinkageEdgeBias,
-                ModelLiftMm: tuningOverrides.ModelLiftMm);
+                ModelLiftMm: tuningOverrides.ModelLiftMm,
+                OverhangSensitivity: tuningOverrides.OverhangSensitivity,
+                PeelDirection: tuningOverrides.PeelDirection,
+                PeelStartMultiplier: tuningOverrides.PeelStartMultiplier,
+                PeelEndMultiplier: tuningOverrides.PeelEndMultiplier,
+                HeightBias: tuningOverrides.HeightBias,
+                BridgeReductionFactor: tuningOverrides.BridgeReductionFactor,
+                CantileverMomentMultiplier: tuningOverrides.CantileverMomentMultiplier,
+                CantileverReferenceLengthMm: tuningOverrides.CantileverReferenceLengthMm,
+                LayerBondStrengthPerMm2: tuningOverrides.LayerBondStrengthPerMm2,
+                LayerAdhesionSafetyFactor: tuningOverrides.LayerAdhesionSafetyFactor);
         }
 
         var config = appConfigService?.GetAsync().GetAwaiter().GetResult();
@@ -2122,7 +2429,17 @@ public sealed class AutoSupportGenerationService
             MinFeatureWidthMm: config?.AutoSupportMinFeatureWidthMm ?? AppConfigService.DefaultAutoSupportMinFeatureWidthMm,
             ShrinkagePercent: config?.AutoSupportShrinkagePercent ?? AppConfigService.DefaultAutoSupportShrinkagePercent,
             ShrinkageEdgeBias: config?.AutoSupportShrinkageEdgeBias ?? AppConfigService.DefaultAutoSupportShrinkageEdgeBias,
-            ModelLiftMm: config?.AutoSupportModelLiftMm ?? AppConfigService.DefaultAutoSupportModelLiftMm);
+                ModelLiftMm: config?.AutoSupportModelLiftMm ?? AppConfigService.DefaultAutoSupportModelLiftMm,
+                OverhangSensitivity: DefaultOverhangSensitivity,
+                PeelDirection: PeelDirection.ZPositive,
+                PeelStartMultiplier: DefaultPeelStartMultiplier,
+                PeelEndMultiplier: DefaultPeelEndMultiplier,
+                HeightBias: DefaultHeightBias,
+                BridgeReductionFactor: DefaultBridgeReductionFactor,
+                CantileverMomentMultiplier: DefaultCantileverMomentMultiplier,
+                CantileverReferenceLengthMm: DefaultCantileverReferenceLengthMm,
+                LayerBondStrengthPerMm2: DefaultLayerBondStrengthPerMm2,
+                LayerAdhesionSafetyFactor: DefaultLayerAdhesionSafetyFactor);
     }
 
     private sealed record AutoSupportTuning(
@@ -2149,7 +2466,17 @@ public sealed class AutoSupportGenerationService
         float MinFeatureWidthMm,
         float ShrinkagePercent,
         float ShrinkageEdgeBias,
-        float ModelLiftMm);
+        float ModelLiftMm,
+        float OverhangSensitivity,
+        PeelDirection PeelDirection,
+        float PeelStartMultiplier,
+        float PeelEndMultiplier,
+        float HeightBias,
+        float BridgeReductionFactor,
+        float CantileverMomentMultiplier,
+        float CantileverReferenceLengthMm,
+        float LayerBondStrengthPerMm2,
+        float LayerAdhesionSafetyFactor);
 
     private static float GetTipRadiusMm(SupportSize size, AutoSupportTuning tuning) => size switch
     {
@@ -2589,4 +2916,16 @@ public sealed class AutoSupportGenerationService
         float VerticalPullForce,
         float CompressiveForce,
         float AngularForce);
+
+    private sealed record IslandTopologyMetrics(
+        IslandTopology Topology,
+        float AnchoredPerimeterRatio,
+        float CantileverLengthMm);
+
+    private enum IslandTopology
+    {
+        Floating,
+        Cantilever,
+        Bridge,
+    }
 }

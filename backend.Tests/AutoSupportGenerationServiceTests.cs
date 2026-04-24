@@ -307,6 +307,53 @@ public class AutoSupportGenerationServiceTests
     }
 
     [Fact]
+    public void GenerateSupportPreview_RotatedThinPlate_SingleSupportShowsHighAngularForceByLayerTen()
+    {
+        var box = MakeBox(centerX: 0f, centerZ: 0f, width: 40f, depth: 40f, height: 2f);
+        var rotated = RotateTrianglesAroundX(box, MathF.PI / 6f, pivotY: 1f);
+        var onBed = LiftTrianglesToBed(rotated);
+        var geometry = CreateGeometryFromTriangles(onBed);
+
+        var result = sut.GenerateSupportPreview(
+            geometry,
+            DefaultOverrides with
+            {
+                MinLayerHeightMm = 0.1f,
+                MaxLayerHeightMm = 0.1f,
+                GravityEnabled = false,
+                DragCoefficientMultiplier = 0f,
+                ShrinkagePercent = 0f,
+                MaxAngularForce = 10000f,
+                CrushForceThreshold = 10000f,
+                ResinStrength = 1000f,
+            },
+            maxSupportPoints: 2000);
+
+        Assert.NotEmpty(result.SupportPoints);
+        var layerTenOrAbove = result.SupportPoints
+            .Where(point => point.LayerForces is { Count: > 0 })
+            .SelectMany(point => point.LayerForces!)
+            .Where(layer => layer.LayerIndex >= 10)
+            .ToList();
+
+        Assert.NotEmpty(layerTenOrAbove);
+
+        var maxLateralRotation = layerTenOrAbove
+            .Select(layer => MathF.Sqrt((layer.Rotation.X * layer.Rotation.X) + (layer.Rotation.Z * layer.Rotation.Z)))
+            .DefaultIfEmpty(0f)
+            .Max();
+        var maxPeel = layerTenOrAbove
+            .Select(layer => layer.Peel.Y)
+            .DefaultIfEmpty(0f)
+            .Max();
+
+        Assert.True(maxPeel > 0f,
+            $"Expected non-zero peel force by layer 10+, got max peel {maxPeel:F3}.");
+        Assert.True(maxLateralRotation >= 1f,
+            $"Expected significant lateral angular force by layer 10+ with one-sided peel load, got {maxLateralRotation:F3}.");
+    }
+
+    [Fact]
     public void GenerateSupportPreview_TwoOverlappingBoxes_PlacesTipForEachIsland()
     {
         // Two overlapping boxes that share the same top layer merge into one connected island,
@@ -422,6 +469,182 @@ public class AutoSupportGenerationServiceTests
 
         Assert.True(highGrowth.SupportPoints.Count >= baseline.SupportPoints.Count,
             $"High area growth ({highGrowth.SupportPoints.Count}) should produce >= supports than baseline ({baseline.SupportPoints.Count})");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_HighOverhangSensitivity_ProducesMoreSupports()
+    {
+        var pillar = MakeBox(centerX: -6f, centerZ: 0f, width: 3f, depth: 4f, height: 8f);
+        var shelf = TranslateTriangles3D(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 16f, depth: 4f, height: 2f),
+            offsetY: 8f);
+        var geometry = CreateGeometry(pillar, shelf);
+
+        var baseline = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                OverhangSensitivity = 0f,
+                GravityEnabled = false,
+                DragCoefficientMultiplier = 0f,
+                ShrinkagePercent = 0f,
+            });
+        var highSensitivity = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                OverhangSensitivity = 1.5f,
+                GravityEnabled = false,
+                DragCoefficientMultiplier = 0f,
+                ShrinkagePercent = 0f,
+            });
+
+        Assert.True(highSensitivity.SupportPoints.Count >= baseline.SupportPoints.Count,
+            $"High overhang sensitivity ({highSensitivity.SupportPoints.Count}) should produce >= baseline supports ({baseline.SupportPoints.Count}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_HighHeightBias_ProducesMoreSupportsNearBase()
+    {
+        var baseGeometry = CreateGeometry(
+            MakeSphere(radius: 18f, centerY: 18f));
+        var geometry = new LoadedGeometry
+        {
+            Triangles = baseGeometry.Triangles,
+            DimensionXMm = baseGeometry.DimensionXMm,
+            DimensionYMm = 36f,
+            DimensionZMm = baseGeometry.DimensionZMm,
+            SphereCentre = baseGeometry.SphereCentre,
+            SphereRadius = baseGeometry.SphereRadius,
+        };
+
+        var noBias = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                HeightBias = 0f,
+            },
+            maxSupportPoints: 2000);
+        var highBias = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                HeightBias = 0.8f,
+            },
+            maxSupportPoints: 2000);
+
+        Assert.True(highBias.SupportPoints.Count >= noBias.SupportPoints.Count,
+            $"High height bias ({highBias.SupportPoints.Count}) should produce >= no-bias supports ({noBias.SupportPoints.Count}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_PeelDirectionBias_ShiftsSupportsTowardPeelStart()
+    {
+        var geometry = CreateGeometry(
+            TranslateTriangles3D(
+                MakeBox(centerX: -8f, centerZ: 0f, width: 12f, depth: 8f, height: 2f),
+                offsetY: 8f));
+
+        var xPositive = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                PeelDirection = PeelDirection.XPositive,
+                PeelStartMultiplier = 2.0f,
+                PeelEndMultiplier = 0.4f,
+                GravityEnabled = false,
+                DragCoefficientMultiplier = 0f,
+                ShrinkagePercent = 0f,
+            });
+        var xNegative = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                PeelDirection = PeelDirection.XNegative,
+                PeelStartMultiplier = 2.0f,
+                PeelEndMultiplier = 0.4f,
+                GravityEnabled = false,
+                DragCoefficientMultiplier = 0f,
+                ShrinkagePercent = 0f,
+            });
+
+        Assert.NotEmpty(xPositive.SupportPoints);
+        Assert.NotEmpty(xNegative.SupportPoints);
+
+        var totalPeelXPositive = xPositive.SupportPoints
+            .Sum(point => point.LayerForces?.Sum(layer => layer.Peel.Y) ?? 0f);
+        var totalPeelXNegative = xNegative.SupportPoints
+            .Sum(point => point.LayerForces?.Sum(layer => layer.Peel.Y) ?? 0f);
+
+        Assert.True(totalPeelXPositive > totalPeelXNegative,
+            $"Expected X+ peel direction to produce higher peel on left-offset geometry (X+ peel={totalPeelXPositive:F3}, X- peel={totalPeelXNegative:F3}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_CantileverTopology_ProducesAtLeastBridgeSupportCount()
+    {
+        var bridgeGeometry = CreateGeometry(
+            MakeBox(centerX: -6f, centerZ: 0f, width: 3f, depth: 4f, height: 8f),
+            MakeBox(centerX: 6f, centerZ: 0f, width: 3f, depth: 4f, height: 8f),
+            TranslateTriangles3D(
+                MakeBox(centerX: 0f, centerZ: 0f, width: 18f, depth: 4f, height: 2f),
+                offsetY: 8f));
+        var cantileverGeometry = CreateGeometry(
+            MakeBox(centerX: -6f, centerZ: 0f, width: 3f, depth: 4f, height: 8f),
+            TranslateTriangles3D(
+                MakeBox(centerX: 0f, centerZ: 0f, width: 18f, depth: 4f, height: 2f),
+                offsetY: 8f));
+
+        var baselineTuning = DefaultOverrides with
+        {
+            BridgeReductionFactor = 0f,
+            CantileverMomentMultiplier = 0f,
+            GravityEnabled = false,
+            DragCoefficientMultiplier = 0f,
+            ShrinkagePercent = 0f,
+        };
+        var topologyTuning = DefaultOverrides with
+        {
+            BridgeReductionFactor = 0.6f,
+            CantileverMomentMultiplier = 1.2f,
+            CantileverReferenceLengthMm = 4f,
+            GravityEnabled = false,
+            DragCoefficientMultiplier = 0f,
+            ShrinkagePercent = 0f,
+        };
+
+        var bridgeBaseline = sut.GenerateSupportPreview(bridgeGeometry, baselineTuning);
+        var bridgeTopologyAware = sut.GenerateSupportPreview(bridgeGeometry, topologyTuning);
+        var cantileverBaseline = sut.GenerateSupportPreview(cantileverGeometry, baselineTuning);
+        var cantileverTopologyAware = sut.GenerateSupportPreview(cantileverGeometry, topologyTuning);
+
+        Assert.True(bridgeTopologyAware.SupportPoints.Count <= bridgeBaseline.SupportPoints.Count,
+            $"Bridge-aware reduction should not increase supports ({bridgeTopologyAware.SupportPoints.Count} vs baseline {bridgeBaseline.SupportPoints.Count}).");
+        Assert.True(cantileverTopologyAware.SupportPoints.Count >= cantileverBaseline.SupportPoints.Count,
+            $"Cantilever moment multiplier should not reduce supports ({cantileverTopologyAware.SupportPoints.Count} vs baseline {cantileverBaseline.SupportPoints.Count}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_WeakLayerBondStrength_UpgradesSupportSizes()
+    {
+        var stem = MakeBox(centerX: 0f, centerZ: 0f, width: 2f, depth: 2f, height: 10f);
+        var topMass = TranslateTriangles3D(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 14f, depth: 8f, height: 4f),
+            offsetY: 10f);
+        var geometry = CreateGeometry(stem, topMass);
+
+        var strongBond = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                LayerBondStrengthPerMm2 = 5f,
+                LayerAdhesionSafetyFactor = 1f,
+            });
+        var weakBond = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                LayerBondStrengthPerMm2 = 0.05f,
+                LayerAdhesionSafetyFactor = 2f,
+            });
+
+        var strongBondUpgraded = strongBond.SupportPoints.Count(point => point.Size is SupportSize.Medium or SupportSize.Heavy);
+        var weakBondUpgraded = weakBond.SupportPoints.Count(point => point.Size is SupportSize.Medium or SupportSize.Heavy);
+
+        Assert.True(weakBondUpgraded >= strongBondUpgraded,
+            $"Weak layer bond should produce >= upgraded supports ({weakBondUpgraded}) than strong bond ({strongBondUpgraded}).");
     }
 
     [Fact]
@@ -835,6 +1058,19 @@ public class AutoSupportGenerationServiceTests
                 new Vec3(triangle.V0.X + offsetX, triangle.V0.Y, triangle.V0.Z + offsetZ),
                 new Vec3(triangle.V1.X + offsetX, triangle.V1.Y, triangle.V1.Z + offsetZ),
                 new Vec3(triangle.V2.X + offsetX, triangle.V2.Y, triangle.V2.Z + offsetZ),
+                triangle.Normal))
+            .ToList();
+
+    private static List<Triangle3D> TranslateTriangles3D(
+        IEnumerable<Triangle3D> triangles,
+        float offsetX = 0f,
+        float offsetY = 0f,
+        float offsetZ = 0f)
+        => triangles
+            .Select(triangle => new Triangle3D(
+                new Vec3(triangle.V0.X + offsetX, triangle.V0.Y + offsetY, triangle.V0.Z + offsetZ),
+                new Vec3(triangle.V1.X + offsetX, triangle.V1.Y + offsetY, triangle.V1.Z + offsetZ),
+                new Vec3(triangle.V2.X + offsetX, triangle.V2.Y + offsetY, triangle.V2.Z + offsetZ),
                 triangle.Normal))
             .ToList();
 

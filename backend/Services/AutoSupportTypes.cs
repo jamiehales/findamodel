@@ -2,6 +2,14 @@ namespace findamodel.Services;
 
 public enum SupportSize { Micro, Light, Medium, Heavy }
 
+public enum PeelDirection
+{
+    XPositive,
+    XNegative,
+    ZPositive,
+    ZNegative,
+}
+
 public sealed record SupportLayerForce(
     int LayerIndex,
     float SliceHeightMm,
@@ -41,7 +49,17 @@ public sealed record AutoSupportTuningOverrides(
     float MinFeatureWidthMm = 1f,
     float ShrinkagePercent = 5f,
     float ShrinkageEdgeBias = 0.7f,
-    float ModelLiftMm = 10f);
+    float ModelLiftMm = 10f,
+    float OverhangSensitivity = 0.65f,
+    PeelDirection PeelDirection = PeelDirection.ZPositive,
+    float PeelStartMultiplier = 1.3f,
+    float PeelEndMultiplier = 0.9f,
+    float HeightBias = 0.3f,
+    float BridgeReductionFactor = 0.3f,
+    float CantileverMomentMultiplier = 0.4f,
+    float CantileverReferenceLengthMm = 8f,
+    float LayerBondStrengthPerMm2 = 1.2f,
+    float LayerAdhesionSafetyFactor = 1.1f);
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,
