@@ -1,3 +1,5 @@
+using findamodel.Services;
+
 namespace findamodel.Models;
 
 public sealed record AutoSupportSettingsPreviewTuningRequest(
@@ -24,7 +26,27 @@ public sealed record AutoSupportSettingsPreviewTuningRequest(
     float MinFeatureWidthMm = 1f,
     float ShrinkagePercent = 5f,
     float ShrinkageEdgeBias = 0.7f,
-    float ModelLiftMm = 10f);
+    float ModelLiftMm = 10f,
+    float OverhangSensitivity = 0.65f,
+    PeelDirection PeelDirection = PeelDirection.ZPositive,
+    float PeelStartMultiplier = 1.3f,
+    float PeelEndMultiplier = 0.9f,
+    float HeightBias = 0.3f,
+    float BridgeReductionFactor = 0.3f,
+    float CantileverMomentMultiplier = 0.4f,
+    float CantileverReferenceLengthMm = 8f,
+    float LayerBondStrengthPerMm2 = 1.2f,
+    float LayerAdhesionSafetyFactor = 1.1f,
+    bool SupportInteractionEnabled = true,
+    float DrainageDepthForceMultiplier = 0.15f,
+    bool AccessibilityEnabled = true,
+    int AccessibilityScanRadiusPx = 6,
+    int AccessibilityMinOpenDirections = 1,
+    float SurfaceQualityWeight = 0.35f,
+    int SurfaceQualitySearchRadiusPx = 6,
+    bool OrientationCheckEnabled = true,
+    float OrientationRiskForceMultiplierMax = 1.35f,
+    float OrientationRiskThresholdRatio = 1.15f);
 
 public sealed record AutoSupportSettingsPreviewRequest(
     AutoSupportSettingsPreviewTuningRequest Tuning,

@@ -5,7 +5,7 @@
 * Supports should be assigned their island ID - that is, the island they were originally created at.
 * An island has an id that is a bitmap
 * When islands join, that new island is given a new unique id based on the or of all parents ids (does that logic work?)
-* Support (quarter/half/full resolution) slice preview on the plate page? Might be tricky, as we'd have to load in a large amount of mesh data
+* Combine MinVoxelSizeMm, MaxVoxelSizeMm, MinLayerHeightMm and MaxLayerHeightMm into one VoxelSizeMm param
 
 --
 

@@ -648,6 +648,137 @@ public class AutoSupportGenerationServiceTests
     }
 
     [Fact]
+    public void GenerateSupportPreview_HighDrainageDepthMultiplier_ProducesMoreSupportsOnDonut()
+    {
+        var geometry = CreateGeometry(
+            MakeTorus(majorRadius: 12f, minorRadius: 3f, centerY: 12f));
+
+        var baseline = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                DrainageDepthForceMultiplier = 0f,
+            },
+            maxSupportPoints: 2000);
+        var highDrainage = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                DrainageDepthForceMultiplier = 0.6f,
+            },
+            maxSupportPoints: 2000);
+
+        Assert.True(highDrainage.SupportPoints.Count >= baseline.SupportPoints.Count,
+            $"High drainage multiplier ({highDrainage.SupportPoints.Count}) should produce >= baseline supports ({baseline.SupportPoints.Count}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_SupportInteractionEnabled_IncreasesSupportsOnDenseSphere()
+    {
+        var geometry = CreateGeometry(
+            MakeSphere(radius: 18f, centerY: 18f));
+
+        var disabled = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                SupportInteractionEnabled = false,
+                SupportSpacingThresholdMm = 3f,
+            },
+            maxSupportPoints: 2000);
+        var enabled = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                SupportInteractionEnabled = true,
+                SupportSpacingThresholdMm = 3f,
+            },
+            maxSupportPoints: 2000);
+
+        Assert.True(enabled.SupportPoints.Count >= disabled.SupportPoints.Count,
+            $"Support interaction enabled ({enabled.SupportPoints.Count}) should produce >= disabled ({disabled.SupportPoints.Count}) on dense geometry.");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_AccessibilityEnabled_BiasesAwayFromDeepInterior()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 18f, depth: 18f, height: 3f));
+
+        var withoutAccessibility = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                AccessibilityEnabled = false,
+            },
+            maxSupportPoints: 2000);
+        var withAccessibility = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                AccessibilityEnabled = true,
+                AccessibilityScanRadiusPx = 6,
+                AccessibilityMinOpenDirections = 2,
+            },
+            maxSupportPoints: 2000);
+
+        var averageRadiusWithout = ComputeAveragePlanarRadius(withoutAccessibility.SupportPoints);
+        var averageRadiusWith = ComputeAveragePlanarRadius(withAccessibility.SupportPoints);
+
+        Assert.True(averageRadiusWith >= averageRadiusWithout,
+            $"Accessibility-aware placement should bias supports outward (with={averageRadiusWith:F3}, without={averageRadiusWithout:F3}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_SurfaceQualityWeight_BiasesSupportsTowardBoundary()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 18f, depth: 18f, height: 3f));
+
+        var noWeight = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                SurfaceQualityWeight = 0f,
+            },
+            maxSupportPoints: 2000);
+        var highWeight = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                SurfaceQualityWeight = 0.9f,
+                SurfaceQualitySearchRadiusPx = 8,
+            },
+            maxSupportPoints: 2000);
+
+        var averageRadiusNoWeight = ComputeAveragePlanarRadius(noWeight.SupportPoints);
+        var averageRadiusHighWeight = ComputeAveragePlanarRadius(highWeight.SupportPoints);
+
+        Assert.True(averageRadiusHighWeight >= averageRadiusNoWeight,
+            $"Surface quality weighting should push supports outward (high={averageRadiusHighWeight:F3}, none={averageRadiusNoWeight:F3}).");
+    }
+
+    [Fact]
+    public void GenerateSupportPreview_OrientationCheckEnabled_IncreasesConservativeForcesOnFlatPlate()
+    {
+        var geometry = CreateGeometry(
+            MakeBox(centerX: 0f, centerZ: 0f, width: 24f, depth: 24f, height: 2f));
+
+        var noOrientation = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                OrientationCheckEnabled = false,
+            },
+            maxSupportPoints: 2000);
+        var withOrientation = sut.GenerateSupportPreview(geometry,
+            DefaultOverrides with
+            {
+                OrientationCheckEnabled = true,
+                OrientationRiskThresholdRatio = 1.01f,
+                OrientationRiskForceMultiplierMax = 2.0f,
+            },
+            maxSupportPoints: 2000);
+
+        var noOrientationPeel = noOrientation.SupportPoints.Sum(point => point.LayerForces?.Sum(layer => layer.Peel.Y) ?? 0f);
+        var withOrientationPeel = withOrientation.SupportPoints.Sum(point => point.LayerForces?.Sum(layer => layer.Peel.Y) ?? 0f);
+
+        Assert.True(withOrientationPeel >= noOrientationPeel,
+            $"Orientation check should not reduce conservative peel estimate (with={withOrientationPeel:F3}, without={noOrientationPeel:F3}).");
+    }
+
+    [Fact]
     public void GenerateSupportPreview_Donut_DoesNotPlaceSupportInCenterHole()
     {
         var geometry = CreateGeometry(
@@ -877,6 +1008,16 @@ public class AutoSupportGenerationServiceTests
             SphereCentre = new Vec3(0f, 10f, 0f),
             SphereRadius = 25f,
         };
+    }
+
+    private static float ComputeAveragePlanarRadius(IReadOnlyList<SupportPoint> supportPoints)
+    {
+        if (supportPoints.Count == 0)
+            return 0f;
+
+        return supportPoints
+            .Select(point => MathF.Sqrt((point.Position.X * point.Position.X) + (point.Position.Z * point.Position.Z)))
+            .Average();
     }
 
     private static LoadedGeometry CreateGeometryFromTriangles(List<Triangle3D> triangles)

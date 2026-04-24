@@ -50,6 +50,26 @@ public class AppConfig
     public float AutoSupportShrinkagePercent { get; set; } = 5f;
     public float AutoSupportShrinkageEdgeBias { get; set; } = 0.7f;
     public float AutoSupportModelLiftMm { get; set; } = 10f;
+    public float AutoSupportOverhangSensitivity { get; set; } = 0.65f;
+    public int AutoSupportPeelDirection { get; set; } = 2;
+    public float AutoSupportPeelStartMultiplier { get; set; } = 1.3f;
+    public float AutoSupportPeelEndMultiplier { get; set; } = 0.9f;
+    public float AutoSupportHeightBias { get; set; } = 0.3f;
+    public float AutoSupportBridgeReductionFactor { get; set; } = 0.3f;
+    public float AutoSupportCantileverMomentMultiplier { get; set; } = 0.4f;
+    public float AutoSupportCantileverReferenceLengthMm { get; set; } = 8f;
+    public float AutoSupportLayerBondStrengthPerMm2 { get; set; } = 1.2f;
+    public float AutoSupportLayerAdhesionSafetyFactor { get; set; } = 1.1f;
+    public bool AutoSupportSupportInteractionEnabled { get; set; } = true;
+    public float AutoSupportDrainageDepthForceMultiplier { get; set; } = 0.15f;
+    public bool AutoSupportAccessibilityEnabled { get; set; } = true;
+    public int AutoSupportAccessibilityScanRadiusPx { get; set; } = 6;
+    public int AutoSupportAccessibilityMinOpenDirections { get; set; } = 1;
+    public float AutoSupportSurfaceQualityWeight { get; set; } = 0.35f;
+    public int AutoSupportSurfaceQualitySearchRadiusPx { get; set; } = 6;
+    public bool AutoSupportOrientationCheckEnabled { get; set; } = true;
+    public float AutoSupportOrientationRiskForceMultiplierMax { get; set; } = 1.35f;
+    public float AutoSupportOrientationRiskThresholdRatio { get; set; } = 1.15f;
 
     public float AutoSupportV2VoxelSizeMm { get; set; } = 2f;
 

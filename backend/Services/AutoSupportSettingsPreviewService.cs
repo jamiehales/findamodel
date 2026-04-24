@@ -306,7 +306,27 @@ public sealed class AutoSupportSettingsPreviewService(
             tuning.MinFeatureWidthMm,
             tuning.ShrinkagePercent,
             tuning.ShrinkageEdgeBias,
-            tuning.ModelLiftMm);
+            tuning.ModelLiftMm,
+            tuning.OverhangSensitivity,
+            tuning.PeelDirection,
+            tuning.PeelStartMultiplier,
+            tuning.PeelEndMultiplier,
+            tuning.HeightBias,
+            tuning.BridgeReductionFactor,
+            tuning.CantileverMomentMultiplier,
+            tuning.CantileverReferenceLengthMm,
+            tuning.LayerBondStrengthPerMm2,
+            tuning.LayerAdhesionSafetyFactor,
+            tuning.SupportInteractionEnabled,
+            tuning.DrainageDepthForceMultiplier,
+            tuning.AccessibilityEnabled,
+            tuning.AccessibilityScanRadiusPx,
+            tuning.AccessibilityMinOpenDirections,
+            tuning.SurfaceQualityWeight,
+            tuning.SurfaceQualitySearchRadiusPx,
+            tuning.OrientationCheckEnabled,
+            tuning.OrientationRiskForceMultiplierMax,
+            tuning.OrientationRiskThresholdRatio);
 
     private void CleanupExpiredPreviews()
     {

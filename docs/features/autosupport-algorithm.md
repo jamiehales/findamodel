@@ -24,17 +24,26 @@ A detailed technical reference for the island-tip support generation algorithm u
 
 The auto-support algorithm generates support point markers for MSLA/resin printing by treating the model as a stack of horizontal layer bitmaps. It finds regions of freshly-appearing geometry at each layer ("tip islands"), then runs a multi-pass physics-informed solver to place and size support tips.
 
-The algorithm models five real-world failure modes:
+The current implementation combines force estimation, topology classification, and placement-quality heuristics:
 
-| Force | Cause | Detection |
+| Signal | Why it matters | Current approximation |
 |---|---|---|
-| **Peel force** | FEP film separation | Area x `PeelForceMultiplier` per pixel |
-| **Suction** | Enclosed cups/hollows resisting film | BFS flood-fill from bitmap edges |
-| **Area growth** | Rapidly expanding cross-section | Layer-to-layer area delta ratio |
-| **Gravity** | Weight of overhanging resin above supports | Cumulative mass accumulation per support |
-| **Hydrodynamic drag** | Resin flow around thin features | Narrow-island detection |
-
-An optional shrinkage pass adds edge supports on large flat islands where UV-cure contraction causes curling.
+| **Peel force** | FEP separation load | Area x `PeelForceMultiplier` per pixel |
+| **Suction** | Enclosed cups/hollows resist separation | Edge flood-fill plus enclosure ratio |
+| **Area growth** | Rapid cross-section expansion spikes peel load | Layer-to-layer area delta ratio |
+| **Gravity** | Lower supports carry accumulated model mass | Cumulative per-support weight pass |
+| **Hydrodynamic drag** | Thin features see lateral flow load | Aspect-ratio and minimum-width heuristic |
+| **Overhang severity** | Shallower overhangs need denser support | Unsupported-pixel ratio within island |
+| **Peel kinematics** | Peel-front load is not uniform across bed | Position-dependent multiplier by peel direction |
+| **Bridge vs cantilever** | Topology changes required support density | Anchored-edge classification |
+| **Shrinkage** | Large flat areas curl during cure | Edge-support pass on low perimeter-to-area islands |
+| **Layer adhesion** | Narrow load paths can delaminate | Bottleneck-area check per support |
+| **Support interaction** | Dense clusters can both share and concentrate load | Cluster spacing heuristic |
+| **Drainage risk** | Deep enclosed cavities trap resin and pressure | Enclosure depth multiplier |
+| **Accessibility** | Deep interior supports are hard to remove | Open-direction scan around candidates |
+| **Surface quality** | Tip marks should prefer less-visible regions | Boundary-distance penalty |
+| **Orientation risk** | Poor orientation raises required support conservatism | Downward-area comparison against nearby rotated candidates |
+| **Height bias** | Low layers are more failure-sensitive | Conservative multiplier near base |
 
 ---
 
@@ -42,32 +51,33 @@ An optional shrinkage pass adds edge supports on large flat islands where UV-cur
 
 ```mermaid
 flowchart TD
-    A([LoadedGeometry]) --> B[Compute voxel/layer grid]
-    B --> C[Render all layer bitmaps in parallel]
-    C --> D[Find islands per layer\nBFS flood-fill]
-    D --> E{SuctionMultiplier > 1?}
-    E -- yes --> F[Detect enclosed pixels\nper layer]
-    F --> G
-    E -- no --> G[Compute area growth ratios]
-    G --> H[Build per-layer pixel sets]
-    H --> I
+  A([LoadedGeometry]) --> B[Compute voxel and layer grid]
+  B --> C[Estimate orientation risk multiplier]
+  C --> D[Render all layer bitmaps in parallel]
+  D --> E[Find per-layer islands\ncentroid area aspect ratio perimeter]
+  E --> F[Detect enclosed regions\nand enclosure depth]
+  F --> G[Compute area-growth ratios\nand pixel lookup caches]
+  G --> H
 
-    subgraph solver ["Solver loop (max 8 passes)"]
-        I[ReinforceSupportsByForceAndSpacing] --> J{ShrinkagePercent > 0?}
-        J -- yes --> K[ApplyShrinkageEdgeSupports]
-        K --> L
-        J -- no --> L{GravityEnabled?}
-        L -- yes --> M[ApplyGravityLoading]
-        M --> N
-        L -- no --> N{Changed or cap reached?}
-        N -- changed, below cap --> I
-        N -- stable or cap --> O
-    end
+  subgraph solver ["Solver loop - max 8 passes"]
+    H[ReinforceSupportsByForceAndSpacing] --> I[Evaluate force and placement checks]
+    I --> J{Shrinkage enabled?}
+    J -- yes --> K[ApplyShrinkageEdgeSupports]
+    J -- no --> L
+    K --> L{Gravity enabled?}
+    L -- yes --> M[ApplyGravityLoading]
+    L -- no --> N
+    M --> N{Changed or cap reached?}
+    N -- changed --> H
+    N -- stable or cap --> O
+  end
 
-    O([Exit solver]) --> P[RedistributeSupportHeights]
-    P --> Q[PopulateSupportForces]
-    Q --> R[BuildSupportSphereMesh\n+ BuildMergedVoxelMesh]
-    R --> S([SupportPreviewResult])
+  O --> P[PopulateSupportForces]
+  P --> Q{Layer adhesion bottleneck?}
+  Q -- yes --> R[Upgrade support size and recompute forces]
+  Q -- no --> S
+  R --> S[Build support mesh and voxel preview mesh]
+  S --> T([SupportPreviewResult])
 ```
 
 ---
@@ -212,6 +222,23 @@ else:
 
 This multiplier feeds directly into `effectivePixelForce`, causing the solver to add more supports on rapidly flaring geometry.
 
+## Step 6.5: Orientation Risk Estimation
+
+Before the solver starts, the service estimates whether the current model orientation looks materially worse than a small set of nearby candidate rotations. This is not a full auto-orientation system - it is a conservative risk estimator used to avoid under-supporting obviously poor orientations.
+
+```mermaid
+flowchart LR
+  A[Current mesh] --> B[Measure downward-facing area score]
+  A --> C[Measure nearby rotated candidates]
+  B --> D[Compare current vs best candidate]
+  C --> D
+  D --> E{Current ratio above threshold?}
+  E -- yes --> F[Increase orientation risk multiplier]
+  E -- no --> G[Use 1.0 multiplier]
+```
+
+The score is a weighted sum of downward-facing triangle area. If the current orientation is sufficiently worse than the best nearby candidate, the solver scales force estimates upward by `OrientationRiskForceMultiplierMax` capped by the measured ratio.
+
 ---
 
 ## Step 7: Solver Loop
@@ -224,26 +251,29 @@ This is the main support placement algorithm. It processes every island from lay
 
 ```mermaid
 flowchart TD
-    A([For each island]) --> B[Get unsupported pixels\nN minus N-1]
-    B --> C{Any unsupported pixels?}
-    C -- no --> Z([Next island])
-    C -- yes --> D[Find existing supports\ninside island footprint]
-    D --> E{Any supports found?}
-    E -- no --> F[Place Light support\nat centroid or furthest\npoint from all supports]
-    F --> Z
-    E -- yes --> G[EvaluateSupportForces\nVoronoi assignment]
-    G --> H[Compute combinedCapacity\n= sum of pi*r^2*ResinStrength]
-    H --> I{Any threshold exceeded?}
-    I -- no --> Z
-    I -- yes --> J[Compute overload ratio\n= max of load/crush/angular ratios]
-    J --> K{overloadRatio}
-    K -- "> 1.8" --> L[Size = Heavy]
-    K -- "> 1.25" --> M[Size = Medium]
-    K -- else --> N[Size = Light]
-    L & M & N --> O[Place support at\nfurthest unsupported pixel]
-    O --> P{Tip island and\nbelow iteration cap?}
-    P -- yes --> D
-    P -- no --> Z
+  A([For each island]) --> B[Get unsupported pixels\ncurrent layer minus previous layer]
+  B --> C{Any unsupported pixels?}
+  C -- no --> Z([Next island])
+  C -- yes --> D[Find existing supports\nunder island footprint]
+  D --> E{Any supports found?}
+  E -- no --> F[Pick first placement target\ncentroid or furthest unsupported pixel]
+  F --> G[Score candidate pixels by\nlowest valid layer plus distance plus cosmetic penalty]
+  G --> H{Accessibility check passes?}
+  H -- no --> Z
+  H -- yes --> I[Add Light support]
+  I --> Z
+  E -- yes --> J[EvaluateSupportForces\nwith Voronoi pixel assignment]
+  J --> K[Apply multipliers\nsuction area growth drag overhang\nheight topology peel drainage orientation]
+  K --> L[Adjust cluster load and capacity\nwith support-interaction heuristic]
+  L --> M{Load crush angular spacing\nor cluster spread exceeded?}
+  M -- no --> Z
+  M -- yes --> N[Choose size\nLight Medium or Heavy]
+  N --> O[Target furthest gap or overloaded region]
+  O --> P[Score candidate pixels again\nlayer accessibility surface quality]
+  P --> Q[Add support at best valid layer]
+  Q --> R{Tip island and\nbelow iteration cap?}
+  R -- yes --> D
+  R -- no --> Z
 ```
 
 The four thresholds that trigger reinforcement are checked simultaneously:
@@ -255,6 +285,14 @@ The four thresholds that trigger reinforcement are checked simultaneously:
 | Angular force | `maxAngularForce > MaxAngularForce` |
 | Spacing gap | `furthestPixelDistance > SupportSpacingThresholdMm` |
 
+The force evaluation also incorporates these placement-related modifiers before thresholding:
+
+- Support interaction adjusts effective cluster load and cluster capacity when many supports are tightly packed.
+- Drainage depth increases force estimates for deep enclosed regions.
+- Accessibility rejects candidate pixels that do not open to enough outward directions.
+- Surface quality adds a placement penalty to deep interior pixels so supports bias toward boundaries when structure allows.
+- Orientation risk scales force estimates upward when the current orientation appears materially worse than nearby alternatives.
+
 **Tip islands** allow up to `MaxTipIslandAddsPerPass` (4) supports per pass before moving on. This prevents one large tip island from consuming the entire support budget.
 
 **Non-tip (body) islands** are limited to one new support per pass and only when the layer is above the lowest quarter of the model. Support density is also compared against a height-scaled desired count:
@@ -264,7 +302,7 @@ desiredSupports = ceil(unsupportedAreaMm2 / (pi * spacingThreshold^2))
 heightScaled    = max(1, ceil(desiredSupports * (0.15 + 0.85 * layerRatio)))
 ```
 
-This relaxes support density requirements toward the base where gravity and weight carry loads differently.
+This makes the solver more conservative near the base where early-print failures are more expensive.
 
 ### 7b. Shrinkage Edge Supports
 
@@ -309,31 +347,31 @@ Supports whose accumulated gravity load exceeds thresholds are upgraded:
 
 ---
 
-## Step 8: Height Redistribution
+## Step 8: Force Population and Layer Adhesion
 
-After the solver, the algorithm checks for over-clustering of supports near the model base. If more than half of all supports sit in the bottom quarter of the model, excess supports are promoted upward to the highest available boundary pixel at the same XZ position within the bottom half of the model.
+The current solver keeps supports at their selected placement layer. It does **not** run a post-pass height-redistribution step.
 
-```
-Before redistribution:        After redistribution:
+After the solver converges, per-support force vectors are recomputed for visualisation and for the final layer-adhesion bottleneck check.
 
-Layer 48:  . . . . . . .      Layer 48:  . . . . . . .
-  ...                           ...
-Layer 12:  . . S . . . .      Layer 24:  . . S . . . .  (promoted)
-Layer 10:  . S . . . . .      Layer 10:  . S . . . . .  (kept)
-Layer  3:  . . . S . . .      Layer  3:  . . . S . . .  (kept - at limit)
-Layer  2:  . S . . . . .      Layer 10:  . S . . . . .  (promoted)
-Layer  1:  . . S . . . .      Layer  8:  . . S . . . .  (promoted)
-
- (too many at base)             (spread out)
-```
-
-Promotion only succeeds if the target layer has a boundary pixel at the same column/row. Supports that cannot be promoted remain in place.
-
----
-
-## Step 9: Force Population
+### 8a. Force Population
 
 With the final support set fixed, per-support pull-force vectors are recomputed across all islands for visualisation in the 3D viewer. This uses the same Voronoi assignment as the solver but accumulates the `PullVector` (lateral + signed vertical components) into each `SupportPoint.PullForce`.
+
+### 8b. Layer Adhesion Reinforcement
+
+The final support set is then checked against the narrowest load path below each support. The algorithm walks downward through the support column and estimates the smallest local cross-section area that still contains the support position.
+
+```mermaid
+flowchart TD
+    A[Support with expected load] --> B[Walk downward through layers]
+    B --> C[Measure smallest local area\naround support column]
+    C --> D[Compute required area\nload divided by bond strength]
+    D --> E{Bottleneck area sufficient?}
+    E -- yes --> F[Keep support size]
+    E -- no --> G[Upgrade Light to Medium\nor Medium to Heavy]
+```
+
+This catches cases where the support tip itself is strong enough, but the thin geometry beneath it is not.
 
 ---
 

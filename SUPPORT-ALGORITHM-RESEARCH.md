@@ -848,32 +848,22 @@ Low. Single multiplier based on layer index, trivially applied to existing force
 | 3 | Gravity / cumulative weight | Medium | Medium-High | Yes |
 | 4 | Hydrodynamic drag (resin flow) | Medium-High | Medium | Yes |
 | 5 | Thermal shrinkage / polymerization stress | Medium | High | Yes |
-| 6 | Overhang angle sensitivity | Low-Medium | High | No |
-| 7 | FEP tilt/peel kinematics | Low | Medium | No |
-| 8 | Support-to-support structural interaction | Medium | Medium | No |
-| 9 | Bridge and cantilever detection | Medium | High | No |
-| 10 | Resin viscosity and drainage | Medium-High | Medium | No |
-| 11 | Layer adhesion / delamination risk | Medium-High | Medium-High | No |
-| 12 | Support accessibility | High | Medium | No |
-| 13 | Surface quality-aware placement | Medium | Medium | No |
-| 14 | Model orientation optimization | Medium-High | Very High | No |
+| 6 | Overhang angle sensitivity | Low-Medium | High | Yes |
+| 7 | FEP tilt/peel kinematics | Low | Medium | Yes |
+| 8 | Support-to-support structural interaction | Medium | Medium | Yes |
+| 9 | Bridge and cantilever detection | Medium | High | Yes |
+| 10 | Resin viscosity and drainage | Medium-High | Medium | Yes |
+| 11 | Layer adhesion / delamination risk | Medium-High | Medium-High | Yes |
+| 12 | Support accessibility | High | Medium | Yes |
+| 13 | Surface quality-aware placement | Medium | Medium | Yes |
+| 14 | Model orientation optimization | Medium-High | Very High | Yes |
 | 15 | Support structure variation (tree/lattice) | High | High | No |
 | 16 | Raft design and plate adhesion | Low-Medium | High | No |
-| 17 | Dynamic density by print height | Low | Medium | No |
+| 17 | Dynamic density by print height | Low | Medium | Yes |
 
 ## Recommended implementation priority
 
-Based on impact-to-complexity ratio (items 1-5 implemented):
+Based on current implementation status:
 
-1. **Overhang angle sensitivity** (item 6) - Low complexity, high impact
-2. **Dynamic density by print height** (item 17) - Low complexity, medium impact
-3. **FEP tilt/peel kinematics** (item 7) - Low complexity, medium impact
-4. **Bridge and cantilever detection** (item 9) - Medium complexity, high impact
-5. **Raft design and plate adhesion** (item 16) - Low-medium complexity, high impact
-6. **Support structural interaction** (item 8) - Medium complexity, medium impact
-7. **Layer adhesion / delamination** (item 11) - Medium-high complexity, medium-high impact
-8. **Model orientation optimization** (item 14) - Medium-high complexity, very high impact
-9. **Surface quality-aware placement** (item 13) - Medium complexity, medium impact
-10. **Resin viscosity and drainage** (item 10) - Medium-high complexity, medium impact
-11. **Support accessibility** (item 12) - High complexity, medium impact
-12. **Support structure variation** (item 15) - High complexity, high impact
+1. **Support structure variation** (item 15) - still not implemented
+2. **Raft design and plate adhesion** (item 16) - still not implemented

@@ -59,7 +59,17 @@ public sealed record AutoSupportTuningOverrides(
     float CantileverMomentMultiplier = 0.4f,
     float CantileverReferenceLengthMm = 8f,
     float LayerBondStrengthPerMm2 = 1.2f,
-    float LayerAdhesionSafetyFactor = 1.1f);
+    float LayerAdhesionSafetyFactor = 1.1f,
+    bool SupportInteractionEnabled = true,
+    float DrainageDepthForceMultiplier = 0.15f,
+    bool AccessibilityEnabled = true,
+    int AccessibilityScanRadiusPx = 6,
+    int AccessibilityMinOpenDirections = 1,
+    float SurfaceQualityWeight = 0.35f,
+    int SurfaceQualitySearchRadiusPx = 6,
+    bool OrientationCheckEnabled = true,
+    float OrientationRiskForceMultiplierMax = 1.35f,
+    float OrientationRiskThresholdRatio = 1.15f);
 
 public sealed record SupportPreviewResult(
     IReadOnlyList<SupportPoint> SupportPoints,

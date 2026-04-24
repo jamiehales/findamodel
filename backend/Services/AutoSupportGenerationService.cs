@@ -35,6 +35,16 @@ public sealed class AutoSupportGenerationService
     private const float DefaultCantileverReferenceLengthMm = 8f;
     private const float DefaultLayerBondStrengthPerMm2 = 1.2f;
     private const float DefaultLayerAdhesionSafetyFactor = 1.1f;
+    private const bool DefaultSupportInteractionEnabled = true;
+    private const float DefaultDrainageDepthForceMultiplier = 0.15f;
+    private const bool DefaultAccessibilityEnabled = true;
+    private const int DefaultAccessibilityScanRadiusPx = 6;
+    private const int DefaultAccessibilityMinOpenDirections = 1;
+    private const float DefaultSurfaceQualityWeight = 0.35f;
+    private const int DefaultSurfaceQualitySearchRadiusPx = 6;
+    private const bool DefaultOrientationCheckEnabled = true;
+    private const float DefaultOrientationRiskForceMultiplierMax = 1.35f;
+    private const float DefaultOrientationRiskThresholdRatio = 1.15f;
     private static readonly ParallelOptions FullCoreParallelOptions = new()
     {
         MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
@@ -77,6 +87,9 @@ public sealed class AutoSupportGenerationService
         var layerHeightMm = Math.Clamp(geometry.DimensionYMm / 48f, tuning.MinLayerHeightMm, tuning.MaxLayerHeightMm);
         var pixelWidth = Math.Max(24, (int)Math.Ceiling(bedWidthMm / voxelSizeMm));
         var pixelHeight = Math.Max(24, (int)Math.Ceiling(bedDepthMm / voxelSizeMm));
+        var orientationRiskMultiplier = tuning.OrientationCheckEnabled
+            ? EstimateOrientationRiskMultiplier(geometry, tuning)
+            : 1f;
 
         var layerCount = Math.Max(1, (int)Math.Ceiling(Math.Max(geometry.DimensionYMm, layerHeightMm) / layerHeightMm));
 
@@ -138,6 +151,46 @@ public sealed class AutoSupportGenerationService
                     }
                 }
             });
+
+            var lowestEnclosedLayerByPixel = new Dictionary<(int Column, int Row), int>();
+            for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+            {
+                var enclosedPixels = DetectEnclosedPixels(layerBitmaps[layerIndex]);
+                if (enclosedPixels == null)
+                    continue;
+
+                foreach (var pixel in enclosedPixels)
+                {
+                    if (!lowestEnclosedLayerByPixel.ContainsKey(pixel))
+                        lowestEnclosedLayerByPixel[pixel] = layerIndex;
+                }
+            }
+
+            for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+            {
+                for (var islandIndex = 0; islandIndex < layerIslands[layerIndex].Count; islandIndex++)
+                {
+                    var island = layerIslands[layerIndex][islandIndex];
+                    if (!island.HasEnclosedRegion)
+                        continue;
+
+                    var minLayer = int.MaxValue;
+                    foreach (var pixel in island.PixelCoords)
+                    {
+                        if (lowestEnclosedLayerByPixel.TryGetValue(pixel, out var firstLayer) && firstLayer < minLayer)
+                            minLayer = firstLayer;
+                    }
+
+                    if (minLayer == int.MaxValue)
+                        continue;
+
+                    var depthLayers = Math.Max(1, layerIndex - minLayer + 1);
+                    layerIslands[layerIndex][islandIndex] = island with
+                    {
+                        EnclosureDepthLayers = depthLayers,
+                    };
+                }
+            }
         }
 
         // Compute per-layer total pixel area for area-growth detection
@@ -211,7 +264,8 @@ public sealed class AutoSupportGenerationService
                 pixelHeight,
                 layerHeightMm,
                 layerAreaGrowthRatio,
-                tuning);
+                tuning,
+                orientationRiskMultiplier);
 
             var reinforceElapsedMs = Stopwatch.GetElapsedTime(reinforceStart).TotalMilliseconds;
             var reinforceAdded = supportPoints.Count - supportCountBeforeReinforce;
@@ -306,7 +360,8 @@ public sealed class AutoSupportGenerationService
             pixelWidth,
             pixelHeight,
             layerHeightMm,
-            tuning);
+            tuning,
+            orientationRiskMultiplier);
 
         var adhesionAdjusted = ApplyLayerAdhesionReinforcement(
             layerPixelSets,
@@ -329,7 +384,8 @@ public sealed class AutoSupportGenerationService
                 pixelWidth,
                 pixelHeight,
                 layerHeightMm,
-                tuning);
+                tuning,
+                orientationRiskMultiplier);
         }
 
         var sliceLayers = BuildSliceLayers(
@@ -616,7 +672,8 @@ public sealed class AutoSupportGenerationService
         int pixelHeight,
         float layerHeightMm,
         float[] layerAreaGrowthRatio,
-        AutoSupportTuning tuning)
+        AutoSupportTuning tuning,
+        float orientationRiskMultiplier)
     {
         var changed = false;
 
@@ -739,16 +796,26 @@ public sealed class AutoSupportGenerationService
                         island,
                         layerAreaGrowthRatio[layerIndex],
                         prevPixels,
-                        layerProgress);
+                        layerProgress,
+                        orientationRiskMultiplier);
 
-                    var combinedCapacity = supportIndices.Sum(index => ComputeCapacity(supportPoints[index], tuning));
-                    var verticalPullForce = supportForces.Sum(metric => metric.VerticalPullForce);
+                    var interaction = AnalyzeSupportInteraction(
+                        supportIndices,
+                        supportPoints,
+                        tuning.SupportSpacingThresholdMm,
+                        tuning.SupportInteractionEnabled);
+                    var combinedCapacity = supportIndices.Sum(index => ComputeCapacity(supportPoints[index], tuning))
+                        * interaction.CapacityMultiplier;
+                    var verticalPullForce = supportForces.Sum(metric => metric.VerticalPullForce)
+                        * interaction.LoadMultiplier;
                     var maxCompressiveForce = supportForces.Max(metric => metric.CompressiveForce);
                     var maxAngularForce = supportForces.Max(metric => metric.AngularForce);
                     var isOverloaded = verticalPullForce > combinedCapacity;
                     var exceedsCrushForce = maxCompressiveForce > tuning.CrushForceThreshold;
                     var exceedsAngularForce = maxAngularForce > tuning.MaxAngularForce;
                     var exceedsSpacing = furthest.DistanceMm > tuning.SupportSpacingThresholdMm;
+                    var exceedsInteractionSpread = interaction.RequiresRedistribution
+                        && furthest.DistanceMm > (tuning.SupportSpacingThresholdMm * 0.35f);
 
                     // For balanced force placement: identify the most overloaded support
                     // and prefer placing the new support to relieve it.
@@ -850,7 +917,7 @@ public sealed class AutoSupportGenerationService
                         continue;
                     }
 
-                    if (!isOverloaded && !exceedsCrushForce && !exceedsAngularForce && !exceedsSpacing)
+                    if (!isOverloaded && !exceedsCrushForce && !exceedsAngularForce && !exceedsSpacing && !exceedsInteractionSpread)
                         break;
 
                     var loadRatio = combinedCapacity <= 0f ? 2f : verticalPullForce / combinedCapacity;
@@ -925,13 +992,15 @@ public sealed class AutoSupportGenerationService
 
         (int X, int Y) bestPixel = default;
         var bestLayer = int.MaxValue;
-        var bestTargetDistSq = float.MaxValue;
+        var bestScore = float.MaxValue;
         var foundPlacement = false;
         var minimumSpacingSq = minimumPlacementDistanceMm * minimumPlacementDistanceMm;
 
         foreach (var pixel in candidatePixels)
         {
-            var candidateLayer = currentLayerIndex;
+            var candidateLayer = lowestLayerByPixel.TryGetValue((pixel.X, pixel.Y), out var lowestLayer)
+                ? Math.Clamp(lowestLayer, 0, currentLayerIndex)
+                : currentLayerIndex;
             var xMm = ColumnToX(pixel.X, bedWidthMm, pixelWidth);
             var zMm = RowToZ(pixel.Y, bedDepthMm, pixelHeight);
             var dx = xMm - targetXMm;
@@ -942,16 +1011,39 @@ public sealed class AutoSupportGenerationService
                 xMm,
                 zMm);
             var satisfiesSpacing = minimumPlacementDistanceMm <= 0f || nearestSupportDistSq >= minimumSpacingSq;
+            var layerPixels = layerPixelSets[candidateLayer];
+
+            if (tuning.AccessibilityEnabled && layerPixels != null)
+            {
+                if (!HasPlacementAccessibility(
+                        layerPixels,
+                        pixel.X,
+                        pixel.Y,
+                        tuning.AccessibilityScanRadiusPx,
+                        tuning.AccessibilityMinOpenDirections))
+                    continue;
+            }
 
             if (satisfiesSpacing)
             {
+                var cosmeticPenalty = 0f;
+                if (tuning.SurfaceQualityWeight > 0f && layerPixels != null)
+                {
+                    cosmeticPenalty = tuning.SurfaceQualityWeight * ComputeSurfacePenalty(
+                        layerPixels,
+                        pixel.X,
+                        pixel.Y,
+                        tuning.SurfaceQualitySearchRadiusPx);
+                }
+
+                var score = targetDistSq + cosmeticPenalty;
                 if (!foundPlacement
                     || candidateLayer < bestLayer
-                    || (candidateLayer == bestLayer && targetDistSq < bestTargetDistSq))
+                    || (candidateLayer == bestLayer && score < bestScore))
                 {
                     bestLayer = candidateLayer;
                     bestPixel = pixel;
-                    bestTargetDistSq = targetDistSq;
+                    bestScore = score;
                     foundPlacement = true;
                 }
             }
@@ -1179,7 +1271,8 @@ public sealed class AutoSupportGenerationService
         int pixelWidth,
         int pixelHeight,
         float layerHeightMm,
-        AutoSupportTuning tuning)
+        AutoSupportTuning tuning,
+        float orientationRiskMultiplier)
     {
         if (supportPoints.Count == 0)
             return;
@@ -1240,7 +1333,8 @@ public sealed class AutoSupportGenerationService
                             prevPixels: prevPixels,
                             layerProgress: layerIslands.Length <= 1
                                 ? 1f
-                                : layerIndex / (float)(layerIslands.Length - 1));
+                                : layerIndex / (float)(layerIslands.Length - 1),
+                                        orientationRiskMultiplier: orientationRiskMultiplier);
 
                         foreach (var metric in supportForces)
                         {
@@ -1377,7 +1471,8 @@ public sealed class AutoSupportGenerationService
         TipIsland? island = null,
         float areaGrowthRatio = 0f,
         HashSet<(int Column, int Row)>? prevPixels = null,
-        float layerProgress = 1f)
+        float layerProgress = 1f,
+        float orientationRiskMultiplier = 1f)
     {
         var pixelAreaMm2 = (bedWidthMm / pixelWidth) * (bedDepthMm / pixelHeight);
         var pixelForce = pixelAreaMm2 * tuning.PeelForceMultiplier;
@@ -1411,6 +1506,13 @@ public sealed class AutoSupportGenerationService
         // Item 17: Dynamic support density by print height (more conservative near base)
         var clampedProgress = Math.Clamp(layerProgress, 0f, 1f);
         var heightMultiplier = 1f + (tuning.HeightBias * (1f - clampedProgress));
+
+        // Item 10: Drainage depth risk for enclosed features where trapped resin has poor venting.
+        var drainageMultiplier = 1f;
+        if (island is { HasEnclosedRegion: true } && tuning.DrainageDepthForceMultiplier > 0f)
+        {
+            drainageMultiplier += MathF.Min(2f, island.EnclosureDepthLayers * tuning.DrainageDepthForceMultiplier);
+        }
 
         // Item 9: Bridge/cantilever topology detection
         var topologyMultiplier = 1f;
@@ -1466,7 +1568,9 @@ public sealed class AutoSupportGenerationService
             * overhangMultiplier
             * heightMultiplier
             * topologyMultiplier
-            * peelKinematicsMultiplier;
+            * peelKinematicsMultiplier
+            * drainageMultiplier
+            * MathF.Max(1f, orientationRiskMultiplier);
         var supportSlotCount = supportIndices.Count;
         var supportSlots = new SupportPoint[supportSlotCount];
         for (var slot = 0; slot < supportSlotCount; slot++)
@@ -2005,6 +2109,174 @@ public sealed class AutoSupportGenerationService
         return new IslandTopologyMetrics(IslandTopology.Cantilever, anchoredRatio, cantileverLengthMm);
     }
 
+    private static SupportInteractionMetrics AnalyzeSupportInteraction(
+        IReadOnlyList<int> supportIndices,
+        IReadOnlyList<SupportPoint> supportPoints,
+        float spacingThresholdMm,
+        bool enabled)
+    {
+        if (!enabled || supportIndices.Count < 2)
+            return new SupportInteractionMetrics(1f, 1f, false);
+
+        var pairCount = 0;
+        var closePairCount = 0;
+        var sumDistance = 0f;
+        for (var i = 0; i < supportIndices.Count; i++)
+        {
+            var a = supportPoints[supportIndices[i]].Position;
+            for (var j = i + 1; j < supportIndices.Count; j++)
+            {
+                var b = supportPoints[supportIndices[j]].Position;
+                var dx = a.X - b.X;
+                var dz = a.Z - b.Z;
+                var d = MathF.Sqrt((dx * dx) + (dz * dz));
+                sumDistance += d;
+                pairCount++;
+                if (d <= spacingThresholdMm * 0.6f)
+                    closePairCount++;
+            }
+        }
+
+        if (pairCount == 0)
+            return new SupportInteractionMetrics(1f, 1f, false);
+
+        var avgDistance = sumDistance / pairCount;
+        var closeRatio = closePairCount / (float)pairCount;
+        var capacityMultiplier = 1f;
+        var loadMultiplier = 1f;
+
+        if (avgDistance <= spacingThresholdMm * 0.75f)
+            capacityMultiplier += 0.08f;
+
+        if (closeRatio > 0.45f)
+            loadMultiplier += 0.1f;
+
+        var requiresRedistribution = closeRatio > 0.6f;
+        return new SupportInteractionMetrics(capacityMultiplier, loadMultiplier, requiresRedistribution);
+    }
+
+    private static bool HasPlacementAccessibility(
+        HashSet<(int Column, int Row)> layerPixels,
+        int column,
+        int row,
+        int scanRadius,
+        int minOpenDirections)
+    {
+        if (!layerPixels.Contains((column, row)))
+            return false;
+
+        var openDirections = 0;
+        foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+        {
+            for (var step = 1; step <= scanRadius; step++)
+            {
+                var nx = column + (dx * step);
+                var ny = row + (dy * step);
+                if (!layerPixels.Contains((nx, ny)))
+                {
+                    openDirections++;
+                    break;
+                }
+            }
+        }
+
+        return openDirections >= minOpenDirections;
+    }
+
+    private static float ComputeSurfacePenalty(
+        HashSet<(int Column, int Row)> layerPixels,
+        int column,
+        int row,
+        int maxSearchRadius)
+    {
+        if (!layerPixels.Contains((column, row)))
+            return 1f;
+
+        if (IsBoundaryPixel(layerPixels, column, row))
+            return 0f;
+
+        for (var radius = 1; radius <= maxSearchRadius; radius++)
+        {
+            for (var dy = -radius; dy <= radius; dy++)
+            {
+                var dx = radius - Math.Abs(dy);
+                if (IsBoundaryPixel(layerPixels, column + dx, row + dy)
+                    || IsBoundaryPixel(layerPixels, column - dx, row + dy))
+                {
+                    return radius / (float)Math.Max(maxSearchRadius, 1);
+                }
+            }
+        }
+
+        return 1f;
+    }
+
+    private float EstimateOrientationRiskMultiplier(LoadedGeometry geometry, AutoSupportTuning tuning)
+    {
+        if (geometry.Triangles.Count == 0)
+            return 1f;
+
+        var baseScore = ComputeOrientationScore(geometry.Triangles);
+        var bestScore = baseScore;
+        var candidates = new (float X, float Z)[]
+        {
+            (MathF.PI / 9f, 0f),
+            (-MathF.PI / 9f, 0f),
+            (0f, MathF.PI / 9f),
+            (0f, -MathF.PI / 9f),
+            (MathF.PI / 9f, MathF.PI / 9f),
+            (-MathF.PI / 9f, -MathF.PI / 9f),
+        };
+
+        foreach (var (rotX, rotZ) in candidates)
+        {
+            var score = ComputeOrientationScore(geometry.Triangles, rotX, rotZ);
+            if (score < bestScore)
+                bestScore = score;
+        }
+
+        if (bestScore <= 0.0001f)
+            return 1f;
+
+        var ratio = baseScore / bestScore;
+        if (ratio <= tuning.OrientationRiskThresholdRatio)
+            return 1f;
+
+        return Math.Clamp(ratio, 1f, tuning.OrientationRiskForceMultiplierMax);
+    }
+
+    private static float ComputeOrientationScore(
+        IReadOnlyList<Triangle3D> triangles,
+        float rotateX = 0f,
+        float rotateZ = 0f)
+    {
+        var score = 0f;
+        var cosX = MathF.Cos(rotateX);
+        var sinX = MathF.Sin(rotateX);
+        var cosZ = MathF.Cos(rotateZ);
+        var sinZ = MathF.Sin(rotateZ);
+
+        foreach (var triangle in triangles)
+        {
+            var normal = triangle.Normal;
+            if (rotateX != 0f)
+                normal = new Vec3(normal.X, (normal.Y * cosX) - (normal.Z * sinX), (normal.Y * sinX) + (normal.Z * cosX));
+            if (rotateZ != 0f)
+                normal = new Vec3((normal.X * cosZ) - (normal.Y * sinZ), (normal.X * sinZ) + (normal.Y * cosZ), normal.Z);
+
+            var downward = MathF.Max(0f, -normal.Y);
+            if (downward <= 0f)
+                continue;
+
+            var edgeA = triangle.V1 - triangle.V0;
+            var edgeB = triangle.V2 - triangle.V0;
+            var area = edgeA.Cross(edgeB).Length * 0.5f;
+            score += area * downward;
+        }
+
+        return score;
+    }
+
     private static bool ApplyLayerAdhesionReinforcement(
         HashSet<(int Column, int Row)>?[] layerPixelSets,
         List<SupportPoint> supportPoints,
@@ -2401,7 +2673,17 @@ public sealed class AutoSupportGenerationService
                 CantileverMomentMultiplier: tuningOverrides.CantileverMomentMultiplier,
                 CantileverReferenceLengthMm: tuningOverrides.CantileverReferenceLengthMm,
                 LayerBondStrengthPerMm2: tuningOverrides.LayerBondStrengthPerMm2,
-                LayerAdhesionSafetyFactor: tuningOverrides.LayerAdhesionSafetyFactor);
+                LayerAdhesionSafetyFactor: tuningOverrides.LayerAdhesionSafetyFactor,
+                SupportInteractionEnabled: tuningOverrides.SupportInteractionEnabled,
+                DrainageDepthForceMultiplier: tuningOverrides.DrainageDepthForceMultiplier,
+                AccessibilityEnabled: tuningOverrides.AccessibilityEnabled,
+                AccessibilityScanRadiusPx: tuningOverrides.AccessibilityScanRadiusPx,
+                AccessibilityMinOpenDirections: tuningOverrides.AccessibilityMinOpenDirections,
+                SurfaceQualityWeight: tuningOverrides.SurfaceQualityWeight,
+                SurfaceQualitySearchRadiusPx: tuningOverrides.SurfaceQualitySearchRadiusPx,
+                OrientationCheckEnabled: tuningOverrides.OrientationCheckEnabled,
+                OrientationRiskForceMultiplierMax: tuningOverrides.OrientationRiskForceMultiplierMax,
+                OrientationRiskThresholdRatio: tuningOverrides.OrientationRiskThresholdRatio);
         }
 
         var config = appConfigService?.GetAsync().GetAwaiter().GetResult();
@@ -2430,16 +2712,28 @@ public sealed class AutoSupportGenerationService
             ShrinkagePercent: config?.AutoSupportShrinkagePercent ?? AppConfigService.DefaultAutoSupportShrinkagePercent,
             ShrinkageEdgeBias: config?.AutoSupportShrinkageEdgeBias ?? AppConfigService.DefaultAutoSupportShrinkageEdgeBias,
                 ModelLiftMm: config?.AutoSupportModelLiftMm ?? AppConfigService.DefaultAutoSupportModelLiftMm,
-                OverhangSensitivity: DefaultOverhangSensitivity,
-                PeelDirection: PeelDirection.ZPositive,
-                PeelStartMultiplier: DefaultPeelStartMultiplier,
-                PeelEndMultiplier: DefaultPeelEndMultiplier,
-                HeightBias: DefaultHeightBias,
-                BridgeReductionFactor: DefaultBridgeReductionFactor,
-                CantileverMomentMultiplier: DefaultCantileverMomentMultiplier,
-                CantileverReferenceLengthMm: DefaultCantileverReferenceLengthMm,
-                LayerBondStrengthPerMm2: DefaultLayerBondStrengthPerMm2,
-                LayerAdhesionSafetyFactor: DefaultLayerAdhesionSafetyFactor);
+                OverhangSensitivity: config?.AutoSupportOverhangSensitivity ?? AppConfigService.DefaultAutoSupportOverhangSensitivity,
+                PeelDirection: Enum.IsDefined(typeof(PeelDirection), config?.AutoSupportPeelDirection ?? AppConfigService.DefaultAutoSupportPeelDirection)
+                    ? (PeelDirection)(config?.AutoSupportPeelDirection ?? AppConfigService.DefaultAutoSupportPeelDirection)
+                    : PeelDirection.ZPositive,
+                PeelStartMultiplier: config?.AutoSupportPeelStartMultiplier ?? AppConfigService.DefaultAutoSupportPeelStartMultiplier,
+                PeelEndMultiplier: config?.AutoSupportPeelEndMultiplier ?? AppConfigService.DefaultAutoSupportPeelEndMultiplier,
+                HeightBias: config?.AutoSupportHeightBias ?? AppConfigService.DefaultAutoSupportHeightBias,
+                BridgeReductionFactor: config?.AutoSupportBridgeReductionFactor ?? AppConfigService.DefaultAutoSupportBridgeReductionFactor,
+                CantileverMomentMultiplier: config?.AutoSupportCantileverMomentMultiplier ?? AppConfigService.DefaultAutoSupportCantileverMomentMultiplier,
+                CantileverReferenceLengthMm: config?.AutoSupportCantileverReferenceLengthMm ?? AppConfigService.DefaultAutoSupportCantileverReferenceLengthMm,
+                LayerBondStrengthPerMm2: config?.AutoSupportLayerBondStrengthPerMm2 ?? AppConfigService.DefaultAutoSupportLayerBondStrengthPerMm2,
+                LayerAdhesionSafetyFactor: config?.AutoSupportLayerAdhesionSafetyFactor ?? AppConfigService.DefaultAutoSupportLayerAdhesionSafetyFactor,
+                SupportInteractionEnabled: config?.AutoSupportSupportInteractionEnabled ?? AppConfigService.DefaultAutoSupportSupportInteractionEnabled,
+                DrainageDepthForceMultiplier: config?.AutoSupportDrainageDepthForceMultiplier ?? AppConfigService.DefaultAutoSupportDrainageDepthForceMultiplier,
+                AccessibilityEnabled: config?.AutoSupportAccessibilityEnabled ?? AppConfigService.DefaultAutoSupportAccessibilityEnabled,
+                AccessibilityScanRadiusPx: config?.AutoSupportAccessibilityScanRadiusPx ?? AppConfigService.DefaultAutoSupportAccessibilityScanRadiusPx,
+                AccessibilityMinOpenDirections: config?.AutoSupportAccessibilityMinOpenDirections ?? AppConfigService.DefaultAutoSupportAccessibilityMinOpenDirections,
+                SurfaceQualityWeight: config?.AutoSupportSurfaceQualityWeight ?? AppConfigService.DefaultAutoSupportSurfaceQualityWeight,
+                SurfaceQualitySearchRadiusPx: config?.AutoSupportSurfaceQualitySearchRadiusPx ?? AppConfigService.DefaultAutoSupportSurfaceQualitySearchRadiusPx,
+                OrientationCheckEnabled: config?.AutoSupportOrientationCheckEnabled ?? AppConfigService.DefaultAutoSupportOrientationCheckEnabled,
+                OrientationRiskForceMultiplierMax: config?.AutoSupportOrientationRiskForceMultiplierMax ?? AppConfigService.DefaultAutoSupportOrientationRiskForceMultiplierMax,
+                OrientationRiskThresholdRatio: config?.AutoSupportOrientationRiskThresholdRatio ?? AppConfigService.DefaultAutoSupportOrientationRiskThresholdRatio);
     }
 
     private sealed record AutoSupportTuning(
@@ -2476,7 +2770,17 @@ public sealed class AutoSupportGenerationService
         float CantileverMomentMultiplier,
         float CantileverReferenceLengthMm,
         float LayerBondStrengthPerMm2,
-        float LayerAdhesionSafetyFactor);
+        float LayerAdhesionSafetyFactor,
+        bool SupportInteractionEnabled,
+        float DrainageDepthForceMultiplier,
+        bool AccessibilityEnabled,
+        int AccessibilityScanRadiusPx,
+        int AccessibilityMinOpenDirections,
+        float SurfaceQualityWeight,
+        int SurfaceQualitySearchRadiusPx,
+        bool OrientationCheckEnabled,
+        float OrientationRiskForceMultiplierMax,
+        float OrientationRiskThresholdRatio);
 
     private static float GetTipRadiusMm(SupportSize size, AutoSupportTuning tuning) => size switch
     {
@@ -2865,6 +3169,7 @@ public sealed class AutoSupportGenerationService
         float TopLayerAreaMm2,
         bool HasEnclosedRegion = false,
         float EnclosureRatio = 0f,
+        int EnclosureDepthLayers = 1,
         float AspectRatio = 1f,
         float MinWidthMm = float.MaxValue,
         float PerimeterToAreaRatio = 0f);
@@ -2921,6 +3226,11 @@ public sealed class AutoSupportGenerationService
         IslandTopology Topology,
         float AnchoredPerimeterRatio,
         float CantileverLengthMm);
+
+    private sealed record SupportInteractionMetrics(
+        float CapacityMultiplier,
+        float LoadMultiplier,
+        bool RequiresRedistribution);
 
     private enum IslandTopology
     {

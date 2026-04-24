@@ -51,6 +51,26 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
     public const float DefaultAutoSupportShrinkagePercent = 5f;
     public const float DefaultAutoSupportShrinkageEdgeBias = 0.7f;
     public const float DefaultAutoSupportModelLiftMm = 10f;
+    public const float DefaultAutoSupportOverhangSensitivity = 0.65f;
+    public const int DefaultAutoSupportPeelDirection = 2;
+    public const float DefaultAutoSupportPeelStartMultiplier = 1.3f;
+    public const float DefaultAutoSupportPeelEndMultiplier = 0.9f;
+    public const float DefaultAutoSupportHeightBias = 0.3f;
+    public const float DefaultAutoSupportBridgeReductionFactor = 0.3f;
+    public const float DefaultAutoSupportCantileverMomentMultiplier = 0.4f;
+    public const float DefaultAutoSupportCantileverReferenceLengthMm = 8f;
+    public const float DefaultAutoSupportLayerBondStrengthPerMm2 = 1.2f;
+    public const float DefaultAutoSupportLayerAdhesionSafetyFactor = 1.1f;
+    public const bool DefaultAutoSupportSupportInteractionEnabled = true;
+    public const float DefaultAutoSupportDrainageDepthForceMultiplier = 0.15f;
+    public const bool DefaultAutoSupportAccessibilityEnabled = true;
+    public const int DefaultAutoSupportAccessibilityScanRadiusPx = 6;
+    public const int DefaultAutoSupportAccessibilityMinOpenDirections = 1;
+    public const float DefaultAutoSupportSurfaceQualityWeight = 0.35f;
+    public const int DefaultAutoSupportSurfaceQualitySearchRadiusPx = 6;
+    public const bool DefaultAutoSupportOrientationCheckEnabled = true;
+    public const float DefaultAutoSupportOrientationRiskForceMultiplierMax = 1.35f;
+    public const float DefaultAutoSupportOrientationRiskThresholdRatio = 1.15f;
     public const float DefaultAutoSupportV2VoxelSizeMm = 2f;
     public const bool DefaultAutoSupportV2OptimizationEnabled = true;
     public const float DefaultAutoSupportV2CoarseVoxelSizeMm = 4f;
@@ -167,6 +187,26 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         config.AutoSupportShrinkagePercent = request.AutoSupportShrinkagePercent;
         config.AutoSupportShrinkageEdgeBias = request.AutoSupportShrinkageEdgeBias;
         config.AutoSupportModelLiftMm = request.AutoSupportModelLiftMm;
+        config.AutoSupportOverhangSensitivity = request.AutoSupportOverhangSensitivity;
+        config.AutoSupportPeelDirection = request.AutoSupportPeelDirection;
+        config.AutoSupportPeelStartMultiplier = request.AutoSupportPeelStartMultiplier;
+        config.AutoSupportPeelEndMultiplier = request.AutoSupportPeelEndMultiplier;
+        config.AutoSupportHeightBias = request.AutoSupportHeightBias;
+        config.AutoSupportBridgeReductionFactor = request.AutoSupportBridgeReductionFactor;
+        config.AutoSupportCantileverMomentMultiplier = request.AutoSupportCantileverMomentMultiplier;
+        config.AutoSupportCantileverReferenceLengthMm = request.AutoSupportCantileverReferenceLengthMm;
+        config.AutoSupportLayerBondStrengthPerMm2 = request.AutoSupportLayerBondStrengthPerMm2;
+        config.AutoSupportLayerAdhesionSafetyFactor = request.AutoSupportLayerAdhesionSafetyFactor;
+        config.AutoSupportSupportInteractionEnabled = request.AutoSupportSupportInteractionEnabled;
+        config.AutoSupportDrainageDepthForceMultiplier = request.AutoSupportDrainageDepthForceMultiplier;
+        config.AutoSupportAccessibilityEnabled = request.AutoSupportAccessibilityEnabled;
+        config.AutoSupportAccessibilityScanRadiusPx = request.AutoSupportAccessibilityScanRadiusPx;
+        config.AutoSupportAccessibilityMinOpenDirections = request.AutoSupportAccessibilityMinOpenDirections;
+        config.AutoSupportSurfaceQualityWeight = request.AutoSupportSurfaceQualityWeight;
+        config.AutoSupportSurfaceQualitySearchRadiusPx = request.AutoSupportSurfaceQualitySearchRadiusPx;
+        config.AutoSupportOrientationCheckEnabled = request.AutoSupportOrientationCheckEnabled;
+        config.AutoSupportOrientationRiskForceMultiplierMax = request.AutoSupportOrientationRiskForceMultiplierMax;
+        config.AutoSupportOrientationRiskThresholdRatio = request.AutoSupportOrientationRiskThresholdRatio;
         config.AutoSupportV2VoxelSizeMm = request.AutoSupportV2VoxelSizeMm;
         config.AutoSupportV2OptimizationEnabled = request.AutoSupportV2OptimizationEnabled;
         config.AutoSupportV2CoarseVoxelSizeMm = request.AutoSupportV2CoarseVoxelSizeMm;
@@ -340,6 +380,26 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             config.AutoSupportShrinkagePercent,
             config.AutoSupportShrinkageEdgeBias,
             config.AutoSupportModelLiftMm,
+            config.AutoSupportOverhangSensitivity,
+            config.AutoSupportPeelDirection,
+            config.AutoSupportPeelStartMultiplier,
+            config.AutoSupportPeelEndMultiplier,
+            config.AutoSupportHeightBias,
+            config.AutoSupportBridgeReductionFactor,
+            config.AutoSupportCantileverMomentMultiplier,
+            config.AutoSupportCantileverReferenceLengthMm,
+            config.AutoSupportLayerBondStrengthPerMm2,
+            config.AutoSupportLayerAdhesionSafetyFactor,
+            config.AutoSupportSupportInteractionEnabled,
+            config.AutoSupportDrainageDepthForceMultiplier,
+            config.AutoSupportAccessibilityEnabled,
+            config.AutoSupportAccessibilityScanRadiusPx,
+            config.AutoSupportAccessibilityMinOpenDirections,
+            config.AutoSupportSurfaceQualityWeight,
+            config.AutoSupportSurfaceQualitySearchRadiusPx,
+            config.AutoSupportOrientationCheckEnabled,
+            config.AutoSupportOrientationRiskForceMultiplierMax,
+            config.AutoSupportOrientationRiskThresholdRatio,
             config.AutoSupportV2VoxelSizeMm,
             config.AutoSupportV2OptimizationEnabled,
             config.AutoSupportV2CoarseVoxelSizeMm,
@@ -408,6 +468,26 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
             AutoSupportShrinkagePercent = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkagePercent") ?? DefaultAutoSupportShrinkagePercent,
             AutoSupportShrinkageEdgeBias = configuration.GetValue<float?>("AppConfig:AutoSupportShrinkageEdgeBias") ?? DefaultAutoSupportShrinkageEdgeBias,
             AutoSupportModelLiftMm = configuration.GetValue<float?>("AppConfig:AutoSupportModelLiftMm") ?? DefaultAutoSupportModelLiftMm,
+            AutoSupportOverhangSensitivity = configuration.GetValue<float?>("AppConfig:AutoSupportOverhangSensitivity") ?? DefaultAutoSupportOverhangSensitivity,
+            AutoSupportPeelDirection = configuration.GetValue<int?>("AppConfig:AutoSupportPeelDirection") ?? DefaultAutoSupportPeelDirection,
+            AutoSupportPeelStartMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportPeelStartMultiplier") ?? DefaultAutoSupportPeelStartMultiplier,
+            AutoSupportPeelEndMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportPeelEndMultiplier") ?? DefaultAutoSupportPeelEndMultiplier,
+            AutoSupportHeightBias = configuration.GetValue<float?>("AppConfig:AutoSupportHeightBias") ?? DefaultAutoSupportHeightBias,
+            AutoSupportBridgeReductionFactor = configuration.GetValue<float?>("AppConfig:AutoSupportBridgeReductionFactor") ?? DefaultAutoSupportBridgeReductionFactor,
+            AutoSupportCantileverMomentMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportCantileverMomentMultiplier") ?? DefaultAutoSupportCantileverMomentMultiplier,
+            AutoSupportCantileverReferenceLengthMm = configuration.GetValue<float?>("AppConfig:AutoSupportCantileverReferenceLengthMm") ?? DefaultAutoSupportCantileverReferenceLengthMm,
+            AutoSupportLayerBondStrengthPerMm2 = configuration.GetValue<float?>("AppConfig:AutoSupportLayerBondStrengthPerMm2") ?? DefaultAutoSupportLayerBondStrengthPerMm2,
+            AutoSupportLayerAdhesionSafetyFactor = configuration.GetValue<float?>("AppConfig:AutoSupportLayerAdhesionSafetyFactor") ?? DefaultAutoSupportLayerAdhesionSafetyFactor,
+            AutoSupportSupportInteractionEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportSupportInteractionEnabled") ?? DefaultAutoSupportSupportInteractionEnabled,
+            AutoSupportDrainageDepthForceMultiplier = configuration.GetValue<float?>("AppConfig:AutoSupportDrainageDepthForceMultiplier") ?? DefaultAutoSupportDrainageDepthForceMultiplier,
+            AutoSupportAccessibilityEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportAccessibilityEnabled") ?? DefaultAutoSupportAccessibilityEnabled,
+            AutoSupportAccessibilityScanRadiusPx = configuration.GetValue<int?>("AppConfig:AutoSupportAccessibilityScanRadiusPx") ?? DefaultAutoSupportAccessibilityScanRadiusPx,
+            AutoSupportAccessibilityMinOpenDirections = configuration.GetValue<int?>("AppConfig:AutoSupportAccessibilityMinOpenDirections") ?? DefaultAutoSupportAccessibilityMinOpenDirections,
+            AutoSupportSurfaceQualityWeight = configuration.GetValue<float?>("AppConfig:AutoSupportSurfaceQualityWeight") ?? DefaultAutoSupportSurfaceQualityWeight,
+            AutoSupportSurfaceQualitySearchRadiusPx = configuration.GetValue<int?>("AppConfig:AutoSupportSurfaceQualitySearchRadiusPx") ?? DefaultAutoSupportSurfaceQualitySearchRadiusPx,
+            AutoSupportOrientationCheckEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportOrientationCheckEnabled") ?? DefaultAutoSupportOrientationCheckEnabled,
+            AutoSupportOrientationRiskForceMultiplierMax = configuration.GetValue<float?>("AppConfig:AutoSupportOrientationRiskForceMultiplierMax") ?? DefaultAutoSupportOrientationRiskForceMultiplierMax,
+            AutoSupportOrientationRiskThresholdRatio = configuration.GetValue<float?>("AppConfig:AutoSupportOrientationRiskThresholdRatio") ?? DefaultAutoSupportOrientationRiskThresholdRatio,
             AutoSupportV2VoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2VoxelSizeMm") ?? DefaultAutoSupportV2VoxelSizeMm,
             AutoSupportV2OptimizationEnabled = configuration.GetValue<bool?>("AppConfig:AutoSupportV2OptimizationEnabled") ?? DefaultAutoSupportV2OptimizationEnabled,
             AutoSupportV2CoarseVoxelSizeMm = configuration.GetValue<float?>("AppConfig:AutoSupportV2CoarseVoxelSizeMm") ?? DefaultAutoSupportV2CoarseVoxelSizeMm,
@@ -476,6 +556,27 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         ValidateFiniteRange(request.AutoSupportShrinkagePercent, 0f, 15f, nameof(request.AutoSupportShrinkagePercent));
         ValidateFiniteRange(request.AutoSupportShrinkageEdgeBias, 0f, 1f, nameof(request.AutoSupportShrinkageEdgeBias));
         ValidateFiniteRange(request.AutoSupportModelLiftMm, 0f, 100f, nameof(request.AutoSupportModelLiftMm));
+        ValidateFiniteRange(request.AutoSupportOverhangSensitivity, 0f, 5f, nameof(request.AutoSupportOverhangSensitivity));
+        if (!Enum.IsDefined(typeof(PeelDirection), request.AutoSupportPeelDirection))
+            throw new ArgumentException("Auto support peel direction is invalid.", nameof(request.AutoSupportPeelDirection));
+        ValidateFiniteRange(request.AutoSupportPeelStartMultiplier, 0.1f, 5f, nameof(request.AutoSupportPeelStartMultiplier));
+        ValidateFiniteRange(request.AutoSupportPeelEndMultiplier, 0.1f, 5f, nameof(request.AutoSupportPeelEndMultiplier));
+        ValidateFiniteRange(request.AutoSupportHeightBias, 0f, 2f, nameof(request.AutoSupportHeightBias));
+        ValidateFiniteRange(request.AutoSupportBridgeReductionFactor, 0f, 1f, nameof(request.AutoSupportBridgeReductionFactor));
+        ValidateFiniteRange(request.AutoSupportCantileverMomentMultiplier, 0f, 5f, nameof(request.AutoSupportCantileverMomentMultiplier));
+        ValidateFiniteRange(request.AutoSupportCantileverReferenceLengthMm, 0.1f, 100f, nameof(request.AutoSupportCantileverReferenceLengthMm));
+        ValidateFiniteRange(request.AutoSupportLayerBondStrengthPerMm2, 0.01f, 20f, nameof(request.AutoSupportLayerBondStrengthPerMm2));
+        ValidateFiniteRange(request.AutoSupportLayerAdhesionSafetyFactor, 1f, 5f, nameof(request.AutoSupportLayerAdhesionSafetyFactor));
+        ValidateFiniteRange(request.AutoSupportDrainageDepthForceMultiplier, 0f, 2f, nameof(request.AutoSupportDrainageDepthForceMultiplier));
+        if (request.AutoSupportAccessibilityScanRadiusPx < 1 || request.AutoSupportAccessibilityScanRadiusPx > 32)
+            throw new ArgumentException("Auto support accessibility scan radius must be between 1 and 32.", nameof(request.AutoSupportAccessibilityScanRadiusPx));
+        if (request.AutoSupportAccessibilityMinOpenDirections < 1 || request.AutoSupportAccessibilityMinOpenDirections > 4)
+            throw new ArgumentException("Auto support accessibility minimum open directions must be between 1 and 4.", nameof(request.AutoSupportAccessibilityMinOpenDirections));
+        ValidateFiniteRange(request.AutoSupportSurfaceQualityWeight, 0f, 2f, nameof(request.AutoSupportSurfaceQualityWeight));
+        if (request.AutoSupportSurfaceQualitySearchRadiusPx < 1 || request.AutoSupportSurfaceQualitySearchRadiusPx > 32)
+            throw new ArgumentException("Auto support surface quality search radius must be between 1 and 32.", nameof(request.AutoSupportSurfaceQualitySearchRadiusPx));
+        ValidateFiniteRange(request.AutoSupportOrientationRiskForceMultiplierMax, 1f, 3f, nameof(request.AutoSupportOrientationRiskForceMultiplierMax));
+        ValidateFiniteRange(request.AutoSupportOrientationRiskThresholdRatio, 1f, 3f, nameof(request.AutoSupportOrientationRiskThresholdRatio));
         ValidateFiniteRange(request.AutoSupportV2VoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2VoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2CoarseVoxelSizeMm, 0.1f, 10f, nameof(request.AutoSupportV2CoarseVoxelSizeMm));
         ValidateFiniteRange(request.AutoSupportV2FineVoxelSizeMm, 0.1f, request.AutoSupportV2CoarseVoxelSizeMm, nameof(request.AutoSupportV2FineVoxelSizeMm));
