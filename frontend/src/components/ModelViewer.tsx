@@ -684,6 +684,8 @@ interface ModelViewerProps {
   selectedSliceHeightMm?: number | null;
   slicePreviewEnabled?: boolean;
   showForceMarkers?: boolean;
+  showSupportMesh?: boolean;
+  forceMarkersFollowSupportsToggle?: boolean;
 }
 
 export default function ModelViewer({
@@ -701,6 +703,8 @@ export default function ModelViewer({
   selectedSliceHeightMm,
   slicePreviewEnabled = false,
   showForceMarkers = true,
+  showSupportMesh = true,
+  forceMarkersFollowSupportsToggle = true,
 }: ModelViewerProps) {
   const shouldFetchModel = modelOverride == null;
   const { data: fetchedModel, isPending, isError } = useModel(modelId, shouldFetchModel);
@@ -789,7 +793,9 @@ export default function ModelViewer({
   );
 
   const hasSupportMesh = activeSplitData?.supports != null;
-  const shouldShowForceMarkers = showSupports && showForceMarkers;
+  const shouldShowSupportMesh = hasSupportMesh && showSupportMesh;
+  const shouldShowForceMarkers =
+    showForceMarkers && (forceMarkersFollowSupportsToggle ? showSupports : true);
   const effectiveSliceHeightMm = slicePreviewEnabled ? selectedSliceHeightMm : null;
 
   const effectiveSliceClipHeightMm = useMemo(() => {
@@ -818,9 +824,9 @@ export default function ModelViewer({
   }, [slicePreviewEnabled, effectiveSliceHeightMm, selectedSliceLayerIndex, sliceLayersOverride]);
 
   useEffect(() => {
-    setSupportsToggleAvailable(hasSupportMesh);
+    setSupportsToggleAvailable(shouldShowSupportMesh);
     return () => setSupportsToggleAvailable(false);
-  }, [hasSupportMesh, setSupportsToggleAvailable]);
+  }, [setSupportsToggleAvailable, shouldShowSupportMesh]);
 
   const isGeometryPending = hasSplitOverride
     ? false
@@ -889,7 +895,7 @@ export default function ModelViewer({
             raftHeightMm={model.raftHeightMm}
             selectedSliceClipHeightMm={effectiveSliceClipHeightMm}
           />
-          {hasSupportMesh && (
+          {shouldShowSupportMesh && (
             <SupportGeometryMesh
               geometry={activeSplitData?.supports ?? null}
               visible={showSupports}

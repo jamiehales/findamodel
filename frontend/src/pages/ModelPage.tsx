@@ -144,7 +144,19 @@ function ModelPage() {
                   Edit metadata
                 </Button>
 
-                {model.supported !== true && (
+                {model.supported === true ? (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() =>
+                      navigate(`/model/${encodeURIComponent(model.id)}/supports`, {
+                        state: { autoStart: true },
+                      })
+                    }
+                  >
+                    Find supports
+                  </Button>
+                ) : (
                   <Button
                     size="small"
                     variant="outlined"

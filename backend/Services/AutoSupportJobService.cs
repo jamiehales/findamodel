@@ -8,7 +8,9 @@ public sealed class AutoSupportJobService(
     ModelService modelService,
     ModelLoaderService loaderService,
     MeshTransferService meshTransferService,
+    SupportSeparationService supportSeparationService,
     AutoSupportGenerationService autoSupportGenerationService,
+    SupportedModelSupportDetectionService supportedModelSupportDetectionService,
     IConfiguration config,
     ILoggerFactory loggerFactory)
 {
@@ -97,9 +99,37 @@ public sealed class AutoSupportJobService(
                 return;
             }
 
-            var preview = autoSupportGenerationService.GenerateSupportPreview(geometry);
-            var bodyPayload = meshTransferService.Encode(preview.BodyGeometry ?? geometry);
-            var supportPayload = meshTransferService.Encode(preview.SupportGeometry);
+            SupportPreviewResult preview;
+            LoadedGeometry bodyGeometryForEnvelope;
+            LoadedGeometry supportGeometryForEnvelope;
+
+            if (model.CalculatedSupported == true)
+            {
+                var (bodyTriangles, supportTriangles) = supportSeparationService.Separate(geometry.Triangles);
+                if (supportTriangles == null || supportTriangles.Count == 0)
+                {
+                    job.MarkFailed("No detached support geometry could be identified for this supported model.");
+                    return;
+                }
+
+                var bodyGeometry = CreateSubGeometry(geometry, bodyTriangles);
+                var supportGeometry = CreateSubGeometry(geometry, supportTriangles);
+                preview = await supportedModelSupportDetectionService.GeneratePreviewAsync(
+                    bodyGeometry,
+                    supportGeometry,
+                    CancellationToken.None);
+                bodyGeometryForEnvelope = preview.BodyGeometry ?? bodyGeometry;
+                supportGeometryForEnvelope = preview.SupportGeometry;
+            }
+            else
+            {
+                preview = autoSupportGenerationService.GenerateSupportPreview(geometry);
+                bodyGeometryForEnvelope = preview.BodyGeometry ?? geometry;
+                supportGeometryForEnvelope = preview.SupportGeometry;
+            }
+
+            var bodyPayload = meshTransferService.Encode(bodyGeometryForEnvelope);
+            var supportPayload = meshTransferService.Encode(supportGeometryForEnvelope);
             var envelope = BuildEnvelope(bodyPayload, supportPayload);
             await File.WriteAllBytesAsync(job.CacheFilePath, envelope, CancellationToken.None);
 
@@ -183,6 +213,16 @@ public sealed class AutoSupportJobService(
         supportPayload.CopyTo(span[(afterBody + 4)..]);
         return envelope;
     }
+
+    private static LoadedGeometry CreateSubGeometry(LoadedGeometry source, List<Triangle3D> triangles) => new()
+    {
+        Triangles = triangles,
+        DimensionXMm = source.DimensionXMm,
+        DimensionYMm = source.DimensionYMm,
+        DimensionZMm = source.DimensionZMm,
+        SphereCentre = source.SphereCentre,
+        SphereRadius = source.SphereRadius,
+    };
 
     private static void DeleteFileIfPresent(string path)
     {

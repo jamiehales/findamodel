@@ -5,7 +5,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   useAutoSupportGeometry,
   useAutoSupportJob,
@@ -19,20 +19,31 @@ import LoadingView from '../components/LoadingView';
 import PageLayout from '../components/layouts/PageLayout';
 import styles from './ModelAutoSupportPage.module.css';
 
+type SupportPageLocationState = {
+  autoStart?: boolean;
+};
+
 function ModelAutoSupportPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const decodedId = decodeURIComponent(id ?? '');
+  const autoStartRequested =
+    (location.state as SupportPageLocationState | null)?.autoStart === true;
 
   const [autoSupportJobId, setAutoSupportJobId] = React.useState<string | null>(null);
   const [showForceMarkers, setShowForceMarkers] = React.useState(true);
+  const [showSupportMesh, setShowSupportMesh] = React.useState(false);
   const [selectedLayerIndex, setSelectedLayerIndex] = React.useState(Number.MAX_SAFE_INTEGER);
+  const hasAutoStartedRef = React.useRef(false);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setAutoSupportJobId(null);
     setShowForceMarkers(true);
+    setShowSupportMesh(false);
     setSelectedLayerIndex(Number.MAX_SAFE_INTEGER);
+    hasAutoStartedRef.current = false;
   }, [decodedId]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
@@ -70,6 +81,22 @@ function ModelAutoSupportPage() {
     setSelectedLayerIndex((current) => Math.min(Math.max(current, 0), sliceLayers.length - 1));
   }, [hasSliceLayers, sliceLayers.length]);
 
+  React.useEffect(() => {
+    if (
+      !autoStartRequested ||
+      model?.supported !== true ||
+      autoSupportJobId ||
+      hasAutoStartedRef.current
+    ) {
+      return;
+    }
+
+    hasAutoStartedRef.current = true;
+    generateAutoSupport(undefined, {
+      onSuccess: (job) => setAutoSupportJobId(job.jobId),
+    });
+  }, [autoStartRequested, autoSupportJobId, generateAutoSupport, model?.supported]);
+
   const backButton = (
     <Button variant="back" onClick={() => navigate(`/model/${encodeURIComponent(decodedId)}`)}>
       ← Back to model
@@ -94,6 +121,16 @@ function ModelAutoSupportPage() {
     );
   }
 
+  const isSupportedModel = model.supported === true;
+  const pageTitle = isSupportedModel ? 'Support detection' : 'Auto support generation';
+  const primaryButtonLabel = isSupportedModel ? 'Find supports' : 'Generate autosupport';
+  const placeholderText = isSupportedModel
+    ? 'Find supports to detect where the existing supports touch the model and preview those contact sizes on the slice view.'
+    : 'Generate supports to preview recommended contact points for this unsupported model.';
+  const progressText = isSupportedModel
+    ? `Finding supports ${autoSupportJob?.progressPercent ?? 0}%`
+    : `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`;
+
   return (
     <PageLayout variant="full">
       <Stack spacing={2} className={styles.pageContent}>
@@ -101,13 +138,15 @@ function ModelAutoSupportPage() {
 
         <Stack spacing={0.5}>
           <Typography component="h1" variant="page-title">
-            Auto support generation
+            {pageTitle}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {model.name}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Suggested support points are shown with pull-force arrows sized by magnitude.
+            {isSupportedModel
+              ? 'Detected support contact points are sized from the existing support mesh and aligned to the body intersection.'
+              : 'Suggested support points are shown with pull-force arrows sized by magnitude.'}
           </Typography>
         </Stack>
 
@@ -121,19 +160,30 @@ function ModelAutoSupportPage() {
               })
             }
           >
-            {isGeneratingAutoSupport
-              ? `Generating supports ${autoSupportJob?.progressPercent ?? 0}%`
-              : 'Generate autosupport'}
+            {isGeneratingAutoSupport ? progressText : primaryButtonLabel}
           </Button>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={showForceMarkers}
-                onChange={(event) => setShowForceMarkers(event.target.checked)}
-              />
-            }
-            label="Show force markers"
-          />
+          {!isSupportedModel && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={showForceMarkers}
+                  onChange={(event) => setShowForceMarkers(event.target.checked)}
+                />
+              }
+              label="Show force markers"
+            />
+          )}
+          {isSupportedModel && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={showSupportMesh}
+                  onChange={(event) => setShowSupportMesh(event.target.checked)}
+                />
+              }
+              label="Show support mesh"
+            />
+          )}
         </Stack>
 
         {selectedSliceLayer && (
@@ -146,9 +196,11 @@ function ModelAutoSupportPage() {
               Layer {selectedSliceLayer.layerIndex + 1} of {sliceLayers.length} (
               {selectedSliceLayer.sliceHeightMm.toFixed(2)} mm)
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Force vectors: gravity (blue), peel (amber), rotation (red), total (size colour)
-            </Typography>
+            {!isSupportedModel && (
+              <Typography variant="body2" color="text.secondary">
+                Force vectors: gravity (blue), peel (amber), rotation (red), total (size colour)
+              </Typography>
+            )}
           </Stack>
         )}
 
@@ -161,15 +213,17 @@ function ModelAutoSupportPage() {
                   convexHull={null}
                   concaveHull={null}
                   convexSansRaftHull={null}
-                  supported
+                  supported={model.supported === true}
                   splitGeometryOverride={autoSupportGeometry}
                   supportPointsOverride={autoSupportJob?.supportPoints ?? null}
-                  islandsOverride={autoSupportJob?.islands ?? null}
+                  islandsOverride={isSupportedModel ? null : (autoSupportJob?.islands ?? null)}
                   sliceLayersOverride={sliceLayers}
                   selectedSliceLayerIndex={clampedLayerIndex}
                   selectedSliceHeightMm={selectedSliceLayer?.sliceHeightMm ?? null}
                   slicePreviewEnabled
                   showForceMarkers={showForceMarkers}
+                  showSupportMesh={isSupportedModel ? showSupportMesh : true}
+                  forceMarkersFollowSupportsToggle={!isSupportedModel}
                 />
               </Box>
               <AutoSupportLayerSlider
@@ -186,7 +240,7 @@ function ModelAutoSupportPage() {
                   ? (autoSupportJob.errorMessage ?? 'Support generation failed.')
                   : isGeneratingAutoSupport
                     ? 'Generating supported preview...'
-                    : 'Generate supports to preview recommended contact points for this unsupported model.'}
+                    : placeholderText}
               </Typography>
             </Box>
           )}
