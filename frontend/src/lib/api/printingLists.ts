@@ -26,6 +26,8 @@ export interface PrintingListPrinterInfo {
   name: string;
   bedWidthMm: number;
   bedDepthMm: number;
+  pixelWidth: number;
+  pixelHeight: number;
 }
 
 export interface PrintingListDetail {

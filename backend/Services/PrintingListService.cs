@@ -301,7 +301,9 @@ public class PrintingListService(IDbContextFactory<ModelCacheContext> dbFactory)
                     list.PrinterConfig.Id,
                     list.PrinterConfig.Name,
                     list.PrinterConfig.BedWidthMm,
-                    list.PrinterConfig.BedDepthMm));
+                    list.PrinterConfig.BedDepthMm,
+                    list.PrinterConfig.PixelWidth,
+                    list.PrinterConfig.PixelHeight));
 
     private static string NormalizeSpawnType(string? spawnType) =>
         spawnType?.Trim().ToLowerInvariant() switch

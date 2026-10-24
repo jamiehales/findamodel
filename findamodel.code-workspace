@@ -10,7 +10,8 @@
 			"dotnet ef": true,
 			"yarn --cwd frontend prettier": true,
 			"yarn --cwd frontend build": true,
-			"yarn prettier": true
+			"yarn prettier": true,
+			"dotnet-trace": true
 		}
 	}
 }

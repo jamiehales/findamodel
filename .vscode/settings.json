@@ -8,7 +8,10 @@
     "/data:\\s+clear\\s+database/i": false,
     "/data:\\s+clear\\s+cache/i": false,
     "/Remove-Item\\b/i": false,
-    "/rm\\b/i": false
+    "/rm\\b/i": false,
+    "dotnet test": true,
+    "dotnet run": true,
+    "corepack": true
   },
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
