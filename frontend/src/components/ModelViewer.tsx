@@ -10,11 +10,11 @@ const FRAMING_PADDING = 1.15;
 
 // Colors from the mostlymaking data palette. Keep MODEL_COLOR and SUPPORT_COLOR in
 // step with BODY_COLOR and SUPPORT_COLOR in backend/src/preview/mod.rs.
-const MODEL_COLOR = '#94a7cc';
+const MODEL_COLOR = '#a8404f';
 const SUPPORT_COLOR = '#c9a45c';
 const CONVEX_HULL_COLOR = '#b892c0';
 const CONCAVE_HULL_COLOR = '#8fb894';
-const SANS_RAFT_HULL_COLOR = '#e0909b';
+const SANS_RAFT_HULL_COLOR = '#94a7cc';
 const SCENE_BACKGROUND = '#18171a';
 
 function SceneBg({ color }: { color: string }) {
