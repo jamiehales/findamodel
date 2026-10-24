@@ -7,21 +7,13 @@ import styles from './TagEditor.module.css';
 interface Props {
   localTags: string[] | null;
   inheritedTags: string[] | null;
-  aiTags?: string[] | null;
   tagOptions: string[];
   onChange: (tags: string[] | null) => void;
 }
 
-export default function TagEditor({
-  localTags,
-  inheritedTags,
-  aiTags,
-  tagOptions,
-  onChange,
-}: Props) {
+export default function TagEditor({ localTags, inheritedTags, tagOptions, onChange }: Props) {
   const local = localTags ?? [];
   const inherited = (inheritedTags ?? []).filter((t) => !local.includes(t));
-  const ai = (aiTags ?? []).filter((t) => !local.includes(t) && !inherited.includes(t));
 
   const options = tagOptions.filter((t) => !local.includes(t));
 
@@ -56,23 +48,10 @@ export default function TagEditor({
                       className={styles.inheritedChip}
                     />
                   ))}
-                  {ai.map((tag) => (
-                    <Chip
-                      key={`ai-${tag}`}
-                      label={`AI: ${tag}`}
-                      size="small"
-                      variant="outlined"
-                      className={styles.aiChip}
-                    />
-                  ))}
                 </>
               ),
             }}
-            placeholder={
-              local.length === 0 && inherited.length === 0 && ai.length === 0
-                ? 'Add tags…'
-                : undefined
-            }
+            placeholder={local.length === 0 && inherited.length === 0 ? 'Add tags…' : undefined}
           />
         )}
       />

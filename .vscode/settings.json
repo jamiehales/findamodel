@@ -9,8 +9,8 @@
     "/data:\\s+clear\\s+cache/i": false,
     "/Remove-Item\\b/i": false,
     "/rm\\b/i": false,
-    "dotnet test": true,
-    "dotnet run": true,
+    "cargo test": true,
+    "cargo run": true,
     "corepack": true
   },
   "[javascript]": {

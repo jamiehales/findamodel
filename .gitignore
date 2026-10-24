@@ -1,9 +1,5 @@
-# .NET
-bin/
-obj/
-*.user
-*.suo
-.vs/
+# Rust
+/target
 
 # Node / Frontend
 node_modules/
@@ -22,7 +18,5 @@ frontend/tsconfig.app.tsbuildinfo
 # Database
 debug
 
-# Keep an empty sidecar resources directory for Tauri bundles in clean checkouts.
-!desktop-tauri/src-tauri/bin/
-desktop-tauri/src-tauri/bin/*
-!desktop-tauri/src-tauri/bin/placeholder.txt
+# Tauri generated schemas
+desktop-tauri/src-tauri/gen/

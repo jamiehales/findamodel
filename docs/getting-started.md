@@ -19,7 +19,7 @@ nav_order: 2
 ## Requirements
 
 - **Docker** (recommended) - the easiest way to run FindAModel.
-- Or: .NET 8 SDK and Node.js 20+ for local development.
+- Or: a Rust toolchain (rustup + cargo) and Node.js 24+ with Yarn for local development.
 
 For desktop-specific prerequisites and build flow, see [Desktop > Getting started (desktop)](desktop/getting-started).
 
@@ -43,7 +43,9 @@ docker run -d \
 
 Then open [http://localhost:5000](http://localhost:5000) in your browser.
 
-If you want NVIDIA GPU acceleration for local LLM inference and OpenGL preview rendering, add:
+Open the app and complete the setup wizard, entering `/models` as the model root path. Alternatively set `FINDAMODEL_MODELS_PATH=/models` to skip the wizard.
+
+If you want NVIDIA GPU acceleration for preview rendering, add:
 
 ```bash
 --gpus all \
@@ -55,15 +57,20 @@ If you want NVIDIA GPU acceleration for local LLM inference and OpenGL preview r
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODELS_PATH` | `/models` | Path to your models directory (can be read-only) |
-| `DATA_PATH` | `/data` | Path for the database and cache files |
+| `FINDAMODEL_MODELS_PATH` | _(unset)_ | Model root inside the container (e.g. `/models`). When unset, the setup wizard asks for it |
+| `FINDAMODEL_DATA_PATH` | `/data` | Path for the database and preview cache |
+| `FINDAMODEL_LISTEN` | `0.0.0.0:8080` | Address and port the server binds to |
+| `FINDAMODEL_INDEX_SCHEDULE` | `0 3 * * *` | Cron schedule (UTC) for the full re-index |
+| `FINDAMODEL_INDEX_ON_STARTUP` | `false` | Sync directory configs when the server starts |
+| `FINDAMODEL_FILE_SCAN_THREADS` | `10` | Number of model files processed in parallel while indexing |
+| `FINDAMODEL_PREVIEW_USE_GPU` | `true` | Render previews on the GPU when one is available |
+| `FINDAMODEL_LOG` | `warn,findamodel=info` | Log filter (e.g. `findamodel=debug`) |
 | `PUID` | `1000` | Run the app process as this user id (LinuxServer style) |
 | `PGID` | `1000` | Run the app process as this group id (LinuxServer style) |
 | `UMASK` | `022` | Umask applied before starting the app process |
 | `UMASK_SET` | _(deprecated)_ | Legacy alias for `UMASK` for LinuxServer compatibility |
-| `NVIDIA_VISIBLE_DEVICES` | `all` | NVIDIA device visibility for GPU inference and preview rendering (`none` to force CPU-only) |
-| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility,graphics` | Required NVIDIA driver capabilities for CUDA inference and OpenGL preview rendering |
-| `ASPNETCORE_URLS` | `http://+:8080` | Bind address |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | NVIDIA device visibility for preview rendering (`none` to force CPU rendering) |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility,graphics` | Required NVIDIA driver capabilities for GPU preview rendering |
 
 ### docker-compose example
 
@@ -92,9 +99,9 @@ For NVIDIA GPU acceleration in Compose, add:
   - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 ```
 
-If the Rendering stats panel shows `GL renderer: llvmpipe ...`, the container is still using Mesa software rendering rather than the NVIDIA driver. In that case, verify both `--gpus all` or `gpus: all` and the `graphics` driver capability are present.
+Previews are rendered on the GPU through Vulkan (or OpenGL as a fallback). Without a usable GPU, FindAModel uses its built-in multithreaded CPU renderer. The **Rendering** section of **Settings > Stats** shows which renderer is in use; if it shows `CPU rasteriser`, verify both `--gpus all` or `gpus: all` and the `graphics` driver capability are present.
 
-FindAModel also creates `/usr/share/glvnd/egl_vendor.d/10_nvidia.json` at container startup when NVIDIA EGL libraries are mounted into the container but the GLVND vendor file is missing. This helps headless OpenGL preview rendering avoid falling back to Mesa `llvmpipe` on hosts where the NVIDIA runtime exposes the libraries but not the vendor registration.
+At startup the container also registers the NVIDIA Vulkan ICD and GLVND EGL vendor files when the driver libraries are mounted but those registrations are missing.
 
 ---
 
@@ -104,23 +111,22 @@ FindAModel also creates `/usr/share/glvnd/egl_vendor.d/10_nvidia.json` at contai
 
 The repository includes a complete VS Code configuration. Open `findamodel.code-workspace` in VS Code and use the pre-configured launch profiles and tasks.
 
-**Prerequisites:** .NET 10 SDK, Node.js, Yarn, and Docker (for the optional Seq log viewer) must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier).
+**Prerequisites:** a Rust toolchain (rustup + cargo), Node.js and Yarn must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier, rust-analyzer, CodeLLDB).
 
 **Launch profiles** (Run and Debug panel):
 
 | Profile | Description |
 |---------|-------------|
-| `Full Stack: Backend + Frontend` | Starts both the backend and the frontend dev server together, and opens Seq for structured log viewing |
-| `Backend: .NET Launch` | Starts only the .NET backend with the debugger attached |
+| `Full Stack: Backend + Frontend` | Starts both the backend and the frontend dev server together |
+| `Backend: Rust Launch` | Starts only the backend with the debugger attached |
 | `Frontend: Vite Dev Server` | Starts only the Vite frontend dev server |
-| `Seq: Dashboard` | Starts the Seq structured log viewer via Docker and opens it in the browser |
 
 **Tasks** (Terminal → Run Task):
 
 | Task | Description |
 |------|-------------|
-| `backend: build` | Builds the .NET backend |
-| `backend: watch` | Builds and watches the backend for changes |
+| `backend: build` | Builds the backend |
+| `backend: test` | Runs the backend test suite |
 | `frontend: install` | Runs `yarn install` in the frontend directory |
 | `data: clear database` | Deletes the local SQLite database |
 | `data: clear cache` | Deletes the local model cache |
@@ -142,11 +148,10 @@ If you prefer to run without VS Code, start each process in a separate terminal.
 #### Backend
 
 ```bash
-cd backend
-dotnet run
+FINDAMODEL_DATA_PATH=debug/data FINDAMODEL_MODELS_PATH=/path/to/your/models cargo run -p findamodel
 ```
 
-The API will start at `http://localhost:5000`.
+The API will start at `http://localhost:5000`. Run the backend tests with `cargo test -p findamodel`.
 
 #### Frontend
 

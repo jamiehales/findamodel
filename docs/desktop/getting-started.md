@@ -21,8 +21,7 @@ nav_order: 1
 
 Desktop mode requires these tools in addition to normal server/web development requirements:
 
-- .NET 10 SDK
-- Node.js 20+ and Yarn
+- Node.js 24+ and Yarn
 - Rust toolchain (rustup + cargo)
 
 Platform prerequisites:
@@ -59,8 +58,7 @@ yarn --cwd desktop-tauri build
 This build pipeline does the following:
 
 1. Builds the frontend assets.
-2. Publishes the backend sidecar binary for the current platform target.
-3. Builds desktop artifacts through Tauri for your current OS.
+2. Builds the desktop app (with the backend compiled in) and its installers through Tauri for your current OS.
 
 In VS Code you can run the `desktop-tauri: publish` task for the same flow.
 
@@ -68,11 +66,9 @@ In VS Code you can run the `desktop-tauri: publish` task for the same flow.
 
 ## Debug with VS Code
 
-Use these launch profiles from Run and Debug:
+Use the `Desktop: Tauri Dev` launch profile from Run and Debug. The desktop shell starts the backend inside its own process.
 
-- `Backend: Desktop Mode`
-- `Desktop: Tauri Dev`
-- `Desktop: Backend + Tauri Shell` (compound)
+To debug the backend separately, start it with `FINDAMODEL_MODE=desktop`, `FINDAMODEL_URL=http://127.0.0.1:5000` and `FINDAMODEL_DESKTOP_SESSION_TOKEN=dev-desktop-token`, then run the `desktop-tauri: tauri dev (external backend)` task; the shell attaches to that backend instead of starting its own.
 
 Use these tasks from Terminal -> Run Task:
 

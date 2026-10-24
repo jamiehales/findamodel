@@ -118,12 +118,6 @@
   flex-wrap: wrap;
 }
 
-.aiReasonChip {
-  border: 1px solid rgba(56, 189, 248, 0.4) !important;
-  color: #7dd3fc !important;
-  background: rgba(12, 74, 110, 0.4) !important;
-}
-
 .logList {
   max-height: 38vh;
   overflow: auto;

@@ -8,39 +8,48 @@ RUN yarn install --frozen-lockfile
 COPY frontend/ ./
 RUN yarn build
 
-# Stage 2: Build the ASP.NET backend
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
-WORKDIR /app/backend
+# Stage 2: Build the Rust backend
+FROM rust:1-trixie AS backend-build
+WORKDIR /src
 
-COPY backend/*.csproj ./
-RUN dotnet restore
+# Build dependencies against stub sources first so they are cached independently of
+# application changes.
+COPY Cargo.toml Cargo.lock ./
+COPY backend/Cargo.toml backend/Cargo.toml
+COPY desktop-tauri/src-tauri/Cargo.toml desktop-tauri/src-tauri/Cargo.toml
+RUN mkdir -p backend/src desktop-tauri/src-tauri/src \
+    && echo 'fn main() {}' > backend/src/main.rs \
+    && touch backend/src/lib.rs \
+    && echo 'fn main() {}' > desktop-tauri/src-tauri/src/main.rs \
+    && cargo build --release --locked -p findamodel \
+    && rm -rf backend/src
 
-COPY backend/ ./
-RUN dotnet publish -c Release -o out
+COPY backend/ backend/
+RUN touch backend/src/lib.rs backend/src/main.rs \
+    && cargo build --release --locked -p findamodel \
+    && cp target/release/findamodel /findamodel
 
-# Stage 3: Final runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# Stage 3: Runtime image
+FROM debian:trixie-slim
 WORKDIR /app
 
+# libvulkan1 and libegl1 load the host GPU driver (mounted by the NVIDIA container
+# toolkit) for preview rendering; without a GPU the built-in CPU rasteriser is used.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
-    libgl1 \
-    libglx-mesa0 \
     libegl1 \
-    libegl-mesa0 \
-    libgles2 \
-    libgl1-mesa-dri \
     libvulkan1 \
-    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=backend-build /app/backend/out .
+COPY --from=backend-build /findamodel /app/findamodel
 COPY --from=frontend-build /app/frontend/dist ./wwwroot
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 80
-ENV ASPNETCORE_URLS=http://+:80
+EXPOSE 8080
+ENV FINDAMODEL_LISTEN=0.0.0.0:8080
+ENV FINDAMODEL_DATA_PATH=/data
+ENV FINDAMODEL_WEB_ROOT=/app/wwwroot
 ENV PUID=1000
 ENV PGID=1000
 ENV UMASK=022

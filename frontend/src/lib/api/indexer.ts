@@ -67,9 +67,6 @@ export interface IndexRunFile {
   wasUpdated: boolean;
   generatedPreview: boolean;
   generatedHull: boolean;
-  generatedAiTags: boolean;
-  generatedAiDescription: boolean;
-  aiGenerationReason: string | null;
   message: string | null;
   durationMs: number | null;
   processedAt: string | null;

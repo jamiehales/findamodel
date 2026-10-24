@@ -3,17 +3,11 @@
   "tasks": [
     {
       "label": "backend: build",
-      "command": "dotnet",
       "type": "shell",
+      "command": "cargo build -p findamodel",
       "options": {
-        "cwd": "${workspaceFolder}/backend"
+        "cwd": "${workspaceFolder}"
       },
-      "args": [
-        "build",
-        "findamodel.csproj",
-        "/property:GenerateFullPaths=true",
-        "/consoleloggerparameters:NoSummary"
-      ],
       "presentation": {
         "panel": "new",
         "clear": true,
@@ -21,24 +15,26 @@
         "close": true
       },
       "group": "build",
-      "problemMatcher": []
+      "problemMatcher": [
+        "$rustc"
+      ]
     },
     {
-      "label": "backend: watch",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "watch",
-        "--project",
-        "${workspaceFolder}/backend/findamodel.csproj"
-      ],
-      "problemMatcher": "$msCompile",
+      "label": "backend: test",
+      "type": "shell",
+      "command": "cargo test -p findamodel",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "presentation": {
         "panel": "dedicated",
         "clear": true,
         "showReuseMessage": false
       },
-      "isBackground": true
+      "group": "test",
+      "problemMatcher": [
+        "$rustc"
+      ]
     },
     {
       "label": "frontend: install",
@@ -59,7 +55,10 @@
       "label": "data: clear database",
       "type": "process",
       "command": "bash",
-      "args": ["-c", "rm -f debug/data/findamodel.db*"],
+      "args": [
+        "-c",
+        "rm -f debug/data/findamodel.db*"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -75,7 +74,10 @@
       "label": "data: clear cache",
       "type": "process",
       "command": "bash",
-      "args": ["-c", "rm -rf debug/data/cache"],
+      "args": [
+        "-c",
+        "rm -rf debug/data/cache"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -117,21 +119,6 @@
       "problemMatcher": []
     },
     {
-      "label": "desktop-tauri: build sidecar",
-      "type": "shell",
-      "command": "node scripts/publish-sidecar.mjs",
-      "options": {
-        "cwd": "${workspaceFolder}/desktop-tauri"
-      },
-      "presentation": {
-        "panel": "dedicated",
-        "clear": true,
-        "showReuseMessage": false,
-        "close": true
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "desktop-tauri: tauri dev (external backend)",
       "type": "shell",
       "command": "corepack yarn@1.22.22 tauri dev",
@@ -149,7 +136,9 @@
         "showReuseMessage": false
       },
       "problemMatcher": {
-        "pattern": { "regexp": "^$" },
+        "pattern": {
+          "regexp": "^$"
+        },
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".",

@@ -2,17 +2,38 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Backend: .NET Launch",
-      "type": "dotnet",
+      "name": "Backend: Rust Launch",
+      "type": "lldb",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/backend/findamodel.csproj"
+      "cargo": {
+        "args": [
+          "build",
+          "-p",
+          "findamodel",
+          "--bin",
+          "findamodel"
+        ],
+        "filter": {
+          "name": "findamodel",
+          "kind": "bin"
+        }
+      },
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FINDAMODEL_DATA_PATH": "debug/data",
+        "FINDAMODEL_ENVIRONMENT": "Development",
+        "FINDAMODEL_LOG": "findamodel=debug"
+      }
     },
     {
       "name": "Frontend: Vite Dev Server",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "corepack",
-      "runtimeArgs": ["yarn@1.22.22", "dev"],
+      "runtimeArgs": [
+        "yarn@1.22.22",
+        "dev"
+      ],
       "cwd": "${workspaceFolder}/frontend",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -28,7 +49,11 @@
       "request": "launch",
       "preLaunchTask": "desktop-tauri: install",
       "runtimeExecutable": "corepack",
-      "runtimeArgs": ["yarn@1.22.22", "tauri", "dev"],
+      "runtimeArgs": [
+        "yarn@1.22.22",
+        "tauri",
+        "dev"
+      ],
       "cwd": "${workspaceFolder}/desktop-tauri",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
@@ -37,7 +62,10 @@
   "compounds": [
     {
       "name": "Full Stack: Backend + Frontend",
-      "configurations": ["Backend: .NET Launch", "Frontend: Vite Dev Server"],
+      "configurations": [
+        "Backend: Rust Launch",
+        "Frontend: Vite Dev Server"
+      ],
       "stopAll": true
     }
   ]

@@ -6,12 +6,11 @@
 	],
 	"settings": {
 		"chat.tools.terminal.autoApprove": {
-			"dotnet test": true,
-			"dotnet ef": true,
+			"cargo test": true,
 			"yarn --cwd frontend prettier": true,
 			"yarn --cwd frontend build": true,
 			"yarn prettier": true,
-			"dotnet-trace": true
+			"cargo clippy": true
 		}
 	}
 }
