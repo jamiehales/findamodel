@@ -128,9 +128,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         if (string.IsNullOrWhiteSpace(request.ModelsDirectoryPath))
             throw new ArgumentException("Models directory path is required.", nameof(request.ModelsDirectoryPath));
 
-        var fullPath = Path.GetFullPath(request.ModelsDirectoryPath);
-        if (!Directory.Exists(fullPath))
-            throw new ArgumentException($"Models directory does not exist: {fullPath}", nameof(request.ModelsDirectoryPath));
+        var fullPath = ModelsDirectoryPathResolver.Resolve(request.ModelsDirectoryPath, requireExisting: true);
 
         // Validate other config values
         if (!float.IsFinite(request.DefaultRaftHeightMm) || request.DefaultRaftHeightMm < 0f)
@@ -245,7 +243,7 @@ public class AppConfigService(IDbContextFactory<ModelCacheContext> dbFactory, IC
         var configuredModelsPath = configuration["Models:DirectoryPath"];
         var normalizedConfiguredModelsPath = string.IsNullOrWhiteSpace(configuredModelsPath)
             ? null
-            : Path.GetFullPath(configuredModelsPath);
+            : ModelsDirectoryPathResolver.Resolve(configuredModelsPath);
 
         config = new AppConfig
         {

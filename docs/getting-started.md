@@ -104,7 +104,7 @@ FindAModel also creates `/usr/share/glvnd/egl_vendor.d/10_nvidia.json` at contai
 
 The repository includes a complete VS Code configuration. Open `findamodel.code-workspace` in VS Code and use the pre-configured launch profiles and tasks.
 
-**Prerequisites:** .NET 9 SDK, Node.js, Yarn, and Docker (for the optional Seq log viewer) must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier).
+**Prerequisites:** .NET 10 SDK, Node.js, Yarn, and Docker (for the optional Seq log viewer) must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier).
 
 **Launch profiles** (Run and Debug panel):
 

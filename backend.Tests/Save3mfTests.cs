@@ -1,10 +1,24 @@
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using findamodel.Services;
 using Xunit;
 
 namespace findamodel.Tests;
+
+/// <summary>
+/// Skips the test on macOS because the lib3mf native DLL is not available on that platform.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class Lib3mfFactAttribute : FactAttribute
+{
+    public Lib3mfFactAttribute()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Skip = "lib3mf native DLL is not available on macOS";
+    }
+}
 
 /// <summary>
 /// Validates that <see cref="ModelSaverService.Save3mf"/> produces output that conforms to the
@@ -81,24 +95,24 @@ public class Save3mfTests
 
     // ── Package files ────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Package_ContainsContentTypesXml()
         => Assert.True(ZipEntries(Simple3mf()).ContainsKey("[Content_Types].xml"),
             "[Content_Types].xml is required by OPC");
 
-    [Fact]
+    [Lib3mfFact]
     public void Package_ContainsRels()
         => Assert.True(ZipEntries(Simple3mf()).ContainsKey("_rels/.rels"),
             "_rels/.rels is required by OPC");
 
-    [Fact]
+    [Lib3mfFact]
     public void Package_ContainsModelFile()
         => Assert.True(ZipEntries(Simple3mf()).ContainsKey("3D/3dmodel.model"),
             "3D model part is missing from package");
 
     // ── Content types ─────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void ContentTypes_ModelExtensionIsCorrect()
     {
         var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(
@@ -111,7 +125,7 @@ public class Save3mfTests
         Assert.Equal("application/vnd.ms-package.3dmanufacturing-3dmodel+xml", el.Attribute("ContentType")?.Value);
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void ContentTypes_RelsExtensionIsCorrect()
     {
         var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(
@@ -127,7 +141,7 @@ public class Save3mfTests
 
     // ── Relationships ─────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Rels_Has3mfRelationshipWithCorrectTypeAndTarget()
     {
         var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(
@@ -147,7 +161,7 @@ public class Save3mfTests
 
     // ── Model XML namespace / structure ─────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Model_RootElementHas3mfNamespace()
     {
         var doc = ModelXml(Simple3mf());
@@ -156,7 +170,7 @@ public class Save3mfTests
             doc.Root!.Name.NamespaceName);
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Model_HasUnitAttribute_WithValidValue()
     {
         var doc = ModelXml(Simple3mf());
@@ -167,17 +181,17 @@ public class Save3mfTests
             new[] { "micron", "millimeter", "centimeter", "inch", "foot", "meter" });
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Model_HasResourcesElement()
         => Assert.NotNull(ModelXml(Simple3mf()).Root!.Element(Ns3mf + "resources"));
 
-    [Fact]
+    [Lib3mfFact]
     public void Model_HasBuildElement()
         => Assert.NotNull(ModelXml(Simple3mf()).Root!.Element(Ns3mf + "build"));
 
     // ── Object IDs ──────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Objects_IdsArePositiveIntegers()
     {
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object"))
@@ -189,7 +203,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Objects_IdsAreUnique()
     {
         var ids = ModelXml(Simple3mf())
@@ -202,7 +216,7 @@ public class Save3mfTests
 
     // ── Object structure ─────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Objects_HaveMeshXorComponents_NotBothOrNeither()
     {
         // 3MF spec §4.1: an object MUST contain either a mesh or a components child element.
@@ -220,7 +234,7 @@ public class Save3mfTests
 
     // ── Mesh validity ─────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Mesh_HasAtLeastThreeVertices()
     {
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
@@ -234,7 +248,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Mesh_HasAtLeastOneTriangle()
     {
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
@@ -248,7 +262,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Mesh_VerticesAreDeduplicated()
     {
         // The implementation shares vertices, so the vertex count must be strictly less than
@@ -268,7 +282,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Triangles_IndicesAreInBounds()
     {
         foreach (var obj in ModelXml(Simple3mf()).Descendants(Ns3mf + "object")
@@ -290,7 +304,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Triangles_VertexIndicesAreDistinct()
     {
         // 3MF spec §4.1.4: v1, v2, v3 MUST be distinct (degenerate triangles are forbidden).
@@ -307,7 +321,7 @@ public class Save3mfTests
 
     // ── Build items ───────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Build_HasAtLeastOneItem()
     {
         var count = ModelXml(Simple3mf())
@@ -317,7 +331,7 @@ public class Save3mfTests
         Assert.True(count >= 1, "Build element must contain at least one item");
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void BuildItems_ReferenceExistingObjectIds()
     {
         var doc = ModelXml(Simple3mf());
@@ -333,7 +347,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void BuildItems_ObjectIdsAreUnique()
     {
         // 3MF spec §3.4: the same objectid MUST NOT appear more than once in <build>.
@@ -346,7 +360,7 @@ public class Save3mfTests
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void BuildItems_DoNotDirectlyReferenceMeshObjects()
     {
         // The instancing pattern wraps each placement in a component object.
@@ -363,7 +377,7 @@ public class Save3mfTests
 
     // ── Components ────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Components_ReferenceExistingObjectIds()
     {
         var doc = ModelXml(Simple3mf());
@@ -379,7 +393,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Components_TransformHasTwelveSpaceSeparatedFloats()
     {
         // 3MF spec §3.3: transform is 12 real numbers in row-major order.
@@ -401,7 +415,7 @@ public class Save3mfTests
 
     // ── Instancing ────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Instancing_ThreePlacementsShareOneMeshObject()
     {
         // Three placements of the same model → only one base mesh object in <resources>.
@@ -418,7 +432,7 @@ public class Save3mfTests
         Assert.Single(meshObjects);
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Instancing_ThreePlacementsProduceThreeBuildItems()
     {
         var bytes = Simple3mf(
@@ -433,7 +447,7 @@ public class Save3mfTests
         Assert.Equal(3, count);
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Instancing_ThreePlacementsHaveUniqueWrapperObjectIds()
     {
         var bytes = Simple3mf(
@@ -451,7 +465,7 @@ public class Save3mfTests
         Assert.Equal(buildIds.Count, buildIds.Distinct().Count());
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Instancing_ThousandsOfPlacementsRemainValid()
     {
         var items = Enumerable.Range(0, 5000)
@@ -520,7 +534,7 @@ public class Save3mfTests
         return list;
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Reads_WithoutWarnings()
     {
         // lib3mf raises warnings for non-fatal spec violations.
@@ -532,7 +546,7 @@ public class Save3mfTests
 
     // ── lib3mf instancing tests ───────────────────────────────────────────────────
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Instancing_ThreePlacements_OneMeshObjectInModel()
     {
         var bytes = Simple3mf(
@@ -544,7 +558,7 @@ public class Save3mfTests
         Assert.Single(AllMeshObjects(model));
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Instancing_ThreePlacements_ThreeBuildItemsInModel()
     {
         var bytes = Simple3mf(
@@ -556,7 +570,7 @@ public class Save3mfTests
         Assert.Equal(3, AllBuildItems(model).Count);
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Instancing_ThreePlacements_BuildItemsReferenceComponentsObjects()
     {
         // Each build item must point to a ComponentsObject, not a raw MeshObject.
@@ -571,7 +585,7 @@ public class Save3mfTests
                 "Build item must reference a ComponentsObject (not a mesh object directly)");
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Instancing_ThreePlacements_AllComponentsReferenceTheSameMesh()
     {
         // All three wrapper objects must point their single component at the one shared mesh.
@@ -593,7 +607,7 @@ public class Save3mfTests
         }
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_Instancing_ThreePlacements_TranslationsAreDistinct()
     {
         // Each placement uses a different X translation; verify lib3mf reads them back correctly.
@@ -733,7 +747,7 @@ public class Save3mfTests
         return bytes;
     }
 
-    [Fact]
+    [Lib3mfFact]
     public void Lib3mf_RoundTrip_TwoMeshesTwentyInstancesEach_ComparesWithLib3mfGenerated()
     {
         // Object 1 (cube):   20 positions lerped from (-10, 10, 10) to ( 10, 10, 10)

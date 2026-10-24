@@ -19,6 +19,8 @@ public readonly record struct Vec3(float X, float Y, float Z)
     {
         get { float l = Length; return l < 1e-8f ? Up : this * (1f / l); }
     }
+
+    public override string ToString() => $"({X:F3}, {Y:F3}, {Z:F3})";
 }
 
 public readonly record struct Triangle3D(Vec3 V0, Vec3 V1, Vec3 V2, Vec3 Normal);

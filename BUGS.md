@@ -1,0 +1,1 @@
+* Logs is constantly being called from the frontend
