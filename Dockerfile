@@ -24,9 +24,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
-    libgl1-mesa-glx \
-    libegl1-mesa \
-    libgles2-mesa \
+    libgl1 \
+    libglx-mesa0 \
+    libegl1 \
+    libegl-mesa0 \
+    libgles2 \
+    libgl1-mesa-dri \
     libvulkan1 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
