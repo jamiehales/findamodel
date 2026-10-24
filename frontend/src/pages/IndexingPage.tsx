@@ -685,17 +685,8 @@ function RunDetailWithPaging({
                 <Stack direction="row" spacing={0.5} className={styles.artifactRow}>
                   {artifactChip(file.generatedPreview, 'preview')}
                   {artifactChip(file.generatedHull, 'hull')}
-                  {artifactChip(file.generatedAiTags, 'ai tags')}
-                  {artifactChip(file.generatedAiDescription, 'ai description')}
                   {artifactChip(file.isNew, 'new')}
                   {artifactChip(file.wasUpdated, 'updated')}
-                  {file.aiGenerationReason && (
-                    <Chip
-                      size="small"
-                      label={`ai: ${file.aiGenerationReason}`}
-                      className={styles.aiReasonChip}
-                    />
-                  )}
                 </Stack>
                 {file.message && (
                   <Typography variant="caption" color="text.secondary">

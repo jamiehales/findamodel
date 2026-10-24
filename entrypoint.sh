@@ -19,8 +19,26 @@ NVIDIA_EGL_VENDOR_DIR="/usr/share/glvnd/egl_vendor.d"
 NVIDIA_EGL_VENDOR_FILE="$NVIDIA_EGL_VENDOR_DIR/10_nvidia.json"
 NVIDIA_EGL_LIBRARY="/usr/lib/x86_64-linux-gnu/libEGL_nvidia.so.0"
 
-# Some container runtimes mount NVIDIA EGL libraries without the matching GLVND
-# vendor JSON. When that happens, headless OpenGL falls back to Mesa llvmpipe.
+NVIDIA_VULKAN_ICD_DIR="/usr/share/vulkan/icd.d"
+NVIDIA_VULKAN_ICD_FILE="$NVIDIA_VULKAN_ICD_DIR/nvidia_icd.json"
+NVIDIA_GLX_LIBRARY="/usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.0"
+
+# Some container runtimes mount the NVIDIA driver libraries without the matching Vulkan
+# ICD or GLVND vendor JSON. Without them the GPU is invisible and previews fall back to
+# the CPU rasteriser.
+if [ -f "$NVIDIA_GLX_LIBRARY" ] && [ ! -f "$NVIDIA_VULKAN_ICD_FILE" ] && [ ! -f /etc/vulkan/icd.d/nvidia_icd.json ]; then
+    mkdir -p "$NVIDIA_VULKAN_ICD_DIR"
+    cat >"$NVIDIA_VULKAN_ICD_FILE" <<'EOF'
+{
+  "file_format_version": "1.0.0",
+  "ICD": {
+    "library_path": "libGLX_nvidia.so.0",
+    "api_version": "1.3"
+  }
+}
+EOF
+fi
+
 if [ -f "$NVIDIA_EGL_LIBRARY" ] && [ ! -f "$NVIDIA_EGL_VENDOR_FILE" ]; then
     mkdir -p "$NVIDIA_EGL_VENDOR_DIR"
     cat >"$NVIDIA_EGL_VENDOR_FILE" <<'EOF'
@@ -49,8 +67,11 @@ case "$PGID" in
 esac
 
 # Match LinuxServer-style behavior: run as root when explicitly requested.
+DATA_PATH="${FINDAMODEL_DATA_PATH:-/data}"
+mkdir -p "$DATA_PATH"
+
 if [ "$PUID" = "0" ] || [ "$PGID" = "0" ]; then
-    exec dotnet findamodel.dll
+    exec /app/findamodel
 fi
 
 TARGET_GROUP="app"
@@ -74,4 +95,10 @@ else
     useradd -o -u "$PUID" -g "$PGID" -M -N -s /usr/sbin/nologin "$TARGET_USER"
 fi
 
-exec gosu "$TARGET_USER:$TARGET_GROUP" dotnet findamodel.dll
+# The data directory must be writable by the app user (the database and preview cache
+# live there).
+if ! gosu "$TARGET_USER:$TARGET_GROUP" test -w "$DATA_PATH"; then
+    chown "$TARGET_USER:$TARGET_GROUP" "$DATA_PATH"
+fi
+
+exec gosu "$TARGET_USER:$TARGET_GROUP" /app/findamodel

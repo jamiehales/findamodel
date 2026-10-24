@@ -28,7 +28,9 @@ docker run -d \
   ghcr.io/jamiehales/findamodel:latest
 ```
 
-For NVIDIA GPU acceleration, add:
+Then open [http://localhost:5000](http://localhost:5000) and enter `/models` as the model root path in the setup wizard.
+
+For NVIDIA GPU-accelerated preview rendering, add:
 
 ```bash
 --gpus all \

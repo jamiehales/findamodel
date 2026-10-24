@@ -11,8 +11,9 @@ General:
 * Scale assumptions: production catalog size is approximately 100,000 models
 * Scale assumptions: a printing list usually contains approximately 20-30 models
 * Given those assumptions, prefer server-side filtering/pagination/batched endpoints; avoid full-catalog fetches in UI flows and avoid N+1 per-model request patterns
-* Always add tests for new backend functionality - unit or integration tests in `backend.Tests/` using the xUnit + EF InMemory/SQLite pattern already present
-* Always run the full backend test suite (`dotnet test backend.Tests/findamodel.Tests.csproj`) after completing any implementation and fix any failures before finishing
+* Always add tests for new backend functionality - unit tests in a `#[cfg(test)] mod tests` next to the code (using `test_support::TestDb` for a temporary SQLite database) or HTTP-level tests in `backend/tests/`
+* Always run the full backend test suite (`cargo test -p findamodel`) after completing any implementation and fix any failures before finishing
+* Backend code must pass `cargo fmt --all --check` and `cargo clippy -p findamodel --all-targets -- -D warnings`
 
 Frontend:
 * Prefer usage of MUI layout (Stack, Grid) instead of Box and divs
@@ -22,8 +23,9 @@ Frontend:
 * Ensure frontend code matches Prettier formatting (`frontend/.prettierrc.json`). After frontend edits, run formatting on changed files (or `yarn --cwd frontend format`) before finalizing.
 
 Backend:
-* Ensure permissions are checked for each operation
-* Use standard asp.net authorization/authentication checks for generated api calls
-* If there are any changes to EF Core entities they must be accompanied by a new EF migration
-* Performance monitor: `ToModelDto()` and similar extension-method mapping can cause full-entity materialization in EF Core queries. If model list/query endpoints become slow, prioritize SQL-translatable projection (`Select` with expression) and `AsNoTracking()` on read paths.
-* Scan config checksum: `ScanConfig.Compute(float raftHeightMm)` in `backend/Services/ScanConfig.cs` is the single canonical source for the hull/scan staleness checksum. If any new input affects hull generation (e.g. a new algorithm version constant, mesh tolerance, additional raft parameter), add it to that method's format string AND bump `HullCalculationService.CurrentHullGenerationVersion`. Do not add staleness checks anywhere else.
+* The backend is a Rust crate (`backend/`, axum + sqlx/SQLite); the Tauri desktop app embeds it as a library
+* Ensure permissions are checked for each operation: API handlers take the `CurrentUser` extractor, and printing list operations go through `Caller` ownership checks
+* Any database schema change must be a new numbered SQL migration in `backend/migrations/` (never edit an existing migration), with matching updates to the row types in `backend/src/entities.rs`
+* Performance monitor: model list/query endpoints should filter, sort and paginate in SQL and only load the columns they need; avoid loading full model rows for the whole catalog
+* Scan config checksum: `scan_config::compute(raft_height_mm)` in `backend/src/services/scan_config.rs` is the single canonical source for the hull/scan staleness checksum. If any new input affects hull generation (e.g. a new algorithm version constant, mesh tolerance, additional raft parameter), add it to that function's format string AND bump `CURRENT_HULL_GENERATION_VERSION` in `backend/src/geometry/hull.rs`. Do not add staleness checks anywhere else.
+* Bump `CURRENT_PREVIEW_GENERATION_VERSION` in `backend/src/preview/mod.rs` whenever preview output changes

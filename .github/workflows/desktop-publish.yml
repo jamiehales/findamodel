@@ -15,13 +15,13 @@ jobs:
         include:
           - platform: windows-latest
             rust-target: x86_64-pc-windows-msvc
-            dotnet-rid: win-x64
+            artifact: win-x64
           - platform: macos-latest
             rust-target: aarch64-apple-darwin
-            dotnet-rid: osx-arm64
+            artifact: osx-arm64
           - platform: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu
-            dotnet-rid: linux-x64
+            artifact: linux-x64
 
     runs-on: ${{ matrix.platform }}
     permissions:
@@ -30,11 +30,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -53,7 +48,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop-tauri/src-tauri -> target
+          workspaces: . -> target
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -71,11 +66,6 @@ jobs:
       - name: Install desktop-tauri dependencies
         run: yarn --cwd desktop-tauri install --frozen-lockfile
 
-      - name: Publish .NET sidecar
-        run: node desktop-tauri/scripts/publish-sidecar.mjs
-        env:
-          FINDAMODEL_RID: ${{ matrix.dotnet-rid }}
-
       - name: Build Tauri desktop app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -91,6 +81,6 @@ jobs:
       - name: Upload desktop installers
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.dotnet-rid }}
-          path: desktop-tauri/src-tauri/target/${{ matrix.rust-target }}/release/bundle/
+          name: desktop-${{ matrix.artifact }}
+          path: target/${{ matrix.rust-target }}/release/bundle/
           if-no-files-found: error

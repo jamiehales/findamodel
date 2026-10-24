@@ -9,8 +9,8 @@ If this file and AGENTS.md differ, AGENTS.md is authoritative.
 - Ask before making user-facing behavior decisions.
 - Add logging/tests when debugging and validating changes.
 - For frontend edits, ensure output matches Prettier config and run formatting before finalizing (format touched files or run `yarn --cwd frontend format`).
-- Backend changes to EF Core entities must include a migration.
-- Monitor query performance: extension-method DTO mapping can trigger full-entity materialization. If list/query endpoints degrade, prefer SQL-translatable projection and `AsNoTracking()` on read paths.
+- Backend database schema changes must include a new SQL migration in `backend/migrations/`.
+- Monitor query performance: filter, sort and paginate model queries in SQL and avoid loading full rows for the whole catalog.
 
 ## Restricted tasks
 

@@ -43,11 +43,8 @@ function ModelCard({ model, href }: ModelCardProps) {
     [model.previewUrl, showSupports],
   );
   const showSlicerPlaceholder = !previewUrl && !model.canExportToPlate;
-  const generatedDescription = model.generatedDescription?.trim() ?? '';
-  const hasDescription = generatedDescription.length > 0;
   const isIndexing = indexingState === 'running';
   const userTags = model.tags ?? [];
-  const aiTags = (model.generatedTags ?? []).filter((tag) => !userTags.includes(tag));
 
   function navigateToModels(nextSearch: string) {
     navigate({ pathname: '/', search: nextSearch ? `?${nextSearch}` : '' });
@@ -80,147 +77,127 @@ function ModelCard({ model, href }: ModelCardProps) {
 
   return (
     <>
-      <Tooltip
-        title={generatedDescription}
-        placement="top"
-        arrow
-        disableHoverListener={!hasDescription}
-      >
-        <span>
-          <AppCard
-            href={href}
-            interactive
-            className={styles.card}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-          >
-            {previewUrl ? (
-              <Box component="img" src={previewUrl} alt="" className={styles.preview} />
-            ) : showSlicerPlaceholder ? (
-              <Box className={styles.previewPlaceholder}>
-                <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
-                <p className={styles.previewPlaceholderLabel}>{model.fileType.toUpperCase()}</p>
-              </Box>
-            ) : (
-              <Box className={styles.previewPlaceholder} />
-            )}
-
-            <Box className={styles.infoBlock}>
-              <Stack direction="row" className={styles.pillRow} spacing={0.5} flexWrap="wrap">
-                <FilterPill
-                  label={model.fileType.toUpperCase()}
-                  onClick={(e) => onStandardFilterClick(e, 'fileType', model.fileType)}
-                />
-
-                {model.material && (
-                  <FilterPill
-                    label={model.material}
-                    onClick={(e) => onStandardFilterClick(e, 'material', model.material!)}
-                  />
-                )}
-
-                {model.category && (
-                  <FilterPill
-                    label={model.category}
-                    onClick={(e) => onStandardFilterClick(e, 'category', model.category!)}
-                  />
-                )}
-
-                {model.type && (
-                  <FilterPill
-                    label={model.type}
-                    onClick={(e) => onStandardFilterClick(e, 'type', model.type!)}
-                  />
-                )}
-
-                {model.supported !== null && (
-                  <FilterPill
-                    label={model.supported ? 'Supported' : 'Unsupported'}
-                    tone={model.supported ? 'supported' : 'unsupported'}
-                    onClick={(e) => onSupportedFilterClick(e, model.supported!)}
-                  />
-                )}
-              </Stack>
-
-              <p className={styles.name}>{model.name}</p>
-
-              <p className={styles.fileName}>{getFileName(model.relativePath)}</p>
-
-              <p className={styles.size}>{formatBytes(model.fileSize)}</p>
-
-              {aiTags.length > 0 && (
-                <Stack direction="row" className={styles.pillRow} spacing={0.5} flexWrap="wrap">
-                  {aiTags.map((tag) => (
-                    <FilterPill
-                      key={`ai-${tag}`}
-                      label={`AI: ${tag}`}
-                      tone="ai"
-                      onClick={(e) => onTagFilterClick(e, tag)}
-                    />
-                  ))}
-                </Stack>
-              )}
-
-              {userTags.length > 0 && (
-                <Stack direction="row" className={styles.userTagRow} spacing={0.5} flexWrap="wrap">
-                  {userTags.map((tag) => (
-                    <FilterPill
-                      key={`user-${tag}`}
-                      label={tag}
-                      tone="user"
-                      onClick={(e) => onTagFilterClick(e, tag)}
-                    />
-                  ))}
-                </Stack>
-              )}
+      <span>
+        <AppCard
+          href={href}
+          interactive
+          className={styles.card}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          {previewUrl ? (
+            <Box component="img" src={previewUrl} alt="" className={styles.preview} />
+          ) : showSlicerPlaceholder ? (
+            <Box className={styles.previewPlaceholder}>
+              <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
+              <p className={styles.previewPlaceholderLabel}>{model.fileType.toUpperCase()}</p>
             </Box>
+          ) : (
+            <Box className={styles.previewPlaceholder} />
+          )}
 
-            <Tooltip title="Edit metadata" placement="top">
-              <IconButton
-                size="small"
-                className={styles.editMetadataButton}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setMetadataOpen(true);
-                }}
-              >
-                <EditRoundedIcon fontSize="inherit" />
-              </IconButton>
-            </Tooltip>
+          <Box className={styles.infoBlock}>
+            <Stack direction="row" className={styles.pillRow} spacing={0.5} flexWrap="wrap">
+              <FilterPill
+                label={model.fileType.toUpperCase()}
+                onClick={(e) => onStandardFilterClick(e, 'fileType', model.fileType)}
+              />
 
-            <Tooltip
-              title={
-                indexingState === 'running'
-                  ? 'Refreshing index...'
-                  : indexingState === 'queued'
-                    ? 'Refresh queued...'
-                    : 'Refresh index'
-              }
-              placement="top"
+              {model.material && (
+                <FilterPill
+                  label={model.material}
+                  onClick={(e) => onStandardFilterClick(e, 'material', model.material!)}
+                />
+              )}
+
+              {model.category && (
+                <FilterPill
+                  label={model.category}
+                  onClick={(e) => onStandardFilterClick(e, 'category', model.category!)}
+                />
+              )}
+
+              {model.type && (
+                <FilterPill
+                  label={model.type}
+                  onClick={(e) => onStandardFilterClick(e, 'type', model.type!)}
+                />
+              )}
+
+              {model.supported !== null && (
+                <FilterPill
+                  label={model.supported ? 'Supported' : 'Unsupported'}
+                  tone={model.supported ? 'supported' : 'unsupported'}
+                  onClick={(e) => onSupportedFilterClick(e, model.supported!)}
+                />
+              )}
+            </Stack>
+
+            <p className={styles.name}>{model.name}</p>
+
+            <p className={styles.fileName}>{getFileName(model.relativePath)}</p>
+
+            <p className={styles.size}>{formatBytes(model.fileSize)}</p>
+
+            {userTags.length > 0 && (
+              <Stack direction="row" className={styles.userTagRow} spacing={0.5} flexWrap="wrap">
+                {userTags.map((tag) => (
+                  <FilterPill
+                    key={`user-${tag}`}
+                    label={tag}
+                    tone="user"
+                    onClick={(e) => onTagFilterClick(e, tag)}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
+
+          <Tooltip title="Edit metadata" placement="top">
+            <IconButton
+              size="small"
+              className={styles.editMetadataButton}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMetadataOpen(true);
+              }}
             >
-              <IconButton
-                size="small"
-                className={styles.refreshIndexButton}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  indexModel();
-                }}
-                disabled={indexingState !== null}
-              >
-                {isIndexing ? (
-                  <CircularProgress size={14} className={styles.refreshSpinner} />
-                ) : (
-                  <RefreshRoundedIcon fontSize="inherit" />
-                )}
-              </IconButton>
-            </Tooltip>
+              <EditRoundedIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
 
-            <PrintingListControls modelId={model.id} showButtons={hovered} />
-          </AppCard>
-        </span>
-      </Tooltip>
+          <Tooltip
+            title={
+              indexingState === 'running'
+                ? 'Refreshing index...'
+                : indexingState === 'queued'
+                  ? 'Refresh queued...'
+                  : 'Refresh index'
+            }
+            placement="top"
+          >
+            <IconButton
+              size="small"
+              className={styles.refreshIndexButton}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                indexModel();
+              }}
+              disabled={indexingState !== null}
+            >
+              {isIndexing ? (
+                <CircularProgress size={14} className={styles.refreshSpinner} />
+              ) : (
+                <RefreshRoundedIcon fontSize="inherit" />
+              )}
+            </IconButton>
+          </Tooltip>
+
+          <PrintingListControls modelId={model.id} showButtons={hovered} />
+        </AppCard>
+      </span>
 
       <AppDialog
         open={metadataOpen}

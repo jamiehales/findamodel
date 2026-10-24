@@ -7,6 +7,6 @@ has_children: true
 
 # Desktop
 
-Desktop packaging uses Tauri v2 with a .NET backend sidecar.
+Desktop packaging uses Tauri v2 with the backend embedded in the same process.
 
 Use the child pages in this section for requirements, local development flow, and packaging details.

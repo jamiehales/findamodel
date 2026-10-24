@@ -97,22 +97,6 @@ export interface AppConfig {
   theme: string;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
-  tagGenerationEnabled: boolean;
-  aiDescriptionEnabled: boolean;
-  tagGenerationProvider: string;
-  tagGenerationEndpoint: string;
-  tagGenerationModel: string;
-  tagGenerationModelDefault: string;
-  tagGenerationModelOverride: string;
-  tagGenerationTimeoutMs: number;
-  tagGenerationMaxTags: number;
-  tagGenerationMinConfidence: number;
-  tagGenerationPromptTemplate: string;
-  descriptionGenerationPromptTemplate: string;
-  tagGenerationPromptTemplateDefault: string;
-  descriptionGenerationPromptTemplateDefault: string;
-  tagGenerationPromptTemplateOverride: string;
-  descriptionGenerationPromptTemplateOverride: string;
   setupCompleted: boolean;
   modelsDirectoryPath: string | null;
 }
@@ -127,14 +111,6 @@ export interface InitialSetupDefaults {
   defaultRaftHeightMm: number;
   theme: string;
   generatePreviewsEnabled: boolean;
-  tagGenerationEnabled: boolean;
-  aiDescriptionEnabled: boolean;
-  tagGenerationProvider: string;
-  tagGenerationEndpoint: string;
-  tagGenerationModel: string;
-  tagGenerationTimeoutMs: number;
-  tagGenerationMaxTags: number;
-  tagGenerationMinConfidence: number;
 }
 
 export interface UpdateAppConfigRequest {
@@ -142,16 +118,6 @@ export interface UpdateAppConfigRequest {
   theme: string;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
-  tagGenerationEnabled: boolean;
-  aiDescriptionEnabled: boolean;
-  tagGenerationProvider: string;
-  tagGenerationEndpoint: string;
-  tagGenerationModel: string;
-  tagGenerationTimeoutMs: number;
-  tagGenerationMaxTags: number;
-  tagGenerationMinConfidence: number;
-  tagGenerationPromptTemplate: string;
-  descriptionGenerationPromptTemplate: string;
 }
 
 export interface InitialSetupRequest {
@@ -159,14 +125,6 @@ export interface InitialSetupRequest {
   defaultRaftHeightMm: number;
   theme: string;
   generatePreviewsEnabled: boolean;
-  tagGenerationEnabled: boolean;
-  aiDescriptionEnabled: boolean;
-  tagGenerationProvider: string;
-  tagGenerationEndpoint: string;
-  tagGenerationModel: string;
-  tagGenerationTimeoutMs: number;
-  tagGenerationMaxTags: number;
-  tagGenerationMinConfidence: number;
 }
 
 export interface ApplicationLogEntry {
@@ -193,12 +151,8 @@ export interface InstanceStats {
   previewGpuEnabled: boolean;
   previewGpuAvailable: boolean;
   previewRenderer: string;
-  internalLlmGpuEnabled: boolean;
-  internalLlmGpuLayerCount: number;
   modelCount: number;
   modelsWithPreviews: number;
-  modelsWithGeneratedTags: number;
-  modelsWithGeneratedDescriptions: number;
   directoryConfigCount: number;
   printingListCount: number;
   metadataDictionaryValueCount: number;

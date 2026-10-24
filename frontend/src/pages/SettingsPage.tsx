@@ -159,7 +159,6 @@ const SETTINGS_SECTIONS = [
   { key: 'settings', label: 'Settings', path: '/settings' },
   { key: 'printers', label: 'Printers', path: '/settings/printers' },
   { key: 'logs', label: 'Logs', path: '/settings/logs' },
-  { key: 'ai', label: 'AI Settings', path: '/settings/ai' },
   { key: 'schema', label: 'Schema', path: '/settings/schema' },
   { key: 'stats', label: 'Stats', path: '/settings/stats' },
 ] as const;
@@ -224,7 +223,7 @@ function InstanceStatsSection({
             rows={[
               { label: 'App version', value: stats.applicationVersion },
               { label: 'Environment', value: stats.environment },
-              { label: '.NET runtime', value: stats.frameworkVersion },
+              { label: 'Rust toolchain', value: stats.frameworkVersion },
               { label: 'Operating system', value: stats.operatingSystem },
             ]}
           />
@@ -233,21 +232,9 @@ function InstanceStatsSection({
             rows={[
               { label: 'Preview GPU', value: formatEnabled(stats.previewGpuEnabled) },
               { label: 'GPU availability', value: formatAvailability(stats.previewGpuAvailable) },
-              { label: 'GL renderer', value: stats.previewRenderer },
+              { label: 'GPU renderer', value: stats.previewRenderer },
               { label: 'Preview version', value: stats.previewGenerationVersion },
               { label: 'Hull version', value: stats.hullGenerationVersion },
-            ]}
-          />
-          <StatsGroup
-            title="AI"
-            rows={[
-              { label: 'Internal LLM GPU', value: formatEnabled(stats.internalLlmGpuEnabled) },
-              { label: 'GPU layers', value: stats.internalLlmGpuLayerCount },
-              { label: 'Models with AI tags', value: stats.modelsWithGeneratedTags },
-              {
-                label: 'Models with AI descriptions',
-                value: stats.modelsWithGeneratedDescriptions,
-              },
             ]}
           />
           <StatsGroup
@@ -279,19 +266,6 @@ export default function SettingsPage() {
   const [theme, setTheme] = useState<string>('nord');
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
-  const [tagGenerationEnabled, setTagGenerationEnabled] = useState(false);
-  const [aiDescriptionEnabled, setAiDescriptionEnabled] = useState(false);
-  const [tagGenerationProvider, setTagGenerationProvider] = useState<'internal' | 'ollama'>(
-    'internal',
-  );
-  const [tagGenerationEndpoint, setTagGenerationEndpoint] = useState('http://localhost:11434');
-  const [tagGenerationModelOverride, setTagGenerationModelOverride] = useState('');
-  const [tagGenerationTimeoutMs, setTagGenerationTimeoutMs] = useState('60000');
-  const [tagGenerationMaxTags, setTagGenerationMaxTags] = useState('12');
-  const [tagGenerationMinConfidence, setTagGenerationMinConfidence] = useState('0.45');
-  const [tagGenerationPromptOverride, setTagGenerationPromptOverride] = useState('');
-  const [descriptionGenerationPromptOverride, setDescriptionGenerationPromptOverride] =
-    useState('');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -321,18 +295,6 @@ export default function SettingsPage() {
       setTheme(appConfig.theme);
       setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
       setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
-      setTagGenerationEnabled(appConfig.tagGenerationEnabled);
-      setAiDescriptionEnabled(appConfig.aiDescriptionEnabled);
-      setTagGenerationProvider(
-        appConfig.tagGenerationProvider === 'ollama' ? 'ollama' : 'internal',
-      );
-      setTagGenerationEndpoint(appConfig.tagGenerationEndpoint);
-      setTagGenerationModelOverride(appConfig.tagGenerationModelOverride);
-      setTagGenerationTimeoutMs(String(appConfig.tagGenerationTimeoutMs));
-      setTagGenerationMaxTags(String(appConfig.tagGenerationMaxTags));
-      setTagGenerationMinConfidence(String(appConfig.tagGenerationMinConfidence));
-      setTagGenerationPromptOverride(appConfig.tagGenerationPromptTemplateOverride);
-      setDescriptionGenerationPromptOverride(appConfig.descriptionGenerationPromptTemplateOverride);
     }
   }, [appConfig]);
 
@@ -352,9 +314,6 @@ export default function SettingsPage() {
 
   const raftHeightValue = Number(defaultRaftHeightMm);
   const minimumPreviewGenerationVersionValue = Number(minimumPreviewGenerationVersion);
-  const timeoutValue = Number(tagGenerationTimeoutMs);
-  const maxTagsValue = Number(tagGenerationMaxTags);
-  const minConfidenceValue = Number(tagGenerationMinConfidence);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
 
   const appConfigValid =
@@ -364,22 +323,11 @@ export default function SettingsPage() {
     Number.isInteger(minimumPreviewGenerationVersionValue) &&
     minimumPreviewGenerationVersionValue >= 0 &&
     (previewGenerationVersionLimit === undefined ||
-      minimumPreviewGenerationVersionValue <= previewGenerationVersionLimit) &&
-    tagGenerationEndpoint.trim().length > 0 &&
-    Number.isInteger(timeoutValue) &&
-    timeoutValue >= 1000 &&
-    timeoutValue <= 300000 &&
-    Number.isInteger(maxTagsValue) &&
-    maxTagsValue >= 1 &&
-    maxTagsValue <= 64 &&
-    Number.isFinite(minConfidenceValue) &&
-    minConfidenceValue >= 0 &&
-    minConfidenceValue <= 1;
+      minimumPreviewGenerationVersionValue <= previewGenerationVersionLimit);
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
     if (location.pathname.startsWith('/settings/logs')) return 'logs';
-    if (location.pathname.startsWith('/settings/ai')) return 'ai';
     if (location.pathname.startsWith('/settings/schema')) return 'schema';
     if (location.pathname.startsWith('/settings/stats')) return 'stats';
     return 'settings';
@@ -405,16 +353,6 @@ export default function SettingsPage() {
       theme,
       generatePreviewsEnabled,
       minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
-      tagGenerationEnabled,
-      aiDescriptionEnabled,
-      tagGenerationProvider,
-      tagGenerationEndpoint: tagGenerationEndpoint.trim(),
-      tagGenerationModel: tagGenerationModelOverride.trim(),
-      tagGenerationTimeoutMs: timeoutValue,
-      tagGenerationMaxTags: maxTagsValue,
-      tagGenerationMinConfidence: minConfidenceValue,
-      tagGenerationPromptTemplate: tagGenerationPromptOverride.trim(),
-      descriptionGenerationPromptTemplate: descriptionGenerationPromptOverride.trim(),
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -774,186 +712,6 @@ export default function SettingsPage() {
                     No logs matched the selected filters.
                   </Typography>
                 )}
-              </Stack>
-            </Stack>
-          )}
-
-          {currentSection === 'ai' && (
-            <Stack className={styles.globalSettingsSection}>
-              <Stack spacing={2}>
-                <Stack direction="row" spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={tagGenerationEnabled}
-                        onChange={(e) => setTagGenerationEnabled(e.target.checked)}
-                      />
-                    }
-                    label="Enable AI tag generation"
-                  />
-                </Stack>
-
-                <Stack direction="row" spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={aiDescriptionEnabled}
-                        onChange={(e) => setAiDescriptionEnabled(e.target.checked)}
-                      />
-                    }
-                    label="Enable AI description generation"
-                  />
-                </Stack>
-
-                <TextField
-                  select
-                  size="small"
-                  label="Provider"
-                  value={tagGenerationProvider}
-                  onChange={(e) =>
-                    setTagGenerationProvider(e.target.value === 'ollama' ? 'ollama' : 'internal')
-                  }
-                >
-                  <MenuItem value="internal">Internal</MenuItem>
-                  <MenuItem value="ollama">Ollama</MenuItem>
-                </TextField>
-
-                {tagGenerationProvider === 'ollama' && (
-                  <TextField
-                    size="small"
-                    label="Endpoint"
-                    value={tagGenerationEndpoint}
-                    onChange={(e) => setTagGenerationEndpoint(e.target.value)}
-                    error={!tagGenerationEndpoint.trim()}
-                    helperText={!tagGenerationEndpoint.trim() ? 'Endpoint is required.' : undefined}
-                  />
-                )}
-
-                <Stack spacing={1}>
-                  <TextField
-                    size="small"
-                    label="Model"
-                    InputLabelProps={{ shrink: true }}
-                    value={tagGenerationModelOverride}
-                    placeholder={appConfig.tagGenerationModelDefault}
-                    onChange={(e) => setTagGenerationModelOverride(e.target.value)}
-                    helperText={
-                      !tagGenerationModelOverride.trim()
-                        ? 'Using the built-in model from backend defaults.'
-                        : undefined
-                    }
-                  />
-                  <Button variant="outlined" onClick={() => setTagGenerationModelOverride('')}>
-                    Reset model to default
-                  </Button>
-                </Stack>
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Timeout (ms)"
-                  value={tagGenerationTimeoutMs}
-                  onChange={(e) => setTagGenerationTimeoutMs(e.target.value)}
-                  error={
-                    !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
-                  }
-                  helperText={
-                    !Number.isInteger(timeoutValue) || timeoutValue < 1000 || timeoutValue > 300000
-                      ? 'Must be an integer between 1000 and 300000.'
-                      : undefined
-                  }
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Max tags"
-                  value={tagGenerationMaxTags}
-                  onChange={(e) => setTagGenerationMaxTags(e.target.value)}
-                  error={!Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64}
-                  helperText={
-                    !Number.isInteger(maxTagsValue) || maxTagsValue < 1 || maxTagsValue > 64
-                      ? 'Must be an integer between 1 and 64.'
-                      : undefined
-                  }
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Min confidence"
-                  value={tagGenerationMinConfidence}
-                  onChange={(e) => setTagGenerationMinConfidence(e.target.value)}
-                  error={
-                    !Number.isFinite(minConfidenceValue) ||
-                    minConfidenceValue < 0 ||
-                    minConfidenceValue > 1
-                  }
-                  helperText={
-                    !Number.isFinite(minConfidenceValue) ||
-                    minConfidenceValue < 0 ||
-                    minConfidenceValue > 1
-                      ? 'Must be a number between 0 and 1.'
-                      : undefined
-                  }
-                />
-
-                <Stack spacing={1}>
-                  <TextField
-                    size="small"
-                    label="Tag generation prompt template"
-                    InputLabelProps={{ shrink: true }}
-                    value={tagGenerationPromptOverride}
-                    placeholder={appConfig.tagGenerationPromptTemplateDefault}
-                    onChange={(e) => setTagGenerationPromptOverride(e.target.value)}
-                    helperText={
-                      !tagGenerationPromptOverride.trim()
-                        ? 'Using the built-in prompt. Supports {{maxTags}} and {{allowedTags}} placeholders.'
-                        : 'Supports {{maxTags}} and {{allowedTags}} placeholders.'
-                    }
-                    multiline
-                    minRows={4}
-                    fullWidth
-                  />
-                  <Button variant="outlined" onClick={() => setTagGenerationPromptOverride('')}>
-                    Reset to default
-                  </Button>
-                </Stack>
-
-                <Stack spacing={1}>
-                  <TextField
-                    size="small"
-                    label="Description generation prompt template"
-                    InputLabelProps={{ shrink: true }}
-                    value={descriptionGenerationPromptOverride}
-                    placeholder={appConfig.descriptionGenerationPromptTemplateDefault}
-                    onChange={(e) => setDescriptionGenerationPromptOverride(e.target.value)}
-                    helperText={
-                      !descriptionGenerationPromptOverride.trim()
-                        ? 'Using the built-in prompt. Supports {{modelName}} and {{fullPath}} placeholders.'
-                        : 'Supports {{modelName}} and {{fullPath}} placeholders.'
-                    }
-                    multiline
-                    minRows={4}
-                    fullWidth
-                  />
-                  <Button
-                    variant="outlined"
-                    onClick={() => setDescriptionGenerationPromptOverride('')}
-                  >
-                    Reset to default
-                  </Button>
-                </Stack>
-
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    variant="contained"
-                    disabled={updateAppConfigMutation.isPending || !appConfigValid}
-                    onClick={saveConfig}
-                  >
-                    Save
-                  </Button>
-                </Stack>
               </Stack>
             </Stack>
           )}

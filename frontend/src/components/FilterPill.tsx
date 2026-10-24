@@ -1,6 +1,6 @@
 import styles from './FilterPill.module.css';
 
-export type FilterPillTone = 'standard' | 'supported' | 'unsupported' | 'ai' | 'user';
+export type FilterPillTone = 'standard' | 'supported' | 'unsupported' | 'user';
 
 interface Props {
   label: string;
@@ -14,11 +14,9 @@ export default function FilterPill({ label, tone = 'standard', onClick }: Props)
       ? styles.supported
       : tone === 'unsupported'
         ? styles.unsupported
-        : tone === 'ai'
-          ? styles.ai
-          : tone === 'user'
-            ? styles.user
-            : styles.standard;
+        : tone === 'user'
+          ? styles.user
+          : styles.standard;
 
   return (
     <button type="button" className={`${styles.pill} ${toneClass}`} onClick={onClick}>
