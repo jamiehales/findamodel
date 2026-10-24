@@ -17,9 +17,7 @@ public record PrintingListPrinterInfoDto(
     Guid Id,
     string Name,
     float BedWidthMm,
-    float BedDepthMm,
-    int PixelWidth,
-    int PixelHeight);
+    float BedDepthMm);
 
 public record PrintingListItemDto(
     Guid Id,
