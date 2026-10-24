@@ -21,7 +21,7 @@ nav_order: 1
 
 Desktop mode requires these tools in addition to normal server/web development requirements:
 
-- .NET 9 SDK
+- .NET 10 SDK
 - Node.js 20+ and Yarn
 - Rust toolchain (rustup + cargo)
 
