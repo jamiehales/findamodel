@@ -1,5 +1,4 @@
-import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
+import styles from './StatusView.module.css';
 
 interface ErrorViewProps {
   message?: string;
@@ -11,8 +10,10 @@ export default function ErrorView({
   minHeight = '30vh',
 }: ErrorViewProps) {
   return (
-    <Stack alignItems="center" justifyContent="center" sx={{ minHeight, gap: 2 }}>
-      <Typography color="error.main">{message}</Typography>
-    </Stack>
+    <div className={styles.center} style={{ minHeight }}>
+      <p role="alert" className={styles.error}>
+        {message}
+      </p>
+    </div>
   );
 }

@@ -1,43 +1,28 @@
-import { StrictMode, useEffect, useMemo, useState } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import './styles/tokens.css';
+import '@fontsource/fira-sans-condensed/600.css';
+import '@fontsource/fira-sans-condensed/700.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import './styles/global.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import CircularProgress from '@mui/material/CircularProgress';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { Spinner } from '@jamiehales/ui-kit/mostlymaking';
 import App from './App';
-import { buildTheme, type ThemeName } from './theme';
-import { useAppConfig } from './lib/queries';
 import {
   getRuntimeConfig,
   initializeRuntimeConfig,
   waitForBackendReady,
 } from './lib/runtimeConfig';
+import styles from './main.module.css';
 
 const queryClient = new QueryClient();
 
-function ThemedApp() {
-  const { data: appConfig } = useAppConfig();
-  const themeName = (appConfig?.theme ?? 'nord') as ThemeName;
-  const theme = useMemo(() => buildTheme(themeName), [themeName]);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', themeName);
-  }, [themeName]);
-
-  return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <App />
-    </ThemeProvider>
-  );
-}
-
 function BootstrapApp() {
   const [state, setState] = useState<'starting' | 'ready' | 'failed'>('starting');
-  const [message, setMessage] = useState('Starting local services...');
+  const [message, setMessage] = useState('Starting local services');
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +33,7 @@ function BootstrapApp() {
         const config = getRuntimeConfig();
 
         if (config.mode === 'desktop') {
-          setMessage('Starting local services...');
+          setMessage('Starting local services');
           await waitForBackendReady();
         }
 
@@ -70,24 +55,19 @@ function BootstrapApp() {
   }, []);
 
   if (state === 'ready') {
-    return <ThemedApp />;
+    return <App />;
   }
 
   return (
-    <Stack
-      alignItems="center"
-      justifyContent="center"
-      spacing={2}
-      style={{ minHeight: '100vh', padding: '1.5rem', textAlign: 'center' }}
-    >
-      {state === 'starting' && <CircularProgress color="primary" />}
-      <Typography variant="h6">{message}</Typography>
+    <div className={styles.boot}>
+      {state === 'starting' && <Spinner className={styles.spinner} />}
+      <p className={styles.message}>{message}</p>
       {state === 'failed' && (
-        <Typography variant="body2" color="text.secondary">
-          Check logs in the application data directory and restart the app.
-        </Typography>
+        <p className={styles.detail}>
+          Check the logs in the application data folder, then restart the app.
+        </p>
       )}
-    </Stack>
+    </div>
   );
 }
 

@@ -1,3 +1,96 @@
-.filtersWrapper {
-  width: 100%;
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  min-height: calc(100vh - 57px);
+}
+
+.main {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 20px var(--space-6) 40px;
+}
+
+@media (max-width: 600px) {
+  .main {
+    padding: var(--space-4);
+  }
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.search {
+  flex: 1 1 320px;
+  max-width: 560px;
+}
+
+.spacer {
+  flex: 1 1 0;
+}
+
+.count {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.remove {
+  gap: 6px;
+  border: 0;
+  cursor: pointer;
+}
+
+.remove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.filtersButton {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .filtersButton {
+    display: inline-flex;
+  }
+
+  .search {
+    flex-basis: 0;
+    flex-grow: 1;
+    min-width: 0;
+  }
+
+  .spacer {
+    display: none;
+  }
+
+  .count {
+    flex-basis: 100%;
+  }
+}
+
+.filterCount {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--tag);
+  color: var(--tag-foreground);
+  font: 500 11px/1 var(--font-mono);
 }

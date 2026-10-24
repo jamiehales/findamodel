@@ -109,7 +109,6 @@ pub struct User {
 pub struct AppConfigRow {
     pub id: i64,
     pub default_raft_height_mm: f32,
-    pub theme: String,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
     pub setup_completed: bool,

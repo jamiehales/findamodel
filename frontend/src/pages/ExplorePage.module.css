@@ -1,22 +1,35 @@
-.headerRow {
-  margin-bottom: 0.75rem;
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sectionHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
-.headerActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.35rem;
+.sectionHeader h2 {
+  color: var(--muted-foreground);
 }
 
-.sectionWithMargin {
-  margin-bottom: 2rem;
+.badge {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font: 500 11px/1 var(--font-mono);
 }
 
-.statusMessage {
-  margin-top: 1rem;
+.folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  align-items: start;
+  gap: 12px;
 }

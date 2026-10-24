@@ -1,50 +1,43 @@
-import FormControl from '@mui/material/FormControl';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@jamiehales/ui-kit/mostlymaking';
+
+// Radix Select can't hold an empty string, so "not set" has its own value.
+const UNSET = '__unset__';
 
 interface Props {
+  id?: string;
   value: string | null;
   inheritedValue?: string | null;
   options: string[];
   onChange: (value: string | null) => void;
-  selectClassName?: string;
 }
 
 export default function MetadataSelectField({
+  id,
   value,
   inheritedValue,
   options,
   onChange,
-  selectClassName,
 }: Props) {
+  const unsetLabel = inheritedValue ? `Not set (${inheritedValue})` : 'Not set';
   return (
-    <>
-      <FormControl size="small" fullWidth>
-        <Select
-          displayEmpty
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value || null)}
-          className={selectClassName}
-          renderValue={(v) =>
-            v ? (
-              String(v)
-            ) : (
-              <em style={{ color: 'inherit', opacity: 0.5 }}>
-                Not set{inheritedValue ? ` (${inheritedValue})` : ''}
-              </em>
-            )
-          }
-        >
-          <MenuItem value="">
-            <em>Not set</em>
-          </MenuItem>
-          {options.map((o) => (
-            <MenuItem key={o} value={o}>
-              {o}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-    </>
+    <Select value={value ?? UNSET} onValueChange={(v) => onChange(v === UNSET ? null : v)}>
+      <SelectTrigger id={id}>
+        <SelectValue placeholder={unsetLabel} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNSET}>{unsetLabel}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o} value={o}>
+            {o}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

@@ -13,8 +13,6 @@ use crate::error::{AppResult, bad_request};
 use crate::preview::CURRENT_PREVIEW_GENERATION_VERSION;
 
 pub const DATABASE_DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
-const DEFAULT_THEME: &str = "nord";
-const ALLOWED_THEMES: [&str; 2] = ["default", "nord"];
 
 /// The models root in effect, shared by every service. Set from the environment or the
 /// setup wizard.
@@ -123,13 +121,6 @@ fn validate_raft_height(value: f32) -> AppResult<()> {
     Ok(())
 }
 
-fn validate_theme(theme: &str) -> AppResult<()> {
-    if !ALLOWED_THEMES.iter().any(|t| t.eq_ignore_ascii_case(theme)) {
-        return Err(bad_request(format!("Unknown theme '{theme}'.")));
-    }
-    Ok(())
-}
-
 fn normalize_minimum_preview_version(v: i32) -> i32 {
     v.clamp(0, CURRENT_PREVIEW_GENERATION_VERSION)
 }
@@ -162,7 +153,6 @@ impl AppConfigService {
         let row = AppConfigRow {
             id: 1,
             default_raft_height_mm: self.defaults.default_raft_height_mm.unwrap_or(DATABASE_DEFAULT_RAFT_HEIGHT_MM),
-            theme: self.defaults.theme.clone().unwrap_or_else(|| DEFAULT_THEME.to_string()),
             generate_previews_enabled: self.defaults.generate_previews_enabled.unwrap_or(true),
             minimum_preview_generation_version: normalize_minimum_preview_version(
                 self.defaults.minimum_preview_generation_version.unwrap_or(CURRENT_PREVIEW_GENERATION_VERSION),
@@ -172,12 +162,11 @@ impl AppConfigService {
             updated_at: now(),
         };
         sqlx::query(
-            "INSERT OR IGNORE INTO app_config (id, default_raft_height_mm, theme, generate_previews_enabled,
+            "INSERT OR IGNORE INTO app_config (id, default_raft_height_mm, generate_previews_enabled,
                 minimum_preview_generation_version, setup_completed, models_directory_path, updated_at)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (1, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.default_raft_height_mm)
-        .bind(&row.theme)
         .bind(row.generate_previews_enabled)
         .bind(row.minimum_preview_generation_version)
         .bind(row.setup_completed)
@@ -191,7 +180,6 @@ impl AppConfigService {
     fn to_dto(row: &AppConfigRow) -> AppConfigDto {
         AppConfigDto {
             default_raft_height_mm: row.default_raft_height_mm,
-            theme: row.theme.clone(),
             generate_previews_enabled: row.generate_previews_enabled,
             minimum_preview_generation_version: normalize_minimum_preview_version(
                 row.minimum_preview_generation_version,
@@ -211,7 +199,6 @@ impl AppConfigService {
 
     pub async fn update(&self, req: &UpdateAppConfigRequest) -> AppResult<AppConfigDto> {
         validate_raft_height(req.default_raft_height_mm)?;
-        validate_theme(&req.theme)?;
         if req.minimum_preview_generation_version < 0
             || req.minimum_preview_generation_version > CURRENT_PREVIEW_GENERATION_VERSION
         {
@@ -221,11 +208,10 @@ impl AppConfigService {
         }
         self.ensure_config().await?;
         sqlx::query(
-            "UPDATE app_config SET default_raft_height_mm = ?, theme = ?, generate_previews_enabled = ?,
+            "UPDATE app_config SET default_raft_height_mm = ?, generate_previews_enabled = ?,
                 minimum_preview_generation_version = ?, updated_at = ? WHERE id = 1",
         )
         .bind(req.default_raft_height_mm)
-        .bind(&req.theme)
         .bind(req.generate_previews_enabled)
         .bind(req.minimum_preview_generation_version)
         .bind(now())
@@ -251,17 +237,15 @@ impl AppConfigService {
         }
         let full = resolve_models_directory_path(&req.models_directory_path, true, &|p: &Path| p.is_dir())?;
         validate_raft_height(req.default_raft_height_mm)?;
-        validate_theme(&req.theme)?;
 
         self.ensure_config().await?;
         let full_text = full.display().to_string();
         sqlx::query(
             "UPDATE app_config SET setup_completed = 1, models_directory_path = ?, default_raft_height_mm = ?,
-                theme = ?, generate_previews_enabled = ?, updated_at = ? WHERE id = 1",
+                generate_previews_enabled = ?, updated_at = ? WHERE id = 1",
         )
         .bind(&full_text)
         .bind(req.default_raft_height_mm)
-        .bind(&req.theme)
         .bind(req.generate_previews_enabled)
         .bind(now())
         .execute(&self.db)
@@ -285,7 +269,6 @@ impl AppConfigService {
         Ok(InitialSetupDefaultsDto {
             models_directory_path: self.configured_models_path.clone().or(row.models_directory_path),
             default_raft_height_mm: row.default_raft_height_mm,
-            theme: row.theme,
             generate_previews_enabled: row.generate_previews_enabled,
         })
     }
@@ -339,7 +322,6 @@ mod tests {
         let sut = service(&t, None);
         let request = |version: i32| UpdateAppConfigRequest {
             default_raft_height_mm: 3.0,
-            theme: "nord".into(),
             generate_previews_enabled: true,
             minimum_preview_generation_version: version,
         };
@@ -370,7 +352,6 @@ mod tests {
             .complete_initial_setup(&InitialSetupRequest {
                 models_directory_path: dir.path().display().to_string(),
                 default_raft_height_mm: 2.0,
-                theme: "nord".into(),
                 generate_previews_enabled: true,
             })
             .await

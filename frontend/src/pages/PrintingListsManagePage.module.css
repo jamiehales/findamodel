@@ -1,197 +1,83 @@
-.createForm {
+.create {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-2);
+}
+
+.create > input {
+  flex: 1 1 auto;
+}
+
+.lists {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--mm-edge);
+  border-radius: var(--mm-r-card);
+  background: var(--card);
+  box-shadow: 2px 2px 0 var(--mm-shadow-soft);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-2) 12px;
+  min-height: 60px;
+  padding: 10px 12px 10px 16px;
+  border-top: 1px solid var(--border);
 }
 
-.createTextField {
-  flex: 1;
+.row:first-child {
+  border-top: 0;
 }
 
-.createTextField :global(.MuiOutlinedInput-root) {
-  border-radius: var(--radius-pill);
+.row[data-active] {
+  background: var(--secondary);
 }
 
-.createTextField :global(.MuiOutlinedInput-root fieldset) {
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.createTextField :global(.MuiOutlinedInput-root:hover fieldset) {
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.createTextField :global(.MuiOutlinedInput-root.Mui-focused fieldset) {
-  border-color: var(--color-primary);
-}
-
-.createTextField :global(.MuiOutlinedInput-root input::placeholder) {
-  color: var(--color-text-secondary);
-}
-
-.listStack {
+.info {
+  flex: 1 1 200px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
 }
 
-.listItem {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  border-radius: 12px;
-  flex-wrap: wrap;
-  transition:
-    transform 120ms ease,
-    border-color 120ms ease,
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+.name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.listItemClickable {
-  cursor: pointer;
+.name:hover {
+  color: var(--link);
 }
 
-.listItemClickable:hover {
-  transform: translateY(-1px);
-  border-color: rgba(129, 140, 248, 0.55);
-  background: var(--color-surface-hover);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+.name:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
-.listItemDefault {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.listItemActive {
-  background: var(--color-surface-hover);
-  border: 1px solid rgba(99, 102, 241, 0.4);
-}
-
-.listItemName {
-  flex: 1;
-  min-width: 0;
-}
-
-.editForm {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.editTextField {
-  flex: 1;
-}
-
-.editTextField :global(.MuiOutlinedInput-root) {
-  border-radius: 8px;
-}
-
-.editTextField :global(.MuiOutlinedInput-root fieldset) {
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.editTextField :global(.MuiOutlinedInput-root.Mui-focused fieldset) {
-  border-color: var(--color-primary);
-}
-
-.editTextField :global(.MuiOutlinedInput-root input) {
-  padding-top: 0.35rem;
-  padding-bottom: 0.35rem;
-}
-
-.nameMeta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.nameText {
-  font-weight: 600 !important;
-  font-size: 0.95rem !important;
-}
-
-.nameTextActive {
-  color: var(--color-primary-light) !important;
-}
-
-.nameTextDefault {
-  color: var(--color-text-primary) !important;
-}
-
-.nameTextClickable {
-  cursor: pointer;
-}
-
-.nameTextClickable:hover {
-  text-decoration: underline;
-}
-
-.activeBadge {
-  font-size: 0.75rem;
-  color: var(--color-primary-light);
-  background: rgba(99, 102, 241, 0.15);
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--radius-pill);
-}
-
-.defaultBadge {
-  font-size: 0.75rem;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--radius-pill);
-}
-
-.ownerText {
-  font-size: 0.75rem !important;
-  color: var(--color-text-secondary) !important;
-}
-
-.countText {
-  font-size: 0.75rem !important;
-  color: var(--color-text-secondary) !important;
+.meta {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--muted-foreground);
 }
 
 .actions {
   display: flex;
-  gap: 0.5rem;
-  flex-shrink: 0;
   align-items: center;
+  gap: 4px;
 }
 
-.pillCreate {
-  background: rgba(99, 102, 241, 0.85) !important;
-  color: #fff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+.delete {
+  color: var(--destructive-text);
 }
 
-.pillCreate:hover {
-  background: rgba(79, 82, 211, 0.9) !important;
+.edit {
+  flex: 1 1 100%;
+  display: flex;
+  gap: var(--space-2);
 }
 
-.pillCreate.Mui-disabled {
-  background: rgba(99, 102, 241, 0.3) !important;
-  color: rgba(255, 255, 255, 0.4) !important;
-}
-
-.pillSave {
-  color: var(--color-primary-light) !important;
-  border: 1px solid rgba(99, 102, 241, 0.3) !important;
-}
-
-.pillCancel {
-  color: var(--color-text-secondary) !important;
-}
-
-.pillView {
-  color: #94a3b8 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
-
-.pillView:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: var(--color-text-primary) !important;
+.edit > input {
+  flex: 1 1 auto;
 }

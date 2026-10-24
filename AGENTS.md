@@ -16,10 +16,13 @@ General:
 * Backend code must pass `cargo fmt --all --check` and `cargo clippy -p findamodel --all-targets -- -D warnings`
 
 Frontend:
-* Prefer usage of MUI layout (Stack, Grid) instead of Box and divs
+* UI controls come from the mostlymaking ui-kit (`@jamiehales/ui-kit/mostlymaking`), a git submodule at `frontend/vendor/ui-kit` built on Radix. Use its controls before writing your own, and read its `DESIGN.md` and `CHANGELOG.md` before changing or updating it
+* The design lives in the mostlymaking-design canvas artifact (https://claude.ai/artifact/QivSsJCFdYhjp1We4ekmzR): the "app-findamodel" page has the app's screens and the "next-kit" page the shared controls. A new shared control goes into ui-kit and onto that page
+* Follow the design system's rules: dark only, one primary (oxblood) action per view, sentence case, one- or two-word buttons, one-sentence errors, no helper text under labels, no emoji, Lucide icons
+* Style with CSS modules next to the component, using the design tokens (`var(--card)`, `var(--border)`, `var(--space-4)`, the kit's `--mm-*` edges and shadows) rather than raw colors. Use the `.mm-type-*` classes for type styles
+* App CSS modules are unlayered and override the kit's `components` layer; if you set `display` on a kit element that Radix hides with `hidden` (e.g. a TabsContent), add a matching `[hidden] { display: none }` rule
+* Global resets go in the `base` layer in `src/styles/global.css` so they never override kit controls
 * Use react-query for storage and mutation of any state backed by the backend
-* Don't use sx tags for style, update the theme if new controls need adding (theme.ts), else create and use local app re-usable controls if custom styling is needed
-* Use minimal css. Only use local styles (.module.css) where completely appropriate and is truly a one off local change. Prefer using variants and modify the MUI theme if this is a reusable style, or preferably choose an appropriate existing style
 * Ensure frontend code matches Prettier formatting (`frontend/.prettierrc.json`). After frontend edits, run formatting on changed files (or `yarn --cwd frontend format`) before finalizing.
 
 Backend:

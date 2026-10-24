@@ -1,10 +1,7 @@
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { Pencil } from 'lucide-react';
+import { Button, IconButton, Input, Spinner, Tag, Tooltip } from '@jamiehales/ui-kit/mostlymaking';
 import {
   usePrintingLists,
   useCreatePrintingList,
@@ -14,11 +11,11 @@ import {
 } from '../lib/queries';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
-import PageLayout from '../components/layouts/PageLayout';
+import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
+import statusStyles from '../components/StatusView.module.css';
 import styles from './PrintingListsManagePage.module.css';
 
 function PrintingListsManagePage() {
-  const navigate = useNavigate();
   const { data: lists, isPending } = usePrintingLists();
   const createList = useCreatePrintingList();
   const renameList = useRenamePrintingList();
@@ -59,146 +56,117 @@ function PrintingListsManagePage() {
   }
 
   return (
-    <PageLayout variant="narrow" spacing={4}>
-      <Typography component="h1" variant="page-title">
-        Printing lists
-      </Typography>
+    <PageLayout variant="narrow">
+      <PageHeader title="Printing lists" />
 
-      {/* Create new list */}
-      <Box component="form" onSubmit={handleCreate} className={styles.createForm}>
-        <TextField
-          size="small"
-          placeholder="New list name…"
+      <form onSubmit={handleCreate} className={styles.create}>
+        <Input
+          aria-label="New list name"
+          placeholder="New list name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          className={styles.createTextField}
         />
-        <Button
-          variant="contained"
-          type="submit"
-          disabled={!newName.trim() || createList.isPending}
-          startIcon={createList.isPending ? <CircularProgress size={14} color="inherit" /> : null}
-          className={styles.pillCreate}
-        >
-          Create
+        <Button variant="primary" type="submit" disabled={!newName.trim() || createList.isPending}>
+          {createList.isPending ? <Spinner label="Creating" /> : null}
+          New list
         </Button>
-      </Box>
+      </form>
 
-      {/* List of printing lists */}
       {isPending ? (
         <LoadingView />
       ) : !lists || lists.length === 0 ? (
-        <Typography color="text.secondary">No printing lists yet. Create one above.</Typography>
+        <p className={statusStyles.empty}>No printing lists yet.</p>
       ) : (
-        <Box className={styles.listStack}>
+        <ul className={styles.lists}>
           {lists.map((list) => (
-            <Box
-              key={list.id}
-              className={`${styles.listItem} ${list.isActive ? styles.listItemActive : styles.listItemDefault} ${!list.isActive && editingId !== list.id ? styles.listItemClickable : ''}`}
-              onClick={() => {
-                if (editingId === list.id) return;
-                if (list.isActive) return;
-                if (activateList.isPending) return;
-                activateList.mutate(list.id);
-              }}
-            >
-              {/* Name / rename */}
-              <Box className={styles.listItemName}>
-                {editingId === list.id ? (
-                  <Box
-                    component="form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleRename(list.id);
+            <li key={list.id} className={styles.row} data-active={list.isActive ? '' : undefined}>
+              {editingId === list.id ? (
+                <form
+                  className={styles.edit}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleRename(list.id);
+                  }}
+                >
+                  <Input
+                    autoFocus
+                    aria-label="List name"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setEditingId(null);
                     }}
-                    onClick={(e) => e.stopPropagation()}
-                    className={styles.editForm}
-                  >
-                    <TextField
-                      size="small"
-                      autoFocus
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') setEditingId(null);
-                      }}
-                      className={styles.editTextField}
-                    />
-                    <Button
-                      variant="contained"
-                      type="submit"
-                      size="small"
-                      disabled={renameList.isPending}
-                      className={styles.pillSave}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => setEditingId(null)}
-                      className={styles.pillCancel}
-                    >
-                      Cancel
-                    </Button>
-                  </Box>
-                ) : (
-                  <Box className={styles.nameMeta}>
-                    <Typography
-                      className={`${styles.nameText} ${list.isActive ? styles.nameTextActive : styles.nameTextDefault}${!list.isDefault ? ` ${styles.nameTextClickable}` : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!list.isDefault) startEdit(list.id, list.name);
-                      }}
-                    >
-                      {list.name}
-                    </Typography>
-                    {list.isActive && <span className={styles.activeBadge}>active</span>}
-                    {list.isDefault && <span className={styles.defaultBadge}>default</span>}
-                    {list.ownerUsername && (
-                      <Typography component="span" className={styles.ownerText}>
-                        {list.ownerUsername}
-                      </Typography>
-                    )}
-                    <Typography component="span" className={styles.countText}>
-                      {list.itemCount} {list.itemCount === 1 ? 'item' : 'items'}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-
-              {/* Actions */}
-              {editingId !== list.id && (
-                <Box className={styles.actions} onClick={(e) => e.stopPropagation()}>
-                  {!list.isDefault && (
-                    <Button
-                      variant="warning"
-                      size="small"
-                      disabled={deleteList.isPending}
-                      onClick={() => handleDelete(list.id, list.name)}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => navigate(`/printing-list/${list.id}`)}
-                    className={styles.pillView}
-                  >
-                    View
+                  />
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                    Cancel
                   </Button>
-                </Box>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="submit"
+                    disabled={renameList.isPending}
+                  >
+                    Save
+                  </Button>
+                </form>
+              ) : (
+                <>
+                  <div className={styles.info}>
+                    <Link to={`/printing-list/${list.id}`} className={styles.name}>
+                      {list.name}
+                    </Link>
+                    <span className={styles.meta}>
+                      {list.itemCount} {list.itemCount === 1 ? 'item' : 'items'}
+                      {list.ownerUsername ? ` · ${list.ownerUsername}` : ''}
+                    </span>
+                  </div>
+                  {list.isActive && <Tag variant="success">Active</Tag>}
+                  {list.isDefault && <Tag variant="neutral">Default</Tag>}
+                  <div className={styles.actions}>
+                    {!list.isActive && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={activateList.isPending}
+                        onClick={() => activateList.mutate(list.id)}
+                      >
+                        Set active
+                      </Button>
+                    )}
+                    {!list.isDefault && (
+                      <Tooltip content="Rename">
+                        <IconButton
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Rename ${list.name}`}
+                          onClick={() => startEdit(list.id, list.name)}
+                        >
+                          <Pencil size={14} strokeWidth={1.5} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {!list.isDefault && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={styles.delete}
+                        disabled={deleteList.isPending}
+                        onClick={() => handleDelete(list.id, list.name)}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                </>
               )}
-            </Box>
+            </li>
           ))}
-        </Box>
+        </ul>
       )}
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete printing list?"
-        message={`Are you sure you want to delete "${deleteTarget?.name ?? ''}"?`}
+        title={`Delete ${deleteTarget?.name ?? 'this list'}?`}
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}

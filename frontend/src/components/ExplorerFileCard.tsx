@@ -1,19 +1,12 @@
 import { useState } from 'react';
-import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
-import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
-import Dialog from '@mui/material/Dialog';
-import DialogContent from '@mui/material/DialogContent';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
+import { Download, File, Image } from 'lucide-react';
+import { IconButton, Spinner, Tag } from '@jamiehales/ui-kit/mostlymaking';
 import type { ExplorerFile } from '../lib/api';
 import { explorerFileUrl } from '../lib/api';
 import { formatBytes } from '../lib/utils';
 import { useExplorerFileText } from '../lib/queries';
-import AppCard from './AppCard';
-import styles from './ExplorerFileCard.module.css';
-import { appColors } from '../theme';
+import AppDialog from './AppDialog';
+import styles from './Explorer.module.css';
 
 const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 const TEXT_TYPES = new Set(['txt', 'md']);
@@ -23,18 +16,16 @@ interface Props {
   file: ExplorerFile;
 }
 
-export default function ExplorerFileCard({ file }: Props) {
+/** One row in the Files list. Images and text files open a preview. */
+export default function ExplorerFileRow({ file }: Props) {
   const [open, setOpen] = useState(false);
 
   const fileType = file.fileType.toLowerCase();
   const isImage = IMAGE_TYPES.has(fileType);
   const isText = TEXT_TYPES.has(fileType);
-
-  const badgeColor =
-    appColors.fileType[fileType] ??
-    ({ bg: 'rgba(148,163,184,0.2)', color: '#cbd5e1' } as { bg: string; color: string });
-
+  const canPreview = isImage || isText;
   const tooLargeForTextPreview = isText && file.fileSize > MAX_TEXT_PREVIEW_BYTES;
+  const url = explorerFileUrl(file.relativePath);
 
   const {
     data: textContent,
@@ -42,88 +33,48 @@ export default function ExplorerFileCard({ file }: Props) {
     error: textQueryError,
   } = useExplorerFileText(file.relativePath, open && isText && !tooLargeForTextPreview);
 
-  const textError =
-    textQueryError instanceof Error
-      ? textQueryError.message
-      : textQueryError
-        ? 'Failed to load text preview'
-        : null;
-
-  function handleOpen() {
-    setOpen(true);
-  }
+  const Icon = isImage ? Image : File;
 
   return (
     <>
-      <AppCard className={styles.card} onClick={handleOpen}>
-        {isImage ? (
-          <Box
-            component="img"
-            src={explorerFileUrl(file.relativePath)}
-            alt=""
-            className={styles.previewImage}
-          />
+      <div className={styles.fileRow}>
+        <Icon size={16} strokeWidth={1.5} aria-hidden="true" className={styles.fileIcon} />
+        {canPreview ? (
+          <button type="button" className={styles.fileName} onClick={() => setOpen(true)}>
+            {file.fileName}
+          </button>
         ) : (
-          <Box className={styles.previewText}>
-            <ArticleOutlinedIcon className={styles.previewTextIcon} />
-            <Typography className={styles.previewTextType}>
-              {file.fileType.toUpperCase()}
-            </Typography>
-          </Box>
+          <span className={styles.fileName}>{file.fileName}</span>
         )}
+        <Tag variant="neutral">{file.fileType.toUpperCase()}</Tag>
+        <span className={styles.fileSize}>{formatBytes(file.fileSize)}</span>
+        <IconButton asChild variant="ghost" size="sm" aria-label={`Download ${file.fileName}`}>
+          <a href={url} download={file.fileName}>
+            <Download size={16} strokeWidth={1.5} />
+          </a>
+        </IconButton>
+      </div>
 
-        <Box className={styles.overlay}>
-          <span
-            className={styles.badge}
-            style={{ background: badgeColor.bg, color: badgeColor.color }}
-          >
-            {file.fileType.toUpperCase()}
-          </span>
-
-          <Typography className={styles.name}>{file.fileName}</Typography>
-          <Typography className={styles.size}>{formatBytes(file.fileSize)}</Typography>
-        </Box>
-      </AppCard>
-
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth={isImage ? 'lg' : 'md'}>
-        <DialogContent>
-          <Box className={styles.dialogTitleRow}>
-            <h3 className={styles.dialogTitle}>{file.fileName}</h3>
-            <IconButton aria-label="Close preview" onClick={() => setOpen(false)}>
-              <CloseOutlinedIcon />
-            </IconButton>
-          </Box>
-
-          <Box className={styles.dialogBody}>
-            {isImage && (
-              <Box
-                component="img"
-                src={explorerFileUrl(file.relativePath)}
-                alt={file.fileName}
-                className={styles.imageDialog}
-              />
-            )}
-
-            {isText && tooLargeForTextPreview && (
-              <Typography className={styles.textInfo}>
-                {`File too large to preview (${formatBytes(file.fileSize)}).`}
-              </Typography>
-            )}
-
-            {isText && !tooLargeForTextPreview && textLoading && <CircularProgress size={20} />}
-
-            {isText && !tooLargeForTextPreview && textError && (
-              <Typography className={styles.textInfo}>{textError}</Typography>
-            )}
-
-            {isText &&
-              !tooLargeForTextPreview &&
-              !textLoading &&
-              !textError &&
-              textContent !== undefined && <pre className={styles.textContent}>{textContent}</pre>}
-          </Box>
-        </DialogContent>
-      </Dialog>
+      {canPreview && (
+        <AppDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          title={file.fileName}
+          size={isImage ? 'lg' : 'md'}
+        >
+          {isImage && <img src={url} alt={file.fileName} className={styles.previewImage} />}
+          {isText && tooLargeForTextPreview && (
+            <p className={styles.meta}>Too large to preview ({formatBytes(file.fileSize)}).</p>
+          )}
+          {isText && !tooLargeForTextPreview && textLoading && <Spinner />}
+          {isText && !tooLargeForTextPreview && textQueryError && (
+            <p className={styles.error}>Couldn't load the preview.</p>
+          )}
+          {isText && !tooLargeForTextPreview && !textLoading && textContent !== undefined && (
+            <pre className={styles.previewText}>{textContent}</pre>
+          )}
+        </AppDialog>
+      )}
     </>
   );
 }

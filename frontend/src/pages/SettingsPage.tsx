@@ -1,21 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Button,
-  FormControlLabel,
-  MenuItem,
-  List,
-  ListItemButton,
-  ListItemText,
+  Checkbox,
+  HelpTooltip,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Switch,
-  Chip,
-  Divider,
-  Stack,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Tag,
+} from '@jamiehales/ui-kit/mostlymaking';
 import {
   useAppConfig,
   useCreatePrinter,
@@ -33,7 +35,7 @@ import {
 import type { InstanceStats, MetadataDictionaryField } from '../lib/api';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
-import PageLayout from '../components/layouts/PageLayout';
+import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
 import { useApplicationLogs } from '../lib/queries';
 import styles from './SettingsPage.module.css';
 
@@ -45,6 +47,8 @@ const FIELD_LABELS: Record<FieldKey, string> = {
   material: 'Material',
   tags: 'Tags',
 };
+
+const ALL = '__all__';
 
 function toModelsHref(field: FieldKey, value: string): string {
   const params = new URLSearchParams();
@@ -68,98 +72,103 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
     () => data.observed.filter((v) => !configuredSet.has(v.toLowerCase())),
     [data.observed, configuredSet],
   );
+  const label = FIELD_LABELS[field];
 
   return (
-    <Stack className={styles.section}>
-      <Typography variant="h6">{FIELD_LABELS[field]}</Typography>
+    <section className={styles.panel} aria-labelledby={`schema-${field}`}>
+      <div className={styles.row}>
+        <h2 id={`schema-${field}`} className={styles.rowTitle}>
+          {label}
+        </h2>
+        <span className={styles.mono}>{data.configured.length} values</span>
+      </div>
 
-      <Stack spacing={1} className={styles.group}>
-        <Stack direction="row" spacing={1} className={styles.addRow}>
-          <TextField
-            size="small"
-            label={`New ${FIELD_LABELS[field]} value`}
+      <div className={styles.stack}>
+        {data.configured.map((item) => {
+          const current = editValues[item.id] ?? item.value;
+          return (
+            <div key={item.id} className={styles.inline}>
+              <Input
+                aria-label={`${label} value`}
+                value={current}
+                onChange={(e) =>
+                  setEditValues((prev) => ({
+                    ...prev,
+                    [item.id]: e.target.value,
+                  }))
+                }
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={updateMutation.isPending || !current.trim() || current === item.value}
+                onClick={() => updateMutation.mutate({ id: item.id, value: current.trim() })}
+              >
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className={styles.delete}
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(item.id)}
+              >
+                Delete
+              </Button>
+            </div>
+          );
+        })}
+        <form
+          className={styles.inline}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newValue.trim()) return;
+            await createMutation.mutateAsync({ field, value: newValue.trim() });
+            setNewValue('');
+          }}
+        >
+          <Input
+            aria-label={`New ${label} value`}
+            placeholder="New value"
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
           />
           <Button
-            variant="contained"
+            size="sm"
+            variant="secondary"
+            type="submit"
             disabled={createMutation.isPending || !newValue.trim()}
-            onClick={async () => {
-              await createMutation.mutateAsync({ field, value: newValue.trim() });
-              setNewValue('');
-            }}
           >
             Add
           </Button>
-        </Stack>
+        </form>
+      </div>
 
-        <Stack spacing={1}>
-          {data.configured.map((item) => {
-            const current = editValues[item.id] ?? item.value;
-            return (
-              <Stack key={item.id} direction="row" spacing={1} className={styles.configRow}>
-                <TextField
-                  size="small"
-                  value={current}
-                  onChange={(e) =>
-                    setEditValues((prev) => ({
-                      ...prev,
-                      [item.id]: e.target.value,
-                    }))
-                  }
-                />
-                <Button
-                  variant="outlined"
-                  disabled={updateMutation.isPending || !current.trim() || current === item.value}
-                  onClick={() => updateMutation.mutate({ id: item.id, value: current.trim() })}
-                >
-                  Save
-                </Button>
-                <Button
-                  color="error"
-                  variant="outlined"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate(item.id)}
-                >
-                  Delete
-                </Button>
-              </Stack>
-            );
-          })}
-          {data.configured.length === 0 && (
-            <Typography color="text.secondary">No configured values.</Typography>
-          )}
-        </Stack>
-      </Stack>
-
-      <Stack spacing={1} className={styles.group}>
-        <Divider />
-        <Stack direction="row" spacing={1} className={styles.chipsWrap}>
+      <div className={styles.observed}>
+        <span className="mm-type-label">In use</span>
+        <div className={styles.tags}>
           {data.observed.map((value) => (
-            <Chip
+            <Tag
               key={value}
-              label={value}
-              component={Link}
-              clickable
-              to={toModelsHref(field, value)}
-              color={observedOnly.includes(value) ? 'warning' : 'default'}
-              variant={observedOnly.includes(value) ? 'filled' : 'outlined'}
-            />
+              asChild
+              variant={observedOnly.includes(value) ? 'default' : 'neutral'}
+              title={observedOnly.includes(value) ? 'Not a configured value' : undefined}
+            >
+              <Link to={toModelsHref(field, value)}>{value}</Link>
+            </Tag>
           ))}
-          {data.observed.length === 0 && (
-            <Typography color="text.secondary">No observed values yet.</Typography>
-          )}
-        </Stack>
-      </Stack>
-    </Stack>
+          {data.observed.length === 0 && <span className={styles.muted}>Not used yet.</span>}
+        </div>
+      </div>
+    </section>
   );
 }
 
 const SETTINGS_SECTIONS = [
-  { key: 'settings', label: 'Settings', path: '/settings' },
+  { key: 'settings', label: 'General', path: '/settings' },
   { key: 'printers', label: 'Printers', path: '/settings/printers' },
-  { key: 'logs', label: 'Logs', path: '/settings/logs' },
   { key: 'schema', label: 'Schema', path: '/settings/schema' },
+  { key: 'logs', label: 'Logs', path: '/settings/logs' },
   { key: 'stats', label: 'Stats', path: '/settings/stats' },
 ] as const;
 
@@ -183,23 +192,17 @@ function StatsGroup({
   rows: Array<{ label: string; value: string | number }>;
 }) {
   return (
-    <Stack spacing={1} className={styles.statsCard}>
-      <Typography variant="h6">{title}</Typography>
-      <Stack spacing={1}>
+    <section className={styles.panel} aria-label={title}>
+      <h2 className={`mm-type-label ${styles.statsTitle}`}>{title}</h2>
+      <dl className={styles.stats}>
         {rows.map((row) => (
-          <Stack
-            key={row.label}
-            direction="row"
-            spacing={2}
-            justifyContent="space-between"
-            className={styles.statRow}
-          >
-            <Typography color="text.secondary">{row.label}</Typography>
-            <Typography className={styles.statValue}>{row.value}</Typography>
-          </Stack>
+          <Fragment key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{typeof row.value === 'number' ? row.value.toLocaleString() : row.value}</dd>
+          </Fragment>
         ))}
-      </Stack>
-    </Stack>
+      </dl>
+    </section>
   );
 }
 
@@ -212,49 +215,46 @@ function InstanceStatsSection({
   isPending: boolean;
   isError: boolean;
 }) {
+  if (isPending) return <LoadingView />;
+  if (isError || !stats) return <ErrorView message="Couldn't load stats." />;
   return (
-    <Stack spacing={2} className={styles.globalSettingsSection}>
-      {isPending && <Typography color="text.secondary">Loading instance stats...</Typography>}
-      {isError && <Typography color="error">Failed to load instance stats.</Typography>}
-      {!isPending && !isError && stats && (
-        <Stack className={styles.statsGrid}>
-          <StatsGroup
-            title="Runtime"
-            rows={[
-              { label: 'App version', value: stats.applicationVersion },
-              { label: 'Environment', value: stats.environment },
-              { label: 'Rust toolchain', value: stats.frameworkVersion },
-              { label: 'Operating system', value: stats.operatingSystem },
-            ]}
-          />
-          <StatsGroup
-            title="Rendering"
-            rows={[
-              { label: 'Preview GPU', value: formatEnabled(stats.previewGpuEnabled) },
-              { label: 'GPU availability', value: formatAvailability(stats.previewGpuAvailable) },
-              { label: 'GPU renderer', value: stats.previewRenderer },
-              { label: 'Preview version', value: stats.previewGenerationVersion },
-              { label: 'Hull version', value: stats.hullGenerationVersion },
-            ]}
-          />
-          <StatsGroup
-            title="Database"
-            rows={[
-              { label: 'Models in database', value: stats.modelCount },
-              { label: 'Models with previews', value: stats.modelsWithPreviews },
-              { label: 'Directory configs', value: stats.directoryConfigCount },
-              { label: 'Printing lists', value: stats.printingListCount },
-              { label: 'Metadata dictionary values', value: stats.metadataDictionaryValueCount },
-            ]}
-          />
-        </Stack>
-      )}
-    </Stack>
+    <div className={styles.statsGrid}>
+      <StatsGroup
+        title="Runtime"
+        rows={[
+          { label: 'App version', value: stats.applicationVersion },
+          { label: 'Environment', value: stats.environment },
+          { label: 'Rust toolchain', value: stats.frameworkVersion },
+          { label: 'Operating system', value: stats.operatingSystem },
+        ]}
+      />
+      <StatsGroup
+        title="Rendering"
+        rows={[
+          { label: 'Preview GPU', value: formatEnabled(stats.previewGpuEnabled) },
+          { label: 'GPU availability', value: formatAvailability(stats.previewGpuAvailable) },
+          { label: 'GPU renderer', value: stats.previewRenderer },
+          { label: 'Preview version', value: stats.previewGenerationVersion },
+          { label: 'Hull version', value: stats.hullGenerationVersion },
+        ]}
+      />
+      <StatsGroup
+        title="Database"
+        rows={[
+          { label: 'Models', value: stats.modelCount },
+          { label: 'With previews', value: stats.modelsWithPreviews },
+          { label: 'Directory configs', value: stats.directoryConfigCount },
+          { label: 'Printing lists', value: stats.printingListCount },
+          { label: 'Dictionary values', value: stats.metadataDictionaryValueCount },
+        ]}
+      />
+    </div>
   );
 }
 
 export default function SettingsPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { data: appConfig, isPending: appConfigPending, isError: appConfigError } = useAppConfig();
   const {
     data: instanceStats,
@@ -263,7 +263,6 @@ export default function SettingsPage() {
   } = useInstanceStats();
   const updateAppConfigMutation = useUpdateAppConfig();
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
-  const [theme, setTheme] = useState<string>('nord');
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
   const [newPrinterName, setNewPrinterName] = useState('');
@@ -292,7 +291,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (appConfig) {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
-      setTheme(appConfig.theme);
       setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
       setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
     }
@@ -350,7 +348,6 @@ export default function SettingsPage() {
   const saveConfig = () =>
     updateAppConfigMutation.mutate({
       defaultRaftHeightMm: raftHeightValue,
-      theme,
       generatePreviewsEnabled,
       minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
     });
@@ -358,384 +355,380 @@ export default function SettingsPage() {
   if (isPending || appConfigPending) return <LoadingView />;
 
   if (isError || appConfigError || !data || !appConfig) {
-    return <ErrorView message="Failed to load settings." />;
+    return <ErrorView message="Couldn't load settings." />;
   }
 
-  if (currentSection === 'logs' && logsPending) return <LoadingView />;
-
-  if (currentSection === 'logs' && (logsError || !logsData)) {
-    return <ErrorView message="Failed to load application logs." />;
-  }
+  const previewVersionInvalid =
+    !Number.isInteger(minimumPreviewGenerationVersionValue) ||
+    minimumPreviewGenerationVersionValue < 0 ||
+    (previewGenerationVersionLimit !== undefined &&
+      minimumPreviewGenerationVersionValue > previewGenerationVersionLimit);
 
   return (
-    <PageLayout variant="full" spacing={2}>
-      <Typography component="h1" variant="page-title">
-        Settings
-      </Typography>
+    <PageLayout>
+      <PageHeader title="Settings" />
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} className={styles.settingsLayout}>
-        <Stack className={styles.sidebar}>
-          <List disablePadding>
-            {SETTINGS_SECTIONS.map((section) => (
-              <ListItemButton
-                key={section.key}
-                component={Link}
-                to={section.path}
-                selected={currentSection === section.key}
-              >
-                <ListItemText primary={section.label} />
-              </ListItemButton>
-            ))}
-          </List>
-        </Stack>
+      <Tabs
+        variant="vertical"
+        value={currentSection}
+        onValueChange={(next) => {
+          const section = SETTINGS_SECTIONS.find((s) => s.key === next);
+          if (section) navigate(section.path);
+        }}
+        className={styles.tabs}
+      >
+        <TabsList aria-label="Settings sections">
+          {SETTINGS_SECTIONS.map((section) => (
+            <TabsTrigger key={section.key} value={section.key}>
+              {section.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-        <Stack spacing={2} className={styles.contentArea}>
-          {currentSection === 'settings' && (
-            <Stack className={styles.globalSettingsSection}>
-              <Stack spacing={2}>
-                <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Raft height (mm)"
-                    value={defaultRaftHeightMm}
-                    onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
-                  />
-                </Stack>
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <Typography>Theme</Typography>
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={theme}
-                    onChange={(_, v) => {
-                      if (v) setTheme(v);
-                    }}
-                  >
-                    <ToggleButton value="default">Default</ToggleButton>
-                    <ToggleButton value="nord">Nord</ToggleButton>
-                  </ToggleButtonGroup>
-                </Stack>
-                <Stack direction="row" spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={generatePreviewsEnabled}
-                        onChange={(e) => setGeneratePreviewsEnabled(e.target.checked)}
+        <TabsContent value="settings" className={styles.content}>
+          <section className={styles.panel} aria-label="General">
+            <div className={styles.row}>
+              <div className={styles.rowLabel}>
+                <span className={styles.rowTitle}>Model root</span>
+                <span className={styles.mono}>{appConfig.modelsDirectoryPath ?? 'Not set'}</span>
+              </div>
+            </div>
+            <div className={styles.row}>
+              <Label htmlFor="raft-height" className={styles.rowTitle}>
+                Default raft height
+              </Label>
+              <div className={styles.unit}>
+                <Input
+                  id="raft-height"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={defaultRaftHeightMm}
+                  aria-invalid={
+                    !Number.isFinite(raftHeightValue) || raftHeightValue < 0 || undefined
+                  }
+                  onChange={(e) => setDefaultRaftHeightMm(e.target.value)}
+                />
+                <span>mm</span>
+              </div>
+            </div>
+            <div className={styles.row}>
+              <Label htmlFor="generate-previews" className={styles.rowTitle}>
+                Generate previews
+              </Label>
+              <Switch
+                id="generate-previews"
+                checked={generatePreviewsEnabled}
+                onCheckedChange={(checked) => setGeneratePreviewsEnabled(checked)}
+              />
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowLabelInline}>
+                <Label htmlFor="min-preview-version" className={styles.rowTitle}>
+                  Minimum preview version
+                </Label>
+                <HelpTooltip
+                  aria-label="About minimum preview version"
+                  content="Previews can be slow to generate on large libraries, change this version to force previews created on old versions to be regenerated"
+                />
+              </div>
+              <div className={styles.versionField}>
+                <Input
+                  id="min-preview-version"
+                  type="number"
+                  min={0}
+                  max={previewGenerationVersionLimit}
+                  step={1}
+                  value={minimumPreviewGenerationVersion}
+                  aria-invalid={previewVersionInvalid || undefined}
+                  onChange={(e) => setMinimumPreviewGenerationVersion(e.target.value)}
+                />
+                {previewVersionInvalid && previewGenerationVersionLimit !== undefined && (
+                  <p role="alert" className={styles.error}>
+                    Use a whole number from 0 to {previewGenerationVersionLimit}.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+          <div className={styles.footer}>
+            <Button
+              variant="primary"
+              disabled={updateAppConfigMutation.isPending || !appConfigValid}
+              onClick={saveConfig}
+            >
+              Save
+            </Button>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="printers" className={styles.content}>
+          <section className={styles.panel} aria-label="Printers">
+            {existingPrinterRows.map((printer) => {
+              const edit = printerEdits[printer.id] ?? {
+                name: printer.name,
+                bedWidthMm: String(printer.bedWidthMm),
+                bedDepthMm: String(printer.bedDepthMm),
+              };
+              const width = Number(edit.bedWidthMm);
+              const depth = Number(edit.bedDepthMm);
+              const canSaveCustom =
+                !printer.isBuiltIn &&
+                edit.name.trim().length > 0 &&
+                Number.isFinite(width) &&
+                width > 0 &&
+                Number.isFinite(depth) &&
+                depth > 0 &&
+                (edit.name.trim() !== printer.name ||
+                  width !== printer.bedWidthMm ||
+                  depth !== printer.bedDepthMm);
+              const setEdit = (patch: Partial<typeof edit>) =>
+                setPrinterEdits((current) => ({ ...current, [printer.id]: { ...edit, ...patch } }));
+
+              return (
+                <div key={printer.id} className={styles.printer}>
+                  {printer.isBuiltIn ? (
+                    <div className={styles.printerName}>
+                      <span className={styles.rowTitle}>{printer.name}</span>
+                      <span className={styles.mono}>
+                        {printer.bedWidthMm} × {printer.bedDepthMm} mm
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={styles.printerFields}>
+                      <Input
+                        aria-label="Name"
+                        value={edit.name}
+                        onChange={(e) => setEdit({ name: e.target.value })}
                       />
-                    }
-                    label="Generate previews"
-                  />
-                </Stack>
-                <Stack direction="row" spacing={1} alignItems="center" className={styles.addRow}>
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Minimum preview version"
-                    value={minimumPreviewGenerationVersion}
-                    onChange={(e) => setMinimumPreviewGenerationVersion(e.target.value)}
-                    error={
-                      !Number.isInteger(minimumPreviewGenerationVersionValue) ||
-                      minimumPreviewGenerationVersionValue < 0 ||
-                      (previewGenerationVersionLimit !== undefined &&
-                        minimumPreviewGenerationVersionValue > previewGenerationVersionLimit)
-                    }
-                    helperText={
-                      previewGenerationVersionLimit === undefined
-                        ? 'Set the minimum cached preview version accepted during indexing.'
-                        : `Must be an integer between 0 and ${previewGenerationVersionLimit}. Existing previews below this version will be regenerated on scan.`
-                    }
-                  />
-                </Stack>
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    variant="contained"
-                    disabled={updateAppConfigMutation.isPending || !appConfigValid}
-                    onClick={saveConfig}
-                  >
-                    Save
-                  </Button>
-                </Stack>
-              </Stack>
-            </Stack>
-          )}
-
-          {currentSection === 'printers' && (
-            <Stack className={styles.globalSettingsSection}>
-              <Stack spacing={2}>
-                <Typography variant="h6">Printers</Typography>
-
-                <Stack spacing={1}>
-                  {existingPrinterRows.map((printer) => {
-                    const edit = printerEdits[printer.id] ?? {
-                      name: printer.name,
-                      bedWidthMm: String(printer.bedWidthMm),
-                      bedDepthMm: String(printer.bedDepthMm),
-                    };
-                    const width = Number(edit.bedWidthMm);
-                    const depth = Number(edit.bedDepthMm);
-                    const canSaveCustom =
-                      !printer.isBuiltIn &&
-                      edit.name.trim().length > 0 &&
-                      Number.isFinite(width) &&
-                      width > 0 &&
-                      Number.isFinite(depth) &&
-                      depth > 0 &&
-                      (edit.name.trim() !== printer.name ||
-                        width !== printer.bedWidthMm ||
-                        depth !== printer.bedDepthMm);
-
-                    return (
-                      <Stack
-                        key={printer.id}
-                        direction={{ xs: 'column', md: 'row' }}
-                        spacing={1}
-                        alignItems={{ xs: 'stretch', md: 'center' }}
-                      >
-                        <TextField
-                          size="small"
-                          label="Name"
-                          value={edit.name}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                name: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <TextField
-                          size="small"
+                      <div className={styles.unit}>
+                        <Input
+                          aria-label="Width (mm)"
                           type="number"
-                          label="Width (mm)"
                           value={edit.bedWidthMm}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                bedWidthMm: e.target.value,
-                              },
-                            }))
-                          }
+                          onChange={(e) => setEdit({ bedWidthMm: e.target.value })}
                         />
-                        <TextField
-                          size="small"
+                        <span>mm</span>
+                      </div>
+                      <div className={styles.unit}>
+                        <Input
+                          aria-label="Depth (mm)"
                           type="number"
-                          label="Depth (mm)"
                           value={edit.bedDepthMm}
-                          disabled={printer.isBuiltIn}
-                          onChange={(e) =>
-                            setPrinterEdits((current) => ({
-                              ...current,
-                              [printer.id]: {
-                                ...edit,
-                                bedDepthMm: e.target.value,
-                              },
-                            }))
-                          }
+                          onChange={(e) => setEdit({ bedDepthMm: e.target.value })}
                         />
-                        <Stack direction="row" spacing={1}>
-                          {!printer.isBuiltIn && (
-                            <Button
-                              variant="contained"
-                              disabled={!canSaveCustom || updatePrinterMutation.isPending}
-                              onClick={() =>
-                                updatePrinterMutation.mutate({
-                                  id: printer.id,
-                                  name: edit.name.trim(),
-                                  bedWidthMm: Number(edit.bedWidthMm),
-                                  bedDepthMm: Number(edit.bedDepthMm),
-                                })
-                              }
-                            >
-                              Save
-                            </Button>
-                          )}
-                          <Button
-                            variant={printer.isDefault ? 'contained' : 'outlined'}
-                            disabled={printer.isDefault || setDefaultPrinterMutation.isPending}
-                            onClick={() => setDefaultPrinterMutation.mutate(printer.id)}
-                          >
-                            {printer.isDefault ? 'Default' : 'Set default'}
-                          </Button>
-                          {!printer.isBuiltIn && (
-                            <Button
-                              variant="warning"
-                              disabled={deletePrinterMutation.isPending || printer.isDefault}
-                              onClick={() => deletePrinterMutation.mutate(printer.id)}
-                            >
-                              Delete
-                            </Button>
-                          )}
-                          {printer.isBuiltIn && <Chip size="small" label="Built in" />}
-                        </Stack>
-                      </Stack>
-                    );
-                  })}
-                </Stack>
+                        <span>mm</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className={styles.printerActions}>
+                    {printer.isDefault && <Tag>Default</Tag>}
+                    {printer.isBuiltIn && <Tag variant="neutral">Built in</Tag>}
+                    {!printer.isBuiltIn && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!canSaveCustom || updatePrinterMutation.isPending}
+                        onClick={() =>
+                          updatePrinterMutation.mutate({
+                            id: printer.id,
+                            name: edit.name.trim(),
+                            bedWidthMm: Number(edit.bedWidthMm),
+                            bedDepthMm: Number(edit.bedDepthMm),
+                          })
+                        }
+                      >
+                        Save
+                      </Button>
+                    )}
+                    {!printer.isDefault && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={setDefaultPrinterMutation.isPending}
+                        onClick={() => setDefaultPrinterMutation.mutate(printer.id)}
+                      >
+                        Make default
+                      </Button>
+                    )}
+                    {!printer.isBuiltIn && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={styles.delete}
+                        disabled={deletePrinterMutation.isPending || printer.isDefault}
+                        onClick={() => deletePrinterMutation.mutate(printer.id)}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
 
-                <Divider />
+          <form
+            className={`${styles.panel} ${styles.addPrinter}`}
+            aria-label="Add printer"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createPrinterMutation.mutate(
+                {
+                  name: newPrinterName.trim(),
+                  bedWidthMm: Number(newPrinterWidthMm),
+                  bedDepthMm: Number(newPrinterDepthMm),
+                },
+                { onSuccess: () => setNewPrinterName('') },
+              );
+            }}
+          >
+            <div className={styles.field}>
+              <Label htmlFor="new-printer-name">Name</Label>
+              <Input
+                id="new-printer-name"
+                value={newPrinterName}
+                onChange={(e) => setNewPrinterName(e.target.value)}
+              />
+            </div>
+            <div className={styles.field}>
+              <Label htmlFor="new-printer-width">Width</Label>
+              <div className={styles.unit}>
+                <Input
+                  id="new-printer-width"
+                  type="number"
+                  value={newPrinterWidthMm}
+                  onChange={(e) => setNewPrinterWidthMm(e.target.value)}
+                />
+                <span>mm</span>
+              </div>
+            </div>
+            <div className={styles.field}>
+              <Label htmlFor="new-printer-depth">Depth</Label>
+              <div className={styles.unit}>
+                <Input
+                  id="new-printer-depth"
+                  type="number"
+                  value={newPrinterDepthMm}
+                  onChange={(e) => setNewPrinterDepthMm(e.target.value)}
+                />
+                <span>mm</span>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={
+                createPrinterMutation.isPending ||
+                !newPrinterName.trim() ||
+                Number(newPrinterWidthMm) <= 0 ||
+                Number(newPrinterDepthMm) <= 0
+              }
+            >
+              Add printer
+            </Button>
+          </form>
+        </TabsContent>
 
-                <Typography variant="h6">New Printer</Typography>
+        <TabsContent value="schema" className={styles.content}>
+          <FieldSection field="category" data={data.category} />
+          <FieldSection field="type" data={data.type} />
+          <FieldSection field="material" data={data.material} />
+          <FieldSection field="tags" data={data.tags} />
+        </TabsContent>
 
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems="center">
-                  <TextField
-                    size="small"
-                    label="Printer name"
-                    value={newPrinterName}
-                    onChange={(e) => setNewPrinterName(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Width (mm)"
-                    value={newPrinterWidthMm}
-                    onChange={(e) => setNewPrinterWidthMm(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Depth (mm)"
-                    value={newPrinterDepthMm}
-                    onChange={(e) => setNewPrinterDepthMm(e.target.value)}
-                  />
-                  <Button
-                    variant="contained"
-                    disabled={
-                      createPrinterMutation.isPending ||
-                      !newPrinterName.trim() ||
-                      Number(newPrinterWidthMm) <= 0 ||
-                      Number(newPrinterDepthMm) <= 0
-                    }
-                    onClick={() => {
-                      createPrinterMutation.mutate(
-                        {
-                          name: newPrinterName.trim(),
-                          bedWidthMm: Number(newPrinterWidthMm),
-                          bedDepthMm: Number(newPrinterDepthMm),
-                        },
-                        {
-                          onSuccess: () => {
-                            setNewPrinterName('');
-                          },
-                        },
-                      );
-                    }}
-                  >
-                    Add printer
-                  </Button>
-                </Stack>
-              </Stack>
-            </Stack>
-          )}
-
-          {currentSection === 'logs' && logsData && (
-            <Stack spacing={2} className={styles.globalSettingsSection}>
-              <Stack direction="row" spacing={2} className={styles.filterRow}>
-                <TextField
-                  select
-                  size="small"
-                  label="Channel"
-                  value={logsChannel}
-                  onChange={(e) => setLogsChannel(e.target.value)}
-                  className={`${styles.filterControl} ${styles.channelFilterControl}`}
+        <TabsContent value="logs" className={styles.content}>
+          {logsPending ? (
+            <LoadingView />
+          ) : logsError || !logsData ? (
+            <ErrorView message="Couldn't load the logs." />
+          ) : (
+            <>
+              <div className={styles.logFilters}>
+                <Select
+                  value={logsChannel || ALL}
+                  onValueChange={(v) => setLogsChannel(v === ALL ? '' : v)}
                 >
-                  <MenuItem value="">All channels</MenuItem>
-                  {logsData.availableChannels.map((item) => (
-                    <MenuItem key={item} value={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
-                <TextField
-                  select
-                  size="small"
-                  label="Minimum severity"
-                  value={logsSeverity}
-                  onChange={(e) => setLogsSeverity(e.target.value)}
-                  className={styles.filterControl}
+                  <SelectTrigger aria-label="Channel" className={styles.filter}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>All channels</SelectItem>
+                    {logsData.availableChannels.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={logsSeverity || ALL}
+                  onValueChange={(v) => setLogsSeverity(v === ALL ? '' : v)}
                 >
-                  <MenuItem value="">All severities</MenuItem>
-                  {logsData.availableSeverities.map((item) => (
-                    <MenuItem key={item} value={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
-                <Button
-                  variant={showExceptionsOnly ? 'contained' : 'outlined'}
-                  onClick={() => setShowExceptionsOnly((prev) => !prev)}
+                  <SelectTrigger aria-label="Minimum severity" className={styles.filter}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>All severities</SelectItem>
+                    {logsData.availableSeverities.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Checkbox
+                  checked={showExceptionsOnly}
+                  onCheckedChange={(checked) => setShowExceptionsOnly(checked === true)}
                 >
-                  {showExceptionsOnly ? 'Showing exceptions only' : 'Filter to exceptions'}
-                </Button>
-
-                <Button variant="outlined" disabled={logsRefetching} onClick={() => refetchLogs()}>
+                  Exceptions only
+                </Checkbox>
+                <div className={styles.spacer} />
+                <span className={styles.mono}>Newest {LOG_LIMIT}</span>
+                <Button variant="secondary" disabled={logsRefetching} onClick={() => refetchLogs()}>
                   Refresh
                 </Button>
-              </Stack>
+              </div>
 
-              <Typography color="text.secondary">
-                Showing newest {LOG_LIMIT} log entries from this running backend instance.
-              </Typography>
-
-              <Stack spacing={1} className={styles.logsList}>
-                {logsEntries.map((entry, index) => (
-                  <Stack key={`${entry.timestamp}-${index}`} className={styles.logCard} spacing={1}>
-                    <Stack direction="row" spacing={1} className={styles.logMetaRow}>
-                      <Typography className={styles.logMetaText}>
+              <section className={styles.panel} aria-label="Log entries">
+                {logsEntries.map((entry, index) => {
+                  const severity = entry.severity.toLowerCase();
+                  return (
+                    <div key={`${entry.timestamp}-${index}`} className={styles.log}>
+                      <span className={styles.mono}>
                         {new Date(entry.timestamp).toLocaleString()}
-                      </Typography>
-                      <Typography className={styles.logMetaText}>{entry.severity}</Typography>
-                      <Typography className={styles.logMetaText}>{entry.channel}</Typography>
-                    </Stack>
-                    <Typography variant="body2">{entry.message}</Typography>
-                    {entry.exception && (
-                      <Typography
-                        variant="caption"
-                        component="pre"
-                        className={styles.exceptionText}
+                      </span>
+                      <span
+                        className={`${styles.mono} ${severity.startsWith('err') || severity === 'critical' ? styles.errorText : severity.startsWith('warn') ? styles.warnText : ''}`}
                       >
-                        {entry.exception}
-                      </Typography>
-                    )}
-                  </Stack>
-                ))}
+                        {entry.severity}
+                      </span>
+                      <span className={styles.mono}>{entry.channel}</span>
+                      <span className={styles.logMessage}>
+                        {entry.message}
+                        {entry.exception && (
+                          <pre className={styles.exception}>{entry.exception}</pre>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
                 {logsEntries.length === 0 && (
-                  <Typography color="text.secondary">
-                    No logs matched the selected filters.
-                  </Typography>
+                  <p className={styles.emptyRow}>No log entries match these filters.</p>
                 )}
-              </Stack>
-            </Stack>
+              </section>
+            </>
           )}
+        </TabsContent>
 
-          {currentSection === 'schema' && (
-            <Stack spacing={2} className={styles.globalSettingsSection}>
-              <Stack direction="column" spacing={2} className={styles.sectionsColumn}>
-                <FieldSection field="category" data={data.category} />
-                <FieldSection field="type" data={data.type} />
-                <FieldSection field="material" data={data.material} />
-                <FieldSection field="tags" data={data.tags} />
-              </Stack>
-            </Stack>
-          )}
-
-          {currentSection === 'stats' && (
-            <InstanceStatsSection
-              stats={instanceStats}
-              isPending={instanceStatsPending}
-              isError={instanceStatsError}
-            />
-          )}
-        </Stack>
-      </Stack>
+        <TabsContent value="stats" className={styles.content}>
+          <InstanceStatsSection
+            stats={instanceStats}
+            isPending={instanceStatsPending}
+            isError={instanceStatsError}
+          />
+        </TabsContent>
+      </Tabs>
     </PageLayout>
   );
 }

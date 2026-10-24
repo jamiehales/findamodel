@@ -1,38 +1,52 @@
 import React from 'react';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { ChevronLeft, Download, RefreshCw } from 'lucide-react';
+import {
+  Button,
+  IconButton,
+  Spinner,
+  Tag,
+  TextLink,
+  Tooltip,
+} from '@jamiehales/ui-kit/mostlymaking';
 import {
   useModel,
   useModelOtherParts,
   useActivePrintingList,
   useUpsertPrintingListItem,
+  useIndexModel,
+  useIsModelIndexing,
 } from '../lib/queries';
-import { useIndexModel, useIsModelIndexing } from '../lib/queries';
 import ModelViewer from '../components/ModelViewer';
 import ErrorView from '../components/ErrorView';
 import HullPreview from '../components/HullPreview';
 import LoadingView from '../components/LoadingView';
 import PathBreadcrumb from '../components/PathBreadcrumb';
 import ModelCard from '../components/ModelCard';
-import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
+import CardGrid from '../components/CardGrid';
 import PageLayout from '../components/layouts/PageLayout';
-import AppDialog from '../components/AppDialog';
 import ModelMetadataEditor from '../components/ModelMetadataEditor';
+import QuantityStepper from '../components/QuantityStepper';
 import styles from './ModelPage.module.css';
 import { formatBytes } from '../lib/utils';
-import { appColors } from '../theme';
+
+function filterHref(key: string, value: string): string {
+  return `/?${new URLSearchParams({ [key]: value }).toString()}`;
+}
+
+function BackLink() {
+  return (
+    <Button asChild variant="ghost" size="sm" className={styles.back}>
+      <Link to="/">
+        <ChevronLeft size={16} strokeWidth={1.5} aria-hidden="true" />
+        Models
+      </Link>
+    </Button>
+  );
+}
 
 function ModelPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-
   const decodedId = decodeURIComponent(id ?? '');
   const [metadataOpen, setMetadataOpen] = React.useState(false);
 
@@ -44,232 +58,210 @@ function ModelPage() {
   const { data: otherParts } = useModelOtherParts(decodedId);
   const { data: activeList } = useActivePrintingList();
   const { mutate: upsertItem } = useUpsertPrintingListItem();
-  const activeListId = activeList?.id ?? '';
   const qty = model ? (activeList?.items.find((i) => i.modelId === model.id)?.quantity ?? 0) : 0;
 
   const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '');
   const indexingStatus = useIsModelIndexing(model?.relativePath ?? '');
-  const isReindexing = indexingStatus === 'running';
-
-  const backButton = (
-    <Button variant="back" onClick={() => navigate('/')}>
-      ← Back
-    </Button>
-  );
 
   if (isPending) {
     return (
-      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
-        {backButton}
-        <LoadingView minHeight="100vh" />
+      <PageLayout>
+        <BackLink />
+        <LoadingView minHeight="60vh" />
       </PageLayout>
     );
   }
 
   if (isError || model === null) {
     return (
-      <PageLayout variant="narrow" sx={{ maxWidth: '600px', p: 0, overflowX: 'hidden' }}>
-        {backButton}
-        <ErrorView message="Model not found." minHeight="100vh" />
+      <PageLayout>
+        <BackLink />
+        <ErrorView message="Model not found." minHeight="60vh" />
       </PageLayout>
     );
   }
 
-  const badge = appColors.fileType[model.fileType] ?? {
-    bg: 'rgba(255,255,255,0.1)',
-    color: '#94a3b8',
+  const setQuantity = (next: number) => {
+    if (!activeList) return;
+    upsertItem({ listId: activeList.id, modelId: model.id, quantity: Math.max(0, next) });
   };
 
-  const metaRows: { label: string; value: React.ReactNode }[] = [
-    model.name && { label: 'Name', value: model.name },
-    model.partName && { label: 'Part Name', value: model.partName },
-    model.creator && { label: 'Creator', value: model.creator },
-    model.collection && { label: 'Collection', value: model.collection },
-    model.subcollection && { label: 'Subcollection', value: model.subcollection },
-    (model.tags?.length ?? 0) > 0 && {
-      label: 'Tags',
+  const dimensions =
+    model.dimensionXMm != null && model.dimensionYMm != null && model.dimensionZMm != null
+      ? `${model.dimensionXMm.toFixed(1)} × ${model.dimensionYMm.toFixed(1)} × ${model.dimensionZMm.toFixed(1)} mm`
+      : null;
+
+  const metaRows: { label: string; value: React.ReactNode; mono?: boolean }[] = [
+    model.partName && { label: 'Part', value: model.partName },
+    model.creator && {
+      label: 'Creator',
       value: (
-        <Box display="flex" flexWrap="wrap" gap={0.5}>
-          {model.tags.map((tag) => (
-            <Chip key={tag} size="small" label={tag} />
-          ))}
-        </Box>
+        <TextLink asChild>
+          <Link to={filterHref('creator', model.creator)}>{model.creator}</Link>
+        </TextLink>
+      ),
+    },
+    model.collection && {
+      label: 'Collection',
+      value: (
+        <TextLink asChild>
+          <Link to={filterHref('collection', model.collection)}>{model.collection}</Link>
+        </TextLink>
+      ),
+    },
+    model.subcollection && {
+      label: 'Subcollection',
+      value: (
+        <TextLink asChild>
+          <Link to={filterHref('subcollection', model.subcollection)}>{model.subcollection}</Link>
+        </TextLink>
       ),
     },
     model.category && { label: 'Category', value: model.category },
     model.type && { label: 'Type', value: model.type },
     model.material && { label: 'Material', value: model.material },
-  ].filter(Boolean) as { label: string; value: React.ReactNode }[];
+    dimensions && { label: 'Size', value: dimensions, mono: true },
+    { label: 'Raft height', value: `${model.raftHeightMm} mm`, mono: true },
+  ].filter(Boolean) as { label: string; value: React.ReactNode; mono?: boolean }[];
+
+  const hasHulls = !!(model.convexHull || model.concaveHull || model.convexSansRaftHull);
 
   return (
-    <>
-      <PageLayout variant="full" sx={{ p: 0 }}>
-        <Box className={styles.content}>
-          {backButton}
-          <Box className={styles.titleGroup}>
-            <Typography component="h1" variant="page-title">
-              {model.name}
-            </Typography>
+    <PageLayout>
+      <BackLink />
 
+      <div className={styles.top}>
+        <section className={styles.stage} aria-label="3D preview">
+          <ModelViewer
+            modelId={model.id}
+            convexHull={model.convexHull}
+            concaveHull={model.concaveHull}
+            convexSansRaftHull={model.convexSansRaftHull}
+            supported={model.supported}
+          />
+        </section>
+
+        <section className={styles.panel} aria-label="Model details">
+          <div className={styles.titleGroup}>
+            <h1 className="mm-type-title-lg">{model.name}</h1>
             <PathBreadcrumb path={model.relativePath} />
+            <span className={styles.fileMeta}>{formatBytes(model.fileSize)}</span>
+          </div>
 
-            <Box className={styles.headerMetaRow}>
-              <Box className={styles.tagRow}>
-                <span
-                  className={styles.fileTypeBadge}
-                  style={{ background: badge.bg, color: badge.color }}
-                >
-                  {model.fileType.toUpperCase()}
-                </span>
-                <Typography component="span" className={styles.fileSizeInline}>
-                  {formatBytes(model.fileSize)}
-                </Typography>
-                {model.supported != null && (
-                  <span
-                    className={styles.supportedBadge}
-                    style={{
-                      background: model.supported
-                        ? 'rgba(16,185,129,0.15)'
-                        : 'rgba(239,68,68,0.15)',
-                      color: model.supported ? '#34d399' : '#f87171',
-                    }}
-                  >
-                    {model.supported ? 'SUPPORTED' : 'UNSUPPORTED'}
-                  </span>
+          <div className={styles.tags}>
+            <Tag variant="neutral">{model.fileType.toUpperCase()}</Tag>
+            {model.supported != null && (
+              <Tag variant={model.supported ? 'success' : 'outline'}>
+                {model.supported ? 'Supported' : 'Unsupported'}
+              </Tag>
+            )}
+            {model.tags.map((tag) => (
+              <Tag key={tag} asChild>
+                <Link to={filterHref('tags', tag)}>{tag}</Link>
+              </Tag>
+            ))}
+          </div>
+
+          <div className={styles.actions}>
+            <QuantityStepper value={qty} onChange={setQuantity} label={model.name} />
+            <Button variant="primary" disabled={!activeList} onClick={() => setQuantity(qty + 1)}>
+              {qty > 0 ? 'Add another' : 'Add to list'}
+            </Button>
+            <div className={styles.spacer} />
+            <Button variant="secondary" onClick={() => setMetadataOpen(true)}>
+              Edit
+            </Button>
+            <Tooltip content={`Download .${model.fileType}`}>
+              <IconButton asChild aria-label={`Download .${model.fileType}`}>
+                <a href={model.fileUrl} download={`${model.name}.${model.fileType}`}>
+                  <Download size={18} strokeWidth={1.5} />
+                </a>
+              </IconButton>
+            </Tooltip>
+            <Tooltip
+              content={
+                indexingStatus === 'running'
+                  ? 'Reindexing'
+                  : indexingStatus === 'queued'
+                    ? 'Reindex queued'
+                    : 'Reindex'
+              }
+            >
+              <IconButton
+                aria-label="Reindex model"
+                onClick={() => indexModel()}
+                disabled={indexingStatus !== null}
+              >
+                {indexingStatus === 'running' ? (
+                  <Spinner label="Reindexing" />
+                ) : (
+                  <RefreshCw size={18} strokeWidth={1.5} />
                 )}
-              </Box>
-
-              <Box className={styles.headerActions}>
-                <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
-                  Edit metadata
-                </Button>
-
-                <IconButton
-                  component="a"
-                  href={model.fileUrl}
-                  download={`${model.name}.${model.fileType}`}
-                  aria-label={`Download .${model.fileType}`}
-                  color="primary"
-                  className={styles.actionIconBtn}
-                >
-                  <DownloadRoundedIcon fontSize="small" />
-                </IconButton>
-
-                <IconButton
-                  onClick={() => indexModel()}
-                  aria-label="Reindex model"
-                  color="primary"
-                  className={styles.actionIconBtn}
-                  disabled={isReindexing}
-                >
-                  {isReindexing ? (
-                    <CircularProgress size={16} className={styles.reindexSpinner} />
-                  ) : (
-                    <RefreshRoundedIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </Box>
-            </Box>
-          </Box>
-
-          <Box className={styles.qtyControl}>
-            <IconButton
-              onClick={() =>
-                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty - 1 })
-              }
-              aria-label="Decrease quantity"
-              className={styles.qtyBtn}
-            >
-              −
-            </IconButton>
-            <Typography className={styles.qtyValue}>{qty}</Typography>
-            <IconButton
-              onClick={() =>
-                upsertItem({ listId: activeListId, modelId: model.id, quantity: qty + 1 })
-              }
-              aria-label="Increase quantity"
-              className={styles.qtyBtn}
-            >
-              +
-            </IconButton>
-          </Box>
+              </IconButton>
+            </Tooltip>
+          </div>
 
           {metaRows.length > 0 && (
-            <Box className={styles.metaGrid}>
-              {metaRows.map(({ label, value }) => (
+            <dl className={styles.kv}>
+              {metaRows.map(({ label, value, mono }) => (
                 <React.Fragment key={label}>
-                  <Typography className={styles.metaLabel}>{label}</Typography>
-                  <Typography component="div" className={styles.metaValue}>
-                    {value}
-                  </Typography>
+                  <dt>{label}</dt>
+                  <dd className={mono ? styles.mono : undefined}>{value}</dd>
                 </React.Fragment>
               ))}
-            </Box>
+            </dl>
           )}
-        </Box>
+        </section>
+      </div>
 
-        <Box className={styles.viewerSection}>
-          <Box className={styles.viewerBox}>
-            <ModelViewer
-              modelId={model.id}
-              convexHull={model.convexHull}
-              concaveHull={model.concaveHull}
-              convexSansRaftHull={model.convexSansRaftHull}
-              supported={model.supported}
-            />
-          </Box>
-        </Box>
+      {hasHulls && (
+        <section className={styles.section} aria-labelledby="hulls-heading">
+          <h2 id="hulls-heading" className="mm-type-label">
+            Hull projections
+          </h2>
+          <HullPreview
+            convexHull={model.convexHull}
+            concaveHull={model.concaveHull}
+            convexSansRaftHull={model.convexSansRaftHull}
+            label="Hull projections"
+          />
+        </section>
+      )}
 
-        {(model.convexHull || model.concaveHull || model.convexSansRaftHull) && (
-          <Box className={styles.hullSection}>
-            <HullPreview
-              convexHull={model.convexHull}
-              concaveHull={model.concaveHull}
-              convexSansRaftHull={model.convexSansRaftHull}
-              label="Hull Projections"
-            />
-          </Box>
-        )}
+      {(otherParts?.length ?? 0) > 0 && (
+        <section className={styles.section} aria-labelledby="parts-heading">
+          <h2 id="parts-heading" className="mm-type-label">
+            Other parts
+          </h2>
+          <CardGrid minCardWidth={170}>
+            {otherParts!.map((part) => (
+              <ModelCard
+                key={part.id}
+                href={`/model/${encodeURIComponent(part.id)}`}
+                model={{
+                  ...model,
+                  id: part.id,
+                  name: part.name,
+                  relativePath: part.relativePath,
+                  fileType: part.fileType,
+                  canExportToPlate: part.fileType === 'stl' || part.fileType === 'obj',
+                  fileSize: part.fileSize,
+                  fileUrl: '',
+                  hasPreview: part.previewUrl != null,
+                  previewUrl: part.previewUrl,
+                }}
+              />
+            ))}
+          </CardGrid>
+        </section>
+      )}
 
-        {(otherParts?.length ?? 0) > 0 && (
-          <Box className={styles.otherPartsSection}>
-            <Box>
-              <Typography variant="h6">Other parts</Typography>
-              <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
-                {otherParts!.map((part) => (
-                  <ModelCard
-                    key={part.id}
-                    href={`/model/${encodeURIComponent(part.id)}`}
-                    model={{
-                      ...model,
-                      id: part.id,
-                      name: part.name,
-                      relativePath: part.relativePath,
-                      fileType: part.fileType,
-                      canExportToPlate: part.fileType === 'stl' || part.fileType === 'obj',
-                      fileSize: part.fileSize,
-                      fileUrl: '',
-                      hasPreview: part.previewUrl != null,
-                      previewUrl: part.previewUrl,
-                    }}
-                  />
-                ))}
-              </CardGrid>
-            </Box>
-          </Box>
-        )}
-      </PageLayout>
-
-      <AppDialog
+      <ModelMetadataEditor
+        model={model}
         open={metadataOpen}
         onClose={() => setMetadataOpen(false)}
-        title="Edit model metadata"
-        maxWidth="sm"
-        fullWidth
-      >
-        <ModelMetadataEditor model={model} onClose={() => setMetadataOpen(false)} />
-      </AppDialog>
-    </>
+      />
+    </PageLayout>
   );
 }
 

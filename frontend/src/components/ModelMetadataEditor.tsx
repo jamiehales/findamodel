@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
+import { RotateCcw } from 'lucide-react';
+import {
+  Button,
+  IconButton,
+  Input,
+  Label,
+  Spinner,
+  Tooltip,
+} from '@jamiehales/ui-kit/mostlymaking';
 import type { Model, ModelMetadata } from '../lib/api';
 import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
 import MetadataBoolField from './metadata/MetadataBoolField';
@@ -17,10 +19,12 @@ import {
   useModelMetadata,
   useUpdateModelMetadata,
 } from '../lib/queries';
-import styles from './ModelMetadataEditor.module.css';
+import { AppSheet } from './AppDialog';
+import styles from './metadata/MetadataForm.module.css';
 
 interface Props {
   model: Model;
+  open: boolean;
   onClose: () => void;
 }
 
@@ -73,25 +77,25 @@ function hasFormChanges(current: FormState, original: FormState): boolean {
   );
 }
 
-export default function ModelMetadataEditor({ model, onClose }: Props) {
+export default function ModelMetadataEditor({ model, open, onClose }: Props) {
   const mutation = useUpdateModelMetadata(model.id);
   const { data: detail } = useModelMetadata(model.id);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const [error, setError] = useState<string | null>(null);
-  const [savedIndicator, setSavedIndicator] = useState(false);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [initialForm, setInitialForm] = useState<FormState>(EMPTY_FORM);
 
   useEffect(() => {
-    if (detail) {
+    if (detail && open) {
       const hydrated: FormState = {
         ...detail.localValues,
       };
       setForm(hydrated);
       setInitialForm(hydrated);
+      setError(null);
     }
-  }, [detail]);
+  }, [detail, open]);
 
   function setFieldBySharedKey(key: SharedModelKey, value: string | boolean | number | null) {
     const modelKey = toModelKey(key);
@@ -103,26 +107,22 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
     setError(null);
 
     try {
-      const parsedTags = form.tags ?? null;
-
       await mutation.mutateAsync({
         name: form.name,
         partName: form.partName,
         creator: form.creator,
         collection: form.collection,
         subcollection: form.subcollection,
-        tags: parsedTags,
+        tags: form.tags ?? null,
         category: form.category,
         type: form.type,
         material: form.material,
         supported: form.supported,
         raftHeightMm: form.raftHeightMm,
       });
-      setSavedIndicator(true);
-      setTimeout(() => setSavedIndicator(false), 2000);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save model metadata');
+      setError(err instanceof Error ? err.message : "Couldn't save. Try again.");
     }
   }
 
@@ -138,87 +138,98 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
   }
 
   return (
-    <Stack className={styles.form}>
-      {MODEL_FIELDS.map((field) => {
-        const fieldKey = field.key as SharedModelKey;
-        const localValue = getModelValue(form, fieldKey);
-        const inheritedValue =
-          detail?.inheritedValues != null
-            ? (getModelValue(detail.inheritedValues, fieldKey) as string | boolean | number | null)
-            : null;
-        const hasLocalValue = localValue != null;
-        const hasInheritedValue = inheritedValue != null;
-        const canReset = hasLocalValue && hasInheritedValue;
-        const selectOptions =
-          field.fieldType === 'select'
-            ? getSelectOptions(field, typeof localValue === 'string' ? localValue : null)
-            : [];
+    <AppSheet
+      open={open}
+      onClose={onClose}
+      title="Edit metadata"
+      footer={
+        <>
+          {error && (
+            <span role="alert" className={`${styles.error} ${styles.footerNote}`}>
+              {error}
+            </span>
+          )}
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={mutation.isPending || !isDirty}>
+            {mutation.isPending ? <Spinner label="Saving" /> : null}
+            Save
+          </Button>
+        </>
+      }
+    >
+      <div className={styles.form}>
+        {MODEL_FIELDS.map((field) => {
+          const fieldKey = field.key as SharedModelKey;
+          const id = `model-meta-${field.key}`;
+          const localValue = getModelValue(form, fieldKey);
+          const inheritedValue =
+            detail?.inheritedValues != null
+              ? (getModelValue(detail.inheritedValues, fieldKey) as
+                  | string
+                  | boolean
+                  | number
+                  | null)
+              : null;
+          const canReset = localValue != null && inheritedValue != null;
+          const selectOptions =
+            field.fieldType === 'select'
+              ? getSelectOptions(field, typeof localValue === 'string' ? localValue : null)
+              : [];
 
-        const handleReset = () => setFieldBySharedKey(fieldKey, null);
+          return (
+            <div key={field.key} className={styles.field}>
+              <div className={styles.fieldHeader}>
+                <Label htmlFor={id}>{field.label}</Label>
+                {canReset && (
+                  <Tooltip content="Use inherited value">
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Reset ${field.label} to inherited value`}
+                      onClick={() => setFieldBySharedKey(fieldKey, null)}
+                    >
+                      <RotateCcw size={14} strokeWidth={1.5} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </div>
 
-        return (
-          <Stack key={field.key}>
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              className={styles.fieldHeader}
-            >
-              <Typography variant="caption" color="text.secondary">
-                {field.label}
-              </Typography>
-              <Tooltip
-                title={canReset ? 'Reset to inherited value' : 'No inherited value to reset to'}
-              >
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={!canReset}
-                    onClick={handleReset}
-                    className={styles.resetBtn}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                    </svg>
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Stack>
+              {field.fieldType === 'text' && (
+                <MetadataTextField
+                  id={id}
+                  value={typeof localValue === 'string' ? localValue : null}
+                  inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
+                  onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                />
+              )}
 
-            {field.fieldType === 'text' && (
-              <MetadataTextField
-                value={typeof localValue === 'string' ? localValue : null}
-                inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
-                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
-                inputClassName={styles.fieldInput}
-              />
-            )}
+              {field.fieldType === 'select' && (
+                <MetadataSelectField
+                  id={id}
+                  value={typeof localValue === 'string' ? localValue : null}
+                  inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
+                  options={selectOptions}
+                  onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                />
+              )}
 
-            {field.fieldType === 'select' && (
-              <MetadataSelectField
-                value={typeof localValue === 'string' ? localValue : null}
-                inheritedValue={typeof inheritedValue === 'string' ? inheritedValue : null}
-                options={selectOptions}
-                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
-                selectClassName={styles.selectSmall}
-              />
-            )}
+              {field.fieldType === 'bool' && (
+                <MetadataBoolField
+                  id={id}
+                  value={typeof localValue === 'boolean' ? localValue : null}
+                  inheritedValue={typeof inheritedValue === 'boolean' ? inheritedValue : null}
+                  onChange={(v) => setFieldBySharedKey(fieldKey, v)}
+                />
+              )}
 
-            {field.fieldType === 'bool' && (
-              <MetadataBoolField
-                value={typeof localValue === 'boolean' ? localValue : null}
-                inheritedValue={typeof inheritedValue === 'boolean' ? inheritedValue : null}
-                onChange={(v) => setFieldBySharedKey(fieldKey, v)}
-                selectClassName={styles.selectSmall}
-              />
-            )}
-
-            {field.fieldType === 'number' && (
-              <>
-                <TextField
-                  size="small"
-                  fullWidth
+              {field.fieldType === 'number' && (
+                <Input
+                  id={id}
                   type="number"
+                  min={0}
+                  step="any"
                   value={typeof localValue === 'number' ? localValue : ''}
                   placeholder={
                     typeof inheritedValue === 'number' && Number.isFinite(inheritedValue)
@@ -231,49 +242,26 @@ export default function ModelMetadataEditor({ model, onClose }: Props) {
                     const valid = parsed == null || (Number.isFinite(parsed) && parsed >= 0);
                     setFieldBySharedKey(fieldKey, valid ? parsed : null);
                   }}
-                  InputProps={{ className: styles.fieldInput }}
                 />
-              </>
-            )}
-          </Stack>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
 
-      <Stack>
-        <Typography variant="caption" color="text.secondary" className={styles.fieldHeader}>
-          Tags
-        </Typography>
-        <TagEditor
-          localTags={form.tags}
-          inheritedTags={detail?.inheritedValues?.tags ?? null}
-          tagOptions={[
-            ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
-            ...(metadataDictionary?.tags.observed ?? []),
-          ].filter((v, i, arr) => arr.indexOf(v) === i)}
-          onChange={(tags) => setForm((prev) => ({ ...prev, tags }))}
-        />
-      </Stack>
-
-      <Stack direction="row" className={styles.actions}>
-        {error && (
-          <Typography variant="caption" color="error" className={styles.inlineError}>
-            {error}
-          </Typography>
-        )}
-        {savedIndicator && (
-          <Typography variant="caption" color="success.main">
-            Saved
-          </Typography>
-        )}
-        <Button onClick={onClose}>Close</Button>
-        <Button
-          onClick={onSave}
-          variant={isDirty ? 'affirmative' : 'outlined'}
-          disabled={mutation.isPending || !isDirty}
-        >
-          {mutation.isPending ? <CircularProgress size={16} /> : 'Save'}
-        </Button>
-      </Stack>
-    </Stack>
+        <div className={styles.field}>
+          <Label htmlFor="model-meta-tags">Tags</Label>
+          <TagEditor
+            id="model-meta-tags"
+            localTags={form.tags}
+            inheritedTags={detail?.inheritedValues?.tags ?? null}
+            tagOptions={[
+              ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
+              ...(metadataDictionary?.tags.observed ?? []),
+            ].filter((v, i, arr) => arr.indexOf(v) === i)}
+            onChange={(tags) => setForm((prev) => ({ ...prev, tags }))}
+          />
+        </div>
+      </div>
+    </AppSheet>
   );
 }

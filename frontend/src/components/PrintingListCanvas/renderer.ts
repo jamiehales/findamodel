@@ -145,7 +145,7 @@ export function drawBody(
   const sin = Math.sin(angle);
 
   gfx.beginFill(color, highlightOutOfBounds ? 0.62 : 0.45);
-  gfx.lineStyle(highlightOutOfBounds ? 3 : 1.5, highlightOutOfBounds ? 0xef4444 : color, 0.95);
+  gfx.lineStyle(highlightOutOfBounds ? 3 : 1.5, highlightOutOfBounds ? 0xe2685c : color, 0.95);
   const v0 = visualLocalVerts[0];
   gfx.moveTo(
     (v0.x * cos - v0.y * sin) * scale + px,
@@ -163,7 +163,7 @@ export function drawBody(
 
   // When out of bounds, draw a red outline using the with-raft border hull.
   if (highlightOutOfBounds && borderLocalVerts.length) {
-    gfx.lineStyle(3, 0xef4444, 0.98);
+    gfx.lineStyle(3, 0xe2685c, 0.98);
     const b0 = borderLocalVerts[0];
     gfx.moveTo(
       (b0.x * cos - b0.y * sin) * scale + px,

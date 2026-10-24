@@ -1,0 +1,27 @@
+.sm {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.md {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.lg {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.sheet {
+  width: min(460px, 100vw);
+}
+
+.sheetBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) 20px;
+}

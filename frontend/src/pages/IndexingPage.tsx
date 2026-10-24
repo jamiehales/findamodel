@@ -1,17 +1,19 @@
-import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
-import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Pagination from '@mui/material/Pagination';
-import Tooltip from '@mui/material/Tooltip';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import CloseIcon from '@mui/icons-material/Close';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Square } from 'lucide-react';
+import {
+  Button,
+  IconButton,
+  Progress,
+  SegmentedControl,
+  SegmentedControlItem,
+  Spinner,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Tag,
+  Tooltip,
+} from '@jamiehales/ui-kit/mostlymaking';
 import {
   IndexFlags,
   type IndexRunFilesView,
@@ -22,13 +24,15 @@ import {
 } from '../lib/api';
 import {
   useCancelIndexerRun,
+  useEnqueueIndex,
   useIndexerRun,
   useIndexerRuns,
   useIndexerStatus,
 } from '../lib/queries';
 import ErrorView from '../components/ErrorView';
 import LoadingView from '../components/LoadingView';
-import PageLayout from '../components/layouts/PageLayout';
+import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
+import Pagination from '../components/Pagination';
 import styles from './IndexingPage.module.css';
 
 function formatDate(value: string | null): string {
@@ -149,21 +153,30 @@ function targetLabel(run: Pick<IndexRunSummary, 'directoryFilter' | 'relativeMod
   return run.relativeModelPath ?? run.directoryFilter ?? 'All directories';
 }
 
-function statusChip(status: string) {
-  if (status === 'cancelling')
-    return <Chip size="small" color="warning" variant="outlined" label="Cancelling" />;
-  if (status === 'running') return <Chip size="small" variant="status-running" label="Running" />;
-  if (status === 'queued') return <Chip size="small" variant="outlined" label="Queued" />;
-  if (status === 'failed')
-    return <Chip size="small" color="error" variant="outlined" label="Failed" />;
-  if (status === 'cancelled')
-    return <Chip size="small" color="warning" variant="outlined" label="Cancelled" />;
-  return <Chip size="small" color="success" variant="outlined" label="Success" />;
+const STATUS_LABELS: Record<string, string> = {
+  cancelling: 'Cancelling',
+  running: 'Running',
+  queued: 'Queued',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  success: 'Success',
+};
+
+function StatusTag({ status }: { status: string }) {
+  const label = STATUS_LABELS[status] ?? 'Success';
+  if (status === 'running' || status === 'cancelling')
+    return <Tag className={styles.running}>{label}</Tag>;
+  if (status === 'failed') return <Tag className={styles.failed}>{label}</Tag>;
+  if (status === 'queued' || status === 'cancelled') return <Tag variant="neutral">{label}</Tag>;
+  return <Tag variant="success">{label}</Tag>;
 }
 
-function artifactChip(enabled: boolean, label: string) {
-  return <Chip size="small" label={label} variant={enabled ? 'badge-enabled' : 'badge-disabled'} />;
-}
+const FILE_STATUS_TAG: Record<IndexRunFile['status'], 'success' | 'neutral' | 'outline'> = {
+  processed: 'success',
+  pending: 'neutral',
+  skipped: 'outline',
+  failed: 'outline',
+};
 
 const FILES_PAGE_SIZE = 200;
 const EVENTS_PAGE_SIZE = 200;
@@ -206,72 +219,54 @@ function RunSummaryCard({
   })();
 
   return (
-    <Stack
-      role={selectable ? 'button' : undefined}
-      tabIndex={selectable ? 0 : undefined}
-      onClick={selectable ? onSelect : undefined}
-      onKeyDown={(event) => {
-        if (!selectable) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      spacing={0.5}
-      className={`${styles.runCard} ${selected ? styles.runCardActive : ''} ${!selectable ? styles.runCardDisabled : ''}`}
-    >
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="subtitle2" className={styles.cardTitle}>
-          {targetLabel(run)}
-        </Typography>
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          {(canCancel || isCancelling) && (
-            <Tooltip title={isCancelling ? 'Cancelling...' : 'Cancel'}>
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onCancel();
-                  }}
-                  disabled={isCancelling}
-                  aria-label={isCancelling ? 'Cancelling' : 'Cancel'}
-                >
-                  {isCancelling ? <CircularProgress size={16} /> : <CloseIcon fontSize="small" />}
-                </IconButton>
-              </span>
-            </Tooltip>
-          )}
-          {statusChip(run.status)}
-        </Stack>
-      </Stack>
-      <Typography variant="caption" color="text.secondary">
-        {flagsLabel(run.flags)}
-      </Typography>
-      <Typography variant="caption" color="text.secondary">
-        Requested {formatDate(run.requestedAt)}
-      </Typography>
-      <Typography variant="caption" color="text.secondary">
-        Processing time {runtimeLabel}
-      </Typography>
-      {run.totalFiles != null && (
-        <>
-          <LinearProgress
-            variant="determinate"
-            value={Math.min(100, percent)}
-            className={styles.progressBar}
-          />
-          <Typography variant="caption" color="text.secondary">
-            {run.processedFiles}/{run.totalFiles} files
-          </Typography>
-        </>
+    <div className={styles.run} data-selected={selected ? '' : undefined}>
+      <button
+        type="button"
+        className={styles.runButton}
+        onClick={onSelect}
+        disabled={!selectable}
+        aria-pressed={selected}
+      >
+        <span className={styles.runTop}>
+          <StatusTag status={run.status} />
+          <span className={styles.runTarget}>{targetLabel(run)}</span>
+        </span>
+        {run.totalFiles != null && (
+          <span className={styles.runProgress}>
+            <Progress value={Math.min(100, percent)} className={styles.progress} />
+            <span className={styles.mono}>
+              {run.processedFiles.toLocaleString()} / {run.totalFiles.toLocaleString()}
+            </span>
+          </span>
+        )}
+        <span className={styles.runMeta}>
+          <span>{flagsLabel(run.flags)}</span>
+          <span className={styles.mono}>
+            {formatDate(run.requestedAt)} · {runtimeLabel}
+          </span>
+        </span>
+      </button>
+      {(canCancel || isCancelling) && (
+        <Tooltip content={isCancelling ? 'Cancelling' : 'Cancel run'}>
+          <IconButton
+            variant="ghost"
+            size="sm"
+            className={styles.cancel}
+            onClick={onCancel}
+            disabled={isCancelling}
+            aria-label={isCancelling ? 'Cancelling' : 'Cancel run'}
+          >
+            {isCancelling ? <Spinner label="Cancelling" /> : <Square size={14} strokeWidth={1.5} />}
+          </IconButton>
+        </Tooltip>
       )}
-    </Stack>
+    </div>
   );
 }
 
 export default function IndexingPage() {
   const { data: status } = useIndexerStatus({ adaptivePolling: true });
+  const enqueueIndex = useEnqueueIndex();
   const cancelRunMutation = useCancelIndexerRun(7);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const {
@@ -441,76 +436,59 @@ export default function IndexingPage() {
   if (isPending) return <LoadingView />;
   if (isError || !runs) return <ErrorView message="Failed to load indexing history." />;
 
+  const selectRun = (run: IndexRunSummary) => {
+    setSelectedRunId(run.id);
+    setFilesPage(1);
+    setEventsPage(1);
+  };
+
+  const renderRun = (run: IndexRunSummary) => (
+    <RunSummaryCard
+      key={run.id}
+      run={run}
+      selected={run.id === effectiveRunId}
+      selectable={run.status !== 'queued'}
+      onSelect={() => selectRun(run)}
+      canCancel={canCancelRun(run)}
+      onCancel={() => cancelRun(run.id)}
+      isCancelling={run.status === 'cancelling' || cancellingRunId === run.id}
+    />
+  );
+
   return (
     <PageLayout>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        className={styles.pageHeader}
-      >
-        <Stack spacing={0.5}>
-          <Typography variant="page-title">Indexing</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Live indexing progress and retained history (7 days)
-          </Typography>
-        </Stack>
-      </Stack>
+      <PageHeader
+        title="Indexing"
+        actions={
+          <Button
+            variant="secondary"
+            disabled={enqueueIndex.isPending}
+            onClick={() => enqueueIndex.mutate({ directoryFilter: null, flags: IndexFlags.All })}
+          >
+            Index all
+          </Button>
+        }
+      />
 
-      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} className={styles.contentWrap}>
-        <Paper variant="outlined" className={styles.sidebarPanel}>
-          <Stack spacing={1} className={styles.panelBody}>
-            <Typography variant="h6">Runs</Typography>
-            <Divider />
-            <Stack spacing={1} className={styles.runList}>
-              {runsWithLive.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  No indexing runs in the last 7 days.
-                </Typography>
-              )}
-              {groupedRuns.running.map((run) => (
-                <RunSummaryCard
-                  key={run.id}
-                  run={run}
-                  selected={run.id === effectiveRunId}
-                  selectable={run.status !== 'queued'}
-                  onSelect={() => {
-                    setSelectedRunId(run.id);
-                    setFilesPage(1);
-                    setEventsPage(1);
-                  }}
-                  canCancel={canCancelRun(run)}
-                  onCancel={() => cancelRun(run.id)}
-                  isCancelling={run.status === 'cancelling' || cancellingRunId === run.id}
-                />
-              ))}
-              {groupedRuns.running.length > 0 && groupedRuns.rest.length > 0 && (
-                <Divider className={styles.runSectionDivider}>Queued and completed runs</Divider>
-              )}
-              {groupedRuns.rest.map((run) => (
-                <RunSummaryCard
-                  key={run.id}
-                  run={run}
-                  selected={run.id === effectiveRunId}
-                  selectable={run.status !== 'queued'}
-                  onSelect={() => {
-                    setSelectedRunId(run.id);
-                    setFilesPage(1);
-                    setEventsPage(1);
-                  }}
-                  canCancel={canCancelRun(run)}
-                  onCancel={() => cancelRun(run.id)}
-                  isCancelling={run.status === 'cancelling' || cancellingRunId === run.id}
-                />
-              ))}
-            </Stack>
-          </Stack>
-        </Paper>
+      <div className={styles.layout}>
+        <section className={`${styles.panel} ${styles.runs}`} aria-labelledby="runs-heading">
+          <div className={styles.panelHeader}>
+            <h2 id="runs-heading" className="mm-type-label">
+              Runs
+            </h2>
+            <span className={styles.mono}>Last 7 days</span>
+          </div>
+          {runsWithLive.length === 0 && (
+            <p className={styles.emptyRuns}>No runs in the last 7 days.</p>
+          )}
+          {groupedRuns.running.map(renderRun)}
+          {groupedRuns.rest.map(renderRun)}
+        </section>
 
-        <Stack className={styles.mainPanel}>
+        <div className={styles.detail}>
           {hasRunnableSelection && isRunPending && <LoadingView />}
           {hasRunnableSelection && !isRunPending && isRunError && (
-            <ErrorView message="Failed to load the selected index run detail." />
+            <ErrorView message="Couldn't load this run." />
           )}
           {hasRunnableSelection && !isRunPending && !isRunError && runDetail && (
             <RunDetailWithPaging
@@ -526,8 +504,8 @@ export default function IndexingPage() {
               }}
             />
           )}
-        </Stack>
-      </Stack>
+        </div>
+      </div>
     </PageLayout>
   );
 }
@@ -598,140 +576,124 @@ function RunDetailWithPaging({
     Math.ceil(effectiveEventsTotalCount / Math.max(1, effectiveEventsPageSize)),
   );
 
+  const filesFrom =
+    effectiveFilesTotalCount === 0 ? 0 : (effectiveFilesPage - 1) * effectiveFilesPageSize + 1;
+  const filesTo = Math.min(effectiveFilesTotalCount, effectiveFilesPage * effectiveFilesPageSize);
+
   return (
-    <Stack spacing={2}>
-      <Paper variant="outlined" className={styles.panel}>
-        <Stack spacing={1.25} className={styles.panelBody}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="h6">Current Progress</Typography>
-            {statusChip(run.status)}
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {targetLabel(run)}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {flagsLabel(run.flags)}
-          </Typography>
-          {run.totalFiles != null && (
-            <>
-              <LinearProgress
-                variant="determinate"
-                value={Math.min(100, percent)}
-                className={styles.progressBarLarge}
-              />
-              <Typography variant="body2">
-                {run.processedFiles}/{run.totalFiles} files ({percent}%)
-              </Typography>
-            </>
-          )}
-          <Typography variant="caption" color="text.secondary">
-            Started: {formatDate(run.startedAt)} | Duration:{' '}
-            {formatDuration(run.startedAt, run.completedAt)}
-          </Typography>
-          {run.error && (
-            <Typography variant="body2" className={styles.errorText}>
-              {run.error}
-            </Typography>
-          )}
-        </Stack>
-      </Paper>
+    <section className={styles.panel} aria-labelledby="run-heading">
+      <div className={styles.panelHeader}>
+        <h2 id="run-heading" className={styles.runTitle}>
+          {targetLabel(run)}
+        </h2>
+        <StatusTag status={run.status} />
+      </div>
+      <div className={styles.summary}>
+        {run.totalFiles != null && (
+          <div className={styles.runProgress}>
+            <Progress value={Math.min(100, percent)} className={styles.progress} />
+            <span className={styles.mono}>
+              {run.processedFiles.toLocaleString()} / {run.totalFiles.toLocaleString()} ({percent}%)
+            </span>
+          </div>
+        )}
+        <span className={styles.mono}>
+          {flagsLabel(run.flags)} · Started {formatDate(run.startedAt)} ·{' '}
+          {formatDuration(run.startedAt, run.completedAt)}
+        </span>
+        {run.error && (
+          <p role="alert" className={styles.error}>
+            {run.error}
+          </p>
+        )}
+      </div>
 
-      <Paper variant="outlined" className={styles.panel}>
-        <Stack spacing={1} className={styles.panelBody}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Indexed Files</Typography>
-            <Stack direction="row" spacing={1} alignItems="center" className={styles.pagerRow}>
-              <ToggleButtonGroup
-                size="small"
-                value={filesView}
-                exclusive
-                onChange={(_, view: IndexRunFilesView | null) => {
-                  if (view) onFilesViewChange(view);
-                }}
-              >
-                <ToggleButton value="all">All</ToggleButton>
-                <ToggleButton value="processed">Processed</ToggleButton>
-                <ToggleButton value="pending">Pending</ToggleButton>
-              </ToggleButtonGroup>
-              <Typography variant="caption" color="text.secondary">
-                Page {effectiveFilesPage}/{filesTotalPages} ({effectiveFilesTotalCount} files)
-              </Typography>
-              <Pagination
-                page={effectiveFilesPage}
-                count={filesTotalPages}
-                color="primary"
-                size="small"
-                shape="rounded"
-                showFirstButton
-                showLastButton
-                onChange={(_, page) => onGoToFiles(page)}
-              />
-            </Stack>
-          </Stack>
-          <Stack spacing={0.75} className={styles.filesList}>
+      <Tabs defaultValue="files" className={styles.tabs}>
+        <TabsList aria-label="Run detail">
+          <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="log">Log</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="files">
+          <div className={styles.toolbar}>
+            <SegmentedControl
+              aria-label="Show files"
+              value={filesView}
+              onValueChange={(view) => onFilesViewChange(view as IndexRunFilesView)}
+            >
+              <SegmentedControlItem value="all">All</SegmentedControlItem>
+              <SegmentedControlItem value="processed">Processed</SegmentedControlItem>
+              <SegmentedControlItem value="pending">Pending</SegmentedControlItem>
+            </SegmentedControl>
+          </div>
+          <ul className={styles.rows}>
             {pagedFilesItems.map((file) => (
-              <Stack key={file.relativePath} spacing={0.5} className={styles.fileRow}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="body2" className={styles.filePath}>
-                    {file.relativePath}
-                  </Typography>
-                  <Stack direction="row" spacing={0.75} alignItems="center">
-                    <Typography variant="caption" color="text.secondary">
-                      {formatDurationMs(resolveFileDurationMs(file, run))}
-                    </Typography>
-                    <Chip size="small" label={file.status} className={styles.statusChip} />
-                  </Stack>
-                </Stack>
-                <Stack direction="row" spacing={0.5} className={styles.artifactRow}>
-                  {artifactChip(file.generatedPreview, 'preview')}
-                  {artifactChip(file.generatedHull, 'hull')}
-                  {artifactChip(file.isNew, 'new')}
-                  {artifactChip(file.wasUpdated, 'updated')}
-                </Stack>
-                {file.message && (
-                  <Typography variant="caption" color="text.secondary">
-                    {file.message}
-                  </Typography>
+              <li key={file.relativePath} className={styles.fileRow}>
+                <div className={styles.fileMain}>
+                  <span className={styles.path}>{file.relativePath}</span>
+                  <span className={styles.mono}>
+                    {formatDurationMs(resolveFileDurationMs(file, run))}
+                  </span>
+                  <Tag
+                    variant={FILE_STATUS_TAG[file.status] ?? 'neutral'}
+                    className={file.status === 'failed' ? styles.failed : undefined}
+                  >
+                    {file.status.charAt(0).toUpperCase() + file.status.slice(1)}
+                  </Tag>
+                </div>
+                {(file.generatedPreview || file.generatedHull || file.isNew || file.wasUpdated) && (
+                  <div className={styles.artifacts}>
+                    {file.isNew && <Tag variant="outline">New</Tag>}
+                    {file.wasUpdated && <Tag variant="outline">Updated</Tag>}
+                    {file.generatedPreview && <Tag variant="outline">Preview</Tag>}
+                    {file.generatedHull && <Tag variant="outline">Hull</Tag>}
+                  </div>
                 )}
-              </Stack>
+                {file.message && <p className={styles.message}>{file.message}</p>}
+              </li>
             ))}
-          </Stack>
-        </Stack>
-      </Paper>
+            {pagedFilesItems.length === 0 && <li className={styles.emptyRuns}>No files.</li>}
+          </ul>
+          <div className={styles.pager}>
+            <Pagination
+              page={effectiveFilesPage}
+              totalPages={filesTotalPages}
+              onPageChange={onGoToFiles}
+              summary={`${filesFrom.toLocaleString()}–${filesTo.toLocaleString()} of ${effectiveFilesTotalCount.toLocaleString()}`}
+            />
+          </div>
+        </TabsContent>
 
-      <Paper variant="outlined" className={styles.panel}>
-        <Stack spacing={1} className={styles.panelBody}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Run Log</Typography>
-            <Stack direction="row" spacing={1} alignItems="center" className={styles.pagerRow}>
-              <Typography variant="caption" color="text.secondary">
-                Page {effectiveEventsPage}/{eventsTotalPages} ({effectiveEventsTotalCount} events)
-              </Typography>
-              <Pagination
-                page={effectiveEventsPage}
-                count={eventsTotalPages}
-                color="primary"
-                size="small"
-                shape="rounded"
-                showFirstButton
-                showLastButton
-                onChange={(_, page) => onGoToEvents(page)}
-              />
-            </Stack>
-          </Stack>
-          <Stack spacing={0.75} className={styles.logList}>
+        <TabsContent value="log">
+          <ul className={styles.rows}>
             {pagedEventsItems.map((event, index) => (
-              <Stack key={`${event.createdAt}-${index}`} spacing={0.2} className={styles.logRow}>
-                <Typography variant="caption" className={styles.logMeta}>
-                  [{new Date(event.createdAt).toLocaleTimeString()}] {event.level.toUpperCase()}
-                  {event.relativePath ? ` • ${event.relativePath}` : ''}
-                </Typography>
-                <Typography variant="body2">{event.message}</Typography>
-              </Stack>
+              <li key={`${event.createdAt}-${index}`} className={styles.logRow}>
+                <span className={styles.mono}>
+                  {new Date(event.createdAt).toLocaleTimeString()}
+                </span>
+                <span
+                  className={`${styles.mono} ${event.level.toLowerCase() === 'error' ? styles.errorText : event.level.toLowerCase().startsWith('warn') ? styles.warnText : ''}`}
+                >
+                  {event.level.toUpperCase()}
+                </span>
+                <span className={styles.logMessage}>
+                  {event.message}
+                  {event.relativePath && <span className={styles.mono}> {event.relativePath}</span>}
+                </span>
+              </li>
             ))}
-          </Stack>
-        </Stack>
-      </Paper>
-    </Stack>
+            {pagedEventsItems.length === 0 && <li className={styles.emptyRuns}>No log entries.</li>}
+          </ul>
+          <div className={styles.pager}>
+            <Pagination
+              page={effectiveEventsPage}
+              totalPages={eventsTotalPages}
+              onPageChange={onGoToEvents}
+              summary={`${effectiveEventsTotalCount.toLocaleString()} events`}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
+    </section>
   );
 }

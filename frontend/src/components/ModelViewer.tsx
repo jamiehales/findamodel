@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo } from 'react';
-import { useTheme } from '@mui/material';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -9,7 +8,14 @@ import { useRenderControls } from './RenderControlsContext';
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
 
-const MODEL_COLOR = '#818cf8';
+// Colors from the mostlymaking data palette. Keep MODEL_COLOR and SUPPORT_COLOR in
+// step with BODY_COLOR and SUPPORT_COLOR in backend/src/preview/mod.rs.
+const MODEL_COLOR = '#94a7cc';
+const SUPPORT_COLOR = '#c9a45c';
+const CONVEX_HULL_COLOR = '#b892c0';
+const CONCAVE_HULL_COLOR = '#8fb894';
+const SANS_RAFT_HULL_COLOR = '#e0909b';
+const SCENE_BACKGROUND = '#18171a';
 
 function SceneBg({ color }: { color: string }) {
   return <color attach="background" args={[color]} />;
@@ -27,7 +33,7 @@ function Lighting() {
 }
 
 function Grid() {
-  return <gridHelper args={[25.4 * 2, 2, '#3a4559', '#1e293b']} position={[0, 0, 0]} />;
+  return <gridHelper args={[25.4 * 2, 2, '#3d3943', '#2a282e']} position={[0, 0, 0]} />;
 }
 
 interface HullLineProps {
@@ -204,17 +210,22 @@ function GeometryModel({
       <mesh geometry={bufferGeometry}>
         <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} flatShading />
       </mesh>
-      <HullPolygon coordinates={hullCoords} color="#818cf8" />
-      <HullLine coordinates={hullCoords} color="#818cf8" />
-      <HullPolygon coordinates={concaveCoords} color="#34d399" yOffset={0.02} opacity={0.22} />
-      <HullLine coordinates={concaveCoords} color="#34d399" yOffset={0.02} />
+      <HullPolygon coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
+      <HullLine coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
+      <HullPolygon
+        coordinates={concaveCoords}
+        color={CONCAVE_HULL_COLOR}
+        yOffset={0.02}
+        opacity={0.22}
+      />
+      <HullLine coordinates={concaveCoords} color={CONCAVE_HULL_COLOR} yOffset={0.02} />
       <HullPolygon
         coordinates={sansRaftCoords}
-        color="#f59e0b"
+        color={SANS_RAFT_HULL_COLOR}
         yOffset={raftHeightMm}
         opacity={0.18}
       />
-      <HullLine coordinates={sansRaftCoords} color="#f59e0b" yOffset={raftHeightMm} />
+      <HullLine coordinates={sansRaftCoords} color={SANS_RAFT_HULL_COLOR} yOffset={raftHeightMm} />
     </group>
   );
 }
@@ -243,7 +254,7 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
   return (
     <mesh geometry={bufferGeometry} visible={visible}>
       <meshStandardMaterial
-        color="#f59e0b"
+        color={SUPPORT_COLOR}
         roughness={0.55}
         metalness={0.1}
         transparent
@@ -297,7 +308,6 @@ export default function ModelViewer({
     shouldFetchFullGeometry,
   );
   const color = MODEL_COLOR;
-  const theme = useTheme();
   const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
   const orbitTarget = useMemo<[number, number, number]>(
     () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
@@ -326,8 +336,7 @@ export default function ModelViewer({
 
   const errorFallback = (
     <div style={containerStyle}>
-      <span style={{ fontSize: '2rem', opacity: 0.3 }}>⬡</span>
-      <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Could not load 3D model</span>
+      <span style={messageStyle}>Couldn't load the 3D model.</span>
     </div>
   );
 
@@ -350,10 +359,10 @@ export default function ModelViewer({
           justifyContent: 'center',
         }}
       >
-        <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+        <span style={messageStyle}>
           {isPending || isGeometryPending || geometryData == null
-            ? 'Loading model…'
-            : 'Model dimensions not yet available'}
+            ? 'Loading model'
+            : 'Model dimensions not available yet'}
         </span>
       </div>
     );
@@ -363,7 +372,7 @@ export default function ModelViewer({
     <ViewerErrorBoundary fallback={errorFallback}>
       <div style={wrapperStyle}>
         <Canvas camera={{ fov: 45 }} gl={{ antialias: true }} style={containerStyle}>
-          <SceneBg color={theme.palette.background.default} />
+          <SceneBg color={SCENE_BACKGROUND} />
           <CameraInit
             target={orbitTarget}
             halfExtents={halfExtents}
@@ -409,5 +418,10 @@ const wrapperStyle: React.CSSProperties = {
 const containerStyle: React.CSSProperties = {
   width: '100%',
   height: '100%',
-  background: 'var(--color-bg-default)',
+  background: SCENE_BACKGROUND,
+};
+
+const messageStyle: React.CSSProperties = {
+  font: '400 13px/18px var(--font-sans)',
+  color: 'var(--muted-foreground)',
 };

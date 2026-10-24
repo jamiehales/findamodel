@@ -1,5 +1,5 @@
-import CircularProgress from '@mui/material/CircularProgress';
-import Stack from '@mui/material/Stack';
+import { Spinner } from '@jamiehales/ui-kit/mostlymaking';
+import styles from './StatusView.module.css';
 
 interface LoadingViewProps {
   minHeight?: string | number;
@@ -7,8 +7,8 @@ interface LoadingViewProps {
 
 export default function LoadingView({ minHeight = '30vh' }: LoadingViewProps) {
   return (
-    <Stack alignItems="center" justifyContent="center" sx={{ minHeight }}>
-      <CircularProgress color="primary" />
-    </Stack>
+    <div className={styles.center} style={{ minHeight }}>
+      <Spinner className={styles.spinner} />
+    </div>
   );
 }

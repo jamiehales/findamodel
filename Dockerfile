@@ -3,6 +3,8 @@ FROM node:24-alpine AS frontend-build
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/yarn.lock* ./
+# The ui-kit submodule is a `link:` dependency, so it must be present before installing.
+COPY frontend/vendor/ui-kit ./vendor/ui-kit
 RUN yarn install --frozen-lockfile
 
 COPY frontend/ ./

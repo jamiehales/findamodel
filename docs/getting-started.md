@@ -135,9 +135,10 @@ The repository includes a complete VS Code configuration. Open `findamodel.code-
 
 To get started:
 
-1. Run the `frontend: install` task once to install Node dependencies.
-2. Use the **Full Stack: Backend + Frontend** launch profile to start everything.
-3. The frontend opens at `http://localhost:5173` and proxies API calls to the backend at `http://localhost:5000`.
+1. Fetch the UI kit submodule once with `git submodule update --init` (or clone with `--recurse-submodules`).
+2. Run the `frontend: install` task once to install Node dependencies.
+3. Use the **Full Stack: Backend + Frontend** launch profile to start everything.
+4. The frontend opens at `http://localhost:5173` and proxies API calls to the backend at `http://localhost:5000`.
 
 ---
 
@@ -155,7 +156,10 @@ The API will start at `http://localhost:5000`. Run the backend tests with `cargo
 
 #### Frontend
 
+The frontend's controls come from the [ui-kit](https://github.com/jamiehales/ui-kit) git submodule at `frontend/vendor/ui-kit`, so fetch it before installing:
+
 ```bash
+git submodule update --init
 cd frontend
 yarn install
 yarn dev

@@ -1,0 +1,22 @@
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  color: var(--muted-foreground);
+}
+
+.error {
+  color: var(--destructive-text);
+}
+
+.empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--muted-foreground);
+}

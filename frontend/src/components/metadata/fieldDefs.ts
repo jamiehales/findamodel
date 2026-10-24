@@ -21,8 +21,8 @@ export interface SharedFieldDef {
  * Ordered for display across the app.
  */
 export const SHARED_FIELDS: SharedFieldDef[] = [
-  { key: 'modelName', yamlName: 'model_name', label: 'Model Name', fieldType: 'text' },
-  { key: 'partName', yamlName: 'part_name', label: 'Part Name', fieldType: 'text' },
+  { key: 'modelName', yamlName: 'model_name', label: 'Model name', fieldType: 'text' },
+  { key: 'partName', yamlName: 'part_name', label: 'Part name', fieldType: 'text' },
   { key: 'creator', yamlName: 'creator', label: 'Creator', fieldType: 'text' },
   { key: 'collection', yamlName: 'collection', label: 'Collection', fieldType: 'text' },
   { key: 'subcollection', yamlName: 'subcollection', label: 'Subcollection', fieldType: 'text' },
@@ -45,7 +45,7 @@ export const SHARED_FIELDS: SharedFieldDef[] = [
   {
     key: 'raftHeightMm',
     yamlName: 'raftHeight',
-    label: 'Raft Height (mm)',
+    label: 'Raft height (mm)',
     fieldType: 'number',
     supportsRules: false,
   },

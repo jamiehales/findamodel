@@ -18,7 +18,6 @@ pub enum RuntimeMode {
 #[derive(Debug, Clone, Default)]
 pub struct AppConfigDefaults {
     pub default_raft_height_mm: Option<f32>,
-    pub theme: Option<String>,
     pub generate_previews_enabled: Option<bool>,
     pub minimum_preview_generation_version: Option<i32>,
 }
@@ -142,7 +141,6 @@ impl Settings {
             preview_use_gpu: env_bool(&["FINDAMODEL_PREVIEW_USE_GPU", "Preview__UseGpu"]).unwrap_or(true),
             app_config_defaults: AppConfigDefaults {
                 default_raft_height_mm: env_parse(&["AppConfig__DefaultRaftHeightMm"]),
-                theme: env(&["AppConfig__Theme"]),
                 generate_previews_enabled: env_bool(&["AppConfig__GeneratePreviewsEnabled"]),
                 minimum_preview_generation_version: env_parse(&["AppConfig__MinimumPreviewGenerationVersion"]),
             },

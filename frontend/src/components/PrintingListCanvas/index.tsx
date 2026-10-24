@@ -4,16 +4,15 @@ import * as PIXI from 'pixi.js';
 import { World, Vec2, Box } from 'planck';
 import type { Body } from 'planck';
 import {
-  Stack,
   Button,
-  MenuItem,
-  Select,
   Checkbox,
-  FormGroup,
-  FormControlLabel,
-  FormControl,
-  InputLabel,
-} from '@mui/material';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@jamiehales/ui-kit/mostlymaking';
+import styles from './PrintingListCanvas.module.css';
 import type { SpawnType, HullMode } from '../../lib/api';
 import {
   VIEW_TOP_MARGIN_PX,
@@ -50,9 +49,10 @@ const GRID_PX = 10 * PX_PER_MM;
 const ROTATION_SNAP_DEGREES = 5;
 const WHEEL_DELTA_PER_ROTATION_STEP = 120;
 
-const PAGE_H_PADDING = 128; // ~4rem per side at wide viewports
-function getCanvasScale(canvasWidthPx: number): number {
-  return Math.min(1.5, Math.max(1, (window.innerWidth - PAGE_H_PADDING) / canvasWidthPx));
+// The plate scales to fill the width of its panel, within these limits.
+function getCanvasScale(availableWidthPx: number, canvasWidthPx: number): number {
+  if (availableWidthPx <= 0) return 1;
+  return Math.min(1.5, Math.max(0.4, availableWidthPx / canvasWidthPx));
 }
 
 export default function PrintingListCanvas({
@@ -80,22 +80,22 @@ export default function PrintingListCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
   const [resetCount, setResetCount] = useState(0);
-  const [canvasScale, setCanvasScale] = useState(() => getCanvasScale(canvasWidthPx));
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [canvasScale, setCanvasScale] = useState(1);
   const canvasScaleRef = useRef(canvasScale);
-  useEffect(() => {
-    const s = getCanvasScale(canvasWidthPx);
-    canvasScaleRef.current = s;
-    setCanvasScale(s);
-  }, [canvasWidthPx]);
 
   useEffect(() => {
-    const handleResize = () => {
-      const s = getCanvasScale(canvasWidthPx);
+    const stage = stageRef.current;
+    if (!stage) return;
+    const update = () => {
+      const s = getCanvasScale(stage.clientWidth, canvasWidthPx);
       canvasScaleRef.current = s;
       setCanvasScale(s);
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(stage);
+    return () => observer.disconnect();
   }, [canvasWidthPx]);
 
   // Resize the live PIXI app when scale changes (no simulation restart)
@@ -175,7 +175,7 @@ export default function PrintingListCanvas({
     const app = new PIXI.Application({
       width: canvasWidthPx * initScale,
       height: viewHeightPx * initScale,
-      backgroundColor: 0x0f172a,
+      backgroundColor: 0x18171a,
       antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       autoDensity: true,
@@ -243,7 +243,7 @@ export default function PrintingListCanvas({
     function redrawStatics(sc: number) {
       const scaledGridPx = GRID_PX * sc;
       gridGfx.clear();
-      gridGfx.lineStyle(0.5, 0x334155, 0.6);
+      gridGfx.lineStyle(0.5, 0x2a282e, 1);
       for (let x = scaledGridPx; x < canvasWidthPx * sc; x += scaledGridPx)
         gridGfx
           .moveTo(x, VIEW_TOP_MARGIN_PX * sc)
@@ -254,12 +254,12 @@ export default function PrintingListCanvas({
           .lineTo(canvasWidthPx * sc, VIEW_TOP_MARGIN_PX * sc + y);
 
       borderGfx.clear();
-      borderGfx.lineStyle({ width: 2, color: 0x64748b, alpha: 1, alignment: 0 });
+      borderGfx.lineStyle({ width: 2, color: 0x6c6874, alpha: 1, alignment: 0 });
       borderGfx.drawRect(0, VIEW_TOP_MARGIN_PX * sc, canvasWidthPx * sc, canvasHeightPx * sc);
 
       const wasVisible = outOfBoundsBorderGfx.visible;
       outOfBoundsBorderGfx.clear();
-      outOfBoundsBorderGfx.lineStyle({ width: 2, color: 0xef4444, alpha: 1, alignment: 0 });
+      outOfBoundsBorderGfx.lineStyle({ width: 2, color: 0xe2685c, alpha: 1, alignment: 0 });
       drawDottedRect(
         outOfBoundsBorderGfx,
         0,
@@ -335,7 +335,7 @@ export default function PrintingListCanvas({
       // Label
       const labelStr = model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name;
       const label = new PIXI.Text(labelStr, {
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
         fontSize: 12,
         fill: 0xffffff,
         align: 'center',
@@ -607,7 +607,7 @@ export default function PrintingListCanvas({
           const label = new PIXI.Text(
             model.name.length > 14 ? model.name.slice(0, 12) + '…' : model.name,
             {
-              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
               fontSize: 12,
               fill: 0xffffff,
               align: 'center',
@@ -662,163 +662,144 @@ export default function PrintingListCanvas({
     prevItemsRef.current = { ...currItems };
   }, [itemsKey, spawnOrder, canvasWidthPx]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const resetSavedLayout = () => {
+    localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+    setHasSavedLayout(false);
+    setUndoLayoutData(null);
+  };
+
   return (
-    <Stack direction="column" spacing={1}>
-      <Stack direction="row" spacing={1} alignContent={'center'} alignItems="center">
-        <FormControl size="small" style={{ minWidth: 250 }}>
-          <InputLabel id="printer-select-label">Printer</InputLabel>
-          <Select
-            labelId="printer-select-label"
-            label="Printer"
-            value={selectedPrinterId ?? ''}
-            onChange={(e) => onPrinterChange?.(e.target.value as string)}
-          >
+    <section className={styles.plate} aria-label="Build plate">
+      <div className={styles.bar}>
+        <Select value={selectedPrinterId ?? undefined} onValueChange={(v) => onPrinterChange?.(v)}>
+          <SelectTrigger aria-label="Printer" className={styles.printer}>
+            <SelectValue placeholder="Printer" />
+          </SelectTrigger>
+          <SelectContent>
             {printers.map((printer) => (
-              <MenuItem key={printer.id} value={printer.id}>
+              <SelectItem key={printer.id} value={printer.id}>
                 {printer.name} ({printer.bedWidthMm} × {printer.bedDepthMm} mm)
-                {printer.isDefault ? ' - default' : ''}
-              </MenuItem>
+              </SelectItem>
             ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small">
-          <InputLabel id="spawn-order-label">Spawn order</InputLabel>
-          <Select
-            labelId="spawn-order-label"
-            label="Spawn order"
-            value={spawnOrder}
-            onChange={(e) => {
-              const next = e.target.value as SpawnType;
-              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
-              setHasSavedLayout(false);
+          </SelectContent>
+        </Select>
+        <Select
+          value={spawnOrder}
+          onValueChange={(v) => {
+            resetSavedLayout();
+            onSpawnOrderChange?.(v as SpawnType);
+          }}
+        >
+          <SelectTrigger aria-label="Spawn order" className={styles.small}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="grouped">Grouped</SelectItem>
+            <SelectItem value="random">Random</SelectItem>
+            <SelectItem value="largestFirstFillGaps">Largest first</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={hullMode}
+          onValueChange={(v) => {
+            resetSavedLayout();
+            onHullModeChange?.(v as HullMode);
+          }}
+        >
+          <SelectTrigger aria-label="Hull mode" className={styles.small}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="convex">Convex hull</SelectItem>
+            <SelectItem value="sansRaft">Without raft</SelectItem>
+          </SelectContent>
+        </Select>
+        <Checkbox
+          checked={showLabels}
+          onCheckedChange={() => {
+            const next = !showLabels;
+            localStorage.setItem(SHOW_LABELS_LOCALSTORAGE_KEY, String(next));
+            setShowLabels(next);
+          }}
+        >
+          Labels
+        </Checkbox>
+        <Checkbox
+          checked={pauseOnDrag}
+          onCheckedChange={() => {
+            const next = !pauseOnDrag;
+            localStorage.setItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY, String(next));
+            setPauseOnDrag(next);
+          }}
+        >
+          Pause on drag
+        </Checkbox>
+        <div className={styles.spacer} />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            if (undoLayoutData !== null) {
+              localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, undoLayoutData);
+              setHasSavedLayout(true);
+              setIsLayoutClean(true);
               setUndoLayoutData(null);
-              onSpawnOrderChange?.(next);
-            }}
-          >
-            <MenuItem value="grouped">Grouped</MenuItem>
-            <MenuItem value="random">Random</MenuItem>
-            <MenuItem value="largestFirstFillGaps">Largest first, fill gaps</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl size="small">
-          <InputLabel id="hull-mode-label">Hull mode</InputLabel>
-          <Select
-            labelId="hull-mode-label"
-            label="Hull mode"
-            value={hullMode}
-            onChange={(e) => {
-              const next = e.target.value as HullMode;
-              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
-              setHasSavedLayout(false);
-              setUndoLayoutData(null);
-              onHullModeChange?.(next);
-            }}
-          >
-            <MenuItem value="convex">Convex hull</MenuItem>
-            <MenuItem value="sansRaft">Sans raft hull</MenuItem>
-          </Select>
-        </FormControl>
-        <FormGroup>
-          <FormControlLabel
-            label="Show labels"
-            control={
-              <Checkbox
-                checked={showLabels}
-                onChange={() => {
-                  const next = !showLabels;
-                  localStorage.setItem(SHOW_LABELS_LOCALSTORAGE_KEY, String(next));
-                  setShowLabels(next);
-                }}
-              />
             }
-          />
-        </FormGroup>
-        <FormGroup>
-          <FormControlLabel
-            label="Pause on drag"
-            control={
-              <Checkbox
-                checked={pauseOnDrag}
-                onChange={() => {
-                  const next = !pauseOnDrag;
-                  localStorage.setItem(PAUSE_ON_DRAG_LOCALSTORAGE_KEY, String(next));
-                  setPauseOnDrag(next);
-                }}
-              />
-            }
-          />
-        </FormGroup>
-        <Stack direction="row" spacing={1} style={{ marginLeft: 'auto' }}>
-          <Button
-            size="large"
-            variant="outlined"
-            onClick={() => {
-              if (undoLayoutData !== null) {
-                localStorage.setItem(LAYOUT_LOCALSTORAGE_KEY, undoLayoutData);
-                setHasSavedLayout(true);
-                setIsLayoutClean(true);
-                setUndoLayoutData(null);
-              }
-              setResetCount((c) => c + 1);
-            }}
-            disabled={undoLayoutData === null && (isLayoutClean || !hasSavedLayout)}
-          >
-            Undo
-          </Button>
-          <Button
-            size="large"
-            variant="outlined"
-            onClick={() => {
-              const existing = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
-              if (existing) setUndoLayoutData(existing);
-              localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
-              setHasSavedLayout(false);
-              setIsLayoutClean(false);
-              setResetCount((c) => c + 1);
-            }}
-          >
-            Reset
-          </Button>
-          <Button
-            size="large"
-            variant={isLayoutClean ? 'outlined' : 'primary'}
-            onClick={() => {
-              if (hasOutOfBoundsRef.current) {
-                setWarnSaveOpen(true);
-              } else {
-                pausedRef.current = true;
-                saveLayoutRef.current?.();
-              }
-            }}
-            disabled={isLayoutClean}
-          >
-            Save
-          </Button>
-          <ConfirmDialog
-            open={warnSaveOpen}
-            title="Models off canvas"
-            message="Some models are outside the print area and will not be included in the exported plate. Save anyway?"
-            confirmLabel="Save"
-            onConfirm={() => {
-              setWarnSaveOpen(false);
+            setResetCount((c) => c + 1);
+          }}
+          disabled={undoLayoutData === null && (isLayoutClean || !hasSavedLayout)}
+        >
+          Undo
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            const existing = localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY);
+            if (existing) setUndoLayoutData(existing);
+            localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+            setHasSavedLayout(false);
+            setIsLayoutClean(false);
+            setResetCount((c) => c + 1);
+          }}
+        >
+          Reset
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            if (hasOutOfBoundsRef.current) {
+              setWarnSaveOpen(true);
+            } else {
               pausedRef.current = true;
               saveLayoutRef.current?.();
-            }}
-            onCancel={() => setWarnSaveOpen(false)}
-          />
-        </Stack>
-      </Stack>
-      <div
-        ref={containerRef}
-        style={{
-          width: canvasWidthPx * canvasScale,
-          height: viewHeightPx * canvasScale,
-          borderRadius: 0,
-          overflow: 'hidden',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-          cursor: 'default',
-        }}
-      />
-    </Stack>
+            }
+          }}
+          disabled={isLayoutClean}
+        >
+          Save layout
+        </Button>
+        <ConfirmDialog
+          open={warnSaveOpen}
+          title="Save with models off the plate?"
+          message="Models outside the print area won't be included in the exported plate."
+          confirmLabel="Save"
+          destructive={false}
+          onConfirm={() => {
+            setWarnSaveOpen(false);
+            pausedRef.current = true;
+            saveLayoutRef.current?.();
+          }}
+          onCancel={() => setWarnSaveOpen(false)}
+        />
+      </div>
+      <div ref={stageRef} className={styles.stage}>
+        <div
+          ref={containerRef}
+          className={styles.canvas}
+          style={{ width: canvasWidthPx * canvasScale, height: viewHeightPx * canvasScale }}
+        />
+      </div>
+    </section>
   );
 }

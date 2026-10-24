@@ -1,0 +1,56 @@
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  border: 1px solid var(--mm-edge);
+  border-radius: 4px;
+  background: var(--card);
+  box-shadow: 2px 2px 0 var(--mm-shadow);
+}
+
+.stepper[data-size='sm'] {
+  height: 32px;
+  background: var(--popover);
+  box-shadow: 2px 2px 0 var(--mm-shadow-soft);
+}
+
+.stepper button {
+  width: 36px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.stepper[data-size='sm'] button {
+  width: 30px;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepper button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.stepper span {
+  min-width: 26px;
+  text-align: center;
+  font: 500 14px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper[data-size='sm'] span {
+  font-size: 13px;
+}

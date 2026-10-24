@@ -1,24 +1,15 @@
-import { memo, useMemo, useState } from 'react';
-import EditRoundedIcon from '@mui/icons-material/EditRounded';
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
-import { Box, Stack } from '@mui/material';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { memo, useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import { IconButton } from '@jamiehales/ui-kit/mostlymaking';
 import type { Model } from '../lib/api';
-import { useIndexModel, useIsModelIndexing } from '../lib/queries';
+import { useActivePrintingList, useUpsertPrintingListItem } from '../lib/queries';
 import { appendFilterValue, appendSupportedFilter } from '../lib/modelFilterNavigation';
-import AppDialog from './AppDialog';
-import AppCard from './AppCard';
-import ModelMetadataEditor from './ModelMetadataEditor';
-import PrintingListControls from './PrintingListControls';
-import FilterPill from './FilterPill';
-import styles from './ModelCard.module.css';
-import { formatBytes } from '../lib/utils';
-import { useRenderControls } from './RenderControlsContext';
 import { withPreviewSupports } from '../lib/http';
+import FilterPill from './FilterPill';
+import QuantityStepper from './QuantityStepper';
+import { useRenderControls } from './RenderControlsContext';
+import styles from './ModelCard.module.css';
 
 function getFileName(relativePath: string): string {
   const parts = relativePath.split('/');
@@ -30,185 +21,104 @@ interface ModelCardProps {
   href: string;
 }
 
+/**
+ * A model tile. The name is the link and stretches over the whole card, so the
+ * filter tags and the printing list buttons can sit on top of it.
+ */
 function ModelCard({ model, href }: ModelCardProps) {
-  const [hovered, setHovered] = useState(false);
-  const [metadataOpen, setMetadataOpen] = useState(false);
   const { showSupports } = useRenderControls();
   const location = useLocation();
   const navigate = useNavigate();
-  const { mutate: indexModel } = useIndexModel(model.relativePath);
-  const indexingState = useIsModelIndexing(model.relativePath);
+  const { data: activeList } = useActivePrintingList();
+  const { mutate: upsert } = useUpsertPrintingListItem();
+  const quantity = activeList?.items.find((i) => i.modelId === model.id)?.quantity ?? 0;
   const previewUrl = useMemo(
     () => (model.previewUrl ? withPreviewSupports(model.previewUrl, showSupports) : null),
     [model.previewUrl, showSupports],
   );
-  const showSlicerPlaceholder = !previewUrl && !model.canExportToPlate;
-  const isIndexing = indexingState === 'running';
-  const userTags = model.tags ?? [];
 
-  function navigateToModels(nextSearch: string) {
-    navigate({ pathname: '/', search: nextSearch ? `?${nextSearch}` : '' });
-  }
-
-  function onStandardFilterClick(
-    e: React.MouseEvent,
-    key: 'fileType' | 'material' | 'category' | 'type',
-    value: string,
-  ) {
+  function filterBy(e: React.MouseEvent, nextSearch: (source: string) => string) {
     e.preventDefault();
     e.stopPropagation();
     const sourceSearch = location.pathname === '/' ? location.search : '';
-    navigateToModels(appendFilterValue(sourceSearch, key, value));
+    const search = nextSearch(sourceSearch);
+    navigate({ pathname: '/', search: search ? `?${search}` : '' });
   }
 
-  function onSupportedFilterClick(e: React.MouseEvent, supported: boolean) {
-    e.preventDefault();
-    e.stopPropagation();
-    const sourceSearch = location.pathname === '/' ? location.search : '';
-    navigateToModels(appendSupportedFilter(sourceSearch, supported));
+  function setQuantity(next: number) {
+    if (!activeList) return;
+    upsert({ listId: activeList.id, modelId: model.id, quantity: Math.max(0, next) });
   }
 
-  function onTagFilterClick(e: React.MouseEvent, tag: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    const sourceSearch = location.pathname === '/' ? location.search : '';
-    navigateToModels(appendFilterValue(sourceSearch, 'tags', tag));
-  }
+  const standard: { key: 'fileType' | 'material' | 'category' | 'type'; value: string | null }[] = [
+    { key: 'fileType', value: model.fileType },
+    { key: 'material', value: model.material },
+    { key: 'category', value: model.category },
+    { key: 'type', value: model.type },
+  ];
 
   return (
-    <>
-      <span>
-        <AppCard
-          href={href}
-          interactive
-          className={styles.card}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          {previewUrl ? (
-            <Box component="img" src={previewUrl} alt="" className={styles.preview} />
-          ) : showSlicerPlaceholder ? (
-            <Box className={styles.previewPlaceholder}>
-              <LayersRoundedIcon className={styles.previewPlaceholderIcon} />
-              <p className={styles.previewPlaceholderLabel}>{model.fileType.toUpperCase()}</p>
-            </Box>
-          ) : (
-            <Box className={styles.previewPlaceholder} />
-          )}
-
-          <Box className={styles.infoBlock}>
-            <Stack direction="row" className={styles.pillRow} spacing={0.5} flexWrap="wrap">
+    <div className={`mm-card-link ${styles.card}`}>
+      <div className={`mm-card-image ${styles.image}`}>
+        {previewUrl ? (
+          <img src={previewUrl} alt="" loading="lazy" />
+        ) : (
+          <span className={styles.placeholder} aria-hidden="true">
+            {model.fileType.toUpperCase()}
+          </span>
+        )}
+      </div>
+      <div className={styles.body}>
+        <Link to={href} className={styles.name}>
+          {model.name}
+        </Link>
+        <span className={styles.file}>{getFileName(model.relativePath)}</span>
+        <div className={styles.tags}>
+          {standard.map(({ key, value }) =>
+            value ? (
               <FilterPill
-                label={model.fileType.toUpperCase()}
-                onClick={(e) => onStandardFilterClick(e, 'fileType', model.fileType)}
+                key={key}
+                label={key === 'fileType' ? value.toUpperCase() : value}
+                onClick={(e) => filterBy(e, (s) => appendFilterValue(s, key, value))}
               />
-
-              {model.material && (
-                <FilterPill
-                  label={model.material}
-                  onClick={(e) => onStandardFilterClick(e, 'material', model.material!)}
-                />
-              )}
-
-              {model.category && (
-                <FilterPill
-                  label={model.category}
-                  onClick={(e) => onStandardFilterClick(e, 'category', model.category!)}
-                />
-              )}
-
-              {model.type && (
-                <FilterPill
-                  label={model.type}
-                  onClick={(e) => onStandardFilterClick(e, 'type', model.type!)}
-                />
-              )}
-
-              {model.supported !== null && (
-                <FilterPill
-                  label={model.supported ? 'Supported' : 'Unsupported'}
-                  tone={model.supported ? 'supported' : 'unsupported'}
-                  onClick={(e) => onSupportedFilterClick(e, model.supported!)}
-                />
-              )}
-            </Stack>
-
-            <p className={styles.name}>{model.name}</p>
-
-            <p className={styles.fileName}>{getFileName(model.relativePath)}</p>
-
-            <p className={styles.size}>{formatBytes(model.fileSize)}</p>
-
-            {userTags.length > 0 && (
-              <Stack direction="row" className={styles.userTagRow} spacing={0.5} flexWrap="wrap">
-                {userTags.map((tag) => (
-                  <FilterPill
-                    key={`user-${tag}`}
-                    label={tag}
-                    tone="user"
-                    onClick={(e) => onTagFilterClick(e, tag)}
-                  />
-                ))}
-              </Stack>
-            )}
-          </Box>
-
-          <Tooltip title="Edit metadata" placement="top">
-            <IconButton
-              size="small"
-              className={styles.editMetadataButton}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setMetadataOpen(true);
-              }}
-            >
-              <EditRoundedIcon fontSize="inherit" />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip
-            title={
-              indexingState === 'running'
-                ? 'Refreshing index...'
-                : indexingState === 'queued'
-                  ? 'Refresh queued...'
-                  : 'Refresh index'
-            }
-            placement="top"
+            ) : null,
+          )}
+          {model.supported !== null && (
+            <FilterPill
+              label={model.supported ? 'Supported' : 'Unsupported'}
+              tone={model.supported ? 'supported' : 'unsupported'}
+              onClick={(e) => filterBy(e, (s) => appendSupportedFilter(s, model.supported!))}
+            />
+          )}
+          {(model.tags ?? []).map((tag) => (
+            <FilterPill
+              key={`user-${tag}`}
+              label={tag}
+              tone="user"
+              onClick={(e) => filterBy(e, (s) => appendFilterValue(s, 'tags', tag))}
+            />
+          ))}
+        </div>
+      </div>
+      <div className={styles.actions} data-pinned={quantity > 0 ? '' : undefined}>
+        {quantity > 0 ? (
+          <QuantityStepper value={quantity} onChange={setQuantity} label={model.name} size="sm" />
+        ) : (
+          <IconButton
+            size="sm"
+            aria-label={`Add ${model.name} to printing list`}
+            disabled={!activeList}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setQuantity(1);
+            }}
           >
-            <IconButton
-              size="small"
-              className={styles.refreshIndexButton}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                indexModel();
-              }}
-              disabled={indexingState !== null}
-            >
-              {isIndexing ? (
-                <CircularProgress size={14} className={styles.refreshSpinner} />
-              ) : (
-                <RefreshRoundedIcon fontSize="inherit" />
-              )}
-            </IconButton>
-          </Tooltip>
-
-          <PrintingListControls modelId={model.id} showButtons={hovered} />
-        </AppCard>
-      </span>
-
-      <AppDialog
-        open={metadataOpen}
-        onClose={() => setMetadataOpen(false)}
-        title="Edit model metadata"
-        maxWidth="sm"
-        fullWidth
-      >
-        <ModelMetadataEditor model={model} onClose={() => setMetadataOpen(false)} />
-      </AppDialog>
-    </>
+            <Plus size={16} strokeWidth={1.5} />
+          </IconButton>
+        )}
+      </div>
+    </div>
   );
 }
 

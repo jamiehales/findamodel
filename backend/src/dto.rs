@@ -482,7 +482,6 @@ pub struct PrintingListArchiveJobDto {
 #[serde(rename_all = "camelCase")]
 pub struct AppConfigDto {
     pub default_raft_height_mm: f32,
-    pub theme: String,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
     pub setup_completed: bool,
@@ -493,7 +492,6 @@ pub struct AppConfigDto {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAppConfigRequest {
     pub default_raft_height_mm: f32,
-    pub theme: String,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
 }
@@ -503,7 +501,6 @@ pub struct UpdateAppConfigRequest {
 pub struct InitialSetupRequest {
     pub models_directory_path: String,
     pub default_raft_height_mm: f32,
-    pub theme: String,
     pub generate_previews_enabled: bool,
 }
 
@@ -519,7 +516,6 @@ pub struct SetupStatusDto {
 pub struct InitialSetupDefaultsDto {
     pub models_directory_path: Option<String>,
     pub default_raft_height_mm: f32,
-    pub theme: String,
     pub generate_previews_enabled: bool,
 }
 

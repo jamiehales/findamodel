@@ -1,0 +1,24 @@
+.boot {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  color: var(--muted-foreground);
+}
+
+.message {
+  font: 600 16px/22px var(--font-sans);
+}
+
+.detail {
+  color: var(--muted-foreground);
+}

@@ -1,16 +1,16 @@
+import { ChevronDown, Download, Trash2 } from 'lucide-react';
 import {
-  Stack,
-  Box,
-  Button,
-  CircularProgress,
-  Typography,
-  Menu,
-  MenuItem,
   Alert,
-  LinearProgress,
-} from '@mui/material';
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+  Button,
+  IconButton,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  Progress,
+  Spinner,
+  Tag,
+} from '@jamiehales/ui-kit/mostlymaking';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -33,13 +33,16 @@ import {
   useUpdatePrintingListSettings,
   usePrinters,
   useUpdatePrintingListPrinter,
+  useUpsertPrintingListItem,
 } from '../lib/queries';
-import ModelCard from '../components/ModelCard';
+import QuantityStepper from '../components/QuantityStepper';
+import ErrorBoundary from '../components/ErrorBoundary';
+import { useRenderControls } from '../components/RenderControlsContext';
+import { withPreviewSupports } from '../lib/http';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
 import PrintingListCanvas, { LAYOUT_LOCALSTORAGE_KEY } from '../components/PrintingListCanvas';
-import PageLayout from '../components/layouts/PageLayout';
-import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
+import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
 import styles from './PrintingListPage.module.css';
 
 function PrintingListPage() {
@@ -55,10 +58,11 @@ function PrintingListPage() {
   const { mutate: activateList } = useActivatePrintingList();
   const { mutate: updateSettings } = useUpdatePrintingListSettings();
   const { mutate: updatePrinter } = useUpdatePrintingListPrinter();
+  const { mutate: upsertItem } = useUpsertPrintingListItem();
+  const { showSupports } = useRenderControls();
   const { data: printers = [] } = usePrinters();
   const [savingPlate, setSavingPlate] = useState(false);
   const [simulationPaused, setSimulationPaused] = useState(false);
-  const [formatMenuAnchor, setFormatMenuAnchor] = useState<HTMLElement | null>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [archiveJob, setArchiveJob] = useState<PrintingListArchiveJob | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -344,262 +348,253 @@ function PrintingListPage() {
 
   const archiveCurrentFile = archiveJob?.currentEntryName?.split('/').pop() ?? null;
   const archiveStatusText = archiveDownloading
-    ? 'Downloading zip…'
+    ? 'Downloading zip'
     : archiveJob?.status === 'queued'
-      ? 'Queueing zip…'
+      ? 'Queueing zip'
       : archiveJob?.status === 'running'
         ? archiveJob.totalEntries > 0
-          ? `Packaging ${archiveJob.completedEntries} of ${archiveJob.totalEntries} files…`
-          : 'Packaging zip…'
+          ? `Packaging ${archiveJob.completedEntries} of ${archiveJob.totalEntries} files`
+          : 'Packaging zip'
         : archiveJob?.status === 'completed'
-          ? 'Zip ready. Starting download…'
+          ? 'Zip ready, downloading'
           : null;
   const plateCurrentFile = plateJob?.currentEntryName?.split('/').pop() ?? null;
   const plateStatusText = plateDownloading
-    ? 'Downloading plate…'
+    ? 'Downloading plate'
     : plateJob?.status === 'queued'
-      ? 'Queueing plate export…'
+      ? 'Queueing plate export'
       : plateJob?.status === 'running'
         ? plateJob.totalEntries > 0
-          ? `Preparing plate ${plateJob.completedEntries} of ${plateJob.totalEntries} models…`
-          : 'Preparing plate…'
+          ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
+          : 'Preparing plate'
         : plateJob?.status === 'completed'
-          ? 'Plate ready. Starting download…'
+          ? 'Plate ready, downloading'
           : null;
 
+  const totalQuantity = list?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+  const exportDisabled = plateBusy || archiveBusy || !simulationPaused;
+
   return (
-    <PageLayout spacing={3}>
-      <Stack direction="column" spacing={2} alignItems="left">
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography component="h1" variant="page-title">
-            {listName}
-          </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button component={Link} to="/printing-lists" variant="outlined">
-              Switch list
+    <PageLayout>
+      <PageHeader
+        title={listName}
+        meta={
+          <>
+            {list?.isActive ? (
+              <Tag variant="success">Active</Tag>
+            ) : list ? (
+              <Button size="sm" variant="secondary" onClick={() => activateList(list.id)}>
+                Set active
+              </Button>
+            ) : null}
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/printing-lists">Switch list</Link>
             </Button>
-            {listedModels.length > 0 && (
-              <>
+          </>
+        }
+        actions={
+          listedModels.length > 0 ? (
+            <>
+              <Button variant="ghost" className={styles.clear} onClick={handleClearList}>
+                Clear
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void handleDownloadAllModels();
+                }}
+                disabled={plateBusy || archiveBusy}
+              >
+                {archiveBusy ? (
+                  <Spinner label="Preparing zip" />
+                ) : (
+                  <Download size={16} strokeWidth={1.5} />
+                )}
+                Download all
+              </Button>
+              <div className={styles.split}>
                 <Button
-                  variant="outlined"
-                  onClick={() => {
-                    void handleDownloadAllModels();
-                  }}
-                  disabled={plateBusy || archiveBusy}
-                  startIcon={
-                    archiveBusy ? (
-                      <CircularProgress size={16} color="inherit" />
-                    ) : (
-                      <DownloadRoundedIcon fontSize="small" />
-                    )
-                  }
+                  variant="primary"
+                  onClick={() => handleSavePlate('3mf')}
+                  disabled={exportDisabled}
                 >
-                  {archiveBusy ? 'Preparing zip…' : 'Download all models'}
+                  {plateBusy ? <Spinner label="Preparing plate" /> : null}
+                  Export plate
                 </Button>
-                <Box sx={{ display: 'flex' }}>
-                  <Button
-                    variant="outlined"
-                    onClick={() => handleSavePlate('3mf')}
-                    disabled={plateBusy || archiveBusy || !simulationPaused}
-                    startIcon={plateBusy ? <CircularProgress size={16} color="inherit" /> : null}
-                    sx={{
-                      borderRadius: '999px 0 0 999px',
-                      borderRight: 'none',
-                    }}
-                  >
-                    {plateBusy ? 'Preparing…' : 'Export plate'}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={(e) => setFormatMenuAnchor(e.currentTarget)}
-                    disabled={plateBusy || archiveBusy || !simulationPaused}
-                    aria-label="export format options"
-                    aria-haspopup="menu"
-                    sx={{
-                      borderRadius: '0 999px 999px 0',
-                      px: '0.55rem',
-                      minWidth: 0,
-                    }}
-                  >
-                    <ArrowDropDownIcon fontSize="small" />
-                  </Button>
-                </Box>
-                <Button variant="warning" onClick={handleClearList}>
-                  Clear list
-                </Button>
-              </>
-            )}
-          </Stack>
-        </Stack>
+                <Menu>
+                  <MenuTrigger asChild>
+                    <IconButton
+                      variant="primary"
+                      aria-label="Export format"
+                      disabled={exportDisabled}
+                      className={styles.splitMenu}
+                    >
+                      <ChevronDown size={16} strokeWidth={2} />
+                    </IconButton>
+                  </MenuTrigger>
+                  <MenuContent align="end">
+                    <MenuItem onSelect={() => handleSavePlate('3mf')}>Export as 3MF</MenuItem>
+                    <MenuItem onSelect={() => handleSavePlate('stl')}>Export as STL</MenuItem>
+                    <MenuItem onSelect={() => handleSavePlate('glb')}>Export as GLB</MenuItem>
+                  </MenuContent>
+                </Menu>
+              </div>
+            </>
+          ) : undefined
+        }
+      />
 
-        <Stack direction="row" spacing={1} alignItems="center">
-          {list && !list.isActive && (
-            <Button onClick={() => activateList(list.id)} variant="activate">
-              Set active
+      {plateStatusText && (
+        <JobStatus text={plateStatusText} job={plateJob} currentFile={plateCurrentFile} />
+      )}
+      {(plateError || plateJob?.errorMessage) && (
+        <Alert tone="error">
+          <div className={styles.alertRow}>
+            <span>{plateError ?? plateJob?.errorMessage}</span>
+            <Button size="sm" variant="ghost" onClick={() => setPlateError(null)}>
+              Dismiss
             </Button>
-          )}
-        </Stack>
-
-        <Menu
-          anchorEl={formatMenuAnchor}
-          open={Boolean(formatMenuAnchor)}
-          onClose={() => setFormatMenuAnchor(null)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        >
-          <MenuItem
-            onClick={() => {
-              setFormatMenuAnchor(null);
-              handleSavePlate('3mf');
-            }}
-          >
-            Export as 3MF
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setFormatMenuAnchor(null);
-              handleSavePlate('stl');
-            }}
-          >
-            Export as STL
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setFormatMenuAnchor(null);
-              handleSavePlate('glb');
-            }}
-          >
-            Export as GLB
-          </MenuItem>
-        </Menu>
-      </Stack>
-
-      {(plateStatusText || plateError || plateJob?.errorMessage) && (
-        <Box className={styles.archiveStatusCard}>
-          {plateStatusText && (
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={16} color="inherit" />
-                <Typography className={styles.archiveStatusTitle}>{plateStatusText}</Typography>
-              </Stack>
-              <LinearProgress
-                variant={plateJob && plateJob.totalEntries > 0 ? 'determinate' : 'indeterminate'}
-                value={plateJob?.progressPercent ?? 0}
-                className={styles.archiveProgress}
-              />
-              {plateJob && plateJob.totalEntries > 0 && (
-                <Typography className={styles.archiveStatusMeta}>
-                  {plateJob.progressPercent}% complete
-                </Typography>
-              )}
-              {plateCurrentFile && (
-                <Typography className={styles.archiveStatusMeta}>
-                  Current model: {plateCurrentFile}
-                </Typography>
-              )}
-            </Stack>
-          )}
-
-          {(plateError || plateJob?.errorMessage) && (
-            <Alert severity="error" onClose={() => setPlateError(null)}>
-              {plateError ?? plateJob?.errorMessage}
-            </Alert>
-          )}
-        </Box>
+          </div>
+        </Alert>
       )}
 
-      {(archiveStatusText || archiveError || archiveJob?.errorMessage) && (
-        <Box className={styles.archiveStatusCard}>
-          {archiveStatusText && (
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={16} color="inherit" />
-                <Typography className={styles.archiveStatusTitle}>{archiveStatusText}</Typography>
-              </Stack>
-              <LinearProgress
-                variant={
-                  archiveJob && archiveJob.totalEntries > 0 ? 'determinate' : 'indeterminate'
-                }
-                value={archiveJob?.progressPercent ?? 0}
-                className={styles.archiveProgress}
-              />
-              {archiveJob && archiveJob.totalEntries > 0 && (
-                <Typography className={styles.archiveStatusMeta}>
-                  {archiveJob.progressPercent}% complete
-                </Typography>
-              )}
-              {archiveCurrentFile && (
-                <Typography className={styles.archiveStatusMeta}>
-                  Current file: {archiveCurrentFile}
-                </Typography>
-              )}
-            </Stack>
-          )}
-
-          {(archiveError || archiveJob?.errorMessage) && (
-            <Alert severity="error" onClose={() => setArchiveError(null)}>
-              {archiveError ?? archiveJob?.errorMessage}
-            </Alert>
-          )}
-        </Box>
+      {archiveStatusText && (
+        <JobStatus text={archiveStatusText} job={archiveJob} currentFile={archiveCurrentFile} />
+      )}
+      {(archiveError || archiveJob?.errorMessage) && (
+        <Alert tone="error">
+          <div className={styles.alertRow}>
+            <span>{archiveError ?? archiveJob?.errorMessage}</span>
+            <Button size="sm" variant="ghost" onClick={() => setArchiveError(null)}>
+              Dismiss
+            </Button>
+          </div>
+        </Alert>
       )}
 
       {(hasNonExportableModels || plateWarning) && (
-        <Alert severity="warning">
+        <Alert>
           {plateWarning ??
-            'Some files in this list (LYS, LYT, CTB) cannot be included in exported plates and will be skipped during plate generation.'}
+            "LYS, LYT and CTB files can't go on an exported plate, so they'll be skipped."}
         </Alert>
       )}
 
       {isPending ? (
         <LoadingView />
       ) : listedModels.length === 0 ? (
-        <Box className={styles.emptyState}>
-          <Typography className={styles.emptyTitle}>No models added yet</Typography>
-          <Typography color="text.secondary" className={styles.emptySubtext}>
-            Browse models and use "Add to printing list" to add them here.
-          </Typography>
-        </Box>
+        <div className={styles.empty}>
+          <p className={styles.emptyTitle}>No models in this list.</p>
+          <Button asChild variant="secondary">
+            <Link to="/">Browse models</Link>
+          </Button>
+        </div>
       ) : (
-        <>
-          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
-            {listedModels.map((model) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                href={`/model/${encodeURIComponent(model.id)}`}
+        <div className={styles.layout}>
+          <div className={styles.plateCol}>
+            <ErrorBoundary
+              fallback={
+                <Alert tone="error">
+                  Couldn't start the plate view. This browser may not support WebGL.
+                </Alert>
+              }
+            >
+              <PrintingListCanvas
+                models={listedModels}
+                items={items}
+                selectedPrinterId={list?.printer?.id ?? null}
+                printers={printers}
+                bedWidthMm={list?.printer?.bedWidthMm ?? 228}
+                bedDepthMm={list?.printer?.bedDepthMm ?? 128}
+                onPrinterChange={handlePrinterChange}
+                spawnOrder={list?.spawnType ?? 'grouped'}
+                hullMode={list?.hullMode ?? 'convex'}
+                onSpawnOrderChange={handleSpawnOrderChange}
+                onHullModeChange={handleHullModeChange}
+                onPausedChange={setSimulationPaused}
               />
-            ))}
-          </CardGrid>
+            </ErrorBoundary>
+          </div>
 
-          <Box className={styles.canvasWrapper}>
-            <PrintingListCanvas
-              models={listedModels}
-              items={items}
-              selectedPrinterId={list?.printer?.id ?? null}
-              printers={printers}
-              bedWidthMm={list?.printer?.bedWidthMm ?? 228}
-              bedDepthMm={list?.printer?.bedDepthMm ?? 128}
-              onPrinterChange={handlePrinterChange}
-              spawnOrder={list?.spawnType ?? 'grouped'}
-              hullMode={list?.hullMode ?? 'convex'}
-              onSpawnOrderChange={handleSpawnOrderChange}
-              onHullModeChange={handleHullModeChange}
-              onPausedChange={setSimulationPaused}
-            />
-          </Box>
-        </>
+          <section className={styles.list} aria-labelledby="list-heading">
+            <div className={styles.listHeader}>
+              <h2 id="list-heading" className="mm-type-label">
+                Models
+              </h2>
+              <span className={styles.mono}>{totalQuantity} total</span>
+            </div>
+            <ul className={styles.rows}>
+              {listedModels.map((model) => {
+                const quantity = items[model.id] ?? 0;
+                const preview = model.previewUrl
+                  ? withPreviewSupports(model.previewUrl, showSupports)
+                  : null;
+                const setQuantity = (next: number) =>
+                  list && upsertItem({ listId: list.id, modelId: model.id, quantity: next });
+                return (
+                  <li key={model.id} className={styles.row}>
+                    <span className={styles.thumb}>
+                      {preview ? <img src={preview} alt="" loading="lazy" /> : null}
+                    </span>
+                    <Link to={`/model/${encodeURIComponent(model.id)}`} className={styles.rowName}>
+                      <span className={styles.name}>{model.name}</span>
+                      <span className={styles.file}>{model.relativePath.split('/').pop()}</span>
+                    </Link>
+                    <QuantityStepper
+                      size="sm"
+                      min={1}
+                      value={quantity}
+                      label={model.name}
+                      onChange={setQuantity}
+                    />
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Remove ${model.name}`}
+                      onClick={() => setQuantity(0)}
+                    >
+                      <Trash2 size={16} strokeWidth={1.5} />
+                    </IconButton>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        </div>
       )}
 
       <ConfirmDialog
         open={clearDialogOpen}
-        title="Clear list?"
-        message={`Are you sure you want to clear all items from "${list?.name ?? 'this list'}"?`}
-        confirmLabel="Clear list"
+        title={`Clear ${list?.name ?? 'this list'}?`}
+        message="Every model is taken off the list."
+        confirmLabel="Clear"
         onConfirm={handleConfirmClearList}
         onCancel={() => setClearDialogOpen(false)}
       />
     </PageLayout>
+  );
+}
+
+function JobStatus({
+  text,
+  job,
+  currentFile,
+}: {
+  text: string;
+  job: { totalEntries: number; progressPercent: number } | null;
+  currentFile: string | null;
+}) {
+  const determinate = !!job && job.totalEntries > 0;
+  return (
+    <div className={styles.status} role="status">
+      <Spinner label={text} />
+      <span>{text}</span>
+      <Progress
+        value={determinate ? job!.progressPercent : undefined}
+        className={styles.statusBar}
+        aria-label={text}
+      />
+      {currentFile && <span className={styles.mono}>{currentFile}</span>}
+    </div>
   );
 }
 

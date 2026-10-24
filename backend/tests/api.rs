@@ -122,19 +122,17 @@ async fn settings_config_round_trip_and_validation() {
 
     let mut update = json!({
         "defaultRaftHeightMm": 3.5,
-        "theme": "default",
         "generatePreviewsEnabled": false,
         "minimumPreviewGenerationVersion": 1
     });
     let (status, updated) = app.json("PUT", "/api/settings/config", update.clone()).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(updated["theme"], "default");
+    assert!(updated.get("theme").is_none());
     assert_eq!(updated["generatePreviewsEnabled"], false);
 
-    update["theme"] = json!("neon");
-    let (status, message) = app.json("PUT", "/api/settings/config", update).await;
+    update["defaultRaftHeightMm"] = json!(-1);
+    let (status, _) = app.json("PUT", "/api/settings/config", update).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(message, "Unknown theme 'neon'.");
 
     let (status, setup) = app.get("/api/settings/setup-status").await;
     assert_eq!(status, StatusCode::OK);
@@ -148,14 +146,18 @@ async fn initial_setup_sets_models_directory() {
     assert_eq!(setup["requiresWizard"], true);
 
     let (status, message) = app
-        .json("POST", "/api/settings/setup", json!({ "modelsDirectoryPath": "/definitely/missing", "defaultRaftHeightMm": 2, "theme": "nord", "generatePreviewsEnabled": true }))
+        .json("POST", "/api/settings/setup", json!({ "modelsDirectoryPath": "/definitely/missing", "defaultRaftHeightMm": 2, "generatePreviewsEnabled": true }))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(message.as_str().unwrap().contains("does not exist"));
 
     let models_path = app.models.path().display().to_string();
     let (status, config) = app
-        .json("POST", "/api/settings/setup", json!({ "modelsDirectoryPath": models_path, "defaultRaftHeightMm": 2, "theme": "nord", "generatePreviewsEnabled": true }))
+        .json(
+            "POST",
+            "/api/settings/setup",
+            json!({ "modelsDirectoryPath": models_path, "defaultRaftHeightMm": 2, "generatePreviewsEnabled": true }),
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(config["setupCompleted"], true);

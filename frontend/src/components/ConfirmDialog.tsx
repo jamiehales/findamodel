@@ -1,15 +1,14 @@
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
-import AppDialog from './AppDialog';
+import { ConfirmDialog as KitConfirmDialog } from '@jamiehales/ui-kit/mostlymaking';
 
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  message: string;
+  message?: string;
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
   pending?: boolean;
+  destructive?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -20,22 +19,23 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   pending = false,
+  destructive = true,
 }: ConfirmDialogProps) {
   return (
-    <AppDialog
+    <KitConfirmDialog
       open={open}
-      onClose={onCancel}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
       title={title}
-      actions={[
-        <Button key="confirm" onClick={onConfirm} variant="warning" disabled={pending}>
-          {confirmLabel}
-        </Button>,
-        <Button key="cancel" onClick={onCancel} variant="contained" disabled={pending}>
-          Cancel
-        </Button>,
-      ]}
-    >
-      <Typography>{message}</Typography>
-    </AppDialog>
+      description={message}
+      confirmLabel={confirmLabel}
+      destructive={destructive}
+      confirmDisabled={pending}
+      onConfirm={(event) => {
+        event.preventDefault();
+        onConfirm();
+      }}
+    />
   );
 }

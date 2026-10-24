@@ -94,7 +94,6 @@ export interface MetadataDictionaryOverview {
 
 export interface AppConfig {
   defaultRaftHeightMm: number;
-  theme: string;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
   setupCompleted: boolean;
@@ -109,13 +108,11 @@ export interface SetupStatus {
 export interface InitialSetupDefaults {
   modelsDirectoryPath: string | null;
   defaultRaftHeightMm: number;
-  theme: string;
   generatePreviewsEnabled: boolean;
 }
 
 export interface UpdateAppConfigRequest {
   defaultRaftHeightMm: number;
-  theme: string;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
 }
@@ -123,7 +120,6 @@ export interface UpdateAppConfigRequest {
 export interface InitialSetupRequest {
   modelsDirectoryPath: string;
   defaultRaftHeightMm: number;
-  theme: string;
   generatePreviewsEnabled: boolean;
 }
 

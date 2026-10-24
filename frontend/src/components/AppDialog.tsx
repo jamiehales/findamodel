@@ -1,51 +1,74 @@
 import type { ReactNode } from 'react';
-import Dialog, { type DialogProps } from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@jamiehales/ui-kit/mostlymaking';
+import styles from './AppDialog.module.css';
 
 interface AppDialogProps {
   open: boolean;
-  onClose: DialogProps['onClose'];
+  onClose: () => void;
   title: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
-  maxWidth?: DialogProps['maxWidth'];
-  fullWidth?: boolean;
-  scroll?: DialogProps['scroll'];
-  contentDividers?: boolean;
+  /** Panel width; `sm` is the kit's confirm size. */
+  size?: 'sm' | 'md' | 'lg';
 }
 
+/** A centred dialog for previews and help text. */
 export default function AppDialog({
   open,
   onClose,
   title,
   children,
   actions,
-  maxWidth = 'sm',
-  fullWidth = false,
-  scroll,
-  contentDividers = false,
+  size = 'md',
 }: AppDialogProps) {
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth={maxWidth}
-      fullWidth={fullWidth}
-      scroll={scroll}
-      slotProps={{
-        paper: {
-          sx: {
-            backgroundColor: 'var(--color-bg-paper)',
-            backgroundImage: 'none',
-          },
-        },
-      }}
-    >
-      <DialogTitle>{title}</DialogTitle>
-      <DialogContent dividers={contentDividers}>{children}</DialogContent>
-      {actions ? <DialogActions sx={{ flexWrap: 'nowrap' }}>{actions}</DialogActions> : null}
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className={styles[size]} aria-describedby={undefined}>
+        <DialogTitle>{title}</DialogTitle>
+        <div className={styles.body}>{children}</div>
+        {actions ? <DialogFooter>{actions}</DialogFooter> : null}
+      </DialogContent>
     </Dialog>
+  );
+}
+
+interface AppSheetProps {
+  open: boolean;
+  onClose: () => void;
+  title: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  side?: 'left' | 'right';
+}
+
+/** A panel docked to an edge: the right for editing forms, the left for phone filters. */
+export function AppSheet({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  side = 'right',
+}: AppSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side={side} className={styles.sheet} aria-describedby={undefined}>
+        <SheetHeader>
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
+        <div className={styles.sheetBody}>{children}</div>
+        {footer ? <SheetFooter>{footer}</SheetFooter> : null}
+      </SheetContent>
+    </Sheet>
   );
 }

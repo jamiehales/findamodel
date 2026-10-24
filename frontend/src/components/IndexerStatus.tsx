@@ -1,39 +1,46 @@
-import { IconButton, Badge } from '@mui/material';
-import { Link, useMatch } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { ListChecks } from 'lucide-react';
+import { Progress, Spinner } from '@jamiehales/ui-kit/mostlymaking';
 import { useIndexerStatus } from '../lib/queries';
 import styles from './IndexerStatus.module.css';
 
+const numberFormat = new Intl.NumberFormat();
+
+/** Header link to the Indexing page; shows live progress while a run is going. */
 export default function IndexerStatus() {
   const { data: status } = useIndexerStatus();
-  const indexingMatch = useMatch('/indexing');
+  const current = status?.currentRequest ?? null;
+  const queued = status?.queue.length ?? 0;
 
-  const isRunning = !!status?.isRunning;
-  const hasQueue = !!status?.queue.length;
-  const isActive = !!(status?.isRunning || hasQueue || indexingMatch);
-  const totalCount = (status?.isRunning ? 1 : 0) + (status?.queue.length ?? 0);
+  if (!status?.isRunning || !current) {
+    return (
+      <Link to="/indexing" className={styles.link} aria-label="Indexing">
+        <ListChecks size={18} strokeWidth={1.5} aria-hidden="true" />
+        {queued > 0 && <span className={styles.count}>{queued} queued</span>}
+      </Link>
+    );
+  }
+
+  const total = current.totalFiles;
+  const processed = current.processedFiles;
+  const label =
+    total != null
+      ? `Indexing, ${numberFormat.format(processed)} of ${numberFormat.format(total)} files`
+      : 'Indexing';
 
   return (
-    <IconButton
-      component={Link}
-      to="/indexing"
-      size="small"
-      className={`${styles.iconButton} ${isActive ? styles.iconButtonActive : ''}`}
-    >
-      <Badge badgeContent={totalCount > 1 ? totalCount : 0} classes={{ badge: styles.badge }}>
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          className={isRunning ? styles.iconSpin : undefined}
-        >
-          {isRunning ? (
-            <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
-          ) : (
-            <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2z" />
-          )}
-        </svg>
-      </Badge>
-    </IconButton>
+    <Link to="/indexing" className={styles.link} aria-label={label}>
+      <Spinner className={styles.spinner} label="Indexing" />
+      <span className={styles.text}>Indexing</span>
+      {total != null && total > 0 && (
+        <>
+          <Progress value={processed} max={total} className={styles.progress} />
+          <span className={styles.count}>
+            {numberFormat.format(processed)} / {numberFormat.format(total)}
+          </span>
+        </>
+      )}
+      {queued > 0 && <span className={styles.count}>+{queued}</span>}
+    </Link>
   );
 }

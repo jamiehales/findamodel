@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Link from '@mui/material/Link';
-import Tooltip from '@mui/material/Tooltip';
-import Divider from '@mui/material/Divider';
+import { CircleHelp, RotateCcw } from 'lucide-react';
+import {
+  Button,
+  IconButton,
+  Label,
+  SegmentedControl,
+  SegmentedControlItem,
+  Input,
+  Spinner,
+  Textarea,
+  TextLink,
+  Tooltip,
+} from '@jamiehales/ui-kit/mostlymaking';
 import {
   useDirectoryConfig,
   useMetadataDictionaryOverview,
@@ -17,13 +19,13 @@ import {
 } from '../lib/queries';
 import { ConfigValidationError } from '../lib/api';
 import type { MetadataFields } from '../lib/api';
-import AppDialog from './AppDialog';
+import AppDialog, { AppSheet } from './AppDialog';
 import { SHARED_FIELDS, type SharedFieldDef } from './metadata/fieldDefs';
 import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
 import TagEditor from './metadata/TagEditor';
-import styles from './MetadataEditor.module.css';
+import styles from './metadata/MetadataForm.module.css';
 
 type FieldMode = 'value' | 'rule';
 
@@ -79,176 +81,89 @@ function getRulePlaceholder(inheritedRule?: string | null) {
 }
 
 function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const code = (text: string) => (
-    <Box
-      component="code"
-      sx={{
-        display: 'block',
-        fontFamily: 'monospace',
-        fontSize: '0.78rem',
-        bgcolor: 'action.hover',
-        borderRadius: 1,
-        px: 1.5,
-        py: 1,
-        my: 0.5,
-        whiteSpace: 'pre',
-        overflowX: 'auto',
-      }}
-    >
-      {text}
-    </Box>
-  );
-  const inline = (text: string) => (
-    <Box
-      component="code"
-      sx={{
-        fontFamily: 'monospace',
-        fontSize: '0.8em',
-        bgcolor: 'action.hover',
-        borderRadius: '3px',
-        px: 0.6,
-        py: 0.1,
-      }}
-    >
-      {text}
-    </Box>
-  );
-  const section = (title: string) => (
-    <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5, fontWeight: 600 }}>
-      {title}
-    </Typography>
-  );
-  const para = (text: React.ReactNode) => (
-    <Typography variant="body2" color="text.primary" sx={{ mb: 0.5 }}>
-      {text}
-    </Typography>
-  );
+  const code = (text: string) => <code className={styles.code}>{text}</code>;
+  const inline = (text: string) => <code className={styles.inlineCode}>{text}</code>;
 
   return (
     <AppDialog
       open={open}
       onClose={onClose}
-      title="Rules System"
-      maxWidth="sm"
-      fullWidth
-      scroll="paper"
-      contentDividers
+      title="Rules"
       actions={
-        <Button size="small" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Close
         </Button>
       }
     >
-      {para(
-        "Rules let you automatically derive a field's value from each model's file path, rather than setting a fixed value. Rules defined on a folder are inherited by all subfolders and models within it.",
-      )}
-      {para(
-        <>
-          Rules are regex-based. The {inline('rule: regex')} key is optional - if omitted, regex is
-          assumed by default. You can provide regex options directly.
-        </>,
-      )}
-
-      <Divider sx={{ my: 1.5 }} />
-
-      {section('rule: regex')}
-      {para('Applies a regular expression to a value derived from the file path.')}
-      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mb: 0.5 }}>
-        Options:
-      </Typography>
-      {para(
-        <>
-          {inline('source: full_path | folder | filename')} - what to match against (default:{' '}
+      <div className={styles.help}>
+        <p>
+          Rules derive a field's value from each model's file path instead of setting a fixed value.
+          Rules on a folder apply to all of its subfolders and models.
+        </p>
+        <p>
+          Rules are regex-based. The {inline('rule: regex')} key is optional; regex is assumed when
+          it's left out.
+        </p>
+        <hr />
+        <h3>rule: regex</h3>
+        <p>Applies a regular expression to a value taken from the file path. Options:</p>
+        <p>
+          {inline('source: full_path | folder | filename')}: what to match against (default{' '}
           {inline('full_path')})
-        </>,
-      )}
-      {para(
-        <>
-          {inline('expression: <pattern>')} - a regex or sed-style substitution (
+        </p>
+        <p>
+          {inline('expression: <pattern>')}: a regex or a sed-style substitution (
           {inline('s|pattern|replacement|flags')}). Quote patterns that start with {inline('[')} or{' '}
-          {inline('{')} (e.g. {inline("expression: '[^n]supported'")})
-        </>,
-      )}
-      {para(
-        <>
-          {inline('values: \{ ValueKey: "pattern" \}')} - for select fields: return the first
-          matching key; for {inline('tags')}: add all matching keys as tags
-        </>,
-      )}
-      {para(
-        <>
-          For {inline('tags')}, the rule result is added as a single computed tag per model and
-          merged with inherited folder tags.
-        </>,
-      )}
-
-      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Plain regex - returns first capture group, or full match:
-      </Typography>
-      {code("rule: regex\nexpression: '.*/([^/]+)/[^/]+$'")}
-      {para(
-        <>
-          For a file at {inline('Artists/Sculptor Name/dragon.stl')} → {inline('Sculptor Name')}
-        </>,
-      )}
-
-      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Sed-style substitution - transform the matched value:
-      </Typography>
-      {code("rule: regex\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
-      {para(<>Same result as above but using a substitution expression</>)}
-
-      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Enum (select) field - map patterns to values:
-      </Typography>
-      {code("source: full_path\nvalues:\n  Bust: 'bust'\n  Miniature: 'mini'")}
-      {para('For select fields, returns the first key whose pattern matches the path.')}
-
-      <Typography variant="caption" color="text.primary" sx={{ display: 'block', mt: 1, mb: 0.25 }}>
-        Tags field - map multiple patterns to tags:
-      </Typography>
-      {code("source: full_path\nvalues:\n  Supported: 'supported'\n  Miniature: 'mini'")}
-      {para('For tags, every matching key is added as a computed tag for the model.')}
-
-      <Divider sx={{ my: 1.5 }} />
-
-      {section('Inheritance')}
-      {para(
-        "Rules set on a parent folder cascade down to all subfolders and models unless overridden. When a subfolder defines its own rule for the same field, it replaces the parent's rule for that subtree.",
-      )}
-      {para(
-        'If a folder has a plain value set for a field, that value takes precedence over any inherited rule.',
-      )}
-      <Divider sx={{ my: 1.5 }} />
-      <Typography variant="body2" color="text.primary">
-        Rules system overview:{' '}
-        <Link
-          href="https://jamiehales.github.io/findamodel/rules/"
-          target="_blank"
-          rel="noreferrer"
-          underline="hover"
-        >
-          docs
-        </Link>
-      </Typography>
-      <Typography variant="body2" color="text.primary" sx={{ mt: 0.5 }}>
-        Regex rule reference:{' '}
-        <Link
-          href="https://jamiehales.github.io/findamodel/rules/regex-rule.html"
-          target="_blank"
-          rel="noreferrer"
-          underline="hover"
-        >
-          docs
-        </Link>
-      </Typography>
+          {inline('{')}, e.g. {inline("expression: '[^n]supported'")}
+        </p>
+        <p>
+          {inline('values: { ValueKey: "pattern" }')}: for select fields, the first matching key;
+          for {inline('tags')}, every matching key is added as a tag
+        </p>
+        <p>Plain regex, returning the first capture group or the whole match:</p>
+        {code("rule: regex\nexpression: '.*/([^/]+)/[^/]+$'")}
+        <p>
+          For {inline('Artists/Sculptor Name/dragon.stl')} this gives {inline('Sculptor Name')}.
+        </p>
+        <p>The same with a sed-style substitution:</p>
+        {code("rule: regex\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
+        <p>Select field, mapping patterns to values:</p>
+        {code("source: full_path\nvalues:\n  Bust: 'bust'\n  Miniature: 'mini'")}
+        <p>Tags, adding every key whose pattern matches:</p>
+        {code("source: full_path\nvalues:\n  Supported: 'supported'\n  Miniature: 'mini'")}
+        <hr />
+        <h3>Inheritance</h3>
+        <p>
+          Rules on a folder apply to everything below it until a subfolder sets its own rule for the
+          same field. A plain value on a folder takes precedence over an inherited rule.
+        </p>
+        <hr />
+        <p>
+          <TextLink
+            href="https://jamiehales.github.io/findamodel/rules/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Rules overview
+          </TextLink>
+          {' · '}
+          <TextLink
+            href="https://jamiehales.github.io/findamodel/rules/regex-rule.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Regex rule reference
+          </TextLink>
+        </p>
+      </div>
     </AppDialog>
   );
 }
 
 interface Props {
   path: string;
-  onClose?: () => void;
+  open: boolean;
+  onClose: () => void;
 }
 
 function normalizeRuleMap(
@@ -275,7 +190,7 @@ function areRuleMapsEqual(a: Record<string, string>, b: Record<string, string>) 
   return true;
 }
 
-export default function MetadataEditor({ path, onClose }: Props) {
+export default function MetadataEditor({ path, open, onClose }: Props) {
   const { data: detail, isLoading } = useDirectoryConfig(path);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const mutation = useUpdateDirectoryConfig(path);
@@ -296,11 +211,10 @@ export default function MetadataEditor({ path, onClose }: Props) {
   const [fieldModes, setFieldModes] = useState<Record<string, FieldMode>>({});
   const [fieldRuleTexts, setFieldRuleTexts] = useState<Record<string, string>>({});
   const [ruleErrors, setRuleErrors] = useState<Record<string, string | null>>({});
-  const [savedIndicator, setSavedIndicator] = useState(false);
   const [rulesHelpOpen, setRulesHelpOpen] = useState(false);
 
   useEffect(() => {
-    if (detail) {
+    if (detail && open) {
       const loaded = { ...detail.localValues } as MetadataFields;
       setFields(loaded);
 
@@ -324,7 +238,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
       setFieldRuleTexts(ruleTexts);
       setRuleErrors({});
     }
-  }, [detail]);
+  }, [detail, open]);
 
   function setFieldValue<K extends keyof MetadataFields>(key: K, value: MetadataFields[K]) {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -446,9 +360,7 @@ export default function MetadataEditor({ path, onClose }: Props) {
         tags: cleanFields.tags ?? null,
         fieldRules: fieldRulesMap,
       });
-      setSavedIndicator(true);
-      setTimeout(() => setSavedIndicator(false), 2000);
-      onClose?.();
+      onClose();
     } catch (err) {
       if (err instanceof ConfigValidationError) {
         setRuleErrors((prev) => ({ ...prev, ...err.fieldErrors }));
@@ -480,291 +392,257 @@ export default function MetadataEditor({ path, onClose }: Props) {
     (p?.tags?.length ?? 0) > 0 || (inheritedTagsRule?.trim().length ?? 0) > 0;
   const canResetTags = hasLocalTagsValue && hasInheritedTagsValue;
 
-  if (isLoading) {
+  const footer = (
+    <>
+      {mutation.isError && (
+        <span role="alert" className={`${styles.error} ${styles.footerNote}`}>
+          Couldn't save. Try again.
+        </span>
+      )}
+      <Button variant="ghost" onClick={onClose}>
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        onClick={() => doSave(fields)}
+        disabled={mutation.isPending || hasValidationErrors() || !isDirty}
+      >
+        {mutation.isPending ? <Spinner label="Saving" /> : null}
+        Save
+      </Button>
+    </>
+  );
+
+  function fieldTools({
+    label,
+    supportsRules,
+    isRuleMode,
+    yamlName,
+    canReset,
+    onReset,
+  }: {
+    label: string;
+    supportsRules: boolean;
+    isRuleMode: boolean;
+    yamlName: string;
+    canReset: boolean;
+    onReset: () => void;
+  }) {
     return (
-      <Box className={styles.loadingBox}>
-        <CircularProgress size={24} />
-      </Box>
+      <div className={styles.fieldTools}>
+        {isRuleMode && (
+          <Tooltip content="Rules help">
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label="Rules help"
+              onClick={() => setRulesHelpOpen(true)}
+            >
+              <CircleHelp size={14} strokeWidth={1.5} />
+            </IconButton>
+          </Tooltip>
+        )}
+        {supportsRules && (
+          <SegmentedControl
+            aria-label={`${label} source`}
+            value={isRuleMode ? 'rule' : 'value'}
+            onValueChange={(next) => {
+              if ((next === 'rule') !== isRuleMode) toggleMode(yamlName);
+            }}
+            className={styles.modeToggle}
+          >
+            <SegmentedControlItem value="value">Value</SegmentedControlItem>
+            <SegmentedControlItem value="rule">Rule</SegmentedControlItem>
+          </SegmentedControl>
+        )}
+        {canReset && (
+          <Tooltip content="Use inherited value">
+            <IconButton
+              variant="ghost"
+              size="sm"
+              aria-label={`Reset ${label} to inherited value`}
+              onClick={onReset}
+            >
+              <RotateCcw size={14} strokeWidth={1.5} />
+            </IconButton>
+          </Tooltip>
+        )}
+      </div>
+    );
+  }
+
+  function ruleField(
+    id: string,
+    yamlName: string,
+    text: string,
+    error: string | null,
+    inherited: string | null,
+  ) {
+    return (
+      <>
+        <Textarea
+          id={id}
+          rows={3}
+          value={text}
+          onChange={(e) => handleRuleChange(yamlName, e.target.value)}
+          aria-invalid={error ? true : undefined}
+          placeholder={getRulePlaceholder(inherited)}
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          className={styles.ruleInput}
+        />
+        {error && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+      </>
     );
   }
 
   return (
-    <Box className={styles.form}>
+    <AppSheet open={open} onClose={onClose} title="Edit metadata" footer={footer}>
       <RulesHelpDialog open={rulesHelpOpen} onClose={() => setRulesHelpOpen(false)} />
-
-      <Box>
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          className={styles.fieldHeader}
-        >
-          <Typography variant="caption" color="text.secondary">
-            Tags
-          </Typography>
-          <Stack direction="row" alignItems="center" gap={1}>
-            {isTagsRuleMode && (
-              <Tooltip title="Rules documentation">
-                <IconButton
-                  size="small"
-                  onClick={() => setRulesHelpOpen(true)}
-                  className={styles.helpBtn}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
-                  </svg>
-                </IconButton>
-              </Tooltip>
+      {isLoading ? (
+        <div className={styles.form}>
+          <Spinner />
+        </div>
+      ) : (
+        <div className={styles.form}>
+          <div className={styles.field}>
+            <div className={styles.fieldHeader}>
+              <Label htmlFor="folder-meta-tags">Tags</Label>
+              {fieldTools({
+                label: 'Tags',
+                supportsRules: true,
+                isRuleMode: isTagsRuleMode,
+                yamlName: TAGS_YAML_NAME,
+                canReset: canResetTags,
+                onReset: () => {
+                  setFieldValue('tags', null);
+                  if (isTagsRuleMode) {
+                    setFieldModes((prev) => ({ ...prev, [TAGS_YAML_NAME]: 'value' }));
+                    setFieldRuleTexts((prev) => ({ ...prev, [TAGS_YAML_NAME]: '' }));
+                  }
+                },
+              })}
+            </div>
+            {isTagsRuleMode ? (
+              ruleField(
+                'folder-meta-tags',
+                TAGS_YAML_NAME,
+                fieldRuleTexts[TAGS_YAML_NAME] ?? '',
+                ruleErrors[TAGS_YAML_NAME] ?? null,
+                inheritedTagsRule,
+              )
+            ) : (
+              <TagEditor
+                id="folder-meta-tags"
+                localTags={fields.tags}
+                inheritedTags={p?.tags ?? null}
+                tagOptions={[
+                  ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
+                  ...(metadataDictionary?.tags.observed ?? []),
+                ].filter((v, i, arr) => arr.indexOf(v) === i)}
+                onChange={(tags) => setFieldValue('tags', tags)}
+              />
             )}
-            <Chip
-              label={isTagsRuleMode ? 'Rule' : 'Value'}
-              size="small"
-              variant={isTagsRuleMode ? 'filled' : 'outlined'}
-              color={isTagsRuleMode ? 'warning' : 'default'}
-              onClick={() => toggleMode(TAGS_YAML_NAME)}
-              className={styles.modeChip}
-              clickable
-            />
-            <Tooltip
-              title={canResetTags ? 'Reset to inherited value' : 'No inherited value to reset to'}
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={!canResetTags}
-                  onClick={() => {
-                    setFieldValue('tags', null);
-                    if (isTagsRuleMode) {
-                      setFieldModes((prev) => ({ ...prev, [TAGS_YAML_NAME]: 'value' }));
-                      setFieldRuleTexts((prev) => ({ ...prev, [TAGS_YAML_NAME]: '' }));
-                    }
-                  }}
-                  className={styles.resetBtn}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10-8c-4.4 0-8.3 2.5-10.2 6.1C4.8 7 2 9.5 2 12.5c0 3.3 2.7 6 6 6 1 0 1.9-.2 2.8-.7 1.3 1.3 3.1 2.1 5.2 2.1 4.4 0 8-3.6 8-8s-3.6-8-8-8zM8 16c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4zm12-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                  </svg>
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Stack>
-        </Stack>
+          </div>
 
-        {isTagsRuleMode ? (
-          <TextField
-            multiline
-            minRows={3}
-            fullWidth
-            size="small"
-            value={fieldRuleTexts[TAGS_YAML_NAME] ?? ''}
-            onChange={(e) => handleRuleChange(TAGS_YAML_NAME, e.target.value)}
-            error={!!(ruleErrors[TAGS_YAML_NAME] ?? null)}
-            helperText={ruleErrors[TAGS_YAML_NAME] ?? undefined}
-            placeholder={getRulePlaceholder(inheritedTagsRule)}
-            slotProps={{
-              input: { className: styles.ruleInput },
-              htmlInput: {
-                spellCheck: false,
-                autoCorrect: 'off',
-                autoCapitalize: 'off',
-              },
-            }}
-          />
-        ) : (
-          <TagEditor
-            localTags={fields.tags}
-            inheritedTags={p?.tags ?? null}
-            tagOptions={[
-              ...(metadataDictionary?.tags.configured.map((v) => v.value) ?? []),
-              ...(metadataDictionary?.tags.observed ?? []),
-            ].filter((v, i, arr) => arr.indexOf(v) === i)}
-            onChange={(tags) => setFieldValue('tags', tags)}
-          />
-        )}
-      </Box>
+          {FIELDS.map((field) => {
+            const id = `folder-meta-${field.key}`;
+            const supportsRules = field.supportsRules !== false;
+            const isRuleMode = supportsRules && fieldModes[field.yamlName] === 'rule';
+            const ruleText = fieldRuleTexts[field.yamlName] ?? '';
+            const ruleError = ruleErrors[field.yamlName] ?? null;
+            const parentValue = p ? (p[field.key] as string | boolean | number | null) : null;
+            const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null;
+            const localValue = fields[field.key] as string | boolean | number | null;
+            const selectOptions = getSelectOptions(field, localValue);
+            const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null;
+            const hasInheritedValue = parentValue != null || inheritedRule != null;
 
-      {FIELDS.map((field) => {
-        const supportsRules = field.supportsRules !== false;
-        const isRuleMode = supportsRules && fieldModes[field.yamlName] === 'rule';
-        const ruleText = fieldRuleTexts[field.yamlName] ?? '';
-        const ruleError = ruleErrors[field.yamlName] ?? null;
-        const parentValue = p ? (p[field.key] as string | boolean | number | null) : null;
-        const inheritedRule = detail?.parentResolvedRules?.[field.yamlName] ?? null;
-        const localValue = fields[field.key] as string | boolean | number | null;
-        const selectOptions = getSelectOptions(field, localValue);
-        const hasLocalValue = isRuleMode ? ruleText.trim() !== '' : localValue != null;
-        const hasInheritedValue = parentValue != null || inheritedRule != null;
-        const canReset = hasLocalValue && hasInheritedValue;
+            const handleReset = () => {
+              setFieldValue(field.key, null as never);
+              if (isRuleMode) {
+                setFieldModes((prev) => ({ ...prev, [field.yamlName]: 'value' }));
+                setFieldRuleTexts((prev) => ({ ...prev, [field.yamlName]: '' }));
+              }
+            };
 
-        const handleReset = () => {
-          // Reset the field to default (null)
-          setFieldValue(field.key, null as never);
-          // Also clear rule mode if active
-          if (isRuleMode) {
-            setFieldModes((prev) => ({ ...prev, [field.yamlName]: 'value' }));
-            setFieldRuleTexts((prev) => ({ ...prev, [field.yamlName]: '' }));
-          }
-          // Save the cleared state
-          setFields((prev) => ({ ...prev, [field.key]: null }));
-        };
+            return (
+              <div key={field.key} className={styles.field}>
+                <div className={styles.fieldHeader}>
+                  <Label htmlFor={id}>{field.label}</Label>
+                  {fieldTools({
+                    label: field.label,
+                    supportsRules,
+                    isRuleMode,
+                    yamlName: field.yamlName,
+                    canReset: hasLocalValue && hasInheritedValue,
+                    onReset: handleReset,
+                  })}
+                </div>
 
-        return (
-          <Box key={field.key}>
-            {/* Label + mode toggle + reset button */}
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              className={styles.fieldHeader}
-            >
-              <Typography variant="caption" color="text.secondary">
-                {field.label}
-              </Typography>
-              <Stack direction="row" alignItems="center" gap={1}>
-                {isRuleMode && (
-                  <Tooltip title="Rules documentation">
-                    <IconButton
-                      size="small"
-                      onClick={() => setRulesHelpOpen(true)}
-                      className={styles.helpBtn}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
-                      </svg>
-                    </IconButton>
-                  </Tooltip>
+                {isRuleMode && ruleField(id, field.yamlName, ruleText, ruleError, inheritedRule)}
+
+                {!isRuleMode && field.fieldType === 'text' && (
+                  <MetadataTextField
+                    id={id}
+                    value={(fields[field.key] as string | null) ?? null}
+                    inheritedValue={(parentValue as string | null) ?? null}
+                    onChange={(v) => setFieldValue(field.key, v as never)}
+                  />
                 )}
-                <Chip
-                  label={isRuleMode ? 'Rule' : 'Value'}
-                  size="small"
-                  variant={isRuleMode ? 'filled' : 'outlined'}
-                  color={isRuleMode ? 'warning' : 'default'}
-                  onClick={supportsRules ? () => toggleMode(field.yamlName) : undefined}
-                  className={styles.modeChip}
-                  clickable={supportsRules}
-                />
-                <Tooltip
-                  title={canReset ? 'Reset to inherited value' : 'No inherited value to reset to'}
-                >
-                  <span>
-                    <IconButton
-                      size="small"
-                      disabled={!canReset}
-                      onClick={handleReset}
-                      className={styles.resetBtn}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M7 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10-8c-4.4 0-8.3 2.5-10.2 6.1C4.8 7 2 9.5 2 12.5c0 3.3 2.7 6 6 6 1 0 1.9-.2 2.8-.7 1.3 1.3 3.1 2.1 5.2 2.1 4.4 0 8-3.6 8-8s-3.6-8-8-8zM8 16c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4zm12-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                      </svg>
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </Stack>
-            </Stack>
 
-            {/* Rule textarea */}
-            {isRuleMode && (
-              <TextField
-                multiline
-                minRows={3}
-                fullWidth
-                size="small"
-                value={ruleText}
-                onChange={(e) => handleRuleChange(field.yamlName, e.target.value)}
-                error={!!ruleError}
-                helperText={ruleError ?? undefined}
-                placeholder={getRulePlaceholder(inheritedRule)}
-                slotProps={{
-                  input: { className: styles.ruleInput },
-                  htmlInput: {
-                    spellCheck: false,
-                    autoCorrect: 'off',
-                    autoCapitalize: 'off',
-                  },
-                }}
-              />
-            )}
+                {!isRuleMode && field.fieldType === 'select' && (
+                  <MetadataSelectField
+                    id={id}
+                    value={(fields[field.key] as string | null) ?? null}
+                    inheritedValue={(parentValue as string | null) ?? null}
+                    options={selectOptions}
+                    onChange={(v) => setFieldValue(field.key, v as never)}
+                  />
+                )}
 
-            {/* Text input */}
-            {!isRuleMode && field.fieldType === 'text' && (
-              <MetadataTextField
-                value={(fields[field.key] as string | null) ?? null}
-                inheritedValue={(parentValue as string | null) ?? null}
-                onChange={(v) => setFieldValue(field.key, v as never)}
-                inputClassName={styles.fieldInput}
-              />
-            )}
+                {!isRuleMode && field.fieldType === 'bool' && (
+                  <MetadataBoolField
+                    id={id}
+                    value={(fields[field.key] as boolean | null) ?? null}
+                    inheritedValue={(parentValue as boolean | null) ?? null}
+                    onChange={(v) => setFieldValue(field.key, v as never)}
+                  />
+                )}
 
-            {/* Select input */}
-            {!isRuleMode && field.fieldType === 'select' && (
-              <MetadataSelectField
-                value={(fields[field.key] as string | null) ?? null}
-                inheritedValue={(parentValue as string | null) ?? null}
-                options={selectOptions}
-                onChange={(v) => setFieldValue(field.key, v as never)}
-                selectClassName={styles.selectSmall}
-              />
-            )}
-
-            {/* Bool input */}
-            {!isRuleMode && field.fieldType === 'bool' && (
-              <MetadataBoolField
-                value={(fields[field.key] as boolean | null) ?? null}
-                inheritedValue={(parentValue as boolean | null) ?? null}
-                onChange={(v) => setFieldValue(field.key, v as never)}
-                selectClassName={styles.selectSmall}
-              />
-            )}
-
-            {!isRuleMode && field.fieldType === 'number' && (
-              <TextField
-                size="small"
-                fullWidth
-                type="number"
-                value={fields.raftHeightMm ?? ''}
-                placeholder={
-                  typeof parentValue === 'number' && Number.isFinite(parentValue)
-                    ? String(parentValue)
-                    : undefined
-                }
-                onChange={(e) => {
-                  const raw = e.target.value.trim();
-                  const parsed = raw === '' ? null : Number(raw);
-                  const isValid = parsed != null && Number.isFinite(parsed) && parsed >= 0;
-                  setFieldValue(
-                    field.key,
-                    raw === '' || isValid ? (parsed as never) : (null as never),
-                  );
-                }}
-                InputProps={{ className: styles.fieldInput }}
-              />
-            )}
-          </Box>
-        );
-      })}
-
-      <Box className={styles.actions}>
-        {mutation.isError && (
-          <Typography variant="caption" color="error.main" className={styles.inlineError}>
-            Failed to save - please try again.
-          </Typography>
-        )}
-        {onClose && <Button onClick={onClose}>Close</Button>}
-        <Button
-          variant={isDirty ? 'affirmative' : 'outlined'}
-          onClick={() => doSave(fields)}
-          disabled={mutation.isPending || hasValidationErrors() || !isDirty}
-          className={styles.saveBtn}
-        >
-          {mutation.isPending ? (
-            <CircularProgress size={14} color="inherit" />
-          ) : savedIndicator ? (
-            'Saved!'
-          ) : (
-            'Save'
-          )}
-        </Button>
-      </Box>
-    </Box>
+                {!isRuleMode && field.fieldType === 'number' && (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={fields.raftHeightMm ?? ''}
+                    placeholder={
+                      typeof parentValue === 'number' && Number.isFinite(parentValue)
+                        ? String(parentValue)
+                        : undefined
+                    }
+                    onChange={(e) => {
+                      const raw = e.target.value.trim();
+                      const parsed = raw === '' ? null : Number(raw);
+                      const isValid = parsed != null && Number.isFinite(parsed) && parsed >= 0;
+                      setFieldValue(
+                        field.key,
+                        raw === '' || isValid ? (parsed as never) : (null as never),
+                      );
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </AppSheet>
   );
 }

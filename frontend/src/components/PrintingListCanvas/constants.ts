@@ -36,13 +36,14 @@ export const CAT_WALL = 0x0001;
 export const CAT_OBJECT = 0x0002;
 export const CAT_BORDER = 0x0004;
 
+// Hull colors from the mostlymaking data palette and its lighter text shades.
 export const PALETTE = [
-  0x818cf8, // indigo
-  0x34d399, // emerald
-  0xfb923c, // orange
-  0xf472b6, // pink
-  0xa78bfa, // violet
-  0x38bdf8, // sky
-  0xfbbf24, // amber
-  0xf87171, // rose
+  0x94a7cc, // slate
+  0xc9a45c, // brass
+  0x8fb894, // sage
+  0xb892c0, // heather
+  0xe0909b, // rose (primary text)
+  0xe0cfa6, // parchment (secondary text)
+  0xa9a5b0, // muted
+  0xef9a96, // vermilion (destructive text)
 ];

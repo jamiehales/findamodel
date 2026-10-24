@@ -1,22 +1,30 @@
 import { useEffect, useState } from 'react';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
-import Pagination from '@mui/material/Pagination';
-import Stack from '@mui/material/Stack';
 import { useModels, useQueryModels } from '../lib/queries';
 import type { ModelFilter } from '../lib/api';
 import ModelCard from './ModelCard';
-import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from './CardGrid';
-import styles from './ModelGrid.module.css';
+import CardGrid from './CardGrid';
+import LoadingView from './LoadingView';
+import Pagination from './Pagination';
+import styles from './StatusView.module.css';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 24;
 
 interface Props {
   filter?: ModelFilter;
   modelName?: string;
+  /** Reports the total match count, for the result count beside the search. */
+  onTotalChange?: (total: number | null) => void;
 }
 
-function FilteredGrid({ filter, modelName }: { filter: ModelFilter; modelName?: string }) {
+function FilteredGrid({
+  filter,
+  modelName,
+  onTotalChange,
+}: {
+  filter: ModelFilter;
+  modelName?: string;
+  onTotalChange?: (total: number | null) => void;
+}) {
   const [page, setPage] = useState(1);
   const offset = (page - 1) * PAGE_SIZE;
   const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset, modelName);
@@ -25,61 +33,47 @@ function FilteredGrid({ filter, modelName }: { filter: ModelFilter; modelName?: 
     setPage(1);
   }, [filter, modelName]);
 
-  if (isPending) return <LoadingState />;
-  if (isError || !data || data.models.length === 0) return null;
+  useEffect(() => {
+    onTotalChange?.(data ? data.totalCount : null);
+  }, [data, onTotalChange]);
+
+  if (isPending) return <LoadingView />;
+  if (isError) return <p className={styles.error}>Couldn't load models. Try again.</p>;
+  if (data.models.length === 0)
+    return <p className={styles.empty}>No models match these filters.</p>;
 
   const totalPages = Math.max(1, Math.ceil(data.totalCount / PAGE_SIZE));
 
   return (
-    <Box className={styles.container}>
-      <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
+    <>
+      <CardGrid>
         {data.models.map((model) => (
           <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
         ))}
       </CardGrid>
-      {totalPages > 1 && (
-        <Stack alignItems="center" paddingTop={2}>
-          <Pagination
-            color="primary"
-            count={totalPages}
-            page={page}
-            onChange={(_event, value) => setPage(value)}
-          />
-        </Stack>
-      )}
-    </Box>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+    </>
   );
 }
 
 function UnfilteredGrid() {
   const { data: models, isPending, isError } = useModels(80);
 
-  if (isPending) return <LoadingState />;
+  if (isPending) return <LoadingView />;
   if (isError || !models || models.length === 0) return null;
 
   return (
-    <Box className={styles.container}>
-      <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
-        {models.map((model) => (
-          <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
-        ))}
-      </CardGrid>
-    </Box>
+    <CardGrid>
+      {models.map((model) => (
+        <ModelCard key={model.id} model={model} href={`/model/${encodeURIComponent(model.id)}`} />
+      ))}
+    </CardGrid>
   );
 }
 
-function LoadingState() {
-  return (
-    <Box className={styles.container}>
-      <Box className={styles.loadingCenter}>
-        <CircularProgress color="primary" />
-      </Box>
-    </Box>
-  );
-}
-
-function ModelGrid({ filter, modelName }: Props) {
-  if (filter) return <FilteredGrid filter={filter} modelName={modelName} />;
+function ModelGrid({ filter, modelName, onTotalChange }: Props) {
+  if (filter)
+    return <FilteredGrid filter={filter} modelName={modelName} onTotalChange={onTotalChange} />;
   return <UnfilteredGrid />;
 }
 

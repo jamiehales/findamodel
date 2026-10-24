@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -35,6 +37,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,6 +61,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

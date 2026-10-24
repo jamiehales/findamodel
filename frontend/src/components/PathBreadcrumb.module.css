@@ -1,43 +1,23 @@
-.breadcrumb {
+.crumbs {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-}
-
-.rootLink {
-  font-size: 0.875rem !important;
-  color: var(--color-primary-light) !important;
-  text-decoration: underline;
-}
-
-.segment {
-  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px 6px;
+  min-width: 0;
+  font: 400 13px/20px var(--font-mono);
+  color: var(--muted-foreground);
 }
 
-.separator {
-  color: #475569 !important;
-  font-size: 0.875rem !important;
+.crumbs a:hover {
+  color: var(--foreground);
 }
 
-.segLink {
-  font-size: 0.875rem !important;
-  color: var(--color-primary-light) !important;
-  cursor: pointer;
+.crumbs a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
-.segLink:hover {
-  text-decoration: underline;
-}
-
-.segLinkLast {
-  font-size: 0.875rem !important;
-  color: var(--color-text-primary) !important;
-  font-weight: 600 !important;
-}
-
-.segLinkLast:hover {
-  text-decoration: none;
+.current {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
 }

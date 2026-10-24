@@ -1,6 +1,6 @@
 import styles from './CardGrid.module.css';
 
-export const DEFAULT_CARD_MIN_WIDTH_PX = 320;
+export const DEFAULT_CARD_MIN_WIDTH_PX = 200;
 
 interface CardGridProps {
   children: React.ReactNode;

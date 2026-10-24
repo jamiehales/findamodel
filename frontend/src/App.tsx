@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ModelsPage from './pages/ModelsPage';
 import ModelPage from './pages/ModelPage';
@@ -7,11 +7,11 @@ import PrintingListsManagePage from './pages/PrintingListsManagePage';
 import ExplorePage from './pages/ExplorePage';
 import SettingsPage from './pages/SettingsPage';
 import IndexingPage from './pages/IndexingPage';
-import NavBar from './components/NavBar';
+import AppHeader from './components/AppHeader';
 import InitialSetupPage from './pages/InitialSetupPage';
 import { RenderControlsProvider } from './components/RenderControlsContext';
 import { useSetupStatus } from './lib/queries';
-import { Container, Stack, Typography } from '@mui/material';
+import LoadingView from './components/LoadingView';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -34,22 +34,24 @@ function ScrollToTop() {
 
 function App() {
   const setupStatusQuery = useSetupStatus();
+  const requiresWizard = !!setupStatusQuery.data?.requiresWizard;
+  // Saving the setup refreshes the setup status, but the wizard stays up for its
+  // last screen until the person presses Finish.
+  const [inWizard, setInWizard] = useState(false);
+
+  useEffect(() => {
+    if (requiresWizard) setInWizard(true);
+  }, [requiresWizard]);
 
   if (setupStatusQuery.isLoading) {
-    return (
-      <Container maxWidth="md">
-        <Stack spacing={2} alignItems="center">
-          <Typography variant="h5">Loading Application</Typography>
-          <Typography variant="body1">Checking setup status...</Typography>
-        </Stack>
-      </Container>
-    );
+    return <LoadingView minHeight="100vh" />;
   }
 
-  if (setupStatusQuery.data?.requiresWizard) {
+  if (inWizard || requiresWizard) {
     return (
       <InitialSetupPage
         onCompleted={() => {
+          setInWizard(false);
           setupStatusQuery.refetch();
         }}
       />
@@ -60,7 +62,7 @@ function App() {
     <BrowserRouter>
       <ScrollToTop />
       <RenderControlsProvider>
-        <NavBar />
+        <AppHeader />
         <Routes>
           <Route path="/" element={<ModelsPage />} />
           <Route path="/model/:id" element={<ModelPage />} />

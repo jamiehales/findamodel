@@ -1,5 +1,3 @@
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import styles from './HullPreview.module.css';
 
 interface HullPreviewProps {
@@ -70,14 +68,14 @@ function toPatternId(label: string): string {
 
 function EmptyPanel({ label }: { label: string }) {
   return (
-    <Box className={styles.emptyPanel}>
-      <Box className={styles.emptyPanelHeader}>
-        <Typography className={styles.panelLabel}>{label}</Typography>
-      </Box>
-      <Box className={styles.emptyNoDataWrap}>
-        <Typography className={styles.emptyNoData}>No data</Typography>
-      </Box>
-    </Box>
+    <div className={styles.emptyPanel}>
+      <div className={styles.emptyPanelHeader}>
+        <span className={styles.panelLabel}>{label}</span>
+      </div>
+      <div className={styles.emptyNoDataWrap}>
+        <span className={styles.emptyNoData}>No data</span>
+      </div>
+    </div>
   );
 }
 
@@ -93,27 +91,27 @@ function HullPanel({ label, layers }: PanelProps) {
   const patternId = toPatternId(label);
 
   return (
-    <Box className={styles.panel}>
-      <Box className={styles.panelHeader}>
-        <Typography className={styles.panelLabel}>{label}</Typography>
+    <div className={styles.panel}>
+      <div className={styles.panelHeader}>
+        <span className={styles.panelLabel}>{label}</span>
         {layers.length > 1 && (
-          <Box className={styles.legend}>
+          <div className={styles.legend}>
             {layers.map((l) => (
-              <Box key={l.label} className={styles.legendItem}>
-                <Box className={styles.legendDot} style={{ backgroundColor: l.color }} />
-                <Typography className={styles.legendLabel}>{l.label}</Typography>
-              </Box>
+              <div key={l.label} className={styles.legendItem}>
+                <div className={styles.legendDot} style={{ backgroundColor: l.color }} />
+                <span className={styles.legendLabel}>{l.label}</span>
+              </div>
             ))}
-          </Box>
+          </div>
         )}
-      </Box>
+      </div>
       <svg
         viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`}
         style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }}
       >
         <defs>
           <pattern id={patternId} width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#3a4559" strokeWidth="0.5" />
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#2a282e" strokeWidth="0.5" />
           </pattern>
         </defs>
         <rect width={SVG_SIZE} height={SVG_SIZE} fill={`url(#${patternId})`} />
@@ -136,7 +134,7 @@ function HullPanel({ label, layers }: PanelProps) {
           </g>
         ))}
       </svg>
-    </Box>
+    </div>
   );
 }
 
@@ -151,15 +149,15 @@ export default function HullPreview({
 
   const convexLayers = [
     ...(convexCoords && convexCoords.length >= 2
-      ? [{ coords: convexCoords, color: '#818cf8', label: 'Full' }]
+      ? [{ coords: convexCoords, color: '#b892c0', label: 'Full' }]
       : []),
     ...(sansRaftCoords && sansRaftCoords.length >= 2
-      ? [{ coords: sansRaftCoords, color: '#f59e0b', label: 'Sans raft' }]
+      ? [{ coords: sansRaftCoords, color: '#e0909b', label: 'Sans raft' }]
       : []),
   ];
 
   return (
-    <Box className={styles.container}>
+    <div className={styles.container}>
       {convexLayers.length > 0 ? (
         <HullPanel label="Convex" layers={convexLayers} />
       ) : (
@@ -169,11 +167,11 @@ export default function HullPreview({
       {concaveCoords && concaveCoords.length >= 2 ? (
         <HullPanel
           label="Concave Hull"
-          layers={[{ coords: concaveCoords, color: '#34d399', label: 'Concave' }]}
+          layers={[{ coords: concaveCoords, color: '#8fb894', label: 'Concave' }]}
         />
       ) : (
         <EmptyPanel label="Concave Hull" />
       )}
-    </Box>
+    </div>
   );
 }

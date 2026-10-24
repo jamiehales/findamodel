@@ -1,52 +1,36 @@
-import FormControl from '@mui/material/FormControl';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@jamiehales/ui-kit/mostlymaking';
+
+const UNSET = '__unset__';
 
 interface Props {
+  id?: string;
   value: boolean | null;
   inheritedValue?: boolean | null;
   onChange: (value: boolean | null) => void;
-  selectClassName?: string;
 }
 
-export default function MetadataBoolField({
-  value,
-  inheritedValue,
-  onChange,
-  selectClassName,
-}: Props) {
+export default function MetadataBoolField({ id, value, inheritedValue, onChange }: Props) {
+  const unsetLabel =
+    inheritedValue != null ? `Not set (${inheritedValue ? 'Yes' : 'No'})` : 'Not set';
   return (
-    <>
-      <FormControl size="small" fullWidth>
-        <Select
-          displayEmpty
-          value={value === null ? '' : String(value)}
-          onChange={(e) => {
-            const v = e.target.value;
-            onChange(v === '' ? null : v === 'true');
-          }}
-          className={selectClassName}
-          renderValue={(v) =>
-            v !== '' ? (
-              v === 'true' ? (
-                'True'
-              ) : (
-                'False'
-              )
-            ) : (
-              <em style={{ color: 'inherit', opacity: 0.5 }}>
-                Not set{inheritedValue != null ? ` (${String(inheritedValue)})` : ''}
-              </em>
-            )
-          }
-        >
-          <MenuItem value="">
-            <em>Not set</em>
-          </MenuItem>
-          <MenuItem value="true">True</MenuItem>
-          <MenuItem value="false">False</MenuItem>
-        </Select>
-      </FormControl>
-    </>
+    <Select
+      value={value === null ? UNSET : String(value)}
+      onValueChange={(v) => onChange(v === UNSET ? null : v === 'true')}
+    >
+      <SelectTrigger id={id}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNSET}>{unsetLabel}</SelectItem>
+        <SelectItem value="true">Yes</SelectItem>
+        <SelectItem value="false">No</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }

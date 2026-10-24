@@ -1,27 +1,22 @@
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import CircularProgress from '@mui/material/CircularProgress';
-import Tooltip from '@mui/material/Tooltip';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
+import { Button, IconButton, Spinner, Tooltip } from '@jamiehales/ui-kit/mostlymaking';
 import { useExplorer, useIndexFolder, useIsFolderIndexing } from '../lib/queries';
 import type { ExplorerModel, Model } from '../lib/api';
 import { explorerFileUrl } from '../lib/api';
-import AppDialog from '../components/AppDialog';
 import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
-import ExplorerFileCard from '../components/ExplorerFileCard';
+import ExplorerFileRow from '../components/ExplorerFileCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
 import ModelCard from '../components/ModelCard';
 import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
-import PageLayout from '../components/layouts/PageLayout';
-import CardGrid, { DEFAULT_CARD_MIN_WIDTH_PX } from '../components/CardGrid';
+import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
+import CardGrid from '../components/CardGrid';
+import explorerStyles from '../components/Explorer.module.css';
+import statusStyles from '../components/StatusView.module.css';
 import styles from './ExplorePage.module.css';
 
 function toProcessedModel(model: ExplorerModel): Model | null {
@@ -63,75 +58,77 @@ function toProcessedModel(model: ExplorerModel): Model | null {
   };
 }
 
+function Section({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const id = `section-${title.toLowerCase()}`;
+  return (
+    <section className={styles.section} aria-labelledby={id}>
+      <div className={styles.sectionHeader}>
+        <h2 id={id} className="mm-type-label">
+          {title}
+        </h2>
+        <span className={styles.badge}>{count}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function ExplorePageInner({ path }: { path: string }) {
   const { data, isPending, isError } = useExplorer(path);
 
   if (isPending) return <LoadingView />;
-
-  if (isError) return <ErrorView message="Failed to load directory. Check that the path exists." />;
+  if (isError) return <ErrorView message="Couldn't open this folder. Check that it exists." />;
 
   const isEmpty = data.folders.length === 0 && data.models.length === 0 && data.files.length === 0;
+  if (isEmpty) return <p className={statusStyles.empty}>This folder is empty.</p>;
 
   return (
     <>
-      {isEmpty && (
-        <Typography color="text.disabled" className={styles.statusMessage}>
-          This folder is empty.
-        </Typography>
-      )}
-
       {data.folders.length > 0 && (
-        <Box
-          className={
-            data.models.length > 0 || data.files.length > 0 ? styles.sectionWithMargin : undefined
-          }
-        >
-          <Typography variant="section-label">Folders</Typography>
-          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
+        <Section title="Folders" count={data.folders.length}>
+          <div className={styles.folders}>
             {data.folders.map((folder) => (
               <FolderCard key={folder.path} folder={folder} href={`/explore/${folder.path}`} />
             ))}
-          </CardGrid>
-        </Box>
+          </div>
+        </Section>
       )}
 
       {data.models.length > 0 && (
-        <Box className={data.files.length > 0 ? styles.sectionWithMargin : undefined}>
-          <Typography variant="section-label">Models</Typography>
-          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
+        <Section title="Models" count={data.models.length}>
+          <CardGrid minCardWidth={180}>
             {data.models.map((model) => {
-              const processedModel = toProcessedModel(model);
-              if (processedModel) {
-                return (
-                  <ModelCard
-                    key={processedModel.id}
-                    model={processedModel}
-                    href={`/model/${encodeURIComponent(processedModel.id)}`}
-                  />
-                );
-              }
-
-              return (
-                <ExplorerModelCard
-                  key={model.relativePath}
-                  model={model}
-                  href={model.id ? `/model/${encodeURIComponent(model.id)}` : undefined}
+              const processed = toProcessedModel(model);
+              return processed ? (
+                <ModelCard
+                  key={processed.id}
+                  model={processed}
+                  href={`/model/${encodeURIComponent(processed.id)}`}
                 />
+              ) : (
+                <ExplorerModelCard key={model.relativePath} model={model} />
               );
             })}
           </CardGrid>
-        </Box>
+        </Section>
       )}
 
       {data.files.length > 0 && (
-        <Box>
-          <Typography variant="section-label">Files</Typography>
-          <CardGrid minCardWidth={DEFAULT_CARD_MIN_WIDTH_PX}>
+        <Section title="Files" count={data.files.length}>
+          <div className={explorerStyles.files}>
             {data.files.map((file) => (
-              <ExplorerFileCard key={file.relativePath} file={file} />
+              <ExplorerFileRow key={file.relativePath} file={file} />
             ))}
-          </CardGrid>
-        </Box>
+          </div>
+        </Section>
       )}
     </>
   );
@@ -143,56 +140,47 @@ export default function ExplorePage() {
   const [metadataOpen, setMetadataOpen] = useState(false);
   const indexFolder = useIndexFolder(path);
   const indexingState = useIsFolderIndexing(path);
-  const isIndexing = indexingState === 'running';
+  const segments = path === '' ? [] : path.split('/');
+  const title = segments[segments.length - 1] ?? 'Explore';
 
   return (
     <PageLayout>
-      <Box className={styles.headerRow}>
-        <PathBreadcrumb path={path} />
-        <Stack direction="row" alignItems="center" className={styles.headerActions}>
-          <Button size="small" variant="outlined" onClick={() => setMetadataOpen(true)}>
-            Edit metadata
-          </Button>
-          <Tooltip
-            title={
-              indexingState === 'running'
-                ? 'Indexing...'
-                : indexingState === 'queued'
-                  ? 'Queued...'
-                  : 'Index folder'
-            }
-            placement="top"
-          >
-            <span>
+      <PageHeader
+        before={segments.length > 0 ? <PathBreadcrumb path={path} /> : undefined}
+        title={title}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setMetadataOpen(true)}>
+              Edit metadata
+            </Button>
+            <Tooltip
+              content={
+                indexingState === 'running'
+                  ? 'Indexing'
+                  : indexingState === 'queued'
+                    ? 'Queued'
+                    : 'Index folder'
+              }
+            >
               <IconButton
-                size="small"
-                color="primary"
                 aria-label="Index folder"
                 onClick={() => indexFolder.mutate()}
                 disabled={indexingState !== null}
               >
-                {isIndexing ? (
-                  <CircularProgress size={16} />
+                {indexingState === 'running' ? (
+                  <Spinner label="Indexing" />
                 ) : (
-                  <RefreshRoundedIcon fontSize="small" />
+                  <RefreshCw size={18} strokeWidth={1.5} />
                 )}
               </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
-      </Box>
+            </Tooltip>
+          </>
+        }
+      />
 
       <ExplorePageInner path={path} />
 
-      <AppDialog
-        open={metadataOpen}
-        onClose={() => setMetadataOpen(false)}
-        title="Edit metadata"
-        maxWidth="md"
-        fullWidth
-      >
-        <MetadataEditor path={path} onClose={() => setMetadataOpen(false)} />
-      </AppDialog>
+      <MetadataEditor path={path} open={metadataOpen} onClose={() => setMetadataOpen(false)} />
     </PageLayout>
   );
 }

@@ -1,128 +1,315 @@
-.page {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.section {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;
-}
-
-.sectionsRow {
-  align-items: stretch;
-  overflow-x: auto;
-}
-
-.sectionsColumn {
-  align-items: stretch;
-}
-
-.group {
-  gap: 8px;
-}
-
-.globalSettingsSection {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.settingsLayout {
+.tabs {
   align-items: flex-start;
 }
 
-.sidebar {
-  width: 220px;
-  min-width: 220px;
-  border: 1px solid var(--mui-palette-divider);
-  border-radius: 12px;
+.content[hidden] {
+  display: none;
+}
+
+.content {
+  flex: 999 1 560px;
+  min-width: 0;
+  max-width: 920px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+@media (max-width: 760px) {
+  .tabs {
+    flex-direction: column;
+  }
+
+  .content {
+    flex-basis: auto;
+    width: 100%;
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--mm-edge);
+  border-radius: var(--mm-r-card);
+  background: var(--card);
+  box-shadow: 2px 2px 0 var(--mm-shadow-soft);
   overflow: hidden;
 }
 
-.contentArea {
-  flex: 1;
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-height: 60px;
+  padding: 12px var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+.rowLabel {
+  flex: 1 1 220px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.addRow {
+.rowLabelInline {
+  display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
 }
 
-.configRow {
+.rowTitle {
+  font: 600 14px/20px var(--font-sans);
+  color: var(--foreground);
+}
+
+.mono {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+.unit {
+  position: relative;
+  width: 140px;
+}
+
+.unit > input {
+  padding-right: 40px;
+  text-align: right;
+}
+
+.unit > span {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.versionField {
+  width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.versionField > input {
+  text-align: right;
+}
+
+.error,
+.errorText {
+  color: var(--destructive-text);
+}
+
+.error {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.warnText {
+  color: var(--secondary-foreground);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.delete {
+  color: var(--destructive-text);
+}
+
+.printer {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: 12px var(--space-4);
+  border-top: 1px solid var(--border);
 }
 
-.chipsWrap {
+.printer:first-child {
+  border-top: 0;
+}
+
+.printerName {
+  display: flex;
+  flex-direction: column;
+}
+
+.printerFields {
+  flex: 1 1 360px;
+  display: flex;
   flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.filterRow {
+.printerFields > input {
+  flex: 1 1 160px;
+}
+
+.printerActions {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 6px;
 }
 
-.filterControl {
-  flex: 0 1 240px;
-  min-width: 240px;
-}
-
-.channelFilterControl {
-  flex-basis: 320px;
-  min-width: 320px;
-}
-
-.logsList {
-  max-height: 65vh;
-  overflow: auto;
-}
-
-.logCard {
-  border: 1px solid var(--mui-palette-divider);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.logMetaRow {
+.addPrinter {
+  flex-direction: row;
   flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px var(--space-4);
+  padding: var(--space-4);
 }
 
-.logMetaText {
-  color: var(--mui-palette-text-secondary);
-  font-size: 0.8rem;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field:first-child {
+  flex: 1 1 200px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.inline > input {
+  flex: 1 1 auto;
+  max-width: 360px;
+}
+
+.observed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 12px var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.observed > :global(.mm-type-label) {
+  color: var(--muted-foreground);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.logFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) 12px;
+}
+
+.filter {
+  width: 200px;
+}
+
+.spacer {
+  flex: 1 1 0;
+}
+
+.log {
+  display: grid;
+  grid-template-columns: 170px 80px 120px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.log:first-child {
+  border-top: 0;
+}
+
+@media (max-width: 760px) {
+  .log {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.logMessage {
+  font: 400 13px/18px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.exception {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: var(--mm-r-sm);
+  background: var(--background);
+  color: var(--destructive-text);
+  font: 400 12px/16px var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.emptyRow {
+  padding: var(--space-6) var(--space-4);
+  color: var(--muted-foreground);
 }
 
 .statsGrid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: var(--space-4);
 }
 
-.statsCard {
-  padding: 16px;
-  border: 1px solid var(--mui-palette-divider);
-  border-radius: 12px;
+.statsTitle {
+  padding: 12px var(--space-4);
+  color: var(--muted-foreground);
 }
 
-.statRow {
-  align-items: flex-start;
+.stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0;
 }
 
-.statValue {
+.stats dt,
+.stats dd {
+  margin: 0;
+  padding: 8px var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.stats dt {
+  color: var(--muted-foreground);
+}
+
+.stats dd {
   text-align: right;
+  font: 400 13px/20px var(--font-mono);
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 900px) {
-  .sidebar {
-    width: 100%;
-    min-width: 0;
-  }
 }
