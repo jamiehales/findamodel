@@ -28,8 +28,8 @@ const RENDER_WIDTH: u32 = 512;
 const RENDER_HEIGHT: u32 = 512;
 const SUPPORTS_REMOVED_SUFFIX: &str = "_supportsremoved";
 
-// Colours matching ModelViewer.tsx: body = #94a7cc (slate), supports = #c9a45c (brass).
-const BODY_COLOR: Vec3 = Vec3::new(0x94 as f32 / 255.0, 0xa7 as f32 / 255.0, 0xcc as f32 / 255.0);
+// Colours matching ModelViewer.tsx: body = #a8404f (oxblood), supports = #c9a45c (brass).
+const BODY_COLOR: Vec3 = Vec3::new(0xa8 as f32 / 255.0, 0x40 as f32 / 255.0, 0x4f as f32 / 255.0);
 const SUPPORT_COLOR: Vec3 = Vec3::new(0xc9 as f32 / 255.0, 0xa4 as f32 / 255.0, 0x5c as f32 / 255.0);
 
 /// File stem for a model's previews. The support split depends on the raft height and the

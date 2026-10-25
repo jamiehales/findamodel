@@ -1,4 +1,4 @@
-// Preview shader. Lighting matches the frontend viewer (ModelViewer.tsx):
+// Preview shader, ported to the frontend viewer in frontend/src/lib/previewShading.ts:
 //   ambient 0.4, directional lights [5,8,5] x1.2, [-4,2,-2] x0.4, [0,-3,-5] x0.25.
 
 struct Uniforms {

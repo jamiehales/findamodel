@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
+import { createPreviewMaterial } from '../lib/previewShading';
 import { useRenderControls } from './RenderControlsContext';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
@@ -10,26 +11,15 @@ const FRAMING_PADDING = 1.15;
 
 // Colors from the mostlymaking data palette. Keep MODEL_COLOR and SUPPORT_COLOR in
 // step with BODY_COLOR and SUPPORT_COLOR in backend/src/preview/mod.rs.
-const MODEL_COLOR = '#94a7cc';
+const MODEL_COLOR = '#a8404f';
 const SUPPORT_COLOR = '#c9a45c';
 const CONVEX_HULL_COLOR = '#b892c0';
 const CONCAVE_HULL_COLOR = '#8fb894';
-const SANS_RAFT_HULL_COLOR = '#e0909b';
+const SANS_RAFT_HULL_COLOR = '#94a7cc';
 const SCENE_BACKGROUND = '#18171a';
 
 function SceneBg({ color }: { color: string }) {
   return <color attach="background" args={[color]} />;
-}
-
-function Lighting() {
-  return (
-    <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[5, 8, 5]} intensity={1.2} />
-      <directionalLight position={[-4, 2, -2]} intensity={0.4} />
-      <directionalLight position={[0, -3, -5]} intensity={0.25} />
-    </>
-  );
 }
 
 function Grid() {
@@ -162,6 +152,13 @@ interface GeometryModelProps {
   raftHeightMm: number;
 }
 
+/** Material shaded like the rendered previews, disposed when it changes or unmounts. */
+function usePreviewMaterial(color: string, opacity?: number): THREE.ShaderMaterial {
+  const material = useMemo(() => createPreviewMaterial(color, opacity), [color, opacity]);
+  useEffect(() => () => material.dispose(), [material]);
+  return material;
+}
+
 function GeometryModel({
   geometry: data,
   color,
@@ -174,9 +171,9 @@ function GeometryModel({
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    geo.computeVertexNormals();
     return geo;
   }, [data]);
+  const material = usePreviewMaterial(color);
 
   const hullCoords = useMemo((): Array<[number, number]> | null => {
     if (!convexHull) return null;
@@ -207,9 +204,7 @@ function GeometryModel({
 
   return (
     <group>
-      <mesh geometry={bufferGeometry}>
-        <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} flatShading />
-      </mesh>
+      <mesh geometry={bufferGeometry} material={material} />
       <HullPolygon coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
       <HullLine coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
       <HullPolygon
@@ -245,25 +240,13 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    geo.computeVertexNormals();
     return geo;
   }, [data]);
+  const material = usePreviewMaterial(SUPPORT_COLOR, 0.5);
 
   if (!data || !bufferGeometry) return null;
 
-  return (
-    <mesh geometry={bufferGeometry} visible={visible}>
-      <meshStandardMaterial
-        color={SUPPORT_COLOR}
-        roughness={0.55}
-        metalness={0.1}
-        transparent
-        opacity={0.5}
-        flatShading
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
+  return <mesh geometry={bufferGeometry} material={material} visible={visible} />;
 }
 
 class ViewerErrorBoundary extends React.Component<
@@ -378,7 +361,6 @@ export default function ModelViewer({
             halfExtents={halfExtents}
             direction={DEFAULT_VIEW_DIRECTION}
           />
-          <Lighting />
           <Grid />
           <GeometryModel
             geometry={geometryData}

@@ -152,7 +152,7 @@ export default function HullPreview({
       ? [{ coords: convexCoords, color: '#b892c0', label: 'Full' }]
       : []),
     ...(sansRaftCoords && sansRaftCoords.length >= 2
-      ? [{ coords: sansRaftCoords, color: '#e0909b', label: 'Sans raft' }]
+      ? [{ coords: sansRaftCoords, color: '#94a7cc', label: 'Sans raft' }]
       : []),
   ];
 

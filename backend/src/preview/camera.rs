@@ -1,6 +1,7 @@
 //! Camera framing and lighting shared by the CPU and GPU renderers. Matches the frontend
 //! viewer (ModelViewer.tsx): Y-up, 45 degree vertical FOV, view direction (1, 0.8, -1),
-//! 1.15x framing padding, ambient 0.4 plus three directional lights.
+//! 1.15x framing padding. The shading constants and lights are ported to the viewer in
+//! frontend/src/lib/previewShading.ts; keep the two in step.
 
 use crate::geometry::{Triangle, Vec3};
 
