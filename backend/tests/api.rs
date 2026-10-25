@@ -237,8 +237,15 @@ async fn index_query_preview_geometry_and_plate_export() {
     assert_eq!(model["name"], "dragon");
     assert_eq!(model["creator"], "Alice");
     assert_eq!(model["relativePath"], "Fantasy/dragon.stl");
-    assert!(model["convexHull"].as_str().unwrap().starts_with("[["));
+    assert!(model["convexHull"].is_null(), "search results leave hulls out");
     let id = model["id"].as_str().unwrap().to_string();
+
+    let (status, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(detail["convexHull"].as_str().unwrap().starts_with("[["));
+    let (status, listed) = app.json("POST", "/api/models/by-ids", json!({ "ids": [id] })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(listed[0]["convexHull"].as_str().unwrap().starts_with("[["));
 
     let (_, options) = app.get("/api/query/options?creator=Alice").await;
     assert_eq!(options["fileTypes"], json!(["ctb", "stl"]));

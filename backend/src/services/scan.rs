@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use super::models::{ModelService, is_model_extension, is_non_geometry_type};
 use crate::db::now;
-use crate::entities::{DirectoryConfig, ModelRow};
+use crate::entities::{DirectoryConfig, ModelHulls, ModelRow};
 use crate::geometry::{LoadedGeometry, hull, loader, support_separation};
 use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
@@ -268,9 +268,11 @@ fn apply_hull_data(
     detected_supported: bool,
 ) {
     model.detected_supported = (calculated && detected_supported).then_some(true);
-    model.convex_hull = hulls.convex.clone();
-    model.concave_hull = hulls.concave.clone();
-    model.convex_sans_raft_hull = hulls.convex_sans_raft.clone();
+    model.hulls = Some(ModelHulls {
+        convex_hull: hulls.convex.clone(),
+        concave_hull: hulls.concave.clone(),
+        convex_sans_raft_hull: hulls.convex_sans_raft.clone(),
+    });
     model.hull_generated_at = calculated.then(now);
     model.hull_generation_version = calculated.then_some(hull::CURRENT_HULL_GENERATION_VERSION);
     model.hull_raft_height_mm = calculated.then_some(raft_height_mm);
@@ -1215,11 +1217,12 @@ mod tests {
         let cancel = CancellationToken::new();
 
         assert!(svc.scan_and_cache_single("sample.ctb", None, &cancel).await.unwrap());
-        let m: ModelRow =
-            sqlx::query_as("SELECT * FROM models WHERE file_name = 'sample.ctb'").fetch_one(&t.db).await.unwrap();
+        let id: Uuid =
+            sqlx::query_scalar("SELECT id FROM models WHERE file_name = 'sample.ctb'").fetch_one(&t.db).await.unwrap();
+        let m = store::get_model(&t.db, id).await.unwrap().unwrap();
         assert_eq!(m.file_type, "ctb");
         assert!(m.preview_image_path.is_none() && m.preview_generation_version.is_none());
-        assert!(m.convex_hull.is_none() && m.concave_hull.is_none() && m.convex_sans_raft_hull.is_none());
+        assert_eq!(m.hulls, Some(ModelHulls::default()));
         assert!(m.scan_config_checksum.is_none() && m.geometry_calculated_at.is_none());
 
         assert!(!svc.scan_and_cache_single("sample.ctb", None, &cancel).await.unwrap());
@@ -1251,7 +1254,7 @@ mod tests {
         assert_eq!(updated.preview_image_path.as_deref(), Some("oldchecksum.png"));
         assert_eq!(updated.preview_generation_version, Some(CURRENT_PREVIEW_GENERATION_VERSION));
         assert_eq!(updated.checksum, checksum);
-        assert!(updated.convex_hull.is_some());
+        assert!(updated.hulls.is_some_and(|h| h.convex_hull.is_some()));
         assert!(updated.dimension_x_mm.is_some());
     }
 
@@ -1303,10 +1306,11 @@ mod tests {
         let names: Vec<String> =
             sqlx::query_scalar("SELECT file_name FROM models ORDER BY file_name").fetch_all(&t.db).await.unwrap();
         assert_eq!(names, vec!["alpha.ctb", "beta.ctb", "gamma.ctb", "part.stl"]);
-        let part: ModelRow =
-            sqlx::query_as("SELECT * FROM models WHERE file_name = 'part.stl'").fetch_one(&t.db).await.unwrap();
+        let id: Uuid =
+            sqlx::query_scalar("SELECT id FROM models WHERE file_name = 'part.stl'").fetch_one(&t.db).await.unwrap();
+        let part = store::get_model(&t.db, id).await.unwrap().unwrap();
         assert_eq!(part.directory, "nested");
-        assert!(part.convex_hull.is_some());
+        assert!(part.hulls.is_some_and(|h| h.convex_hull.is_some()));
 
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);
     }

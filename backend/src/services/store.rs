@@ -1,13 +1,14 @@
 //! Persistence helpers for model and directory config rows.
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
+use sqlx::{Connection, QueryBuilder, Sqlite, SqliteConnection};
 use uuid::Uuid;
 
 use crate::db::{Db, param_chunks, placeholders};
 use crate::dto::{ModelDto, RelatedModelDto};
-use crate::entities::{DirectoryConfig, ModelRow};
+use crate::entities::{DirectoryConfig, ModelHulls, ModelRow};
 use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::ComputedMetadata;
@@ -52,9 +53,9 @@ pub fn to_model_dto(m: &ModelRow) -> ModelDto {
         item_type: m.calculated_type.clone(),
         material: m.calculated_material.clone(),
         supported: m.supported(),
-        convex_hull: m.convex_hull.clone(),
-        concave_hull: m.concave_hull.clone(),
-        convex_sans_raft_hull: m.convex_sans_raft_hull.clone(),
+        convex_hull: m.hulls.as_ref().and_then(|h| h.convex_hull.clone()),
+        concave_hull: m.hulls.as_ref().and_then(|h| h.concave_hull.clone()),
+        convex_sans_raft_hull: m.hulls.as_ref().and_then(|h| h.convex_sans_raft_hull.clone()),
         raft_height_mm: m.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM),
         dimension_x_mm: m.dimension_x_mm,
         dimension_y_mm: m.dimension_y_mm,
@@ -90,7 +91,7 @@ pub fn apply_calculated_metadata(model: &mut ModelRow, metadata: &ComputedMetada
     model.calculated_part_name = metadata.part_name.clone();
 }
 
-const MODEL_COLUMNS: [&str; 38] = [
+const MODEL_COLUMNS: [&str; 35] = [
     "id",
     "checksum",
     "file_name",
@@ -114,9 +115,6 @@ const MODEL_COLUMNS: [&str; 38] = [
     "detected_supported",
     "calculated_model_name",
     "calculated_part_name",
-    "convex_hull",
-    "concave_hull",
-    "convex_sans_raft_hull",
     "hull_generation_version",
     "hull_raft_height_mm",
     "scan_config_checksum",
@@ -155,9 +153,6 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(m.detected_supported)
         .push_bind(&m.calculated_model_name)
         .push_bind(&m.calculated_part_name)
-        .push_bind(&m.convex_hull)
-        .push_bind(&m.concave_hull)
-        .push_bind(&m.convex_sans_raft_hull)
         .push_bind(m.hull_generation_version)
         .push_bind(m.hull_raft_height_mm)
         .push_bind(&m.scan_config_checksum)
@@ -172,8 +167,10 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(m.geometry_calculated_at);
 }
 
-/// Inserts or fully replaces a model row and rewrites its tag index.
+/// Inserts or fully replaces a model row and rewrites its tag index, and its hulls when they
+/// are loaded on the row.
 pub async fn save_model(conn: &mut SqliteConnection, model: &ModelRow) -> sqlx::Result<()> {
+    let mut tx = conn.begin().await?;
     let columns = &MODEL_COLUMNS;
     let mut qb: QueryBuilder<Sqlite> =
         QueryBuilder::new(format!("INSERT INTO models ({}) VALUES (", columns.join(", ")));
@@ -183,8 +180,55 @@ pub async fn save_model(conn: &mut SqliteConnection, model: &ModelRow) -> sqlx::
     }
     qb.push(") ON CONFLICT(id) DO UPDATE SET ");
     qb.push(columns[1..].iter().map(|c| format!("{c} = excluded.{c}")).collect::<Vec<_>>().join(", "));
-    qb.build().execute(&mut *conn).await?;
-    set_model_tags(conn, model.id, &tags::from_json(model.calculated_tags_json.as_deref())).await
+    qb.build().execute(&mut *tx).await?;
+    set_model_tags(&mut tx, model.id, &tags::from_json(model.calculated_tags_json.as_deref())).await?;
+    if let Some(hulls) = &model.hulls {
+        save_model_hulls(&mut tx, model.id, hulls).await?;
+    }
+    tx.commit().await
+}
+
+/// Stores a model's hulls; empty hulls remove its row.
+async fn save_model_hulls(conn: &mut SqliteConnection, model_id: Uuid, hulls: &ModelHulls) -> sqlx::Result<()> {
+    if hulls.is_empty() {
+        sqlx::query("DELETE FROM model_hulls WHERE model_id = ?").bind(model_id).execute(&mut *conn).await?;
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO model_hulls (model_id, convex_hull, concave_hull, convex_sans_raft_hull) VALUES (?, ?, ?, ?)
+         ON CONFLICT(model_id) DO UPDATE SET convex_hull = excluded.convex_hull,
+            concave_hull = excluded.concave_hull, convex_sans_raft_hull = excluded.convex_sans_raft_hull",
+    )
+    .bind(model_id)
+    .bind(&hulls.convex_hull)
+    .bind(&hulls.concave_hull)
+    .bind(&hulls.convex_sans_raft_hull)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Loads each model's hulls onto it; models without a hull row get empty hulls.
+async fn attach_hulls(db: &Db, models: &mut [ModelRow]) -> sqlx::Result<()> {
+    let ids: Vec<Uuid> = models.iter().map(|m| m.id).collect();
+    let mut found: HashMap<Uuid, ModelHulls> = HashMap::new();
+    for chunk in param_chunks(&ids) {
+        let sql = format!(
+            "SELECT model_id, convex_hull, concave_hull, convex_sans_raft_hull FROM model_hulls WHERE model_id IN ({})",
+            placeholders(chunk.len())
+        );
+        let mut q = sqlx::query_as::<_, (Uuid, Option<String>, Option<String>, Option<String>)>(&sql);
+        for id in chunk {
+            q = q.bind(id);
+        }
+        for (id, convex_hull, concave_hull, convex_sans_raft_hull) in q.fetch_all(db).await? {
+            found.insert(id, ModelHulls { convex_hull, concave_hull, convex_sans_raft_hull });
+        }
+    }
+    for m in models {
+        m.hulls = Some(found.remove(&m.id).unwrap_or_default());
+    }
+    Ok(())
 }
 
 pub async fn set_model_tags(conn: &mut SqliteConnection, model_id: Uuid, model_tags: &[String]) -> sqlx::Result<()> {
@@ -200,10 +244,20 @@ pub async fn set_model_tags(conn: &mut SqliteConnection, model_id: Uuid, model_t
     Ok(())
 }
 
+/// One model with its hulls.
 pub async fn get_model(db: &Db, id: Uuid) -> sqlx::Result<Option<ModelRow>> {
-    sqlx::query_as("SELECT * FROM models WHERE id = ?").bind(id).fetch_optional(db).await
+    let model: Option<ModelRow> =
+        sqlx::query_as("SELECT * FROM models WHERE id = ?").bind(id).fetch_optional(db).await?;
+    let Some(model) = model else {
+        return Ok(None);
+    };
+    let mut models = [model];
+    attach_hulls(db, &mut models).await?;
+    let [model] = models;
+    Ok(Some(model))
 }
 
+/// Models with their hulls.
 pub async fn get_models_by_ids(db: &Db, ids: &[Uuid]) -> sqlx::Result<Vec<ModelRow>> {
     let mut rows = Vec::new();
     for chunk in param_chunks(ids) {
@@ -214,6 +268,7 @@ pub async fn get_models_by_ids(db: &Db, ids: &[Uuid]) -> sqlx::Result<Vec<ModelR
         }
         rows.extend(q.fetch_all(db).await?);
     }
+    attach_hulls(db, &mut rows).await?;
     Ok(rows)
 }
 
@@ -302,6 +357,14 @@ mod tests {
     use super::*;
     use crate::preview::CURRENT_PREVIEW_GENERATION_VERSION;
 
+    fn full_hulls() -> ModelHulls {
+        ModelHulls {
+            convex_hull: Some("[[0,0],[1,0],[1,1]]".into()),
+            concave_hull: Some("[[0,0],[0.5,0.1],[1,0],[1,1]]".into()),
+            convex_sans_raft_hull: Some("[[0,0],[1,0]]".into()),
+        }
+    }
+
     fn full_model() -> ModelRow {
         ModelRow {
             id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
@@ -319,9 +382,7 @@ mod tests {
             calculated_material: Some("resin".into()),
             calculated_supported: Some(true),
             calculated_model_name: Some("Dragon".into()),
-            convex_hull: Some("[[0,0],[1,0],[1,1]]".into()),
-            concave_hull: Some("[[0,0],[0.5,0.1],[1,0],[1,1]]".into()),
-            convex_sans_raft_hull: Some("[[0,0],[1,0]]".into()),
+            hulls: Some(full_hulls()),
             hull_raft_height_mm: Some(2.0),
             dimension_x_mm: Some(50.0),
             dimension_y_mm: Some(30.0),
@@ -421,6 +482,45 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(rows, vec![("a.stl".into(), Some(false)), ("b.stl".into(), Some(true)), ("c.stl".into(), None)]);
+    }
+
+    #[tokio::test]
+    async fn hulls_round_trip_through_their_own_table() {
+        let t = crate::test_support::TestDb::new().await;
+        let model = full_model();
+        t.insert_model(&model).await;
+        let loaded = get_model(&t.db, model.id).await.unwrap().unwrap();
+        assert_eq!(loaded.hulls, Some(full_hulls()));
+        let listed = get_models_by_ids(&t.db, &[model.id]).await.unwrap();
+        assert_eq!(listed[0].hulls, Some(full_hulls()));
+    }
+
+    #[tokio::test]
+    async fn saving_without_loaded_hulls_keeps_them_and_empty_hulls_remove_them() {
+        let t = crate::test_support::TestDb::new().await;
+        let mut model = full_model();
+        t.insert_model(&model).await;
+
+        model.hulls = None;
+        model.calculated_creator = Some("Bob".into());
+        t.insert_model(&model).await;
+        assert_eq!(get_model(&t.db, model.id).await.unwrap().unwrap().hulls, Some(full_hulls()));
+
+        model.hulls = Some(ModelHulls::default());
+        t.insert_model(&model).await;
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM model_hulls").fetch_one(&t.db).await.unwrap();
+        assert_eq!(rows, 0);
+        assert_eq!(get_model(&t.db, model.id).await.unwrap().unwrap().hulls, Some(ModelHulls::default()));
+    }
+
+    #[tokio::test]
+    async fn deleting_a_model_deletes_its_hulls() {
+        let t = crate::test_support::TestDb::new().await;
+        let model = full_model();
+        t.insert_model(&model).await;
+        sqlx::query("DELETE FROM models WHERE id = ?").bind(model.id).execute(&t.db).await.unwrap();
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM model_hulls").fetch_one(&t.db).await.unwrap();
+        assert_eq!(rows, 0);
     }
 
     #[test]

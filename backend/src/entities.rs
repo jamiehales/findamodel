@@ -80,10 +80,10 @@ pub struct ModelRow {
     pub calculated_model_name: Option<String>,
     pub calculated_part_name: Option<String>,
 
-    // Hulls as JSON arrays of [x, z] pairs on the X-Z plane (bird's eye view, Y up).
-    pub convex_hull: Option<String>,
-    pub concave_hull: Option<String>,
-    pub convex_sans_raft_hull: Option<String>,
+    /// The model's `model_hulls` row. None when it wasn't loaded, and saving the model then
+    /// leaves the stored hulls alone.
+    #[sqlx(skip)]
+    pub hulls: Option<ModelHulls>,
     pub hull_generation_version: Option<i32>,
     pub hull_raft_height_mm: Option<f32>,
     /// Hash of every config input affecting hull generation (None = needs regeneration).
@@ -99,6 +99,21 @@ pub struct ModelRow {
     pub sphere_centre_z: Option<f32>,
     pub sphere_radius: Option<f32>,
     pub geometry_calculated_at: Option<DateTime<Utc>>,
+}
+
+/// A model's footprint hulls, kept out of `models` so catalog queries don't read them. Each is
+/// a JSON array of [x, z] pairs on the X-Z plane (bird's eye view, Y up).
+#[derive(Debug, Clone, PartialEq, Default, sqlx::FromRow)]
+pub struct ModelHulls {
+    pub convex_hull: Option<String>,
+    pub concave_hull: Option<String>,
+    pub convex_sans_raft_hull: Option<String>,
+}
+
+impl ModelHulls {
+    pub fn is_empty(&self) -> bool {
+        self.convex_hull.is_none() && self.concave_hull.is_none() && self.convex_sans_raft_hull.is_none()
+    }
 }
 
 impl ModelRow {
