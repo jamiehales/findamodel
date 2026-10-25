@@ -22,6 +22,10 @@ use crate::services::store;
 pub const MODEL_EXTENSIONS: [&str; 5] = ["stl", "obj", "lys", "lyt", "ctb"];
 pub const NON_GEOMETRY_TYPES: [&str; 3] = ["lys", "lyt", "ctb"];
 
+/// Page size for the model list when no limit is given, and the most it returns.
+const DEFAULT_MODEL_LIST_LIMIT: i64 = 100;
+const MAX_MODEL_LIST_LIMIT: i64 = 500;
+
 pub fn is_non_geometry_type(file_type: &str) -> bool {
     NON_GEOMETRY_TYPES.iter().any(|t| t.eq_ignore_ascii_case(file_type))
 }
@@ -80,7 +84,7 @@ impl ModelService {
 
     pub async fn get_models(&self, limit: Option<i64>) -> AppResult<Vec<ModelDto>> {
         let rows: Vec<ModelRow> = sqlx::query_as("SELECT * FROM models ORDER BY directory, file_name LIMIT ?")
-            .bind(limit.filter(|l| *l >= 0).unwrap_or(-1))
+            .bind(limit.filter(|l| *l >= 0).unwrap_or(DEFAULT_MODEL_LIST_LIMIT).min(MAX_MODEL_LIST_LIMIT))
             .fetch_all(&self.db)
             .await?;
         Ok(rows.iter().map(store::to_model_dto).collect())
@@ -266,6 +270,20 @@ pub(crate) mod tests {
         let metadata = MetadataConfigService::new(t.db.clone(), models_root.clone(), 1000);
         let app_config = AppConfigService::new(t.db.clone(), AppConfigDefaults::default(), None, models_root.clone());
         ModelService::new(t.db.clone(), models_root, None, metadata, app_config, 4)
+    }
+
+    #[tokio::test]
+    async fn get_models_defaults_and_caps_the_page_size() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        for i in 0..MAX_MODEL_LIST_LIMIT + 10 {
+            t.insert_model(&model(&format!("m{i:04}.stl"), "")).await;
+        }
+        let svc = service(&t, root.path());
+        assert_eq!(svc.get_models(None).await.unwrap().len() as i64, DEFAULT_MODEL_LIST_LIMIT);
+        assert_eq!(svc.get_models(Some(3)).await.unwrap().len(), 3);
+        assert_eq!(svc.get_models(Some(-1)).await.unwrap().len() as i64, DEFAULT_MODEL_LIST_LIMIT);
+        assert_eq!(svc.get_models(Some(i64::MAX)).await.unwrap().len() as i64, MAX_MODEL_LIST_LIMIT);
     }
 
     async fn insert_dir(t: &TestDb, dc: DirectoryConfig) {

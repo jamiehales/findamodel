@@ -1168,6 +1168,7 @@ dependencies = [
  "glam",
  "hex",
  "http-body-util",
+ "log",
  "mime",
  "parking_lot",
  "png 0.17.16",

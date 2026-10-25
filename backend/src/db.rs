@@ -6,11 +6,16 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, SubsecRound, Utc};
+use log::LevelFilter;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{ConnectOptions, Connection, SqlitePool};
 use tracing::{info, warn};
 
 pub type Db = SqlitePool;
+
+/// Statements slower than this are logged as warnings with their SQL, so a stalled
+/// connection pool can be traced to the query holding it.
+const SLOW_STATEMENT_THRESHOLD: Duration = Duration::from_secs(1);
 
 /// Current time at microsecond precision (what is stored and serialised).
 pub fn now() -> DateTime<Utc> {
@@ -25,7 +30,8 @@ fn connect_options(path: &Path) -> SqliteConnectOptions {
         .synchronous(SqliteSynchronous::Normal)
         .busy_timeout(Duration::from_secs(10))
         .foreign_keys(true)
-        .disable_statement_logging()
+        .log_statements(LevelFilter::Off)
+        .log_slow_statements(LevelFilter::Warn, SLOW_STATEMENT_THRESHOLD)
 }
 
 /// Opens (creating if needed) the database and applies migrations.
@@ -152,4 +158,19 @@ pub fn param_chunks<T>(values: &[T]) -> std::slice::Chunks<'_, T> {
 /// `?, ?, ?` with `n` placeholders.
 pub fn placeholders(n: usize) -> String {
     vec!["?"; n].join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // sqlx logs statements from the connection's worker thread, out of reach of a test
+    // subscriber, so this checks the settings the pool connects with.
+    #[test]
+    fn only_slow_statements_are_logged() {
+        let options = format!("{:?}", connect_options(Path::new("findamodel.db")));
+        assert!(options.contains("statements_level: Off"), "{options}");
+        assert!(options.contains("slow_statements_level: Warn"), "{options}");
+        assert!(options.contains("slow_statements_duration: 1s"), "{options}");
+    }
 }

@@ -84,7 +84,9 @@ fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, req: &ModelQueryRequest, skip
     }
 
     if let Some(supported) = req.supported {
-        qb.push(" AND m.effective_supported = ").push_bind(supported);
+        // Spelled out rather than `effective_supported` so ix_models_facets covers it; SQLite
+        // reads the row for any virtual column.
+        qb.push(" AND COALESCE(m.calculated_supported, m.detected_supported) = ").push_bind(supported);
     }
 }
 
@@ -123,11 +125,18 @@ pub async fn query_models(db: &Db, req: &ModelQueryRequest) -> AppResult<ModelQu
     })
 }
 
-async fn distinct_column(db: &Db, req: &ModelQueryRequest, facet: Facet, column: &str) -> AppResult<Vec<String>> {
-    let mut qb = QueryBuilder::new(format!("SELECT DISTINCT {column} FROM models m"));
+/// Facet values come from a scan of `ix_models_facets`, which holds every column the filters
+/// read. Left alone, the planner picks a single-column index to skip the sort and then reads
+/// every model row, hull geometry included.
+fn distinct_column_query<'a>(req: &ModelQueryRequest, facet: Facet, column: &str) -> QueryBuilder<'a, Sqlite> {
+    let mut qb = QueryBuilder::new(format!("SELECT DISTINCT {column} FROM models m INDEXED BY ix_models_facets"));
     push_filters(&mut qb, req, Some(facet));
     qb.push(format!(" AND {column} IS NOT NULL ORDER BY {column}"));
-    Ok(qb.build_query_scalar().fetch_all(db).await?)
+    qb
+}
+
+async fn distinct_column(db: &Db, req: &ModelQueryRequest, facet: Facet, column: &str) -> AppResult<Vec<String>> {
+    Ok(distinct_column_query(req, facet, column).build_query_scalar().fetch_all(db).await?)
 }
 
 /// Facet values available under the current filters. Each facet ignores its own
@@ -301,5 +310,46 @@ mod tests {
         assert!(options.tags.contains(&"ghost".to_string()));
         assert_eq!(options.tags.iter().filter(|v| v.eq_ignore_ascii_case("monster")).count(), 1);
         assert!(!options.tags.iter().any(|v| v.eq_ignore_ascii_case("vehicle")));
+    }
+
+    async fn plan(db: &Db, sql: &str) -> Vec<String> {
+        sqlx::query_as::<_, (i64, i64, i64, String)>(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .fetch_all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(_, _, _, detail)| detail)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn facet_options_scan_the_covering_index_not_model_rows() {
+        let t = TestDb::new().await;
+        let requests = [
+            ModelQueryRequest::default(),
+            ModelQueryRequest { search: Some("dragon".into()), ..Default::default() },
+            ModelQueryRequest { creator: vec!["joe".into()], category: vec!["red".into()], ..Default::default() },
+            ModelQueryRequest { tags: vec!["monster".into()], ..Default::default() },
+            ModelQueryRequest { supported: Some(true), ..Default::default() },
+        ];
+        let facets = [
+            (Facet::Creator, "m.calculated_creator"),
+            (Facet::Collection, "m.calculated_collection"),
+            (Facet::Subcollection, "m.calculated_subcollection"),
+            (Facet::Category, "m.calculated_category"),
+            (Facet::Type, "m.calculated_type"),
+            (Facet::Material, "m.calculated_material"),
+            (Facet::FileType, "m.file_type"),
+        ];
+        for req in &requests {
+            for (facet, column) in facets {
+                let details = plan(&t.db, distinct_column_query(req, facet, column).sql()).await;
+                let model_steps: Vec<&String> = details.iter().filter(|d| d.contains(" m ")).collect();
+                assert!(!model_steps.is_empty(), "no models step in {details:?}");
+                for step in model_steps {
+                    assert!(step.contains("COVERING INDEX"), "{column} reads model rows: {details:?}");
+                }
+            }
+        }
     }
 }
