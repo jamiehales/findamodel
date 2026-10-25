@@ -14,8 +14,26 @@ export const SETTLE_FRAMES = 90; // ~1.5 s at 60 fps
 export const LAYOUT_LOCALSTORAGE_KEY = 'findamodel.printingListLayout';
 export const PAUSE_ON_DRAG_LOCALSTORAGE_KEY = 'findamodel.printingListPauseOnDrag';
 export const SHOW_LABELS_LOCALSTORAGE_KEY = 'findamodel.printingListShowLabels';
+export const PUSH_TO_EDGES_LOCALSTORAGE_KEY = 'findamodel.printingListPushToEdges';
 export const DEBUG_PHYSICS_WIREFRAME = false;
 export const PHYSICS_BORDER_PADDING_PX = 0;
+
+export const GRAVITY_ACCEL = 20;
+// "Push to edges" pulls each model toward its slot on the plate edge with a damped spring
+// (acceleration per unit of distance, and per unit of speed), capped so models glide into
+// place rather than fly.
+export const EDGE_SPRING = 4;
+export const EDGE_DAMPING = 2.5;
+export const EDGE_MAX_ACCEL = GRAVITY_ACCEL * 0.4;
+// Models pass through each other on the way to their slot, and become solid once within
+// this distance of it.
+export const EDGE_ARRIVAL_PX = 2 * PX_PER_MM;
+// How far a model's top can poke above the plate and still count as on it, so the top
+// edge holds a model resting against it.
+export const PLATE_ENTRY_TOLERANCE_PX = 5;
+// Models joining the plate while pushing to edges land within this fraction of the plate
+// size around the centre, so each heads off in its own direction.
+export const CENTRE_PLACEMENT_JITTER = 0.2;
 
 // Physics body inflation - when two bodies touch they have BODY_GAP_MM visual gap.
 export const BODY_GAP_MM = 2;

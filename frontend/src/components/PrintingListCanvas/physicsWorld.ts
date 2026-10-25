@@ -1,4 +1,4 @@
-import { World, Vec2, Polygon, Box, Settings } from 'planck';
+import { World, Vec2, Polygon, Box, Settings, AABB, Transform } from 'planck';
 import type { Body } from 'planck';
 import { CAT_OBJECT, CAT_BORDER, CAT_WALL, BODY_MARGIN_PX, toPhysics } from './constants';
 import type { Vec2Like } from './types';
@@ -102,6 +102,64 @@ export function createModelBody(
   }
 
   return { body, visualLocalVerts: visualLocal, borderLocalVerts: borderLocal };
+}
+
+/**
+ * Bounding box (centre and half extents, physics units) of the body's fixtures in the given
+ * collision category, at its current pose. Null when it has none.
+ */
+export function fixtureBounds(
+  body: Body,
+  category: number,
+): { centre: Vec2Like; half: Vec2Like } | null {
+  const xf = body.getTransform();
+  const box = AABB();
+  let lower: Vec2Like | null = null;
+  let upper: Vec2Like | null = null;
+  for (let f = body.getFixtureList(); f; f = f.getNext()) {
+    if (f.getFilterCategoryBits() !== category) continue;
+    f.getShape().computeAABB(box, xf, 0);
+    lower = lower
+      ? { x: Math.min(lower.x, box.lowerBound.x), y: Math.min(lower.y, box.lowerBound.y) }
+      : { x: box.lowerBound.x, y: box.lowerBound.y };
+    upper = upper
+      ? { x: Math.max(upper.x, box.upperBound.x), y: Math.max(upper.y, box.upperBound.y) }
+      : { x: box.upperBound.x, y: box.upperBound.y };
+  }
+  if (!lower || !upper) return null;
+  return {
+    centre: { x: (lower.x + upper.x) / 2, y: (lower.y + upper.y) / 2 },
+    half: { x: (upper.x - lower.x) / 2, y: (upper.y - lower.y) / 2 },
+  };
+}
+
+/**
+ * Whether `body` could move to `target` (physics units) without its object fixtures'
+ * bounding boxes touching another body's. Boxes come from the shapes, not the broad
+ * phase, whose boxes stay stretched along a sleeping body's last motion.
+ */
+export function isSpotClear(
+  world: InstanceType<typeof World>,
+  body: Body,
+  target: Vec2Like,
+): boolean {
+  const moved = Transform(Vec2(target.x, target.y), body.getAngle());
+  const box = AABB();
+  const otherBox = AABB();
+  for (let f = body.getFixtureList(); f; f = f.getNext()) {
+    if (f.getFilterCategoryBits() !== CAT_OBJECT) continue;
+    f.getShape().computeAABB(box, moved, 0);
+    let clear = true;
+    world.queryAABB(box, (other) => {
+      if (other.getBody() === body || other.getFilterCategoryBits() !== CAT_OBJECT) return true;
+      other.getShape().computeAABB(otherBox, other.getBody().getTransform(), 0);
+      if (!AABB.testOverlap(box, otherBox)) return true;
+      clear = false;
+      return false;
+    });
+    if (!clear) return false;
+  }
+  return true;
 }
 
 /** Find the first dynamic body whose fixture contains the given pixel-space point. */

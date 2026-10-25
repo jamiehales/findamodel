@@ -1,10 +1,20 @@
 import { BODY_MARGIN_PX, toPixels } from './constants';
-import type { ModelFootprintMetrics, SpawnPlanItem, Entry } from './types';
+import type { ModelFootprintMetrics, SpawnPlanItem, Entry, Vec2Like } from './types';
 import type { Model, SpawnType, HullMode } from '../../lib/api';
 import { getModelFootprintMetrics } from './hullHelpers';
 
 export function getRandomSpawnX(canvasWidthPx: number): number {
   return canvasWidthPx * 0.2 + Math.random() * canvasWidthPx * 0.6;
+}
+
+// "Center" spawns jitter by up to this many pixels so bodies never sit exactly on top of
+// each other, which gives the solver no direction to separate them in.
+const CENTRE_SPAWN_JITTER_PX = 2;
+
+/** Spawn point for the "center" spawn type: the middle of the plate. */
+export function centreSpawnPoint(canvasWidthPx: number, canvasHeightPx: number): Vec2Like {
+  const jitter = () => (Math.random() - 0.5) * 2 * CENTRE_SPAWN_JITTER_PX;
+  return { x: canvasWidthPx / 2 + jitter(), y: canvasHeightPx / 2 + jitter() };
 }
 
 export function clampSpawnX(spawnX: number, widthPx: number, canvasWidthPx: number): number {
