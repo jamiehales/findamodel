@@ -9,7 +9,15 @@
 //! 2. A component that stays below the raft height is raft.
 //! 3. The seed is the largest component above the raft. Components with at least
 //!    1/[`MODEL_SEED_DIVISOR`] of its triangles are model parts.
-//! 4. Smaller components reaching within [`TOP_MODEL_BAND_MM`] of the model's top are
+//! 4. Smaller components with at least [`MODEL_MIN_TRIANGLES`] triangles and at least
+//!    1/[`MODEL_DENSITY_DIVISOR`] of the seed's triangles per mm² of surface are sculpted
+//!    model details (kitbashed parts, buttons, pouches). Support primitives keep a fixed
+//!    segment count whatever their size, so they stay far sparser than the sculpt. Dense
+//!    joint balls and ball-and-strut shells are excluded by their shape: generated
+//!    primitives repeat the same triangle around every ring (at least
+//!    [`PRIMITIVE_MIN_REPEATED_FRACTION`] of them are repeats), while sculpted triangles
+//!    are nearly all distinct.
+//! 5. Smaller components reaching within [`TOP_MODEL_BAND_MM`] of the model's top are
 //!    model details; the rest are supports.
 //!
 //! The split is confident only when support components average under a third of the
@@ -23,13 +31,25 @@ use rustc_hash::FxHashMap;
 use super::{Triangle, Vec3};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 1;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 2;
 
 /// Components with at least 1/N of the seed's triangles are model parts.
 const MODEL_SEED_DIVISOR: u32 = 8;
 
 /// Floor for the model-part triangle count, so a low-poly seed does not promote supports.
 const MODEL_MIN_TRIANGLES: u32 = 200;
+
+/// Components with at least 1/N of the seed's surface triangle density are model details.
+const MODEL_DENSITY_DIVISOR: f64 = 4.0;
+
+/// Components with at least this fraction of repeated triangles are generated primitives.
+const PRIMITIVE_MIN_REPEATED_FRACTION: f64 = 0.5;
+
+/// Fewest congruent copies for a triangle to count as repeated.
+const REPEATED_MIN_COPIES: u32 = 4;
+
+/// Edge lengths within this many mm are treated as equal.
+const EDGE_GRID_SIZE_MM: f64 = 0.0001;
 
 /// Small components reaching this close to the model's top are model details.
 const TOP_MODEL_BAND_MM: f32 = 1.0;
@@ -106,7 +126,19 @@ struct ComponentStats {
     triangles: u32,
     top: f32,
     volume: f64,
+    area: f64,
     closed: bool,
+}
+
+impl ComponentStats {
+    fn new(closed: bool) -> Self {
+        Self { triangles: 0, top: f32::NEG_INFINITY, volume: 0.0, area: 0.0, closed }
+    }
+
+    /// Triangles per mm² of surface.
+    fn density(&self) -> f64 {
+        if self.area > 0.0 { f64::from(self.triangles) / self.area } else { 0.0 }
+    }
 }
 
 /// Labels each triangle as model or support. `None` when the mesh has no component that
@@ -117,31 +149,43 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         return None;
     }
 
-    let mut stats: Vec<ComponentStats> = closed
-        .iter()
-        .map(|&closed| ComponentStats { triangles: 0, top: f32::NEG_INFINITY, volume: 0.0, closed })
-        .collect();
+    let mut stats: Vec<ComponentStats> = closed.iter().map(|&closed| ComponentStats::new(closed)).collect();
     for (tri, &c) in triangles.iter().zip(&component_of) {
         let s = &mut stats[c as usize];
         s.triangles += 1;
         s.top = s.top.max(tri.v0.y).max(tri.v1.y).max(tri.v2.y);
         s.volume += signed_volume(tri);
+        s.area += f64::from((tri.v1 - tri.v0).cross(tri.v2 - tri.v0).length()) / 2.0;
     }
 
     let (_, seed) =
         stats.iter().enumerate().filter(|(_, s)| s.top > raft_height_mm).max_by_key(|(_, s)| s.triangles)?;
     let model_min_triangles = (seed.triangles / MODEL_SEED_DIVISOR).max(MODEL_MIN_TRIANGLES);
+    let model_min_density = seed.density() / MODEL_DENSITY_DIVISOR;
     let model_top = stats.iter().filter(|s| s.triangles >= model_min_triangles).map(|s| s.top).fold(seed.top, f32::max);
+
+    // Volume only means something for a closed shell.
+    let is_inner_shell = |s: &ComponentStats| s.closed && s.volume < INNER_SHELL_MAX_VOLUME_MM3;
+    let dense_detail: Vec<bool> = stats
+        .iter()
+        .map(|s| {
+            !is_inner_shell(s)
+                && s.top > raft_height_mm
+                && (MODEL_MIN_TRIANGLES..model_min_triangles).contains(&s.triangles)
+                && s.density() >= model_min_density
+        })
+        .collect();
+    let primitive = primitives(triangles, &component_of, &dense_detail);
 
     let component_is_support: Vec<bool> = stats
         .iter()
-        .map(|s| {
-            // Volume only means something for a closed shell.
-            if s.closed && s.volume < INNER_SHELL_MAX_VOLUME_MM3 {
+        .enumerate()
+        .map(|(c, s)| {
+            if is_inner_shell(s) {
                 false
             } else if s.top <= raft_height_mm {
                 true
-            } else if s.triangles >= model_min_triangles {
+            } else if s.triangles >= model_min_triangles || (dense_detail[c] && !primitive[c]) {
                 false
             } else {
                 s.top < model_top - TOP_MODEL_BAND_MM
@@ -176,6 +220,38 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
 /// Whether the geometry confidently has supports.
 pub fn detect(triangles: &[Triangle], raft_height_mm: f32) -> bool {
     classify(triangles, raft_height_mm).is_some_and(|c| c.confident)
+}
+
+/// Flags the `candidate` components that are generated primitives (see
+/// [`PRIMITIVE_MIN_REPEATED_FRACTION`]).
+fn primitives(triangles: &[Triangle], component_of: &[u32], candidate: &[bool]) -> Vec<bool> {
+    repeated_fractions(triangles, component_of, candidate)
+        .into_iter()
+        .map(|f| f >= PRIMITIVE_MIN_REPEATED_FRACTION)
+        .collect()
+}
+
+/// Per candidate component, the fraction of its triangles congruent to at least
+/// [`REPEATED_MIN_COPIES`] - 1 others (same edge lengths within [`EDGE_GRID_SIZE_MM`]).
+fn repeated_fractions(triangles: &[Triangle], component_of: &[u32], candidate: &[bool]) -> Vec<f64> {
+    let edge = |a: Vec3, b: Vec3| (f64::from((a - b).length()) / EDGE_GRID_SIZE_MM).round() as i64;
+    let mut shapes: FxHashMap<(u32, [i64; 3]), u32> = FxHashMap::default();
+    let mut totals = vec![0u32; candidate.len()];
+    for (tri, &c) in triangles.iter().zip(component_of) {
+        if candidate[c as usize] {
+            let mut edges = [edge(tri.v0, tri.v1), edge(tri.v1, tri.v2), edge(tri.v2, tri.v0)];
+            edges.sort_unstable();
+            *shapes.entry((c, edges)).or_default() += 1;
+            totals[c as usize] += 1;
+        }
+    }
+    let mut repeated = vec![0u32; candidate.len()];
+    for ((c, _), copies) in shapes {
+        if copies >= REPEATED_MIN_COPIES {
+            repeated[c as usize] += copies;
+        }
+    }
+    repeated.iter().zip(&totals).map(|(&r, &t)| if t > 0 { f64::from(r) / f64::from(t) } else { 0.0 }).collect()
 }
 
 struct Components {
@@ -425,6 +501,81 @@ pub(crate) mod tests {
         let c = classify(&mesh, RAFT).expect("classification");
         assert!(c.is_support[mesh.len() - 12..].iter().all(|s| !*s));
         assert_eq!(support_count(&c), 50 * 48);
+    }
+
+    /// Moves each vertex by a position-derived offset, so shared vertices stay shared but
+    /// no two triangles are congruent, like a sculpt.
+    fn sculpted(triangles: Vec<Triangle>, amount: f32) -> Vec<Triangle> {
+        let jitter = |v: Vec3| {
+            let h = |k: f32| (v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + k).sin() * amount;
+            Vec3::new(v.x + h(0.0), v.y + h(1.0), v.z + h(2.0))
+        };
+        triangles.into_iter().map(|t| Triangle::new(jitter(t.v0), jitter(t.v1), jitter(t.v2), t.normal)).collect()
+    }
+
+    /// UV sphere with `segments` around and `rings` from pole to pole, like a support joint.
+    fn sphere(center: Vec3, radius: f32, segments: usize, rings: usize) -> Vec<Triangle> {
+        let point = |ring: usize, segment: usize| {
+            let (theta, phi) = (
+                std::f32::consts::PI * ring as f32 / rings as f32,
+                std::f32::consts::TAU * (segment % segments) as f32 / segments as f32,
+            );
+            Vec3::new(
+                center.x + radius * theta.sin() * phi.cos(),
+                center.y + radius * theta.cos(),
+                center.z + radius * theta.sin() * phi.sin(),
+            )
+        };
+        let mut out = Vec::new();
+        for ring in 0..rings {
+            for segment in 0..segments {
+                let (a, b, c, d) = (
+                    point(ring, segment),
+                    point(ring, segment + 1),
+                    point(ring + 1, segment),
+                    point(ring + 1, segment + 1),
+                );
+                if ring > 0 {
+                    out.push(Triangle::new(a, b, c, Vec3::UP));
+                }
+                if ring + 1 < rings {
+                    out.push(Triangle::new(b, d, c, Vec3::UP));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn dense_kitbashed_parts_are_model_and_sparse_ones_are_support() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        // 1 mm button, 300 triangles over 6 mm² (the body has 18 per mm²).
+        let dense = sculpted(cuboid(Vec3::new(20.0, 8.0, 0.0), Vec3::new(21.0, 9.0, 1.0), 5), 0.01);
+        // 8 mm block, 300 triangles over 384 mm²: a merged support structure.
+        let sparse = cuboid(Vec3::new(30.0, 0.0, 0.0), Vec3::new(38.0, 8.0, 8.0), 5);
+        mesh.extend(&dense);
+        mesh.extend(&sparse);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.confident);
+        let sparse_start = mesh.len() - sparse.len();
+        assert!(c.is_support[sparse_start - dense.len()..sparse_start].iter().all(|s| !*s));
+        assert!(c.is_support[sparse_start..].iter().all(|s| *s));
+        assert_eq!(support_count(&c), 50 * 48 + sparse.len());
+    }
+
+    #[test]
+    fn dense_support_joint_balls_are_support() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        // 1 mm balls, 448 triangles each: as dense as a sculpted detail but all repeats.
+        let balls: Vec<Triangle> =
+            (0..5).flat_map(|k| sphere(Vec3::new(20.0 + k as f32 * 2.0, 8.0, 0.0), 0.5, 16, 15)).collect();
+        assert_eq!(balls.len(), 5 * 448);
+        mesh.extend(&balls);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - balls.len()..].iter().all(|s| *s));
+        assert_eq!(support_count(&c), 50 * 48 + balls.len());
     }
 
     #[test]
