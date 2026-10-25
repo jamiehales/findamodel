@@ -41,6 +41,17 @@ export function awayFromCentre(p: Vec2Like, width: number, height: number): Vec2
   return { x: dx / length, y: dy / length };
 }
 
+/**
+ * Half extents of the smallest box centred on `centre` that holds `box`, so a spacing box
+ * that sits off the footprint's centre can be measured from it.
+ */
+export function halfAround(centre: Vec2Like, box: { centre: Vec2Like; half: Vec2Like }): Vec2Like {
+  return {
+    x: Math.abs(box.centre.x - centre.x) + box.half.x,
+    y: Math.abs(box.centre.y - centre.y) + box.half.y,
+  };
+}
+
 /** How far inside the plate the item's footprint is from the nearest edge. */
 function distanceToEdge(item: EdgeItem, width: number, height: number): number {
   return Math.min(
@@ -137,6 +148,10 @@ function layoutSides(
     Math.max(0, ...side.map((i) => items[i].half.y + items[i].spacingHalf.y));
   const rowTop = rowDepth(top);
   const rowBottom = rowDepth(bottom);
+  if (rowTop + rowBottom > height) return null;
+  const columnDepth = (side: number[]) =>
+    Math.max(0, ...side.map((i) => items[i].half.x + items[i].spacingHalf.x));
+  if (columnDepth(left) + columnDepth(right) > width) return null;
   const column = (side: number[]) =>
     spreadColumn(
       side.map((i) => items[i].spacingHalf.y),

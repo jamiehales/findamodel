@@ -28,7 +28,8 @@ pub fn normalize_spawn_type(spawn_type: Option<&str>) -> String {
     match spawn_type.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
         Some("random") => "random".into(),
         Some("largestfirstfillgaps") => "largestFirstFillGaps".into(),
-        Some("center") => "center".into(),
+        Some("bottomedge") | Some("center") => "bottomEdge".into(),
+        Some("edges") => "edges".into(),
         _ => DEFAULT_SPAWN_TYPE.into(),
     }
 }
@@ -436,7 +437,9 @@ mod tests {
     fn settings_normalisation() {
         assert_eq!(normalize_spawn_type(Some("RANDOM")), "random");
         assert_eq!(normalize_spawn_type(Some("largestFirstFillGaps")), "largestFirstFillGaps");
-        assert_eq!(normalize_spawn_type(Some("Center")), "center");
+        assert_eq!(normalize_spawn_type(Some("bottomEdge")), "bottomEdge");
+        assert_eq!(normalize_spawn_type(Some("Center")), "bottomEdge");
+        assert_eq!(normalize_spawn_type(Some("EDGES")), "edges");
         assert_eq!(normalize_spawn_type(None), "grouped");
         assert_eq!(normalize_hull_mode(Some("sansraft")), "sansRaft");
         assert_eq!(normalize_hull_mode(Some("Concave")), "concave");

@@ -28,9 +28,9 @@ export const EDGE_MAX_ACCEL = GRAVITY_ACCEL * 0.4;
 // How far a model's top can poke above the plate and still count as on it, so the top
 // edge holds a model resting against it.
 export const PLATE_ENTRY_TOLERANCE_PX = 5;
-// Models joining the plate while pushing to edges land within this fraction of the plate
-// size around the centre, so each heads off in its own direction.
-export const CENTRE_PLACEMENT_JITTER = 0.2;
+// Models that join the plate at its centre while pushing to edges wait for the middle to
+// clear; one still waiting after this many frames is parked above the plate instead.
+export const CENTRE_RELEASE_MAX_WAIT_FRAMES = 120;
 
 // Physics body inflation - when two bodies touch they have BODY_GAP_MM visual gap.
 export const BODY_GAP_MM = 2;

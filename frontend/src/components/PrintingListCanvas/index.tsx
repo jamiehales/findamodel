@@ -32,7 +32,7 @@ import {
   EDGE_DAMPING,
   EDGE_MAX_ACCEL,
   PLATE_ENTRY_TOLERANCE_PX,
-  CENTRE_PLACEMENT_JITTER,
+  CENTRE_RELEASE_MAX_WAIT_FRAMES,
   CAT_WALL,
   CAT_BORDER,
   CAT_OBJECT,
@@ -41,9 +41,15 @@ import {
 } from './constants';
 import type { SavedLayout, Entry, Props, Vec2Like } from './types';
 import { getModelFootprintMetrics } from './hullHelpers';
-import { buildSpawnPlan, centreSpawnPoint, getIncrementalSpawnX } from './spawnStrategy';
+import {
+  bottomEdgeSpawnPoints,
+  buildSpawnPlan,
+  centreSpawnPoint,
+  edgeSpawnPoints,
+  getIncrementalSpawnX,
+} from './spawnStrategy';
 import { createModelBody, fixtureBounds, isSpotClear, queryPointPx } from './physicsWorld';
-import { awayFromCentre, edgeTargets } from './edgeLayout';
+import { awayFromCentre, edgeTargets, halfAround } from './edgeLayout';
 import {
   computeOverlapping,
   isOutOfBounds,
@@ -145,6 +151,20 @@ export default function PrintingListCanvas({
     pushToEdgesRef.current = pushToEdges;
   }, [pushToEdges]);
 
+  // "Edges" is the only spawn type while pushing to edges, and only available then.
+  useEffect(() => {
+    const next =
+      pushToEdges && spawnOrder !== 'edges'
+        ? 'edges'
+        : !pushToEdges && spawnOrder === 'edges'
+          ? 'bottomEdge'
+          : null;
+    if (next) {
+      localStorage.removeItem(LAYOUT_LOCALSTORAGE_KEY);
+      onSpawnOrderChange?.(next);
+    }
+  }, [pushToEdges, spawnOrder]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [hasSavedLayout, setHasSavedLayout] = useState(
     () => localStorage.getItem(LAYOUT_LOCALSTORAGE_KEY) !== null,
   );
@@ -169,6 +189,7 @@ export default function PrintingListCanvas({
   const worldRef = useRef<InstanceType<typeof World> | null>(null);
   const entriesRef = useRef<Entry[]>([]);
   const dynamicBodiesRef = useRef<Body[]>([]);
+  const waitingRef = useRef<Body[]>([]);
   const modelColorRef = useRef<Map<string, number>>(new Map());
   const pausedRef = useRef(false);
   const prevItemsRef = useRef<Record<string, number>>({});
@@ -321,22 +342,30 @@ export default function PrintingListCanvas({
     entriesRef.current = entries;
     const dynamicBodies: Body[] = [];
     dynamicBodiesRef.current = dynamicBodies;
+    // Models added while pushing to edges wait off the plate (inactive, hidden) and join at
+    // the centre one at a time: bodies stacked on one spot collide piece against piece,
+    // which stalls the solver for concave hulls.
+    const waiting: Body[] = [];
+    waitingRef.current = waiting;
 
     const modelColor = new Map<string, number>();
     modelColorRef.current = modelColor;
     models.forEach((m, i) => modelColor.set(m.id, PALETTE[i % PALETTE.length]));
 
-    // Bodies spawn above the canvas and fall in, or all at the middle for "center".
+    // Bodies spawn above the canvas and fall in, or straight onto the plate's edges for
+    // "bottom edge" and "edges".
     let spawnY = -40;
-    const spawnAtCentre = spawnOrder === 'center';
-
     const spawnPlan = buildSpawnPlan(models, items, spawnOrder, hullMode, canvasWidthPx);
+    const edgePoints =
+      spawnOrder === 'bottomEdge'
+        ? bottomEdgeSpawnPoints(spawnPlan, canvasWidthPx, canvasHeightPx)
+        : spawnOrder === 'edges'
+          ? edgeSpawnPoints(spawnPlan, canvasWidthPx, canvasHeightPx)
+          : null;
 
-    for (const { model, inst, spawnX, metrics } of spawnPlan) {
+    for (const [i, { model, inst, spawnX, metrics }] of spawnPlan.entries()) {
       const color = modelColor.get(model.id) ?? PALETTE[0];
-      const start = spawnAtCentre
-        ? centreSpawnPoint(canvasWidthPx, canvasHeightPx)
-        : { x: spawnX, y: spawnY };
+      const start = edgePoints?.[i] ?? { x: spawnX, y: spawnY };
 
       const { body, visualLocalVerts, visualPieces, borderLocalVerts } = createModelBody(
         world,
@@ -430,13 +459,10 @@ export default function PrintingListCanvas({
 
     // Each model on the plate has a slot on the plate edge (see edgeTargets; null when the
     // edges are full), reassigned when the setting is turned on, a model arrives on the
-    // plate, or one is removed. Models jump straight to their slot. A model the user has
-    // dragged stays where it was dropped: it has no slot and is never moved for them.
+    // plate, or one is removed. A model the user has dragged stays where it was dropped: it
+    // has no slot and is never moved for them.
     let edgeSlots: Map<Body, Vec2Like | null> | null = null;
     const placedByHand = new Set<Body>();
-    // Set once the layout first settles: the forces stop so models pressing on each other
-    // can separate before the layout counts as settled.
-    let edgeForcesRelaxed = false;
 
     world.on('pre-solve', (contact) => {
       const a = contact.getFixtureA().getBody();
@@ -452,60 +478,33 @@ export default function PrintingListCanvas({
         return border && object ? [{ body, border, object }] : [];
       });
       const targets = edgeTargets(
-        placed.map(({ border, object }) => ({
-          centre: border.centre,
-          half: border.half,
-          spacingHalf: object.half,
-        })),
+        placed.map(({ border, object }) => {
+          const around = halfAround(border.centre, object);
+          return {
+            centre: border.centre,
+            half: border.half,
+            spacingHalf: {
+              x: Math.max(border.half.x, around.x),
+              y: Math.max(border.half.y, around.y),
+            },
+          };
+        }),
         canvasWidthPhys,
         canvasHeightPhys,
       );
       edgeSlots = new Map(placed.map(({ body }, i) => [body, targets[i]]));
-      edgeForcesRelaxed = false;
-      placed.forEach(({ body, border }, i) => {
-        const target = targets[i];
-        if (!target) return;
-        // The slot is for the footprint's centre, which can sit off the body's origin.
-        const pos = body.getPosition();
-        body.setPosition(
-          Vec2(target.x + pos.x - border.centre.x, target.y + pos.y - border.centre.y),
-        );
-        body.setLinearVelocity(Vec2(0, 0));
-        body.setAngularVelocity(0);
-        body.setAwake(true);
-      });
+      for (const { body } of placed) body.setAwake(true);
     }
 
-    // Models on the plate are held in their edge slot; when the edges are full, the rest are
-    // pushed gently outward to pack in behind them and keep the centre clear. Models
-    // above the plate (new or dragged off) wait there and are placed one at a time near the
-    // centre; falling in would leave them resting on the models along the top edge.
+    // Models on the plate are pulled toward their edge slot; when the edges are full, the
+    // rest are pushed gently outward to pack in behind them and keep the centre clear.
     function applyEdgeForces() {
-      const centre = { x: canvasWidthPhys / 2, y: canvasHeightPhys / 2 };
       const needSlots = entries
         .map((e) => e.body)
-        .filter((b) => b.isDynamic() && !placedByHand.has(b) && isOnPlate(b));
+        .filter((b) => b.isActive() && b.isDynamic() && !placedByHand.has(b) && isOnPlate(b));
       if (!edgeSlots || needSlots.some((b) => !edgeSlots!.has(b))) assignEdgeSlots(needSlots);
 
-      let placed = false;
-      for (const { body } of entries) {
-        if (!body.isDynamic() || placedByHand.has(body)) continue;
-        if (!isOnPlate(body)) {
-          body.setLinearVelocity(Vec2(0, 0));
-          body.setAngularVelocity(0);
-          if (placed) continue;
-          const spot = {
-            x: centre.x * (1 + (Math.random() - 0.5) * CENTRE_PLACEMENT_JITTER),
-            y: centre.y * (1 + (Math.random() - 0.5) * CENTRE_PLACEMENT_JITTER),
-          };
-          if (isSpotClear(world, body, spot)) {
-            body.setPosition(Vec2(spot.x, spot.y));
-            body.setAwake(true);
-            placed = true;
-          }
-          continue;
-        }
-        if (edgeForcesRelaxed) continue;
+      for (const body of needSlots) {
         const target = edgeSlots?.get(body);
         const bounds = fixtureBounds(body, CAT_BORDER);
         if (!bounds) continue;
@@ -527,7 +526,38 @@ export default function PrintingListCanvas({
         }
         const mass = body.getMass();
         body.applyForceToCenter(Vec2(ax * mass, ay * mass), true);
+        // Damp spin too, so a model pressed against its neighbours doesn't rock in place.
+        body.applyTorque(-EDGE_DAMPING * body.getAngularVelocity() * body.getInertia(), true);
       }
+    }
+
+    // Brings the next waiting model onto the plate at the centre once the spot is clear. One
+    // that waits too long finds the plate full and is parked above it instead, stacked
+    // upward from the plate's top edge.
+    let waitFrames = 0;
+    let overflowBottom = 0;
+    function releaseWaiting() {
+      const body = waiting[0];
+      if (!body) return;
+      const spot = centreSpawnPoint(canvasWidthPx, canvasHeightPx);
+      let target = { x: toPhysics(spot.x), y: toPhysics(spot.y) };
+      waitFrames++;
+      if (!isSpotClear(world, body, target)) {
+        if (waitFrames < CENTRE_RELEASE_MAX_WAIT_FRAMES) return;
+        const bounds = fixtureBounds(body, CAT_OBJECT) ?? fixtureBounds(body, CAT_BORDER);
+        if (!bounds) return;
+        const pos = body.getPosition();
+        target = {
+          x: canvasWidthPhys / 2 + pos.x - bounds.centre.x,
+          y: overflowBottom - bounds.half.y + pos.y - bounds.centre.y,
+        };
+        overflowBottom -= 2 * bounds.half.y;
+      }
+      waiting.shift();
+      waitFrames = 0;
+      body.setPosition(Vec2(target.x, target.y));
+      body.setActive(true);
+      body.setAwake(true);
     }
 
     // ── Render helper ──────────────────────────────────────────────────────
@@ -542,6 +572,11 @@ export default function PrintingListCanvas({
         visualLocalVerts,
         borderLocalVerts: bVerts,
       } of entries) {
+        gfx.visible = body.isActive();
+        if (!body.isActive()) {
+          label.visible = false;
+          continue;
+        }
         const outOfBounds = isOutOfBounds(body, bVerts, canvasWidthPhys, canvasHeightPhys);
         const renderColor = overlapping.has(body) ? color : darkenColor(color, 0.45);
         drawBody(
@@ -660,16 +695,17 @@ export default function PrintingListCanvas({
       if (!pausedRef.current) {
         const push = pushToEdgesRef.current;
         world.setGravity(Vec2(0, push ? 0 : GRAVITY_ACCEL));
+        releaseWaiting();
         if (push) applyEdgeForces();
         // Cap delta to avoid physics explosion after tab becomes active again
         const deltaSec = Math.min(app.ticker.deltaMS, 50) / 1000;
         world.step(deltaSec, 8, 3);
       }
 
-      renderEntries(computeOverlapping(entries));
+      renderEntries(computeOverlapping(entries.filter((e) => e.body.isActive())));
 
-      // Settling detection (skip when dragging or already paused)
-      if (!pausedRef.current && !drag && dynamicBodies.length > 0) {
+      // Settling detection (skip when dragging, already paused, or models are still to join)
+      if (!pausedRef.current && !drag && waiting.length === 0 && dynamicBodies.length > 0) {
         const allSlow = dynamicBodies.every((b) => {
           const vel = b.getLinearVelocity();
           const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
@@ -677,12 +713,7 @@ export default function PrintingListCanvas({
         });
         if (allSlow) {
           settleFrames++;
-          if (settleFrames >= SETTLE_FRAMES && pushToEdgesRef.current && !edgeForcesRelaxed) {
-            // The forces stop, so models pressed together separate before the layout counts
-            // as settled.
-            edgeForcesRelaxed = true;
-            settleFrames = 0;
-          } else if (settleFrames >= SETTLE_FRAMES) {
+          if (settleFrames >= SETTLE_FRAMES) {
             pausedRef.current = true;
             if (shouldAutosave) {
               saveLayout();
@@ -701,6 +732,7 @@ export default function PrintingListCanvas({
       worldRef.current = null;
       entriesRef.current = [];
       dynamicBodiesRef.current = [];
+      waitingRef.current = [];
       modelColorRef.current = new Map();
       saveLayoutRef.current = null;
       resumeSimulationRef.current = null;
@@ -751,7 +783,7 @@ export default function PrintingListCanvas({
           const color = modelColorRef.current.get(modelId)!;
           const metrics = getModelFootprintMetrics(model, hullModeRef.current);
           const start =
-            spawnOrder === 'center'
+            spawnOrder === 'edges'
               ? centreSpawnPoint(canvasWidthPx, canvasHeightPx)
               : {
                   x: getIncrementalSpawnX(
@@ -774,6 +806,10 @@ export default function PrintingListCanvas({
             metrics.borderLocalVerts,
             model,
           );
+          if (spawnOrder === 'edges') {
+            body.setActive(false);
+            waitingRef.current.push(body);
+          }
 
           spawnY -= 50 + Math.max(metrics.boundingHeightPx, 60);
 
@@ -811,14 +847,17 @@ export default function PrintingListCanvas({
         pausedRef.current = false; // let new bodies fall in
         notifyLayoutCleanRef.current?.(false);
       } else {
-        // Remove the models at the top of the build plate first
+        // Remove models still waiting to join first, then those at the top of the build plate
         for (let i = prevQty; i > currQty; i--) {
-          let minY = Infinity;
-          let toRemove: Entry | null = null;
-          for (const e of entriesRef.current) {
-            if (e.modelId === modelId && toPixels(e.body.getPosition().y) < minY) {
-              minY = toPixels(e.body.getPosition().y);
-              toRemove = e;
+          let toRemove: Entry | null =
+            entriesRef.current.find((e) => e.modelId === modelId && !e.body.isActive()) ?? null;
+          if (!toRemove) {
+            let minY = Infinity;
+            for (const e of entriesRef.current) {
+              if (e.modelId === modelId && toPixels(e.body.getPosition().y) < minY) {
+                minY = toPixels(e.body.getPosition().y);
+                toRemove = e;
+              }
             }
           }
           if (!toRemove) break;
@@ -826,6 +865,8 @@ export default function PrintingListCanvas({
           world.destroyBody(toRemove.body);
           const dynIdx = dynamicBodiesRef.current.indexOf(toRemove.body);
           if (dynIdx >= 0) dynamicBodiesRef.current.splice(dynIdx, 1);
+          const waitIdx = waitingRef.current.indexOf(toRemove.body);
+          if (waitIdx >= 0) waitingRef.current.splice(waitIdx, 1);
 
           app.stage.removeChild(toRemove.gfx);
           toRemove.gfx.destroy();
@@ -881,10 +922,21 @@ export default function PrintingListCanvas({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="grouped">Grouped</SelectItem>
-            <SelectItem value="random">Random</SelectItem>
-            <SelectItem value="largestFirstFillGaps">Largest first</SelectItem>
-            <SelectItem value="center">Center</SelectItem>
+            <SelectItem value="grouped" disabled={pushToEdges}>
+              Grouped
+            </SelectItem>
+            <SelectItem value="random" disabled={pushToEdges}>
+              Random
+            </SelectItem>
+            <SelectItem value="largestFirstFillGaps" disabled={pushToEdges}>
+              Largest first
+            </SelectItem>
+            <SelectItem value="bottomEdge" disabled={pushToEdges}>
+              Bottom edge
+            </SelectItem>
+            <SelectItem value="edges" disabled={!pushToEdges}>
+              Edges
+            </SelectItem>
           </SelectContent>
         </Select>
         <Select

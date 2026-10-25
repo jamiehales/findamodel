@@ -1,20 +1,169 @@
 import { BODY_MARGIN_PX, toPixels } from './constants';
 import type { ModelFootprintMetrics, SpawnPlanItem, Entry, Vec2Like } from './types';
 import type { Model, SpawnType, HullMode } from '../../lib/api';
-import { getModelFootprintMetrics } from './hullHelpers';
+import { getBounds, getModelFootprintMetrics, getRectLocalVerts } from './hullHelpers';
+import { edgeTargets, halfAround } from './edgeLayout';
 
 export function getRandomSpawnX(canvasWidthPx: number): number {
   return canvasWidthPx * 0.2 + Math.random() * canvasWidthPx * 0.6;
 }
 
-// "Center" spawns jitter by up to this many pixels so bodies never sit exactly on top of
+// Centre spawns jitter by up to this many pixels so bodies never sit exactly on top of
 // each other, which gives the solver no direction to separate them in.
 const CENTRE_SPAWN_JITTER_PX = 2;
 
-/** Spawn point for the "center" spawn type: the middle of the plate. */
+/** A spawn point in the middle of the plate. */
 export function centreSpawnPoint(canvasWidthPx: number, canvasHeightPx: number): Vec2Like {
   const jitter = () => (Math.random() - 0.5) * 2 * CENTRE_SPAWN_JITTER_PX;
   return { x: canvasWidthPx / 2 + jitter(), y: canvasHeightPx / 2 + jitter() };
+}
+
+interface Footprint {
+  /** Centre of the footprint relative to the body's origin. */
+  offset: Vec2Like;
+  /** Half extents of the footprint that must stay on the plate. */
+  half: Vec2Like;
+  /** Half extents including the gap kept to neighbouring models. */
+  spacingHalf: Vec2Like;
+}
+
+/** Body-local footprint box of a planned model, in pixels. */
+function footprint(item: SpawnPlanItem): Footprint {
+  const box = (verts: Vec2Like[], margin: number) => {
+    const b = getBounds(verts);
+    return {
+      centre: { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 },
+      half: { x: (b.maxX - b.minX) / 2 + margin, y: (b.maxY - b.minY) / 2 + margin },
+    };
+  };
+  const border = box(item.metrics.borderLocalVerts ?? getRectLocalVerts(item.model), 0);
+  const spacing = box(item.metrics.localVerts ?? getRectLocalVerts(item.model), BODY_MARGIN_PX);
+  const around = halfAround(border.centre, spacing);
+  return {
+    offset: border.centre,
+    half: border.half,
+    spacingHalf: {
+      x: Math.max(border.half.x, around.x),
+      y: Math.max(border.half.y, around.y),
+    },
+  };
+}
+
+/**
+ * Body positions for the "bottom edge" spawn type: rows along the bottom of the plate,
+ * tallest models first, each row centred and stacked on the one below. Rows that don't fit
+ * continue above the plate, so no two models start out overlapping.
+ */
+export function bottomEdgeSpawnPoints(
+  plan: SpawnPlanItem[],
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+): Vec2Like[] {
+  const boxes = plan.map(footprint);
+  const order = plan
+    .map((_, i) => i)
+    .sort((a, b) => boxes[b].spacingHalf.y - boxes[a].spacingHalf.y);
+  const points: Vec2Like[] = new Array(plan.length);
+  let rowBase = canvasHeightPx;
+  let start = 0;
+  while (start < order.length) {
+    // Fill the row left to right, always taking at least one model.
+    let width = 0;
+    let end = start;
+    while (end < order.length) {
+      const w = 2 * boxes[order[end]].spacingHalf.x;
+      if (end > start && width + w > canvasWidthPx) break;
+      width += w;
+      end++;
+    }
+    let cursor = Math.max(0, (canvasWidthPx - width) / 2);
+    let rowHeight = 0;
+    for (const i of order.slice(start, end)) {
+      const { offset, spacingHalf } = boxes[i];
+      points[i] = {
+        x: cursor + spacingHalf.x - offset.x,
+        y: rowBase - spacingHalf.y - offset.y,
+      };
+      cursor += 2 * spacingHalf.x;
+      rowHeight = Math.max(rowHeight, 2 * spacingHalf.y);
+    }
+    rowBase -= rowHeight;
+    start = end;
+  }
+  return points;
+}
+
+/**
+ * Body positions for the "edges" spawn type: each model in its slot around the plate edges
+ * (see edgeTargets), in plan order clockwise from the top. Models that don't fit around the
+ * edges go in rings inside, each against the ring outside it, and any left over after that
+ * are stacked above the plate, so no two models start out overlapping.
+ */
+export function edgeSpawnPoints(
+  plan: SpawnPlanItem[],
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+): Vec2Like[] {
+  const boxes = plan.map(footprint);
+  const centres: Array<Vec2Like | null> = plan.map(() => null);
+  let rect = { left: 0, top: 0, right: canvasWidthPx, bottom: canvasHeightPx };
+  let remaining = plan.map((_, i) => i);
+  for (let ring = 0; remaining.length > 0; ring++) {
+    const width = rect.right - rect.left;
+    const height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) break;
+    // Inner rings keep the outer ring's gap by treating each model's spacing box as its
+    // footprint. Models too big for the ring are left for the overflow, so they don't keep
+    // smaller ones out of it.
+    const halfOf = (i: number) => (ring === 0 ? boxes[i].half : boxes[i].spacingHalf);
+    const candidates = remaining.filter(
+      (i) => 2 * halfOf(i).x <= width && 2 * halfOf(i).y <= height,
+    );
+    // Seed positions on a ring around the centre set the order around the plate.
+    const items = candidates.map((i, k) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * k) / candidates.length;
+      return {
+        centre: {
+          x: width / 2 + (Math.cos(angle) * width) / 4,
+          y: height / 2 + (Math.sin(angle) * height) / 4,
+        },
+        half: halfOf(i),
+        spacingHalf: boxes[i].spacingHalf,
+      };
+    });
+    const targets = edgeTargets(items, width, height);
+    if (targets.every((t) => !t)) break;
+
+    // The next ring starts inside the spacing boxes of the models touching each side.
+    const inner = { ...rect };
+    const touches = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+    targets.forEach((t, k) => {
+      if (!t) return;
+      const { half, spacingHalf } = items[k];
+      const centre = { x: rect.left + t.x, y: rect.top + t.y };
+      centres[candidates[k]] = centre;
+      if (touches(t.x - half.x, 0)) inner.left = Math.max(inner.left, centre.x + spacingHalf.x);
+      if (touches(t.x + half.x, width))
+        inner.right = Math.min(inner.right, centre.x - spacingHalf.x);
+      if (touches(t.y - half.y, 0)) inner.top = Math.max(inner.top, centre.y + spacingHalf.y);
+      if (touches(t.y + half.y, height)) {
+        inner.bottom = Math.min(inner.bottom, centre.y - spacingHalf.y);
+      }
+    });
+    rect = inner;
+    remaining = remaining.filter((i) => !centres[i]);
+  }
+
+  let aboveBottom = 0;
+  return plan.map((_, i) => {
+    const { offset, spacingHalf } = boxes[i];
+    let centre = centres[i];
+    if (!centre) {
+      centre = { x: canvasWidthPx / 2, y: aboveBottom - spacingHalf.y };
+      aboveBottom -= 2 * spacingHalf.y;
+    }
+    return { x: centre.x - offset.x, y: centre.y - offset.y };
+  });
 }
 
 export function clampSpawnX(spawnX: number, widthPx: number, canvasWidthPx: number): number {
