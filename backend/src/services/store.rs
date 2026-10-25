@@ -285,6 +285,22 @@ pub async fn models_in_directories(conn: &mut SqliteConnection, dirs: &[String])
     Ok(rows)
 }
 
+/// Loads the records for the given directory paths; paths without a record are left out.
+pub async fn load_directory_configs_at(conn: &mut SqliteConnection, paths: &[String]) -> sqlx::Result<DirectoryMap> {
+    let mut out = DirectoryMap::new();
+    for chunk in param_chunks(paths) {
+        let sql = format!("SELECT * FROM directory_configs WHERE directory_path IN ({})", placeholders(chunk.len()));
+        let mut q = sqlx::query_as::<_, DirectoryConfig>(&sql);
+        for p in chunk {
+            q = q.bind(p);
+        }
+        for row in q.fetch_all(&mut *conn).await? {
+            out.insert(row.directory_path.clone(), row);
+        }
+    }
+    Ok(out)
+}
+
 pub async fn load_directory_configs(conn: &mut SqliteConnection) -> sqlx::Result<DirectoryMap> {
     let rows: Vec<DirectoryConfig> = sqlx::query_as("SELECT * FROM directory_configs").fetch_all(&mut *conn).await?;
     Ok(rows.into_iter().map(|r| (r.directory_path.clone(), r)).collect())

@@ -132,21 +132,6 @@ fn model_metadata_for(
     (Some(to_fields(resolved)), configs.map(string_map))
 }
 
-async fn directory_configs_for(db: &Db, paths: &[String]) -> AppResult<HashMap<String, DirectoryConfig>> {
-    let mut out = HashMap::new();
-    for chunk in param_chunks(paths) {
-        let sql = format!("SELECT * FROM directory_configs WHERE directory_path IN ({})", placeholders(chunk.len()));
-        let mut q = sqlx::query_as::<_, DirectoryConfig>(&sql);
-        for p in chunk {
-            q = q.bind(p);
-        }
-        for row in q.fetch_all(db).await? {
-            out.insert(row.directory_path.clone(), row);
-        }
-    }
-    Ok(out)
-}
-
 /// Lists folders (sorted), model files (sorted) and previewable files at `relative_path`.
 pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -> AppResult<ExplorerResponseDto> {
     if relative_path.split('/').any(|s| s == "..") {
@@ -157,9 +142,18 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
         return Err(AppError::NotFound(format!("Directory not found: {relative_path}")));
     }
 
-    let listing = {
+    // Child counts are read here too, so a slow disk (e.g. one spinning up) blocks a blocking
+    // thread rather than the async runtime.
+    let (listing, child_counts) = {
         let full = full.clone();
-        tokio::task::spawn_blocking(move || list_dir(&full)).await.map_err(anyhow::Error::from)??
+        tokio::task::spawn_blocking(move || {
+            list_dir(&full).map(|listing| {
+                let counts: Vec<(i64, i64)> = listing.dirs.iter().map(|n| count_entries(&full.join(n))).collect();
+                (listing, counts)
+            })
+        })
+        .await
+        .map_err(anyhow::Error::from)??
     };
     let child_paths: Vec<String> = listing
         .dirs
@@ -171,7 +165,10 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
     let previewable: Vec<&(String, u64)> =
         listing.files.iter().filter(|(n, _)| is_previewable_extension(&extension(n))).collect();
 
-    let child_configs = directory_configs_for(db, &child_paths).await?;
+    let child_configs = {
+        let mut conn = db.acquire().await?;
+        store::load_directory_configs_at(&mut conn, &child_paths).await?
+    };
     let current = store::get_directory_config(db, relative_path).await?;
 
     let model_names: Vec<String> = model_files.iter().map(|(n, _)| n.clone()).collect();
@@ -188,9 +185,10 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
     }
 
     let mut folders = Vec::with_capacity(listing.dirs.len());
-    for (name, child_path) in listing.dirs.iter().zip(&child_paths) {
+    for ((name, child_path), (subdirectory_count, model_count)) in
+        listing.dirs.iter().zip(&child_paths).zip(child_counts)
+    {
         let child_full = full.join(name);
-        let (subdirectory_count, model_count) = count_entries(&child_full);
         let dc = child_configs.get(child_path);
         let mut resolved = match dc {
             Some(d) => config_fields_from_resolved(Some(d)),

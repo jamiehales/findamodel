@@ -191,7 +191,7 @@ function areRuleMapsEqual(a: Record<string, string>, b: Record<string, string>) 
 }
 
 export default function MetadataEditor({ path, open, onClose }: Props) {
-  const { data: detail, isLoading } = useDirectoryConfig(path);
+  const { data: detail, isLoading } = useDirectoryConfig(path, open);
   const { data: metadataDictionary } = useMetadataDictionaryOverview();
   const mutation = useUpdateDirectoryConfig(path);
 

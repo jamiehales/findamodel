@@ -40,42 +40,59 @@ pub struct BufferedLogEvent {
     pub exception: Option<String>,
 }
 
+/// Recent events, with warnings and above kept apart so a burst of routine events (e.g. an
+/// indexing run) can't push them out. Each part holds up to `capacity` events.
 pub struct LogBuffer {
     capacity: usize,
-    events: Mutex<VecDeque<BufferedLogEvent>>,
+    parts: Mutex<BufferParts>,
+}
+
+#[derive(Default)]
+struct BufferParts {
+    next_sequence: u64,
+    routine: VecDeque<(u64, BufferedLogEvent)>,
+    notable: VecDeque<(u64, BufferedLogEvent)>,
+}
+
+fn is_notable(severity: &str) -> bool {
+    severity_rank(severity).zip(severity_rank("Warning")).is_some_and(|(rank, warning)| rank >= warning)
 }
 
 impl LogBuffer {
     pub fn new(capacity: usize) -> Self {
-        Self { capacity: capacity.max(100), events: Mutex::new(VecDeque::new()) }
+        Self { capacity: capacity.max(100), parts: Mutex::new(BufferParts::default()) }
     }
 
     pub fn push(&self, event: BufferedLogEvent) {
-        let mut events = self.events.lock();
-        events.push_back(event);
-        while events.len() > self.capacity {
-            events.pop_front();
+        let mut parts = self.parts.lock();
+        let sequence = parts.next_sequence;
+        parts.next_sequence += 1;
+        let part = if is_notable(event.severity) { &mut parts.notable } else { &mut parts.routine };
+        part.push_back((sequence, event));
+        while part.len() > self.capacity {
+            part.pop_front();
         }
     }
 
     /// Newest first, optionally filtered by channel (case-insensitive) and minimum severity.
     pub fn get(&self, channel: Option<&str>, minimum: Option<usize>, limit: usize) -> Vec<BufferedLogEvent> {
         let channel = channel.map(str::trim).filter(|c| !c.is_empty());
-        let events = self.events.lock();
-        events
+        let parts = self.parts.lock();
+        let mut matching: Vec<&(u64, BufferedLogEvent)> = parts
+            .routine
             .iter()
-            .rev()
-            .filter(|e| channel.is_none_or(|c| e.channel.eq_ignore_ascii_case(c)))
-            .filter(|e| minimum.is_none_or(|m| severity_rank(e.severity).is_some_and(|r| r >= m)))
-            .take(limit.clamp(1, 1000))
-            .cloned()
-            .collect()
+            .chain(&parts.notable)
+            .filter(|(_, e)| channel.is_none_or(|c| e.channel.eq_ignore_ascii_case(c)))
+            .filter(|(_, e)| minimum.is_none_or(|m| severity_rank(e.severity).is_some_and(|r| r >= m)))
+            .collect();
+        matching.sort_unstable_by_key(|(sequence, _)| std::cmp::Reverse(*sequence));
+        matching.into_iter().take(limit.clamp(1, 1000)).map(|(_, e)| e.clone()).collect()
     }
 
     pub fn channels(&self) -> Vec<String> {
-        let events = self.events.lock();
+        let parts = self.parts.lock();
         let mut channels: Vec<String> = Vec::new();
-        for e in events.iter() {
+        for (_, e) in parts.routine.iter().chain(&parts.notable) {
             if !e.channel.trim().is_empty() && !channels.iter().any(|c| c.eq_ignore_ascii_case(&e.channel)) {
                 channels.push(e.channel.clone());
             }
@@ -190,5 +207,24 @@ mod tests {
         let entries = buffer.get(None, None, 1000);
         assert_eq!(entries.len(), 100);
         assert_eq!(entries[0].message, "249");
+    }
+
+    #[test]
+    fn warnings_outlast_a_flood_of_routine_events() {
+        let buffer = LogBuffer::new(100);
+        buffer.push(event("Information", "c", "before"));
+        buffer.push(event("Warning", "sqlx::query", "slow"));
+        buffer.push(event("Error", "c", "failed"));
+        for i in 0..250 {
+            buffer.push(event("Information", "c", &i.to_string()));
+        }
+
+        let entries = buffer.get(None, None, 1000);
+        assert_eq!(entries.len(), 102);
+        assert_eq!(entries[0].message, "249");
+        assert_eq!(entries[100].message, "failed");
+        assert_eq!(entries[101].message, "slow");
+        let warnings = buffer.get(None, severity_rank("warning"), 10);
+        assert_eq!(warnings.iter().map(|e| e.message.as_str()).collect::<Vec<_>>(), vec!["failed", "slow"]);
     }
 }

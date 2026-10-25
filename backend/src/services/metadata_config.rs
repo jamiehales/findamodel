@@ -37,8 +37,15 @@ struct TrackedConfigs {
 
 impl TrackedConfigs {
     async fn load(conn: &mut SqliteConnection) -> sqlx::Result<Self> {
-        let all = store::load_directory_configs(conn).await?;
-        Ok(Self { originals: all.clone(), all })
+        Ok(Self::from(store::load_directory_configs(conn).await?))
+    }
+
+    async fn load_at(conn: &mut SqliteConnection, paths: &[String]) -> sqlx::Result<Self> {
+        Ok(Self::from(store::load_directory_configs_at(conn, paths).await?))
+    }
+
+    fn from(all: DirectoryMap) -> Self {
+        Self { originals: all.clone(), all }
     }
 
     async fn flush(&mut self, conn: &mut SqliteConnection) -> sqlx::Result<()> {
@@ -167,7 +174,9 @@ impl MetadataConfigService {
     }
 
     /// Ensures records exist for every given directory and its ancestors (root first).
-    /// Returns all directory configs keyed by path.
+    /// Returns the configs for those directories keyed by path. Only their records are read
+    /// unless a config file changed, since descendants then need re-resolving and their models
+    /// recomputing.
     pub async fn ensure_directory_configs(
         &self,
         root: &Path,
@@ -178,7 +187,7 @@ impl MetadataConfigService {
         sorted.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
 
         let mut conn = self.db.acquire().await?;
-        let mut tracked = TrackedConfigs::load(&mut conn).await?;
+        let mut tracked = TrackedConfigs::load_at(&mut conn, &sorted).await?;
         let mut changed = HashSet::new();
         for dir_path in &sorted {
             if self.sync_single(root, dir_path, &mut tracked.all, true).await? {
@@ -188,8 +197,15 @@ impl MetadataConfigService {
         tracked.flush(&mut conn).await?;
 
         if !changed.is_empty() {
-            let affected = inheritance::expand_to_descendants(&changed, tracked.all.keys());
-            recompute_model_caches(&mut conn, root, &affected, &tracked.all).await?;
+            let mut descendants = TrackedConfigs::load(&mut conn).await?;
+            let mut roots: Vec<&String> = changed.iter().collect();
+            roots.sort_by_key(|p| p.len());
+            for dir_path in roots {
+                inheritance::resolve_descendants(dir_path, &mut descendants.all);
+            }
+            descendants.flush(&mut conn).await?;
+            let affected = inheritance::expand_to_descendants(&changed, descendants.all.keys());
+            recompute_model_caches(&mut conn, root, &affected, &descendants.all).await?;
         }
         Ok(tracked.all)
     }
@@ -244,10 +260,14 @@ impl MetadataConfigService {
         Ok(true)
     }
 
+    /// Reads only the directory's record and its parent's, which is all the detail shows.
     pub async fn get_directory_config_detail(&self, dir_path: &str) -> AppResult<DirectoryConfigDetailDto> {
-        let mut conn = self.db.acquire().await?;
-        let all = store::load_directory_configs(&mut conn).await?;
-        Ok(build_detail_dto(dir_path, all.get(dir_path), &all))
+        let record = store::get_directory_config(&self.db, dir_path).await?;
+        let parent = match inheritance::parent_path(dir_path) {
+            Some(parent_path) => store::get_directory_config(&self.db, &parent_path).await?,
+            None => None,
+        };
+        Ok(build_detail_dto(dir_path, record.as_ref(), parent.as_ref()))
     }
 
     /// Writes the directory's findamodel.yaml, updates its record, re-resolves descendants
@@ -315,7 +335,8 @@ impl MetadataConfigService {
             .collect();
         recompute_model_caches(&mut conn, &root, &affected, &tracked.all).await?;
 
-        Ok(build_detail_dto(dir_path, tracked.all.get(dir_path), &tracked.all))
+        let parent = inheritance::parent_record(dir_path, &tracked.all);
+        Ok(build_detail_dto(dir_path, tracked.all.get(dir_path), parent))
     }
 }
 
@@ -355,11 +376,10 @@ fn rule_snippets(rules_yaml: Option<&str>, skip: &rules::RuleSet) -> Option<Vec<
 pub fn build_detail_dto(
     dir_path: &str,
     record: Option<&DirectoryConfig>,
-    all: &DirectoryMap,
+    parent_record: Option<&DirectoryConfig>,
 ) -> DirectoryConfigDetailDto {
     let local_values = record.map(config_fields_from_raw).unwrap_or_default();
     let parent_path = inheritance::parent_path(dir_path);
-    let parent_record = parent_path.as_ref().and_then(|p| all.get(p));
     let parent_resolved_values = parent_record.map(|p| config_fields_from_resolved(Some(p)));
 
     let local_rules = rules::deserialize_rules(record.and_then(|r| r.raw_rules_yaml.as_deref()));
@@ -438,6 +458,32 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tag_rows, 1);
+    }
+
+    #[tokio::test]
+    async fn ensure_reads_only_the_ancestor_chain_and_recomputes_descendants_on_change() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "findamodel.yaml", "creator: Alice\n");
+        write_file(root.path(), "A/B/Deep/knight.stl", "x");
+        write_file(root.path(), "Other/orc.stl", "x");
+        let mut deep = model("knight.stl", "A/B/Deep");
+        deep.calculated_creator = Some("Alice".into());
+        t.insert_model(&deep).await;
+        let svc = service(&t, root.path());
+        svc.sync_directory_configs().await.unwrap();
+
+        let configs = svc.ensure_directory_configs(root.path(), &["A/B".to_string()]).await.unwrap();
+        let mut keys: Vec<&str> = configs.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["", "A", "A/B"]);
+        assert_eq!(configs["A/B"].creator.as_deref(), Some("Alice"));
+
+        write_file(root.path(), "A/findamodel.yaml", "collection: Heroes\n");
+        let configs = svc.ensure_directory_configs(root.path(), &["A/B".to_string()]).await.unwrap();
+        assert_eq!(configs["A/B"].collection.as_deref(), Some("Heroes"));
+        let updated = store::get_model(&t.db, deep.id).await.unwrap().unwrap();
+        assert_eq!(updated.calculated_collection.as_deref(), Some("Heroes"));
     }
 
     #[tokio::test]

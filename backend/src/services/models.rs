@@ -58,6 +58,18 @@ impl PreviewPathCandidates {
     }
 }
 
+/// Same-creator models whose name or file stem could match the source's (ASCII
+/// case-insensitively); `get_other_parts` makes the exact comparison. ix_models_facets holds
+/// every column the WHERE reads, so only matching rows are loaded even for a creator with tens
+/// of thousands of models.
+const OTHER_PARTS_SQL: &str = "SELECT m.* FROM models m INDEXED BY ix_models_facets
+     WHERE m.calculated_creator = ? AND m.id != ?
+       AND COALESCE(m.calculated_supported, m.detected_supported) IS ?
+       AND (m.calculated_model_name = ? COLLATE NOCASE
+            OR m.file_name = ? COLLATE NOCASE
+            OR m.file_name LIKE ? ESCAPE '\\')
+     ORDER BY m.directory, m.file_name";
+
 fn normalize_part_grouping(value: Option<&str>) -> String {
     value.map(str::trim).unwrap_or_default().to_string()
 }
@@ -235,13 +247,16 @@ impl ModelService {
         };
         let source_name = name_of(&source);
 
-        let candidates: Vec<ModelRow> = sqlx::query_as(
-            "SELECT * FROM models WHERE id != ? AND calculated_creator = ? ORDER BY directory, file_name",
-        )
-        .bind(id)
-        .bind(&creator)
-        .fetch_all(&self.db)
-        .await?;
+        let escaped = source_name.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let candidates: Vec<ModelRow> = sqlx::query_as(OTHER_PARTS_SQL)
+            .bind(&creator)
+            .bind(id)
+            .bind(source.supported())
+            .bind(&source_name)
+            .bind(&source_name)
+            .bind(format!("{escaped}.%"))
+            .fetch_all(&self.db)
+            .await?;
 
         Ok(candidates
             .iter()
@@ -410,5 +425,43 @@ pub(crate) mod tests {
         }
         let parts = service(&t, root.path()).get_other_parts(source.id).await.unwrap();
         assert_eq!(parts.iter().map(|p| p.id).collect::<Vec<_>>(), vec![sibling.id]);
+    }
+
+    #[tokio::test]
+    async fn other_parts_fall_back_to_file_stems_and_match_supported() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let mk = |file: &str, dir: &str, name: Option<&str>, supported: Option<bool>| {
+            let mut m = model(file, dir);
+            m.calculated_creator = Some("Alice".into());
+            m.calculated_model_name = name.map(Into::into);
+            m.detected_supported = supported;
+            m
+        };
+        let source = mk("Knight_1.stl", "a", None, Some(true));
+        let by_stem = mk("knight_1.obj", "b", None, Some(true));
+        let by_name = mk("other.stl", "c", Some("KNIGHT_1"), Some(true));
+        let wildcard_lookalike = mk("KnightX1.stl", "d", None, Some(true));
+        let longer_stem = mk("Knight_1.v2.stl", "e", None, Some(true));
+        let unsupported = mk("Knight_1.stl", "f", None, Some(false));
+        let unknown_support = mk("Knight_1.stl", "g", None, None);
+        for m in [&source, &by_stem, &by_name, &wildcard_lookalike, &longer_stem, &unsupported, &unknown_support] {
+            t.insert_model(m).await;
+        }
+        let parts = service(&t, root.path()).get_other_parts(source.id).await.unwrap();
+        assert_eq!(parts.iter().map(|p| p.id).collect::<Vec<_>>(), vec![by_stem.id, by_name.id]);
+    }
+
+    #[tokio::test]
+    async fn other_parts_filter_in_the_covering_index() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let mut source = model("knight.stl", "set");
+        source.calculated_creator = Some("Alice".into());
+        t.insert_model(&source).await;
+        let plan: Vec<(i64, i64, i64, String)> =
+            sqlx::query_as(&format!("EXPLAIN QUERY PLAN {OTHER_PARTS_SQL}")).fetch_all(&t.db).await.unwrap();
+        assert!(plan.iter().any(|(_, _, _, d)| d.contains("ix_models_facets (calculated_creator=?)")), "{plan:?}");
+        assert!(service(&t, root.path()).get_other_parts(source.id).await.unwrap().is_empty());
     }
 }

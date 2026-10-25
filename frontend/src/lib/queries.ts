@@ -351,10 +351,11 @@ export function useExplorer(path: string) {
   });
 }
 
-export function useDirectoryConfig(path: string) {
+export function useDirectoryConfig(path: string, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.explorerConfig(path),
     queryFn: () => fetchDirectoryConfig(path),
+    enabled,
   });
 }
 
