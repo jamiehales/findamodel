@@ -14,13 +14,15 @@ use std::sync::{Arc, OnceLock};
 
 use tracing::{debug, info, warn};
 
+#[cfg(test)]
+use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, support_separation};
 
 const LOG_TARGET: &str = "findamodel.Preview";
 
 /// Increment when the preview rendering implementation changes so existing cached
 /// previews are invalidated on the next scan.
-pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 13;
+pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 14;
 
 const RENDER_WIDTH: u32 = 512;
 const RENDER_HEIGHT: u32 = 512;
@@ -30,12 +32,25 @@ const SUPPORTS_REMOVED_SUFFIX: &str = "_supportsremoved";
 const BODY_COLOR: Vec3 = Vec3::new(0x94 as f32 / 255.0, 0xa7 as f32 / 255.0, 0xcc as f32 / 255.0);
 const SUPPORT_COLOR: Vec3 = Vec3::new(0xc9 as f32 / 255.0, 0xa4 as f32 / 255.0, 0x5c as f32 / 255.0);
 
-pub fn relative_path(model_file_hash: &str, include_supports: bool) -> String {
-    if include_supports {
-        format!("{model_file_hash}.png")
-    } else {
-        format!("{model_file_hash}{SUPPORTS_REMOVED_SUFFIX}.png")
-    }
+/// File stem for a model's previews. The support split depends on the raft height and the
+/// supported flag, so both are part of the name: a change renders new files instead of
+/// reusing ones split the old way.
+pub fn preview_stem(model_file_hash: &str, raft_height_mm: f32, supported: Option<bool>) -> String {
+    let split = match supported {
+        Some(true) => "s",
+        Some(false) => "n",
+        None => "a",
+    };
+    format!("{model_file_hash}_r{raft_height_mm:.2}{split}")
+}
+
+/// The stem of a stored with-supports preview path.
+pub fn stem_of(relative_path: &str) -> &str {
+    relative_path.strip_suffix(".png").unwrap_or(relative_path)
+}
+
+pub fn relative_path(stem: &str, include_supports: bool) -> String {
+    if include_supports { format!("{stem}.png") } else { format!("{stem}{SUPPORTS_REMOVED_SUFFIX}.png") }
 }
 
 pub fn encode_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
@@ -126,12 +141,14 @@ impl PreviewService {
         &self.gpu
     }
 
-    /// Renders whichever requested variants are missing from the cache and saves them.
-    /// Cached files matching the hash are reused. Blocking; run on a blocking thread.
+    /// Renders whichever requested variants are missing from the cache and saves them,
+    /// tinting the triangles flagged in `is_support`. Cached files matching the stem are
+    /// reused. Blocking; run on a blocking thread.
     pub fn generate_variants(
         &self,
         geometry: &LoadedGeometry,
-        model_file_hash: &str,
+        stem: &str,
+        is_support: Option<&[bool]>,
         generate_with_supports: bool,
         generate_without_supports: bool,
     ) -> PreviewVariants {
@@ -147,8 +164,8 @@ impl PreviewService {
             return none;
         };
 
-        let with_path = relative_path(model_file_hash, true);
-        let without_path = relative_path(model_file_hash, false);
+        let with_path = relative_path(stem, true);
+        let without_path = relative_path(stem, false);
         let with_full = cache_dir.join(&with_path);
         let without_full = cache_dir.join(&without_path);
         let with_exists = with_full.exists();
@@ -168,12 +185,18 @@ impl PreviewService {
         let needs_with = generate_with_supports && !with_exists;
         let needs_without = generate_without_supports && !without_exists;
         if !needs_with && !needs_without {
-            debug!(target: LOG_TARGET, "Reusing cached previews for {model_file_hash}");
+            debug!(target: LOG_TARGET, "Reusing cached previews for {stem}");
             return result;
         }
 
         // Separate body from supports so they can be rendered in distinct colours.
-        let (body, supports) = support_separation::separate(&geometry.triangles);
+        let (body, supports) = match is_support {
+            Some(mask) => {
+                let (body, supports) = support_separation::split(&geometry.triangles, mask);
+                (body, Some(supports))
+            }
+            None => (geometry.triangles.clone(), None),
+        };
         info!(
             target: LOG_TARGET,
             "Rendering preview ({} body triangles, {} support triangles)",
@@ -306,6 +329,21 @@ mod tests {
         }
     }
 
+    fn support_mask(geometry: &LoadedGeometry) -> Vec<bool> {
+        support_separation::classify(&geometry.triangles, DEFAULT_RAFT_HEIGHT_MM)
+            .and_then(|c| c.mask_for(Some(true)))
+            .expect("support mask")
+    }
+
+    #[test]
+    fn stem_encodes_raft_height_and_supported_flag() {
+        assert_eq!(preview_stem("abc", 2.0, None), "abc_r2.00a");
+        assert_eq!(preview_stem("abc", 1.5, Some(true)), "abc_r1.50s");
+        assert_eq!(preview_stem("abc", 1.5, Some(false)), "abc_r1.50n");
+        assert_eq!(relative_path("abc_r2.00a", false), "abc_r2.00a_supportsremoved.png");
+        assert_eq!(stem_of("abc_r2.00a.png"), "abc_r2.00a");
+    }
+
     fn decode(png_bytes: &[u8]) -> (u32, u32, Vec<u8>) {
         let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
         let mut reader = decoder.read_info().unwrap();
@@ -335,12 +373,13 @@ mod tests {
         let service = PreviewService::new(Some(dir.path().to_path_buf()), false, Arc::new(GpuState::default()));
         let geometry = cube_with_support();
 
-        let first = service.generate_variants(&geometry, "abc", true, true);
+        let mask = support_mask(&geometry);
+        let first = service.generate_variants(&geometry, "abc", Some(&mask), true, true);
         assert!(first.with_supports.generated && first.without_supports.generated);
         assert!(dir.path().join("abc.png").exists());
         assert!(dir.path().join("abc_supportsremoved.png").exists());
 
-        let second = service.generate_variants(&geometry, "abc", true, true);
+        let second = service.generate_variants(&geometry, "abc", Some(&mask), true, true);
         assert!(!second.with_supports.generated && !second.without_supports.generated);
         assert_eq!(second.with_supports.relative_path.as_deref(), Some("abc.png"));
     }
@@ -352,7 +391,7 @@ mod tests {
             return;
         };
         let geometry = cube_with_support();
-        let (body, supports) = support_separation::separate(&geometry.triangles);
+        let (body, supports) = support_separation::separate(&geometry.triangles, DEFAULT_RAFT_HEIGHT_MM, Some(true));
         let (model_only, with_supports) =
             renderer.render_variant_pair(&body, supports.as_deref(), 128, 128, BODY_COLOR, SUPPORT_COLOR).unwrap();
 

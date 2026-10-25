@@ -1,23 +1,47 @@
-//! Separates a pre-supported mesh into model body and support components using
-//! connected-component analysis (union-find on shared quantised edges).
+//! Separates a pre-supported mesh into model body and support components.
 //!
-//! Heuristic: connected components whose triangle count is below
-//! [`SUPPORT_SIZE_THRESHOLD`] x (largest component size) are classified as supports.
-//! This works well for pre-supported STL/OBJ files where supports are physically
-//! detached from the main body (no shared edges) or touch only at tiny break-away
-//! contact points.
+//! Triangles are grouped into connected components (union-find on shared quantised
+//! edges), so supports that are separate shells or touch the body only at break-away tips
+//! form components of their own. Each component is then labelled from its height,
+//! triangle count and volume (Y is up and the base sits at Y=0):
+//!
+//! 1. A component with negative volume is the inner shell of a hollowed model.
+//! 2. A component that stays below the raft height is raft.
+//! 3. The seed is the largest component above the raft. Components with at least
+//!    1/[`MODEL_SEED_DIVISOR`] of its triangles are model parts.
+//! 4. Smaller components reaching within [`TOP_MODEL_BAND_MM`] of the model's top are
+//!    model details; the rest are supports.
+//!
+//! The split is confident only when support components average under a third of the
+//! triangles of model components and add up to at least [`MIN_SUPPORT_TRIANGLES`]. Support
+//! posts and tips are far lower-poly than sculpted parts, so this keeps multi-part models
+//! without supports from being split. The approach follows DragonFruit's model/support
+//! classifier.
 
 use rustc_hash::FxHashMap;
 
 use super::{Triangle, Vec3};
 
-/// Components smaller than this fraction of the largest component are supports.
-const SUPPORT_SIZE_THRESHOLD: f32 = 0.20;
+/// Increment when the classification changes so stored detections are recomputed.
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 1;
 
-/// Minimum fraction of total triangles that must be classified as supports before the
-/// separation is considered meaningful (avoids false positives on models with small
-/// decorative detachments).
-const MIN_SUPPORT_FRACTION: f32 = 0.01;
+/// Components with at least 1/N of the seed's triangles are model parts.
+const MODEL_SEED_DIVISOR: u32 = 8;
+
+/// Floor for the model-part triangle count, so a low-poly seed does not promote supports.
+const MODEL_MIN_TRIANGLES: u32 = 200;
+
+/// Small components reaching this close to the model's top are model details.
+const TOP_MODEL_BAND_MM: f32 = 1.0;
+
+/// Support components must average this many times fewer triangles than model components.
+const SUPPORT_DENSITY_RATIO: u64 = 3;
+
+/// Fewest support triangles for a confident split.
+const MIN_SUPPORT_TRIANGLES: u64 = 2_000;
+
+/// Components with a signed volume below this (mm³) are inner shells.
+const INNER_SHELL_MAX_VOLUME_MM3: f64 = -0.01;
 
 /// Vertex quantisation grid size in mm. Vertices within this distance are treated as
 /// coincident, which handles floating-point rounding at shared edges.
@@ -25,38 +49,149 @@ const VERTEX_GRID_SIZE: f32 = 0.01;
 
 type QuantizedVertex = (i32, i32, i32);
 
-/// Partitions the triangles into model body and support geometry. `supports` is `None`
-/// when no clear support components are found.
-pub fn separate(triangles: &[Triangle]) -> (Vec<Triangle>, Option<Vec<Triangle>>) {
-    let labels = classify(triangles);
-    let Some(is_support) = labels else {
-        return (triangles.to_vec(), None);
-    };
+#[derive(Debug, Clone, PartialEq)]
+pub struct Classification {
+    /// Per-triangle support flag.
+    pub is_support: Vec<bool>,
+    /// The split looks like a model plus support scaffolding rather than a multi-part model.
+    pub confident: bool,
+}
 
+impl Classification {
+    /// The support flags to split with, given the model's supported metadata: never when
+    /// it is unsupported, whenever supports were found when it is supported, and only for a
+    /// confident split when unknown.
+    pub fn mask_for(self, supported: Option<bool>) -> Option<Vec<bool>> {
+        match supported {
+            Some(false) => None,
+            Some(true) => Some(self.is_support),
+            None => self.confident.then_some(self.is_support),
+        }
+    }
+}
+
+/// Partitions the triangles into model body and support geometry, following
+/// [`Classification::mask_for`]. `supports` is `None` when nothing is split off.
+pub fn separate(
+    triangles: &[Triangle],
+    raft_height_mm: f32,
+    supported: Option<bool>,
+) -> (Vec<Triangle>, Option<Vec<Triangle>>) {
+    match classify(triangles, raft_height_mm).and_then(|c| c.mask_for(supported)) {
+        Some(mask) => {
+            let (model, supports) = split(triangles, &mask);
+            (model, Some(supports))
+        }
+        None => (triangles.to_vec(), None),
+    }
+}
+
+/// Splits triangles by a per-triangle support flag into (model, supports).
+pub fn split(triangles: &[Triangle], is_support: &[bool]) -> (Vec<Triangle>, Vec<Triangle>) {
     let support_count = is_support.iter().filter(|s| **s).count();
     let mut model = Vec::with_capacity(triangles.len() - support_count);
     let mut supports = Vec::with_capacity(support_count);
     for (tri, support) in triangles.iter().zip(is_support) {
-        if support {
+        if *support {
             supports.push(*tri);
         } else {
             model.push(*tri);
         }
     }
-    (model, Some(supports))
+    (model, supports)
 }
 
-/// Returns a per-triangle support flag, or `None` when the mesh has no meaningful
-/// support components.
-pub fn classify(triangles: &[Triangle]) -> Option<Vec<bool>> {
-    if triangles.is_empty() {
+#[derive(Debug, Clone, Copy)]
+struct ComponentStats {
+    triangles: u32,
+    top: f32,
+    volume: f64,
+    closed: bool,
+}
+
+/// Labels each triangle as model or support. `None` when the mesh has no component that
+/// classifies as support (or none that classifies as model).
+pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classification> {
+    let Components { component_of, closed } = components(triangles);
+    if closed.len() < 2 {
         return None;
     }
 
-    // Edge-based connectivity keeps point-contact tips detached from the body.
+    let mut stats: Vec<ComponentStats> = closed
+        .iter()
+        .map(|&closed| ComponentStats { triangles: 0, top: f32::NEG_INFINITY, volume: 0.0, closed })
+        .collect();
+    for (tri, &c) in triangles.iter().zip(&component_of) {
+        let s = &mut stats[c as usize];
+        s.triangles += 1;
+        s.top = s.top.max(tri.v0.y).max(tri.v1.y).max(tri.v2.y);
+        s.volume += signed_volume(tri);
+    }
+
+    let (_, seed) =
+        stats.iter().enumerate().filter(|(_, s)| s.top > raft_height_mm).max_by_key(|(_, s)| s.triangles)?;
+    let model_min_triangles = (seed.triangles / MODEL_SEED_DIVISOR).max(MODEL_MIN_TRIANGLES);
+    let model_top = stats.iter().filter(|s| s.triangles >= model_min_triangles).map(|s| s.top).fold(seed.top, f32::max);
+
+    let component_is_support: Vec<bool> = stats
+        .iter()
+        .map(|s| {
+            // Volume only means something for a closed shell.
+            if s.closed && s.volume < INNER_SHELL_MAX_VOLUME_MM3 {
+                false
+            } else if s.top <= raft_height_mm {
+                true
+            } else if s.triangles >= model_min_triangles {
+                false
+            } else {
+                s.top < model_top - TOP_MODEL_BAND_MM
+            }
+        })
+        .collect();
+
+    let (mut model_components, mut model_triangles, mut support_components, mut support_triangles) =
+        (0u64, 0u64, 0u64, 0u64);
+    for (s, support) in stats.iter().zip(&component_is_support) {
+        if *support {
+            support_components += 1;
+            support_triangles += u64::from(s.triangles);
+        } else {
+            model_components += 1;
+            model_triangles += u64::from(s.triangles);
+        }
+    }
+    if support_components == 0 || model_components == 0 {
+        return None;
+    }
+
+    // Average support component < average model component / ratio, cross-multiplied.
+    let low_poly_supports =
+        support_triangles * model_components * SUPPORT_DENSITY_RATIO < model_triangles * support_components;
+    let confident = low_poly_supports && support_triangles >= MIN_SUPPORT_TRIANGLES;
+
+    let is_support = component_of.iter().map(|c| component_is_support[*c as usize]).collect();
+    Some(Classification { is_support, confident })
+}
+
+/// Whether the geometry confidently has supports.
+pub fn detect(triangles: &[Triangle], raft_height_mm: f32) -> bool {
+    classify(triangles, raft_height_mm).is_some_and(|c| c.confident)
+}
+
+struct Components {
+    /// Dense component id per triangle.
+    component_of: Vec<u32>,
+    /// Per component: every edge is shared by two or more triangles.
+    closed: Vec<bool>,
+}
+
+/// Groups triangles into components. Edge-based connectivity keeps point-contact support
+/// tips detached from the body.
+fn components(triangles: &[Triangle]) -> Components {
     let mut parent: Vec<u32> = (0..triangles.len() as u32).collect();
-    let mut edge_owner: FxHashMap<(QuantizedVertex, QuantizedVertex), u32> = FxHashMap::default();
-    edge_owner.reserve(triangles.len() * 3 / 2);
+    // Edge -> (first triangle using it, number of triangles using it).
+    let mut edges: FxHashMap<(QuantizedVertex, QuantizedVertex), (u32, u32)> = FxHashMap::default();
+    edges.reserve(triangles.len() * 3 / 2);
 
     for (i, tri) in triangles.iter().enumerate() {
         let i = i as u32;
@@ -64,31 +199,39 @@ pub fn classify(triangles: &[Triangle]) -> Option<Vec<bool>> {
         let q1 = quantize(tri.v1);
         let q2 = quantize(tri.v2);
         for edge in [ordered(q0, q1), ordered(q1, q2), ordered(q2, q0)] {
-            let owner = *edge_owner.entry(edge).or_insert(i);
+            let entry = edges.entry(edge).or_insert((i, 0));
+            entry.1 += 1;
+            let owner = entry.0;
             union(&mut parent, i, owner);
         }
     }
 
-    let mut component_size = vec![0u32; triangles.len()];
-    let mut roots = Vec::with_capacity(triangles.len());
+    let mut dense = vec![u32::MAX; triangles.len()];
+    let mut count = 0u32;
+    let mut component_of = Vec::with_capacity(triangles.len());
     for i in 0..triangles.len() as u32 {
-        let root = find(&mut parent, i);
-        component_size[root as usize] += 1;
-        roots.push(root);
+        let root = find(&mut parent, i) as usize;
+        if dense[root] == u32::MAX {
+            dense[root] = count;
+            count += 1;
+        }
+        component_of.push(dense[root]);
     }
 
-    let max_size = component_size.iter().copied().max().unwrap_or(0);
-    let size_threshold = (max_size as f32 * SUPPORT_SIZE_THRESHOLD) as u32;
-
-    let is_support: Vec<bool> = roots.iter().map(|r| component_size[*r as usize] < size_threshold).collect();
-    let support_count = is_support.iter().filter(|s| **s).count();
-
-    // Discard if the support fraction is negligible (likely not a supported model).
-    if (support_count as f32) < triangles.len() as f32 * MIN_SUPPORT_FRACTION {
-        return None;
+    let mut closed = vec![true; count as usize];
+    for (owner, uses) in edges.into_values() {
+        if uses < 2 {
+            closed[component_of[owner as usize] as usize] = false;
+        }
     }
+    Components { component_of, closed }
+}
 
-    Some(is_support)
+/// Signed volume of the tetrahedron from the origin to the triangle; sums to the enclosed
+/// volume of a closed shell, positive for outward winding.
+fn signed_volume(tri: &Triangle) -> f64 {
+    let [a, b, c] = [tri.v0, tri.v1, tri.v2].map(|v| [f64::from(v.x), f64::from(v.y), f64::from(v.z)]);
+    (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
 }
 
 fn quantize(v: Vec3) -> QuantizedVertex {
@@ -120,99 +263,193 @@ fn union(parent: &mut [u32], a: u32, b: u32) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn square(x_offset: f32, z_offset: f32) -> Vec<Triangle> {
-        let v0 = Vec3::new(x_offset, 0.0, z_offset);
-        let v1 = Vec3::new(x_offset + 1.0, 0.0, z_offset);
-        let v2 = Vec3::new(x_offset + 1.0, 0.0, z_offset + 1.0);
-        let v3 = Vec3::new(x_offset, 0.0, z_offset + 1.0);
-        vec![Triangle::new(v0, v1, v2, Vec3::UP), Triangle::new(v0, v2, v3, Vec3::UP)]
-    }
+    const RAFT: f32 = 2.0;
 
-    fn body_and_supports(body_squares: usize, support_squares: usize) -> Vec<Triangle> {
-        let mut triangles = Vec::new();
-        for i in 0..body_squares {
-            triangles.extend(square(i as f32, 0.0));
+    /// Closed axis-aligned box with outward winding, each face split into an n x n grid
+    /// (12 n² triangles).
+    pub(crate) fn cuboid(min: Vec3, max: Vec3, n: usize) -> Vec<Triangle> {
+        let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        // (fixed axis, value on that axis, u axis, v axis) with u x v pointing outward.
+        let faces = [
+            (1, min.y, 0, 2),
+            (1, max.y, 2, 0),
+            (0, min.x, 2, 1),
+            (0, max.x, 1, 2),
+            (2, min.z, 1, 0),
+            (2, max.z, 0, 1),
+        ];
+        let (lo, hi) = ([min.x, min.y, min.z], [max.x, max.y, max.z]);
+        let mut out = Vec::with_capacity(12 * n * n);
+        for (axis, value, u, v) in faces {
+            let point = |i: usize, j: usize| {
+                let mut p = [0.0; 3];
+                p[axis] = value;
+                p[u] = lerp(lo[u], hi[u], i as f32 / n as f32);
+                p[v] = lerp(lo[v], hi[v], j as f32 / n as f32);
+                Vec3::new(p[0], p[1], p[2])
+            };
+            for i in 0..n {
+                for j in 0..n {
+                    out.push(Triangle::new(point(i, j), point(i + 1, j), point(i + 1, j + 1), Vec3::UP));
+                    out.push(Triangle::new(point(i, j), point(i + 1, j + 1), point(i, j + 1), Vec3::UP));
+                }
+            }
         }
-        for i in 0..support_squares {
-            triangles.extend(square(i as f32, 1000.0));
+        out
+    }
+
+    fn inverted(triangles: Vec<Triangle>) -> Vec<Triangle> {
+        triangles.into_iter().map(|t| Triangle::new(t.v0, t.v2, t.v1, t.normal)).collect()
+    }
+
+    /// 10 mm body (10,800 triangles) raised to 5-15 mm.
+    pub(crate) fn body() -> Vec<Triangle> {
+        cuboid(Vec3::new(0.0, 5.0, 0.0), Vec3::new(10.0, 15.0, 10.0), 30)
+    }
+
+    /// `count` thin posts (48 triangles each) from the bed to just under the body.
+    pub(crate) fn posts(count: usize) -> Vec<Triangle> {
+        (0..count)
+            .flat_map(|k| {
+                let (x, z) = (0.37 + (k % 8) as f32 * 1.21, 0.43 + (k / 8) as f32 * 1.17);
+                cuboid(Vec3::new(x, 0.0, z), Vec3::new(x + 0.3, 4.9, z + 0.3), 2)
+            })
+            .collect()
+    }
+
+    fn support_count(c: &Classification) -> usize {
+        c.is_support.iter().filter(|s| **s).count()
+    }
+
+    #[test]
+    fn empty_and_single_component_meshes_are_not_classified() {
+        assert!(classify(&[], RAFT).is_none());
+        assert!(classify(&body(), RAFT).is_none());
+        let (model, supports) = separate(&body(), RAFT, Some(true));
+        assert_eq!(model.len(), 10_800);
+        assert!(supports.is_none());
+    }
+
+    #[test]
+    fn low_poly_posts_under_the_body_are_confident_supports() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.confident);
+        assert_eq!(support_count(&c), 50 * 48);
+        assert!(c.is_support[10_800..].iter().all(|s| *s));
+        assert!(detect(&mesh, RAFT));
+    }
+
+    #[test]
+    fn raft_below_the_cutoff_is_support_even_when_largest() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(cuboid(Vec3::new(-5.0, 0.0, -5.0), Vec3::new(15.0, 1.0, 15.0), 40));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.confident);
+        assert_eq!(support_count(&c), 50 * 48 + 12 * 40 * 40);
+    }
+
+    #[test]
+    fn raft_height_decides_whether_a_low_dense_piece_is_raft() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(cuboid(Vec3::new(-5.0, 0.0, -5.0), Vec3::new(15.0, 3.0, 15.0), 30));
+        let raft_triangles = 12 * 30 * 30;
+
+        let low_cutoff = classify(&mesh, RAFT).expect("classification");
+        assert!(low_cutoff.is_support[mesh.len() - raft_triangles..].iter().all(|s| !*s));
+
+        let high_cutoff = classify(&mesh, 3.5).expect("classification");
+        assert!(high_cutoff.is_support[mesh.len() - raft_triangles..].iter().all(|s| *s));
+    }
+
+    #[test]
+    fn multi_part_model_without_supports_is_not_split() {
+        let mut mesh = body();
+        for k in 0..4 {
+            let x = 12.0 + k as f32 * 4.0;
+            mesh.extend(cuboid(Vec3::new(x, 3.0, 0.0), Vec3::new(x + 3.0, 8.0, 3.0), 12));
         }
-        triangles
+        assert!(classify(&mesh, RAFT).is_none());
+        assert!(!detect(&mesh, RAFT));
     }
 
     #[test]
-    fn empty_input_returns_empty_model_and_no_supports() {
-        let (model, supports) = separate(&[]);
-        assert!(model.is_empty());
+    fn few_small_parts_are_found_but_not_confident() {
+        let mut mesh = body();
+        mesh.extend(posts(10));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(!c.confident, "480 support triangles is below the minimum");
+        assert!(!detect(&mesh, RAFT));
+
+        let (_, unknown) = separate(&mesh, RAFT, None);
+        assert!(unknown.is_none());
+        let (model, supported) = separate(&mesh, RAFT, Some(true));
+        assert_eq!(supported.expect("supports").len(), 480);
+        assert_eq!(model.len(), 10_800);
+    }
+
+    #[test]
+    fn supported_false_never_splits() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let (model, supports) = separate(&mesh, RAFT, Some(false));
+        assert_eq!(model.len(), mesh.len());
         assert!(supports.is_none());
     }
 
     #[test]
-    fn single_connected_component_is_all_model() {
-        let (model, supports) = separate(&square(0.0, 0.0));
-        assert_eq!(model.len(), 2);
-        assert!(supports.is_none());
+    fn similar_density_parts_are_not_confident() {
+        // Small parts below the model-part threshold but nearly as dense as the body
+        // look like a kit, not supports, even with enough of them to pass the minimum.
+        let mut mesh = cuboid(Vec3::new(0.0, 5.0, 0.0), Vec3::new(10.0, 15.0, 10.0), 6);
+        for k in 0..12 {
+            let x = 12.0 + k as f32 * 2.0;
+            mesh.extend(cuboid(Vec3::new(x, 0.0, 0.0), Vec3::new(x + 1.0, 3.0, 1.0), 4));
+        }
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert_eq!(support_count(&c), 12 * 192);
+        assert!(!c.confident);
     }
 
     #[test]
-    fn large_connected_mesh_is_all_model() {
-        let (model, supports) = separate(&body_and_supports(50, 0));
-        assert_eq!(model.len(), 100);
-        assert!(supports.is_none());
+    fn small_detail_near_the_top_is_model() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(cuboid(Vec3::new(20.0, 14.5, 0.0), Vec3::new(21.0, 14.8, 1.0), 1));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - 12..].iter().all(|s| !*s));
+        assert_eq!(support_count(&c), 50 * 48);
     }
 
     #[test]
-    fn small_detached_component_is_classified_as_supports() {
-        let (model, supports) = separate(&body_and_supports(20, 1));
-        assert_eq!(supports.expect("supports").len(), 2);
-        assert_eq!(model.len(), 40);
+    fn inner_shell_of_a_hollowed_model_is_model() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(inverted(cuboid(Vec3::new(2.0, 7.0, 2.0), Vec3::new(8.0, 13.0, 8.0), 4)));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - 192..].iter().all(|s| !*s));
+        assert_eq!(support_count(&c), 50 * 48);
     }
 
     #[test]
-    fn support_below_min_fraction_returns_no_supports() {
-        let (_, supports) = separate(&body_and_supports(200, 1));
-        assert!(supports.is_none());
-    }
-
-    #[test]
-    fn two_equal_components_are_not_supports() {
-        let (_, supports) = separate(&body_and_supports(10, 10));
-        assert!(supports.is_none());
-    }
-
-    #[test]
-    fn multiple_small_supports_are_all_classified() {
-        let mut triangles: Vec<Triangle> = (0..30).flat_map(|i| square(i as f32, 0.0)).collect();
-        triangles.extend(square(0.0, 1000.0));
-        triangles.extend(square(0.0, 2000.0));
-        triangles.extend(square(0.0, 3000.0));
-
-        let (model, supports) = separate(&triangles);
-        assert_eq!(supports.expect("supports").len(), 6);
-        assert_eq!(model.len(), 60);
-    }
-
-    #[test]
-    fn point_contact_support_tip_is_classified_as_support() {
-        let mut triangles: Vec<Triangle> = (0..20).flat_map(|i| square(i as f32, 0.0)).collect();
-        triangles.push(Triangle::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(-0.2, 0.0, 0.0),
-            Vec3::new(0.0, 0.2, 0.0),
+    fn point_contact_support_tip_is_its_own_component() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        // Tip touching a body corner at a single vertex.
+        mesh.push(Triangle::new(
+            Vec3::new(0.0, 5.0, 0.0),
+            Vec3::new(-0.2, 4.0, 0.0),
+            Vec3::new(0.0, 4.0, -0.2),
             Vec3::UP,
         ));
-        triangles.push(Triangle::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.2, 0.0),
-            Vec3::new(0.0, 0.0, -0.2),
-            Vec3::UP,
-        ));
-
-        let (model, supports) = separate(&triangles);
-        assert_eq!(supports.expect("supports").len(), 2);
-        assert_eq!(model.len(), 40);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - 1]);
     }
 
     #[test]
@@ -221,8 +458,24 @@ mod tests {
             Triangle::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0), Vec3::UP),
             Triangle::new(Vec3::new(0.0, 0.0, 1.001), Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 1.0), Vec3::UP),
         ];
-        let (model, supports) = separate(&triangles);
-        assert_eq!(model.len(), 2);
-        assert!(supports.is_none());
+        assert_eq!(components(&triangles).closed.len(), 1);
+    }
+
+    #[test]
+    fn closed_shells_and_open_fragments_are_told_apart() {
+        let mut mesh = cuboid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 2);
+        mesh.push(Triangle::new(
+            Vec3::new(5.0, 0.0, 0.0),
+            Vec3::new(6.0, 0.0, 0.0),
+            Vec3::new(5.0, 1.0, 0.0),
+            Vec3::UP,
+        ));
+        assert_eq!(components(&mesh).closed, vec![true, false]);
+    }
+
+    #[test]
+    fn outward_cuboid_has_positive_volume() {
+        let volume: f64 = cuboid(Vec3::new(1.0, 2.0, 3.0), Vec3::new(3.0, 5.0, 7.0), 2).iter().map(signed_volume).sum();
+        assert!((volume - 24.0).abs() < 1e-3, "{volume}");
     }
 }

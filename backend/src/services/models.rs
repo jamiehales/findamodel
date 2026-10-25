@@ -40,28 +40,17 @@ pub struct ModelService {
     pub(crate) file_scan_threads: usize,
 }
 
-/// Preview image candidates in priority order: the requested variant, the other variant,
-/// then the path stored on the model.
+/// Preview image candidates in priority order: the requested variant, then the other
+/// variant of the model's stored preview.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewPathCandidates {
     pub preferred: String,
     pub fallback: String,
-    pub stored: Option<String>,
 }
 
 impl PreviewPathCandidates {
     pub fn candidates(&self) -> Vec<(String, bool)> {
-        let mut out = vec![(self.preferred.clone(), true)];
-        if !self.fallback.eq_ignore_ascii_case(&self.preferred) {
-            out.push((self.fallback.clone(), false));
-        }
-        if let Some(stored) = self.stored.as_ref().filter(|s| !s.trim().is_empty())
-            && !stored.eq_ignore_ascii_case(&self.preferred)
-            && !stored.eq_ignore_ascii_case(&self.fallback)
-        {
-            out.push((stored.clone(), false));
-        }
-        out
+        vec![(self.preferred.clone(), true), (self.fallback.clone(), false)]
     }
 }
 
@@ -123,21 +112,17 @@ impl ModelService {
         id: Uuid,
         include_supports: bool,
     ) -> AppResult<Option<PreviewPathCandidates>> {
-        let row: Option<(String, Option<String>)> =
-            sqlx::query_as("SELECT checksum, preview_image_path FROM models WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&self.db)
-                .await?;
-        let Some((checksum, stored)) = row else {
+        let stored: Option<Option<String>> = sqlx::query_scalar("SELECT preview_image_path FROM models WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?;
+        let Some(stored) = stored.flatten().filter(|s| !s.trim().is_empty()) else {
             return Ok(None);
         };
-        if stored.as_deref().is_none_or(|s| s.trim().is_empty()) {
-            return Ok(None);
-        }
+        let stem = preview::stem_of(&stored);
         Ok(Some(PreviewPathCandidates {
-            preferred: preview::relative_path(&checksum, include_supports),
-            fallback: preview::relative_path(&checksum, !include_supports),
-            stored,
+            preferred: preview::relative_path(stem, include_supports),
+            fallback: preview::relative_path(stem, !include_supports),
         }))
     }
 
@@ -259,7 +244,7 @@ impl ModelService {
             .filter(|m| {
                 normalize_part_grouping(m.calculated_collection.as_deref()) == source_collection
                     && normalize_part_grouping(m.calculated_subcollection.as_deref()) == source_subcollection
-                    && m.calculated_supported == source.calculated_supported
+                    && m.supported() == source.supported()
                     && tags::eq_ignore_case(&name_of(m), &source_name)
             })
             .map(store::to_related_dto)

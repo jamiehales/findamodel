@@ -84,7 +84,7 @@ fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, req: &ModelQueryRequest, skip
     }
 
     if let Some(supported) = req.supported {
-        qb.push(" AND m.calculated_supported = ").push_bind(supported);
+        qb.push(" AND m.effective_supported = ").push_bind(supported);
     }
 }
 

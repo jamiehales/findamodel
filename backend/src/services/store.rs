@@ -12,9 +12,16 @@ use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::ComputedMetadata;
 use crate::metadata::tags;
+use crate::preview;
 
-pub fn preview_url(model_id: Uuid, preview_generation_version: Option<i32>) -> String {
-    format!("/api/models/{model_id}/preview?v={}&includeSupports=true", preview_generation_version.unwrap_or(0))
+/// Preview URL for a model. The stored path is part of it because a different support
+/// split is a different image, and exact-variant previews are cached as immutable.
+pub fn preview_url(model_id: Uuid, preview_generation_version: Option<i32>, preview_image_path: &str) -> String {
+    format!(
+        "/api/models/{model_id}/preview?v={}&key={}&includeSupports=true",
+        preview_generation_version.unwrap_or(0),
+        preview::stem_of(preview_image_path)
+    )
 }
 
 pub fn relative_path(directory: &str, file_name: &str) -> String {
@@ -36,7 +43,7 @@ pub fn to_model_dto(m: &ModelRow) -> ModelDto {
         file_size: m.file_size,
         file_url: format!("/api/models/{}/file", m.id),
         has_preview: m.preview_image_path.is_some(),
-        preview_url: m.preview_image_path.as_ref().map(|_| preview_url(m.id, m.preview_generation_version)),
+        preview_url: m.preview_image_path.as_deref().map(|p| preview_url(m.id, m.preview_generation_version, p)),
         creator: m.calculated_creator.clone(),
         collection: m.calculated_collection.clone(),
         subcollection: m.calculated_subcollection.clone(),
@@ -44,7 +51,7 @@ pub fn to_model_dto(m: &ModelRow) -> ModelDto {
         category: m.calculated_category.clone(),
         item_type: m.calculated_type.clone(),
         material: m.calculated_material.clone(),
-        supported: m.calculated_supported,
+        supported: m.supported(),
         convex_hull: m.convex_hull.clone(),
         concave_hull: m.concave_hull.clone(),
         convex_sans_raft_hull: m.convex_sans_raft_hull.clone(),
@@ -66,7 +73,7 @@ pub fn to_related_dto(m: &ModelRow) -> RelatedModelDto {
         relative_path: relative_path(&m.directory, &m.file_name),
         file_type: m.file_type.clone(),
         file_size: m.file_size,
-        preview_url: m.preview_image_path.as_ref().map(|_| preview_url(m.id, m.preview_generation_version)),
+        preview_url: m.preview_image_path.as_deref().map(|p| preview_url(m.id, m.preview_generation_version, p)),
     }
 }
 
@@ -83,7 +90,7 @@ pub fn apply_calculated_metadata(model: &mut ModelRow, metadata: &ComputedMetada
     model.calculated_part_name = metadata.part_name.clone();
 }
 
-const MODEL_COLUMNS: [&str; 37] = [
+const MODEL_COLUMNS: [&str; 38] = [
     "id",
     "checksum",
     "file_name",
@@ -104,6 +111,7 @@ const MODEL_COLUMNS: [&str; 37] = [
     "calculated_type",
     "calculated_material",
     "calculated_supported",
+    "detected_supported",
     "calculated_model_name",
     "calculated_part_name",
     "convex_hull",
@@ -144,6 +152,7 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(&m.calculated_type)
         .push_bind(&m.calculated_material)
         .push_bind(m.calculated_supported)
+        .push_bind(m.detected_supported)
         .push_bind(&m.calculated_model_name)
         .push_bind(&m.calculated_part_name)
         .push_bind(&m.convex_hull)
@@ -338,7 +347,7 @@ mod tests {
         assert_eq!(
             dto.preview_url.as_deref(),
             Some(format!(
-                "/api/models/11111111-1111-1111-1111-111111111111/preview?v={CURRENT_PREVIEW_GENERATION_VERSION}&includeSupports=true"
+                "/api/models/11111111-1111-1111-1111-111111111111/preview?v={CURRENT_PREVIEW_GENERATION_VERSION}&key=preview/abc&includeSupports=true"
             ))
             .as_deref()
         );
@@ -378,6 +387,40 @@ mod tests {
         let mut model = full_model();
         model.hull_raft_height_mm = None;
         assert_eq!(to_model_dto(&model).raft_height_mm, DEFAULT_RAFT_HEIGHT_MM);
+    }
+
+    #[test]
+    fn model_dto_supported_prefers_metadata_over_detection() {
+        let mut model = full_model();
+        for (calculated, detected, expected) in [
+            (Some(true), None, Some(true)),
+            (Some(false), Some(true), Some(false)),
+            (None, Some(true), Some(true)),
+            (None, None, None),
+        ] {
+            model.calculated_supported = calculated;
+            model.detected_supported = detected;
+            assert_eq!(to_model_dto(&model).supported, expected, "{calculated:?} {detected:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn effective_supported_column_prefers_metadata_over_detection() {
+        let t = crate::test_support::TestDb::new().await;
+        for (name, calculated, detected) in
+            [("a.stl", Some(false), Some(true)), ("b.stl", None, Some(true)), ("c.stl", None, None)]
+        {
+            let mut m = crate::test_support::model(name, "");
+            m.calculated_supported = calculated;
+            m.detected_supported = detected;
+            t.insert_model(&m).await;
+        }
+        let rows: Vec<(String, Option<bool>)> =
+            sqlx::query_as("SELECT file_name, effective_supported FROM models ORDER BY file_name")
+                .fetch_all(&t.db)
+                .await
+                .unwrap();
+        assert_eq!(rows, vec![("a.stl".into(), Some(false)), ("b.stl".into(), Some(true)), ("c.stl".into(), None)]);
     }
 
     #[test]

@@ -239,7 +239,7 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
                 file_size: Some(cm.map_or(*size as i64, |m| m.file_size)),
                 has_preview: cm.is_some_and(|m| m.preview_image_path.is_some()),
                 preview_url: cm.and_then(|m| {
-                    m.preview_image_path.as_ref().map(|_| store::preview_url(m.id, m.preview_generation_version))
+                    m.preview_image_path.as_deref().map(|p| store::preview_url(m.id, m.preview_generation_version, p))
                 }),
                 resolved_metadata,
                 rule_configs,

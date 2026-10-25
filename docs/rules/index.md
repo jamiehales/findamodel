@@ -30,7 +30,7 @@ With a single root-level `findamodel.yaml`, rules can automatically extract:
 - `creator` = "Alice" (from the root folder name)
 - `collection` = "Fantasy" (from the second-level folder)
 - `model_name` = "Elf Warrior" or "Elf Mage" (from the filename)
-- `supported` = `true`/`false` (from whether "supported" appears in the filename)
+- `supported` = `true` (when "supported" appears in the filename)
 - `tags` = additional per-model tags (for example, adding `supported` when filenames match)
 
 ---

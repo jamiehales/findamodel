@@ -96,7 +96,7 @@ Matching is **case-insensitive** by default.
 
 When the rule is applied to a `boolean` field (`supported`), the expression acts as a presence check:
 - If the regex **matches** → field is set to `true`
-- If the regex does **not** match → field is set to `false`
+- If the regex does **not** match → the rule leaves the field unset, so the folder's value (or support detection) applies
 
 ```yaml
 supported:
@@ -107,8 +107,10 @@ supported:
 | File | Result |
 |------|--------|
 | `elf_warrior_supported.stl` | `true` |
-| `elf_warrior.stl` | `false` |
+| `elf_warrior.stl` | unset |
 | `SUPPORTED_dragon.stl` | `true` (case-insensitive) |
+
+To mark files as unsupported, set `supported: false` on the folder or the file.
 
 ---
 

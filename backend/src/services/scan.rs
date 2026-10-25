@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::models::{ModelService, is_model_extension, is_non_geometry_type};
 use crate::db::now;
 use crate::entities::{DirectoryConfig, ModelRow};
-use crate::geometry::{LoadedGeometry, hull, loader};
+use crate::geometry::{LoadedGeometry, hull, loader, support_separation};
 use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::{self, ComputedMetadata};
@@ -64,12 +64,16 @@ pub fn needs_hull_regeneration(stored_checksum: Option<&str>, expected_raft_heig
     stored_checksum != Some(scan_config::compute(expected_raft_height_mm).as_str())
 }
 
+/// A preview is stale when missing, older than the minimum version, or stored under a
+/// different path than `expected_path` (the support split inputs changed).
 pub fn needs_preview_regeneration(
     preview_image_path: Option<&str>,
     stored_version: Option<i32>,
     minimum_version: i32,
+    expected_path: &str,
 ) -> bool {
-    preview_image_path.is_none_or(|p| p.trim().is_empty()) || stored_version.is_none_or(|v| v < minimum_version)
+    preview_image_path.is_none_or(|p| p.trim().is_empty() || p != expected_path)
+        || stored_version.is_none_or(|v| v < minimum_version)
 }
 
 pub fn resolve_minimum_preview_generation_version(configured: i32) -> i32 {
@@ -91,8 +95,21 @@ pub fn resolve_raft_height_mm_for_model(
     configs: &DirectoryMap,
     default_raft_height_mm: f32,
 ) -> f32 {
-    let computed = model_metadata::compute(full_path, configs.get(directory));
-    valid_raft(computed.raft_height_mm)
+    raft_height_mm_for(
+        &model_metadata::compute(full_path, configs.get(directory)),
+        directory,
+        configs,
+        default_raft_height_mm,
+    )
+}
+
+fn raft_height_mm_for(
+    metadata: &ComputedMetadata,
+    directory: &str,
+    configs: &DirectoryMap,
+    default_raft_height_mm: f32,
+) -> f32 {
+    valid_raft(metadata.raft_height_mm)
         .unwrap_or_else(|| resolve_raft_height_mm(directory, configs, default_raft_height_mm))
 }
 
@@ -143,6 +160,7 @@ struct FileData {
     hulls: hull::Hulls,
     hull_generated: bool,
     raft_height_mm: f32,
+    detected_supported: bool,
     metadata: ComputedMetadata,
     dir_config_id: Option<Uuid>,
     geometry: Option<GeometrySummary>,
@@ -184,6 +202,7 @@ struct GeometryRefresh {
     hulls: hull::Hulls,
     hull_generated: bool,
     raft_height_mm: f32,
+    detected_supported: bool,
 }
 
 /// (id, directory, file_name, checksum, file_modified_at, scan_config_checksum,
@@ -226,7 +245,29 @@ struct ScanContext {
     minimum_preview_version: i32,
 }
 
-fn apply_hull_data(model: &mut ModelRow, hulls: &hull::Hulls, calculated: bool, raft_height_mm: f32) {
+impl ScanContext {
+    /// A model file's metadata and raft cutoff.
+    fn resolve(&self, full_path: &str, directory: &str) -> (ComputedMetadata, f32) {
+        let metadata = model_metadata::compute(full_path, self.configs.get(directory));
+        let raft_height_mm = raft_height_mm_for(&metadata, directory, &self.configs, self.default_raft_height_mm);
+        (metadata, raft_height_mm)
+    }
+}
+
+/// The with-supports preview path a model's previews should be stored under.
+fn expected_preview_path(checksum: &str, raft_height_mm: f32, supported: Option<bool>) -> String {
+    preview::relative_path(&preview::preview_stem(checksum, raft_height_mm, supported), true)
+}
+
+/// Stores hulls and the support detection, which share the scan config checksum.
+fn apply_hull_data(
+    model: &mut ModelRow,
+    hulls: &hull::Hulls,
+    calculated: bool,
+    raft_height_mm: f32,
+    detected_supported: bool,
+) {
+    model.detected_supported = (calculated && detected_supported).then_some(true);
     model.convex_hull = hulls.convex.clone();
     model.concave_hull = hulls.concave.clone();
     model.convex_sans_raft_hull = hulls.convex_sans_raft.clone();
@@ -244,7 +285,7 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
     model.preview_image_path = data.preview_image_path.clone();
     model.preview_generated_at = data.preview_generated_at;
     model.preview_generation_version = data.preview_image_path.as_ref().map(|_| CURRENT_PREVIEW_GENERATION_VERSION);
-    apply_hull_data(model, &data.hulls, data.geometry.is_some(), data.raft_height_mm);
+    apply_hull_data(model, &data.hulls, data.geometry.is_some(), data.raft_height_mm, data.detected_supported);
     store::apply_calculated_metadata(model, &data.metadata);
     let g = data.geometry;
     model.dimension_x_mm = g.and_then(|g| g.dimension_x_mm);
@@ -259,7 +300,13 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
 
 fn apply_geometry_refresh(model: &mut ModelRow, refresh: &GeometryRefresh) {
     if refresh.include_hulls {
-        apply_hull_data(model, &refresh.hulls, refresh.geometry_loaded, refresh.raft_height_mm);
+        apply_hull_data(
+            model,
+            &refresh.hulls,
+            refresh.geometry_loaded,
+            refresh.raft_height_mm,
+            refresh.detected_supported,
+        );
     }
     if !refresh.include_preview || !refresh.geometry_loaded {
         return;
@@ -305,19 +352,19 @@ pub fn discover_model_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 impl ModelService {
-    /// Resolves cached preview files for a checksum: the with-supports path when either
+    /// Resolves cached preview files for a stem: the with-supports path when either
     /// variant exists (with the oldest variant's timestamp), else the existing stored path
     /// if its file is present.
     fn resolve_cached_preview_metadata(
         &self,
-        checksum: &str,
+        stem: &str,
         existing: Option<&str>,
     ) -> (Option<String>, Option<DateTime<Utc>>) {
         let Some(renders) = self.preview.as_ref().and_then(|p| p.cache_dir()) else {
             return (existing.map(str::to_string), None);
         };
-        let with = preview::relative_path(checksum, true);
-        let without = preview::relative_path(checksum, false);
+        let with = preview::relative_path(stem, true);
+        let without = preview::relative_path(stem, false);
         let times: Vec<DateTime<Utc>> = [&with, &without]
             .iter()
             .filter_map(|p| std::fs::metadata(renders.join(p)).and_then(|m| m.modified()).ok())
@@ -334,7 +381,9 @@ impl ModelService {
         (None, None)
     }
 
-    /// Loads geometry, renders previews (when requested) and computes hulls.
+    /// Loads geometry, detects supports, renders previews (when requested) and computes
+    /// hulls. Returns (summary, preview generated, hulls, supports detected).
+    #[allow(clippy::too_many_arguments)]
     async fn process_geometry(
         &self,
         file: &Path,
@@ -343,25 +392,29 @@ impl ModelService {
         include_preview: bool,
         include_hulls: bool,
         raft_height_mm: f32,
-    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>) {
+        supported: Option<bool>,
+    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, bool) {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
-        let checksum = checksum.to_string();
+        let stem = preview::preview_stem(checksum, raft_height_mm, supported);
         let preview = self.preview.clone().filter(|_| include_preview);
         tokio::task::spawn_blocking(move || {
             let Some(geometry) = loader::load_model(&path, &file_type) else {
-                return (None, false, None);
+                return (None, false, None, false);
             };
+            let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
+            let detected = classification.as_ref().is_some_and(|c| c.confident);
+            let support_mask = classification.and_then(|c| c.mask_for(supported));
             let preview_generated = preview.is_some_and(|p| {
-                let result = p.generate_variants(&geometry, &checksum, true, true);
+                let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true);
                 result.with_supports.generated || result.without_supports.generated
             });
             let hulls = include_hulls
                 .then(|| hull::calculate_hulls(&geometry, hull::DEFAULT_MAX_HULL_VERTICES, raft_height_mm));
-            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls)
+            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected)
         })
         .await
-        .unwrap_or((None, false, None))
+        .unwrap_or((None, false, None, false))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -380,9 +433,8 @@ impl ModelService {
             None => compute_checksum(file).await?,
         };
         let dir_config: Option<&DirectoryConfig> = ctx.configs.get(directory);
-        let metadata = model_metadata::compute(&file.to_string_lossy(), dir_config);
-        let raft_height_mm = valid_raft(metadata.raft_height_mm)
-            .unwrap_or_else(|| resolve_raft_height_mm(directory, &ctx.configs, ctx.default_raft_height_mm));
+        let (metadata, raft_height_mm) = ctx.resolve(&file.to_string_lossy(), directory);
+        let supported = metadata.supported;
 
         let mut data = FileData {
             checksum: checksum.clone(),
@@ -392,6 +444,7 @@ impl ModelService {
             hulls: hull::Hulls::default(),
             hull_generated: false,
             raft_height_mm,
+            detected_supported: false,
             metadata,
             dir_config_id: dir_config.map(|d| d.id),
             geometry: None,
@@ -401,30 +454,36 @@ impl ModelService {
             return Ok(data);
         }
 
-        let (summary, preview_generated, hulls) =
-            self.process_geometry(file, file_type, &checksum, include_preview, true, raft_height_mm).await;
-        (data.preview_image_path, data.preview_generated_at) =
-            self.resolve_cached_preview_metadata(&checksum, existing_preview_path);
+        let (summary, preview_generated, hulls, detected) =
+            self.process_geometry(file, file_type, &checksum, include_preview, true, raft_height_mm, supported).await;
+        (data.preview_image_path, data.preview_generated_at) = self.resolve_cached_preview_metadata(
+            &preview::preview_stem(&checksum, raft_height_mm, supported),
+            existing_preview_path,
+        );
         data.preview_generated = preview_generated;
         if let Some(summary) = summary {
             data.hulls = hulls.unwrap_or_default();
             data.hull_generated = true;
+            data.detected_supported = detected;
             data.geometry = Some(summary);
         }
         Ok(data)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn compute_geometry_refresh(
         &self,
         file: &Path,
         file_type: &str,
         checksum: &str,
         raft_height_mm: f32,
+        supported: Option<bool>,
         include_preview: bool,
         include_hulls: bool,
     ) -> GeometryRefresh {
-        let (summary, preview_generated, hulls) =
-            self.process_geometry(file, file_type, checksum, include_preview, include_hulls, raft_height_mm).await;
+        let (summary, preview_generated, hulls, detected) = self
+            .process_geometry(file, file_type, checksum, include_preview, include_hulls, raft_height_mm, supported)
+            .await;
         let mut refresh = GeometryRefresh {
             include_preview,
             include_hulls,
@@ -435,13 +494,14 @@ impl ModelService {
             hulls: hulls.unwrap_or_default(),
             hull_generated: false,
             raft_height_mm,
+            detected_supported: detected,
         };
         if summary.is_none() {
             return refresh;
         }
         if include_preview {
             (refresh.preview_image_path, refresh.preview_generated_at) =
-                self.resolve_cached_preview_metadata(checksum, None);
+                self.resolve_cached_preview_metadata(&preview::preview_stem(checksum, raft_height_mm, supported), None);
             refresh.preview_generated = preview_generated;
         }
         refresh.hull_generated = include_hulls;
@@ -483,8 +543,8 @@ impl ModelService {
         let (checksum, recomputed) =
             resolve_checksum(&file, file_stat.modified, Some(&existing.checksum), Some(existing.file_modified_at))
                 .await?;
-        let expected_raft =
-            resolve_raft_height_mm_for_model(&full, &directory, &ctx.configs, ctx.default_raft_height_mm);
+        let (metadata, expected_raft) = ctx.resolve(&full, &directory);
+        let supported = metadata.supported;
         let geometry_type = !is_non_geometry_type(&file_type);
         let hull_mismatch =
             geometry_type && needs_hull_regeneration(existing.scan_config_checksum.as_deref(), expected_raft);
@@ -494,6 +554,7 @@ impl ModelService {
                 existing.preview_image_path.as_deref(),
                 existing.preview_generation_version,
                 ctx.minimum_preview_version,
+                &expected_preview_path(&checksum, expected_raft, supported),
             );
 
         prepared.change = if checksum == existing.checksum && !hull_mismatch && !preview_stale {
@@ -527,6 +588,7 @@ impl ModelService {
                     &file_type,
                     &checksum,
                     expected_raft,
+                    supported,
                     ctx.generate_previews && preview_stale,
                     true,
                 )
@@ -540,7 +602,8 @@ impl ModelService {
                 ctx.minimum_preview_version
             );
             Some(Change::Geometry(
-                self.compute_geometry_refresh(&file, &file_type, &checksum, expected_raft, true, false).await,
+                self.compute_geometry_refresh(&file, &file_type, &checksum, expected_raft, supported, true, false)
+                    .await,
             ))
         };
 
@@ -908,8 +971,8 @@ impl ModelService {
             return Err(Cancelled.into());
         }
         let full_text = full_path.to_string_lossy().into_owned();
-        let expected_raft =
-            resolve_raft_height_mm_for_model(&full_text, &directory, &ctx.configs, ctx.default_raft_height_mm);
+        let (metadata, expected_raft) = ctx.resolve(&full_text, &directory);
+        let supported = metadata.supported;
 
         let existing: Option<ModelRow> = sqlx::query_as("SELECT * FROM models WHERE directory = ? AND file_name = ?")
             .bind(&directory)
@@ -937,6 +1000,7 @@ impl ModelService {
                     e.preview_image_path.as_deref(),
                     e.preview_generation_version,
                     ctx.minimum_preview_version,
+                    &expected_preview_path(&checksum, expected_raft, supported),
                 )
         });
         let hull_stale = existing.as_ref().is_some_and(|e| {
@@ -1037,6 +1101,7 @@ impl ModelService {
                         &file_type,
                         &entity.checksum.clone(),
                         expected_raft,
+                        supported,
                         ctx.generate_previews && preview_stale,
                         true,
                     )
@@ -1055,6 +1120,7 @@ impl ModelService {
                         &file_type,
                         &entity.checksum.clone(),
                         expected_raft,
+                        supported,
                         true,
                         false,
                     )
@@ -1104,8 +1170,13 @@ mod tests {
             (Some("preview.png"), Some(5), 5, false),
             (Some("preview.png"), Some(4), 5, true),
             (Some("preview.png"), Some(6), 5, false),
+            (Some("other.png"), Some(6), 5, true),
         ] {
-            assert_eq!(needs_preview_regeneration(path, stored, minimum), expected, "{path:?} {stored:?} {minimum}");
+            assert_eq!(
+                needs_preview_regeneration(path, stored, minimum, "preview.png"),
+                expected,
+                "{path:?} {stored:?} {minimum}"
+            );
         }
     }
 
@@ -1200,7 +1271,7 @@ mod tests {
 
         let mut m = model("dragon.stl", "");
         m.checksum = checksum.clone();
-        m.preview_image_path = Some(format!("{checksum}.png"));
+        m.preview_image_path = Some(expected_preview_path(&checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None));
         m.preview_generation_version = Some(accepted);
         m.scan_config_checksum = Some(scan_config::compute(hull::DEFAULT_RAFT_HEIGHT_MM));
         m.file_modified_at = stat(&path).unwrap().modified;
@@ -1237,6 +1308,51 @@ mod tests {
         assert_eq!(part.directory, "nested");
         assert!(part.convex_hull.is_some());
 
+        assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);
+    }
+
+    /// Writes Y-up triangles as a Z-up binary STL, the way slicers export.
+    fn write_stl(root: &Path, name: &str, triangles: &[crate::geometry::Triangle]) {
+        use crate::geometry::{Triangle, swap_up_axis};
+        let z_up: Vec<Triangle> = triangles
+            .iter()
+            .map(|t| Triangle::new(swap_up_axis(t.v0), swap_up_axis(t.v1), swap_up_axis(t.v2), swap_up_axis(t.normal)))
+            .collect();
+        write_file(root, name, crate::geometry::saver::save_stl(&z_up, None));
+    }
+
+    #[tokio::test]
+    async fn scan_stores_support_detection_and_metadata_wins() {
+        use crate::geometry::support_separation::tests::{body, posts};
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        let mut supported = body();
+        supported.extend(posts(50));
+        write_stl(root.path(), "supported.stl", &supported);
+        write_stl(root.path(), "plain.stl", &body());
+        write_file(root.path(), "flagged/supported.stl", std::fs::read(root.path().join("supported.stl")).unwrap());
+        write_file(root.path(), "flagged/findamodel.yaml", "supported: false\n");
+        let svc = service(&t, root.path());
+        let cancel = CancellationToken::new();
+
+        assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 3);
+        type Row = (String, String, Option<bool>, Option<bool>, Option<bool>);
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT directory, file_name, calculated_supported, detected_supported, effective_supported
+             FROM models ORDER BY directory, file_name",
+        )
+        .fetch_all(&t.db)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("".into(), "plain.stl".into(), None, None, None),
+                ("".into(), "supported.stl".into(), None, Some(true), Some(true)),
+                ("flagged".into(), "supported.stl".into(), Some(false), Some(true), Some(false)),
+            ]
+        );
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);
     }
 

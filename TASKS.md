@@ -22,3 +22,7 @@
 * It looks like the layout might not be stored in the database, but in the local browser?
 
 * Add support for building desktop as portable installation - not just installer
+
+* Change the save layout/reset buttons to play/pause/rewind
+
+* Bug: When choosing "without raft / convex hull", it should only affect supported models, not unsupported

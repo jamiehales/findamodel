@@ -6,7 +6,8 @@
 //!   expression: a regex, or a sed-style substitution (s|pattern|replacement|flags).
 //!     Sed-style returns the substituted string (all matches are replaced).
 //!     Plain regex returns the first capture group, or the full match without groups.
-//!     Bool fields return "true" when the regex matches, "false" otherwise.
+//!     Bool fields return "true" when the regex matches and nothing otherwise, so a
+//!     non-matching file keeps its folder value (or support detection).
 //!   values: { EnumValue1: "regex1", EnumValue2: "regex2", ... }
 //!     Enum fields return the key of the first matching regex; takes precedence over
 //!     `expression`.
@@ -142,7 +143,7 @@ pub fn parse_value(file_path: &str, field_type: RuleFieldType, options: &RuleSet
 
     let re = compile(expression, "")?;
     if field_type == RuleFieldType::Bool {
-        return Some(if re.is_match(&input).unwrap_or(false) { "true" } else { "false" }.to_string());
+        return re.is_match(&input).unwrap_or(false).then(|| "true".to_string());
     }
 
     let captures = re.captures(&input).ok()??;
@@ -350,10 +351,10 @@ mod tests {
     }
 
     #[test]
-    fn bool_field_returns_true_or_false() {
+    fn bool_field_returns_true_or_nothing() {
         let o = opts(json!({"expression": "supported"}));
         assert_eq!(parse_value("/models/supported_dragon.stl", RuleFieldType::Bool, &o).as_deref(), Some("true"));
-        assert_eq!(parse_value("/models/dragon.stl", RuleFieldType::Bool, &o).as_deref(), Some("false"));
+        assert_eq!(parse_value("/models/dragon.stl", RuleFieldType::Bool, &o), None);
     }
 
     #[test]
@@ -464,7 +465,7 @@ mod tests {
     fn evaluate_bool_and_enum_rules() {
         let bool_rule = json!({"rule": "regex", "expression": "supported"});
         assert_eq!(evaluate("/models/supported_dragon.stl", &bool_rule, RuleFieldType::Bool).as_deref(), Some("true"));
-        assert_eq!(evaluate("/models/dragon.stl", &bool_rule, RuleFieldType::Bool).as_deref(), Some("false"));
+        assert_eq!(evaluate("/models/dragon.stl", &bool_rule, RuleFieldType::Bool), None);
         let enum_rule = json!({"rule": "regex", "values": {"Fantasy": "fantasy", "SciFi": "scifi"}});
         assert_eq!(evaluate("/models/fantasy/elf.stl", &enum_rule, RuleFieldType::Enum).as_deref(), Some("Fantasy"));
     }

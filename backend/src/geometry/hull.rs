@@ -19,7 +19,7 @@ const LOG_TARGET: &str = "findamodel.Hull";
 
 pub const DEFAULT_MAX_HULL_VERTICES: usize = 20;
 /// Bump whenever hull output changes; see `scan_config::compute`.
-pub const CURRENT_HULL_GENERATION_VERSION: i32 = 4;
+pub const CURRENT_HULL_GENERATION_VERSION: i32 = 5;
 pub const DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
 
 const MAX_CONCAVE_HULL_INPUT_POINTS: usize = 30_000;

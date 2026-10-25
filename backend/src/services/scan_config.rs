@@ -1,14 +1,18 @@
 //! Canonical source of truth for the scan configuration checksum, which encodes every
-//! input that affects hull generation. If a new input influences hull generation (an
-//! algorithm version, a mesh tolerance, a raft parameter), add it to [`compute`] so cached
-//! hulls are invalidated on the next scan. Do not add staleness checks elsewhere.
+//! input that affects hull generation and support detection. If a new input influences
+//! either (an algorithm version, a mesh tolerance, a raft parameter), add it to [`compute`]
+//! so cached results are invalidated on the next scan. Do not add staleness checks
+//! elsewhere.
 
 use crate::geometry::hull::CURRENT_HULL_GENERATION_VERSION;
+use crate::geometry::support_separation::CURRENT_SUPPORT_DETECTION_VERSION;
 
-/// Canonical string identifying the inputs used to produce a model's hulls. Stored on the
-/// model; a mismatch with the current value means the hulls are stale.
+/// Canonical string identifying the inputs used to produce a model's hulls and support
+/// detection. Stored on the model; a mismatch with the current value means both are stale.
 pub fn compute(raft_height_mm: f32) -> String {
-    format!("hull:{CURRENT_HULL_GENERATION_VERSION}|raft:{raft_height_mm:.4}")
+    format!(
+        "hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|raft:{raft_height_mm:.4}"
+    )
 }
 
 #[cfg(test)]
@@ -22,7 +26,10 @@ mod tests {
 
     #[test]
     fn produces_expected_format() {
-        assert_eq!(compute(2.0), format!("hull:{CURRENT_HULL_GENERATION_VERSION}|raft:2.0000"));
+        assert_eq!(
+            compute(2.0),
+            format!("hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|raft:2.0000")
+        );
     }
 
     #[test]

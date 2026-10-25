@@ -51,8 +51,8 @@ model_name: "Elf Warrior"
 | `category` | enum | Type of model - see [Metadata fields](../metadata/) for valid values |
 | `type` | enum | Whether the file is a complete model or a single part |
 | `material` | enum | Print technology the model is designed for |
-| `supported` | boolean | Whether the file already includes print supports |
-| `raftHeight` | float (mm) | Height at which to cut the model for the sans-raft hull used on printing plates |
+| `supported` | boolean | Whether the file already includes print supports. When unset, FindAModel detects supports from the geometry |
+| `raftHeight` | float (mm) | Height just above the raft. Used to cut the raft from the sans-raft hull on printing plates, and to recognise raft pieces when detecting supports |
 | `model_name` | string | Display name for the model |
 
 See [Metadata fields](../metadata/) for the full list of valid enum values.

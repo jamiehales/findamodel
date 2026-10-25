@@ -74,6 +74,9 @@ pub struct ModelRow {
     pub calculated_type: Option<String>,
     pub calculated_material: Option<String>,
     pub calculated_supported: Option<bool>,
+    /// Supports found in the geometry (true only when confident, otherwise None). Shares the
+    /// scan config checksum with the hulls.
+    pub detected_supported: Option<bool>,
     pub calculated_model_name: Option<String>,
     pub calculated_part_name: Option<String>,
 
@@ -96,6 +99,14 @@ pub struct ModelRow {
     pub sphere_centre_z: Option<f32>,
     pub sphere_radius: Option<f32>,
     pub geometry_calculated_at: Option<DateTime<Utc>>,
+}
+
+impl ModelRow {
+    /// Whether the model has supports: its metadata when set, else the geometry detection.
+    /// Mirrors the `effective_supported` column.
+    pub fn supported(&self) -> Option<bool> {
+        self.calculated_supported.or(self.detected_supported)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]

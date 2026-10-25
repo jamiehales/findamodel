@@ -398,11 +398,18 @@ mod tests {
     }
 
     #[test]
-    fn bool_rule_parses_to_bool_and_missing_expression_is_none() {
+    fn bool_rule_sets_true_on_match_and_leaves_folder_value_otherwise() {
         let dc =
             dir(|d| d.resolved_rules_yaml = Some("supported:\n  rule: regex\n  expression: \"supported\"\n".into()));
         assert_eq!(compute("/models/supported_model.stl", Some(&dc)).supported, Some(true));
-        assert_eq!(compute("/models/plain_model.stl", Some(&dc)).supported, Some(false));
+        assert_eq!(compute("/models/plain_model.stl", Some(&dc)).supported, None);
+
+        let with_folder_value = dir(|d| {
+            d.supported = Some(false);
+            d.resolved_rules_yaml = Some("supported:\n  rule: regex\n  expression: \"supported\"\n".into());
+        });
+        assert_eq!(compute("/models/supported_model.stl", Some(&with_folder_value)).supported, Some(true));
+        assert_eq!(compute("/models/plain_model.stl", Some(&with_folder_value)).supported, Some(false));
 
         let no_expr = dir(|d| d.resolved_rules_yaml = Some("supported:\n  rule: regex\n  source: filename\n".into()));
         assert_eq!(compute("/models/yes_model.stl", Some(&no_expr)).supported, None);

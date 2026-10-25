@@ -12,6 +12,7 @@ use super::{CurrentUser, IdPath, serve_file};
 use crate::app::AppState;
 use crate::dto::{ModelQueryRequest, ModelsByIdsRequest, UpdateModelMetadataRequest};
 use crate::error::{AppError, AppResult, bad_request, not_found};
+use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::{LoadedGeometry, loader, mesh_transfer, support_separation};
 use crate::services::query;
 
@@ -202,23 +203,26 @@ async fn get_geometry(
 
 /// Body and support geometry of a pre-supported model in one envelope:
 /// `[bodyLength:u32][body FMSH][supportLength:u32][support FMSH]`. 204 when the model is
-/// not supported, has no detectable supports, or cannot be loaded.
+/// not supported (by metadata or detection), has no detectable supports, or cannot be
+/// loaded.
 async fn get_split_geometry(
     State(state): State<AppState>,
     _user: CurrentUser,
     IdPath(id): IdPath,
 ) -> AppResult<Response> {
     let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
-    if model.calculated_supported != Some(true) {
+    if model.supported() != Some(true) {
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
+    let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+    let metadata_supported = model.calculated_supported;
     let (_, geometry) = load_geometry(&state, id).await?;
     let Some(geometry) = geometry else {
         return Ok(StatusCode::NO_CONTENT.into_response());
     };
 
     let envelope = tokio::task::spawn_blocking(move || {
-        let (body, supports) = support_separation::separate(&geometry.triangles);
+        let (body, supports) = support_separation::separate(&geometry.triangles, raft_height_mm, metadata_supported);
         let supports = supports.filter(|s| !s.is_empty())?;
         let body_payload = mesh_transfer::encode(&geometry.with_triangles(body));
         let support_payload = mesh_transfer::encode(&geometry.with_triangles(supports));
