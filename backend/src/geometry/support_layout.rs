@@ -209,7 +209,7 @@ pub struct BraceEnd {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 3;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 4;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -319,25 +319,51 @@ struct TipFit {
 }
 
 /// Fits a tip to `nodes`, which run from the tip's buried end outward; `entry` is the first
-/// one outside the model. The tip may take up `share` of the length from the contact on.
-fn fit_tip(graph: &Graph, nodes: &[u32], entry: usize, contact: Vec3, share: f32) -> TipFit {
+/// one outside the model, and `walked` says which of them the walk took (it skips the slices
+/// of a tip leaning away from its contact). The tip may take up `share` of the length from the
+/// contact on, which runs on to `end` when the support goes past the last node (a branch's
+/// knot).
+fn fit_tip(
+    graph: &Graph,
+    nodes: &[u32],
+    walked: &[bool],
+    entry: usize,
+    contact: Vec3,
+    end: Option<Vec3>,
+    share: f32,
+) -> TipFit {
     let points: Vec<Vec3> = nodes[entry..].iter().map(|&i| graph.centre(i)).collect();
     let widths: Vec<f32> = nodes[entry..].iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
-    let total = (points[0] - contact).length() + points.windows(2).map(|w| (w[1] - w[0]).length()).sum::<f32>();
+    let walked = &walked[entry..];
+    let last = *points.last().expect("a tip has a blob outside the model");
+    let total = (points[0] - contact).length()
+        + points.windows(2).map(|w| (w[1] - w[0]).length()).sum::<f32>()
+        + end.map_or(0.0, |end| (end - last).length());
     // The tip is a straight cone, so it is measured by straight distance from the contact:
     // the blob centres of a steeply inclined tip jump about from slice to slice.
     let reach: Vec<f32> = points.iter().map(|p| (*p - contact).length()).collect();
 
     let window = TIP_WINDOW_MM.min(total * share);
     let widest = (0..points.len()).take_while(|&i| reach[i] <= window).map(|i| widths[i]).fold(0.0, f32::max);
+    // A slice of a leaning tip must also keep its width to count as a plateau: past a joint
+    // ball the tip runs into, the slices narrow again, and the shaft the walk picks up below the
+    // tip is never narrower than it.
     let plateau = |i: usize| {
-        (i..points.len())
-            .find(|&j| reach[j] >= reach[i] + PLATEAU_SPAN_MM)
-            .is_some_and(|j| widths[j] - widths[i] < PLATEAU_GROWTH_MM)
+        (i..points.len()).find(|&j| reach[j] >= reach[i] + PLATEAU_SPAN_MM).is_some_and(|j| {
+            let least = match (walked[i], walked[j]) {
+                (true, _) => f32::NEG_INFINITY,
+                (false, false) => -PLATEAU_GROWTH_MM,
+                (false, true) => 0.0,
+            };
+            (least..PLATEAU_GROWTH_MM).contains(&(widths[j] - widths[i]))
+        })
     };
+    // A leaning tip's own slices widen to nearly the widest before it ends, so among them only
+    // where they stop widening marks the socket.
+    let body = |i: usize| walked[i] && widths[i] >= widest * TIP_BODY_FRACTION;
     let socket_index = (0..points.len())
         .take_while(|&i| reach[i] <= window)
-        .find(|&i| reach[i] >= MIN_TIP_LENGTH_MM && (widths[i] >= widest * TIP_BODY_FRACTION || plateau(i)))
+        .find(|&i| reach[i] >= MIN_TIP_LENGTH_MM && (body(i) || plateau(i)))
         .or_else(|| (0..points.len()).rev().find(|&i| reach[i] <= window))
         .unwrap_or(0);
 
@@ -387,16 +413,22 @@ fn build_support(
     if let Some(lower) = lower {
         return Some(build_strut(graph, walk, contact, entry, &lower));
     }
-    let fit = fit_tip(graph, &walk.nodes, entry, contact.point, TIP_SHARE);
-    let points: Vec<Vec3> = walk.nodes[entry..].iter().map(|&i| graph.centre(i)).collect();
-    let widths: Vec<f32> =
-        walk.nodes[entry + fit.socket_index + 1..].iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
+    let entry = walk.tip_index(entry);
+    let knot = match walk.end {
+        WalkEnd::Joined(_, node) => Some(graph.centre(node)),
+        _ => None,
+    };
+    let (nodes, walked) = walk.tip();
+    let fit = fit_tip(graph, &nodes, &walked, entry, contact.point, knot, TIP_SHARE);
+    let below = walk.nodes_below(entry + fit.socket_index);
+    let widths: Vec<f32> = below.iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
     let shaft_diameter = shaft_diameter(widths, fit.socket_width);
     let tip = contact_tip(contact, &fit, shaft_diameter);
-    let (socket_index, socket) = (fit.socket_index, fit.socket);
+    let socket = fit.socket;
 
     // Shaft centre line from the socket down, ending at the base.
-    let mut line: Vec<Vec3> = points[socket_index..].to_vec();
+    let mut line: Vec<Vec3> = vec![socket];
+    line.extend(below.iter().map(|&i| graph.centre(i)));
     let base = match walk.end {
         WalkEnd::Joined(parent, node) => {
             let point = graph.centre(node);
@@ -431,8 +463,11 @@ fn build_support(
 
 /// A strut between two parts of the model, from its upper contact down to its lower one.
 fn build_strut(graph: &Graph, walk: &Walk, contact: &SurfacePoint, entry: usize, lower: &LowerEnd) -> SupportPath {
-    let mut upper_fit = fit_tip(graph, &walk.nodes, entry, contact.point, STRUT_TIP_SHARE);
-    let mut lower_fit = fit_tip(graph, &lower.nodes, lower.entry, lower.contact.point, STRUT_TIP_SHARE);
+    let (nodes, walked) = walk.tip();
+    let mut upper_fit = fit_tip(graph, &nodes, &walked, walk.tip_index(entry), contact.point, None, STRUT_TIP_SHARE);
+    let lower_walked = vec![true; lower.nodes.len()];
+    let mut lower_fit =
+        fit_tip(graph, &lower.nodes, &lower_walked, lower.entry, lower.contact.point, None, STRUT_TIP_SHARE);
     if upper_fit.socket.z <= lower_fit.socket.z {
         // The two tips overlap on a short strut: put each socket a third of the way along.
         let span = lower.contact.point - contact.point;
@@ -592,9 +627,38 @@ enum WalkEnd {
 struct Walk {
     /// Shaft blobs from the top down, leaving out widened ones.
     nodes: Vec<u32>,
+    /// The slices of a tip leaning away from its contact that the walk skipped (see
+    /// [`Graph::walk`]); they go between `nodes[..leaning_at]` and the rest.
+    leaning: Vec<u32>,
+    leaning_at: usize,
     /// Every blob passed, from the top down.
     visited: Vec<u32>,
     end: WalkEnd,
+}
+
+impl Walk {
+    /// The blobs a tip is fitted to: the shaft blobs with a leaning tip's slices put back, and
+    /// whether the walk took each.
+    fn tip(&self) -> (Vec<u32>, Vec<bool>) {
+        let mut tip = self.nodes[..self.leaning_at].to_vec();
+        tip.extend(&self.leaning);
+        tip.extend(&self.nodes[self.leaning_at..]);
+        let mut walked = vec![true; tip.len()];
+        walked[self.leaning_at..self.leaning_at + self.leaning.len()].fill(false);
+        (tip, walked)
+    }
+
+    /// Where `nodes[i]` is in [`Walk::tip`].
+    fn tip_index(&self, i: usize) -> usize {
+        if i < self.leaning_at { i } else { i + self.leaning.len() }
+    }
+
+    /// The shaft blobs below the `i`th blob of [`Walk::tip`].
+    fn nodes_below(&self, i: usize) -> &[u32] {
+        let from =
+            if i < self.leaning_at { i + 1 } else { (i + 1).saturating_sub(self.leaning.len()).max(self.leaning_at) };
+        &self.nodes[from..]
+    }
 }
 
 impl Graph {
@@ -698,12 +762,21 @@ impl Graph {
     }
 
     /// Follows the shaft down from `start` until the plate, a claimed blob or a dead end.
+    ///
+    /// Until the walk has come far enough to know the shaft's direction it steers as if the
+    /// shaft were upright, so it skips the slices of a tip leaning steeply away from its
+    /// contact as drifting. The run of those that each carry on the tip's step from the slice
+    /// before (as narrow as the tip, and unclaimed) is kept for fitting the tip. The walk does
+    /// not steer by them: the shaft below a tip seldom carries on at the tip's lean.
     fn walk(&self, start: u32, claimed: &[u32]) -> Walk {
         let mut nodes = vec![start];
         let mut visited = vec![start];
         let mut width = self.blobs[start as usize].half_max;
         // Top of the current run of skipped blobs.
         let mut skipped_from: Option<f32> = None;
+        // A leaning tip's skipped slices, where they go among the nodes, the tip's width, and
+        // whether the run of them may go on.
+        let (mut leaning, mut leaning_at, mut leaning_width, mut leaning_open) = (Vec::new(), 0, width, true);
         let mut current = start;
         loop {
             let below = &self.down[current as usize];
@@ -743,14 +816,36 @@ impl Graph {
             if (narrow && aligned) || reset {
                 let owner = claimed[next as usize];
                 if owner != NONE {
-                    return Walk { nodes, visited, end: WalkEnd::Joined(owner as usize, next) };
+                    let end = WalkEnd::Joined(owner as usize, next);
+                    return Walk { nodes, leaning, leaning_at, visited, end };
                 }
                 let step = (self.centre(next) - self.centre(*nodes.last().expect("walk has a start"))).length();
                 width += ((blob.half_max - width) * WIDTH_SMOOTHING).min(MAX_WIDTH_GROWTH * step);
                 skipped_from = None;
+                leaning_open &= leaning.is_empty();
                 nodes.push(next);
             } else {
                 skipped_from.get_or_insert(blob.z);
+                if leaning_open {
+                    if leaning.is_empty() {
+                        (leaning_at, leaning_width) = (nodes.len(), width);
+                    }
+                    // Where the tip's last step from slice to slice carries it on to.
+                    let mut tip = nodes[..leaning_at].iter().chain(&leaning).rev().map(|&i| self.centre(i));
+                    let previous = tip.next().expect("walk has a start");
+                    let carried = previous + (previous - tip.next().unwrap_or(previous));
+                    let steered = settled.is_some_and(|s| self.heading(&nodes[..=s], blob.z).is_some());
+                    leaning_open = !steered
+                        && claimed[next as usize] == NONE
+                        && blob.half_max <= leaning_width * WIDEN_RATIO + WIDEN_SLACK_MM
+                        && (blob.x - carried.x).hypot(blob.y - carried.y) <= DRIFT_MM + leaning_width * DRIFT_RATIO;
+                    if leaning_open {
+                        let step = (self.centre(next) - previous).length();
+                        leaning_width +=
+                            ((blob.half_max - leaning_width) * WIDTH_SMOOTHING).min(MAX_WIDTH_GROWTH * step);
+                        leaning.push(next);
+                    }
+                }
             }
             current = next;
         }
@@ -759,7 +854,7 @@ impl Graph {
         } else {
             WalkEnd::Stranded
         };
-        Walk { nodes, visited, end }
+        Walk { nodes, leaning, leaning_at, visited, end }
     }
 
     /// Horizontal run per unit of height going down from `start` for [`FORK_LOOKAHEAD_MM`],
@@ -980,15 +1075,18 @@ impl Graph {
 
     /// Where the shaft through `nodes` (top down) continues at height `z`.
     fn predict(&self, nodes: &[u32], z: f32) -> (f32, f32) {
+        self.heading(nodes, z).unwrap_or_else(|| {
+            let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
+            (last.x, last.y)
+        })
+    }
+
+    /// [`Graph::predict`] when `nodes` are long enough to give the shaft's direction.
+    fn heading(&self, nodes: &[u32], z: f32) -> Option<(f32, f32)> {
         let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
-        let anchor = nodes.iter().rev().map(|&i| self.blobs[i as usize]).find(|b| b.z - last.z >= DIRECTION_SPAN_MM);
-        match anchor {
-            Some(a) => {
-                let t = (z - last.z) / (last.z - a.z);
-                (last.x + (last.x - a.x) * t, last.y + (last.y - a.y) * t)
-            }
-            None => (last.x, last.y),
-        }
+        let a = nodes.iter().rev().map(|&i| self.blobs[i as usize]).find(|b| b.z - last.z >= DIRECTION_SPAN_MM)?;
+        let t = (z - last.z) / (last.z - a.z);
+        Some((last.x + (last.x - a.x) * t, last.y + (last.y - a.y) * t))
     }
 }
 
@@ -1385,6 +1483,46 @@ mod tests {
         assert_eq!(parent, 0);
         assert!(point.x.abs() < 0.2 && (3.0..=5.0).contains(&point.z), "{point}");
         assert!(layout.braces.is_empty(), "{:?}", layout.braces);
+    }
+
+    #[test]
+    fn tip_leaning_steeply_into_its_parent_keeps_its_cone() {
+        // A trunk under one part of the model, and a tip on a lower part leaning 45 degrees
+        // into the trunk's side, with no shaft of its own: a branch that is all tip.
+        let mut model = box_model(Vec3::new(-2.0, -2.0, 10.0), Vec3::new(2.0, 2.0, 15.0));
+        model.extend(box_model(Vec3::new(-6.0, -2.0, 9.0), Vec3::new(-2.0, 2.0, 15.0)));
+        let mut supports = support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend(frustum(Vec3::new(-3.2, 0.0, 9.2), Vec3::new(-0.3, 0.0, 6.3), 0.15, 0.35));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 2);
+        let branch = &layout.supports[1];
+        assert!(matches!(branch.base, SupportBase::Shaft { parent: 0, .. }), "{:?}", branch.base);
+        let tip = &branch.tip;
+        assert!(close(tip.contact, Vec3::new(-3.0, 0.0, 9.0), 0.2), "{}", tip.contact);
+        // The socket lies on the tip's own line, most of the way to the trunk.
+        assert!(distance_to_segment(tip.socket, Vec3::new(-3.0, 0.0, 9.0), Vec3::new(-0.3, 0.0, 6.3)) < 0.15);
+        let length = (tip.socket - tip.contact).length();
+        assert!(length >= 1.8, "{length}");
+        assert!(tip.body_diameter_mm >= 0.5, "{}", tip.body_diameter_mm);
+        assert!(branch.joints.is_empty(), "{:?}", branch.joints);
+    }
+
+    #[test]
+    fn leaning_tip_socket_is_where_its_cone_ends() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        // A tip leaning 35 degrees from its contact, widening to the width of the upright shaft
+        // it turns into 1.2 mm below the contact.
+        let socket = Vec3::new(0.84, 0.0, 8.8);
+        let mut supports = frustum(Vec3::new(-0.14, 0.0, 10.2), socket, 0.12, 0.33);
+        supports.extend(frustum(socket, Vec3::new(0.84, 0.0, 0.0), 0.33, 0.33));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        assert!(close(s.tip.socket, socket, 0.3), "{}", s.tip.socket);
+        assert!((0.55..=0.7).contains(&s.tip.body_diameter_mm), "{}", s.tip.body_diameter_mm);
+        assert!(s.joints.is_empty(), "{:?}", s.joints);
     }
 
     #[test]
