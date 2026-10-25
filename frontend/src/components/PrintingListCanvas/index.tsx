@@ -31,7 +31,6 @@ import {
   EDGE_SPRING,
   EDGE_DAMPING,
   EDGE_MAX_ACCEL,
-  EDGE_ARRIVAL_PX,
   PLATE_ENTRY_TOLERANCE_PX,
   CENTRE_PLACEMENT_JITTER,
   CAT_WALL,
@@ -175,6 +174,7 @@ export default function PrintingListCanvas({
   const prevItemsRef = useRef<Record<string, number>>({});
   const saveLayoutRef = useRef<(() => void) | null>(null);
   const resumeSimulationRef = useRef<(() => void) | null>(null);
+  const respreadEdgesRef = useRef<(() => void) | null>(null);
   const displayScaleRef = useRef(canvasScale);
   const redrawStaticsRef = useRef<((sc: number) => void) | null>(null);
   // Always-current mirrors updated every render
@@ -409,7 +409,11 @@ export default function PrintingListCanvas({
       notifyLayoutCleanRef.current?.(false);
       settleFrames = 0;
       edgeSlots = null;
+      placedByHand.clear();
       for (const b of dynamicBodies) b.setAwake(true);
+    };
+    respreadEdgesRef.current = () => {
+      edgeSlots = null;
     };
 
     // ── Push to edges ──────────────────────────────────────────────────────
@@ -424,26 +428,18 @@ export default function PrintingListCanvas({
     }
 
     // Each model on the plate has a slot on the plate edge (see edgeTargets; null when the
-    // edges are full), reassigned whenever the models on the plate change, the setting is
-    // turned on, or a drag ends. Models pass through each other while travelling to their
-    // slot, so none gets wedged behind its neighbours, and are solid once they arrive.
+    // edges are full), reassigned when the setting is turned on, a model arrives on the
+    // plate, or one is removed. Models jump straight to their slot. A model the user has
+    // dragged stays where it was dropped: it has no slot and is never moved for them.
     let edgeSlots: Map<Body, Vec2Like | null> | null = null;
-    const arrived = new Set<Body>();
-    // Set once the layout first settles: the pull stops so models pressing on each other
+    const placedByHand = new Set<Body>();
+    // Set once the layout first settles: the forces stop so models pressing on each other
     // can separate before the layout counts as settled.
     let edgeForcesRelaxed = false;
-    const isTravelling = (body: Body) =>
-      pushToEdgesRef.current && !!edgeSlots?.get(body) && !arrived.has(body);
 
     world.on('pre-solve', (contact) => {
-      const fa = contact.getFixtureA();
-      const fb = contact.getFixtureB();
-      const a = fa.getBody();
-      const b = fb.getBody();
-      if (fa.getFilterCategoryBits() === CAT_OBJECT && fb.getFilterCategoryBits() === CAT_OBJECT) {
-        if (isTravelling(a) || isTravelling(b)) contact.setEnabled(false);
-        return;
-      }
+      const a = contact.getFixtureA().getBody();
+      const b = contact.getFixtureB().getBody();
       if (a !== wallTop && b !== wallTop) return;
       if (!pushToEdgesRef.current || !isOnPlate(a === wallTop ? b : a)) contact.setEnabled(false);
     });
@@ -464,27 +460,35 @@ export default function PrintingListCanvas({
         canvasHeightPhys,
       );
       edgeSlots = new Map(placed.map(({ body }, i) => [body, targets[i]]));
-      arrived.clear();
       edgeForcesRelaxed = false;
+      placed.forEach(({ body, border }, i) => {
+        const target = targets[i];
+        if (!target) return;
+        // The slot is for the footprint's centre, which can sit off the body's origin.
+        const pos = body.getPosition();
+        body.setPosition(
+          Vec2(target.x + pos.x - border.centre.x, target.y + pos.y - border.centre.y),
+        );
+        body.setLinearVelocity(Vec2(0, 0));
+        body.setAngularVelocity(0);
+        body.setAwake(true);
+      });
     }
 
-    // Models on the plate are pulled gently toward their edge slot; when the edges are full,
-    // the rest are pushed outward to pack in behind them and keep the centre clear. Models
+    // Models on the plate are held in their edge slot; when the edges are full, the rest are
+    // pushed gently outward to pack in behind them and keep the centre clear. Models
     // above the plate (new or dragged off) wait there and are placed one at a time near the
     // centre; falling in would leave them resting on the models along the top edge.
     function applyEdgeForces() {
       const centre = { x: canvasWidthPhys / 2, y: canvasHeightPhys / 2 };
-      const onPlate = entries.map((e) => e.body).filter((b) => b.isDynamic() && isOnPlate(b));
-      if (
-        !edgeSlots ||
-        edgeSlots.size !== onPlate.length ||
-        onPlate.some((b) => !edgeSlots!.has(b))
-      )
-        assignEdgeSlots(onPlate);
+      const needSlots = entries
+        .map((e) => e.body)
+        .filter((b) => b.isDynamic() && !placedByHand.has(b) && isOnPlate(b));
+      if (!edgeSlots || needSlots.some((b) => !edgeSlots!.has(b))) assignEdgeSlots(needSlots);
 
       let placed = false;
       for (const { body } of entries) {
-        if (!body.isDynamic()) continue;
+        if (!body.isDynamic() || placedByHand.has(body)) continue;
         if (!isOnPlate(body)) {
           body.setLinearVelocity(Vec2(0, 0));
           body.setAngularVelocity(0);
@@ -508,11 +512,8 @@ export default function PrintingListCanvas({
         let ax: number;
         let ay: number;
         if (target) {
-          const dx = target.x - bounds.centre.x;
-          const dy = target.y - bounds.centre.y;
-          if (Math.hypot(dx, dy) <= toPhysics(EDGE_ARRIVAL_PX)) arrived.add(body);
-          ax = EDGE_SPRING * dx - EDGE_DAMPING * v.x;
-          ay = EDGE_SPRING * dy - EDGE_DAMPING * v.y;
+          ax = EDGE_SPRING * (target.x - bounds.centre.x) - EDGE_DAMPING * v.x;
+          ay = EDGE_SPRING * (target.y - bounds.centre.y) - EDGE_DAMPING * v.y;
         } else {
           const dir = awayFromCentre(bounds.centre, canvasWidthPhys, canvasHeightPhys);
           ax = EDGE_MAX_ACCEL * dir.x - EDGE_DAMPING * v.x;
@@ -601,6 +602,7 @@ export default function PrintingListCanvas({
       if (hit) {
         const pos = hit.getPosition();
         drag = { body: hit, ox: x - toPixels(pos.x), oy: worldY - toPixels(pos.y) };
+        placedByHand.add(hit);
         hit.setType('kinematic');
         hit.setLinearVelocity(Vec2(0, 0));
         hit.setAngularVelocity(0);
@@ -627,7 +629,6 @@ export default function PrintingListCanvas({
       drag = null;
       pausedRef.current = false;
       settleFrames = 0;
-      edgeSlots = null;
     };
     app.stage.on('pointerup', endDrag);
     app.stage.on('pointerupoutside', endDrag);
@@ -676,9 +677,8 @@ export default function PrintingListCanvas({
         if (allSlow) {
           settleFrames++;
           if (settleFrames >= SETTLE_FRAMES && pushToEdgesRef.current && !edgeForcesRelaxed) {
-            // All models become solid and the pull stops, so models short of their slot or
-            // pressed together separate before the layout counts as settled.
-            for (const e of entries) arrived.add(e.body);
+            // The forces stop, so models pressed together separate before the layout counts
+            // as settled.
             edgeForcesRelaxed = true;
             settleFrames = 0;
           } else if (settleFrames >= SETTLE_FRAMES) {
@@ -703,6 +703,7 @@ export default function PrintingListCanvas({
       modelColorRef.current = new Map();
       saveLayoutRef.current = null;
       resumeSimulationRef.current = null;
+      respreadEdgesRef.current = null;
       redrawStaticsRef.current = null;
       app.destroy(true, { children: true, texture: true, baseTexture: true });
       // planck world is GC'd when ref is released - no explicit clear needed
@@ -831,6 +832,12 @@ export default function PrintingListCanvas({
 
           const eIdx = entriesRef.current.indexOf(toRemove);
           if (eIdx >= 0) entriesRef.current.splice(eIdx, 1);
+        }
+        if (pushToEdgesRef.current) {
+          // Re-spread the remaining models around the edges.
+          respreadEdgesRef.current?.();
+          pausedRef.current = false;
+          notifyLayoutCleanRef.current?.(false);
         }
       }
     }

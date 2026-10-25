@@ -19,15 +19,12 @@ export const DEBUG_PHYSICS_WIREFRAME = false;
 export const PHYSICS_BORDER_PADDING_PX = 0;
 
 export const GRAVITY_ACCEL = 20;
-// "Push to edges" pulls each model toward its slot on the plate edge with a damped spring
-// (acceleration per unit of distance, and per unit of speed), capped so models glide into
-// place rather than fly.
+// "Push to edges" holds each model in its slot on the plate edge with a damped spring
+// (acceleration per unit of distance, and per unit of speed). Models that don't fit around
+// the edges are pushed outward at the capped acceleration.
 export const EDGE_SPRING = 4;
 export const EDGE_DAMPING = 2.5;
 export const EDGE_MAX_ACCEL = GRAVITY_ACCEL * 0.4;
-// Models pass through each other on the way to their slot, and become solid once within
-// this distance of it.
-export const EDGE_ARRIVAL_PX = 2 * PX_PER_MM;
 // How far a model's top can poke above the plate and still count as on it, so the top
 // edge holds a model resting against it.
 export const PLATE_ENTRY_TOLERANCE_PX = 5;
