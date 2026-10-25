@@ -3,8 +3,8 @@
 //! chunks. Scene state is JSON (`META`, `SCNE`, `MODL`, `SUPP`) and each distinct mesh is one
 //! binary STL `MESH` chunk. Placements that share a mesh point at the first placement's chunk,
 //! which raises the container version from 2 to 3. A mesh's support layout is written to
-//! `SUPP` as DragonFruit roots, trunks, branches, twigs, sticks and knots for every placement
-//! of it.
+//! `SUPP` as DragonFruit roots, trunks, branches, twigs, sticks, braces and knots for every
+//! placement of it.
 
 use std::io::{Seek, SeekFrom, Write};
 
@@ -196,7 +196,7 @@ pub fn write_voxl<W: Write + Seek>(
         "leaves": [],
         "twigs": supports.twigs,
         "sticks": supports.sticks,
-        "braces": [],
+        "braces": supports.braces,
         "knots": supports.knots,
     });
 
@@ -234,6 +234,7 @@ struct SupportDocument {
     branches: Vec<Value>,
     twigs: Vec<Value>,
     sticks: Vec<Value>,
+    braces: Vec<Value>,
     knots: Vec<Value>,
 }
 
@@ -334,6 +335,25 @@ impl SupportDocument {
                 SupportBase::Model(_) => unreachable!("struts are written above"),
             }
             shafts.push(spans);
+        }
+
+        // Each brace hangs from a knot on each of the two supports it joins, lower end first.
+        for brace in &layout.braces {
+            let mut knot_ids = Vec::with_capacity(2);
+            for end in [&brace.lower, &brace.upper] {
+                let host = layout.supports[end.support].shaft_diameter_mm;
+                let knot = knot_on(&shafts[end.support], place(end.point), host);
+                knot_ids.push(knot["id"].clone());
+                self.knots.push(knot);
+            }
+            self.braces.push(json!({
+                "id": Uuid::new_v4().to_string(),
+                "modelId": model_id,
+                "typeId": "brace",
+                "startKnotId": knot_ids[0],
+                "endKnotId": knot_ids[1],
+                "profile": { "diameter": round(brace.diameter_mm) },
+            }));
         }
     }
 
@@ -671,6 +691,7 @@ mod tests {
             body_diameter_mm: 0.8,
         };
         let layout = SupportLayout {
+            braces: vec![],
             supports: vec![
                 SupportPath {
                     tip: tip(Vec3::new(1.0, 2.0, 10.0), Vec3::new(1.0, 2.0, 8.0)),
@@ -753,7 +774,7 @@ mod tests {
             joints: vec![],
             shaft_diameter_mm: 0.5,
         };
-        let layout = SupportLayout { supports: vec![strut(12.0), strut(18.0)] };
+        let layout = SupportLayout { supports: vec![strut(12.0), strut(18.0)], braces: vec![] };
         let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
         let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
         let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
@@ -785,6 +806,51 @@ mod tests {
         let (disk, length) =
             (cone["diskLengthOverride"].as_f64().unwrap(), cone["profile"]["lengthMm"].as_f64().unwrap());
         assert!(near([0, 1, 2].map(|k| pos[k] + surface[k] * disk + normal[k] * length), [0.0, 0.0, 10.8]));
+    }
+
+    #[test]
+    fn braces_hang_from_knots_on_the_supports_they_join() {
+        use crate::geometry::support_layout::{BraceEnd, BraceLayout, ContactTip, SupportBase, SupportPath};
+
+        let trunk = |x: f32| SupportPath {
+            tip: ContactTip {
+                contact: Vec3::new(x, 0.0, 10.0),
+                surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                socket: Vec3::new(x, 0.0, 8.0),
+                contact_diameter_mm: 0.3,
+                body_diameter_mm: 0.8,
+            },
+            base: SupportBase::Plate { x, y: 0.0, diameter_mm: 3.0 },
+            joints: vec![],
+            shaft_diameter_mm: 0.8,
+        };
+        let layout = SupportLayout {
+            supports: vec![trunk(0.0), trunk(3.0)],
+            braces: vec![BraceLayout {
+                lower: BraceEnd { support: 1, point: Vec3::new(3.0, 0.0, 4.0) },
+                upper: BraceEnd { support: 0, point: Vec3::new(0.0, 0.0, 6.0) },
+                diameter_mm: 0.6,
+            }],
+        };
+        let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+
+        let brace = &supp["braces"][0];
+        assert_eq!(brace["typeId"], "brace");
+        assert_eq!(brace["modelId"], json_chunk(&chunks, b"MODL")[0]["id"]);
+        assert_eq!(brace["profile"]["diameter"], 0.6);
+        let knot = |id: &Value| supp["knots"].as_array().unwrap().iter().find(|k| k["id"] == *id).unwrap().clone();
+        let segment_ids = |t: usize| {
+            supp["trunks"][t]["segments"].as_array().unwrap().iter().map(|s| s["id"].clone()).collect::<Vec<_>>()
+        };
+        let (start, end) = (knot(&brace["startKnotId"]), knot(&brace["endKnotId"]));
+        assert!(segment_ids(1).contains(&start["parentShaftId"]));
+        assert!(segment_ids(0).contains(&end["parentShaftId"]));
+        assert!(near(xyz(&start["pos"]), [3.0, 0.0, 4.0]));
+        assert!(near(xyz(&end["pos"]), [0.0, 0.0, 6.0]));
+        assert_eq!(start["diameter"], 0.9);
     }
 
     #[test]

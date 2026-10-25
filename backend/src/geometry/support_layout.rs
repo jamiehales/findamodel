@@ -104,6 +104,31 @@ const DUPLICATE_CONTACT_MM: f32 = 0.5;
 /// A walk ending within this height of the lowest support layer stands on the plate, when that
 /// layer is itself this close to the plate (Z = 0).
 const PLATE_REACH_MM: f32 = 0.5;
+/// Brace detection: untraced pieces of at least `MIN_BRACE_BLOBS` cross-sections; the places
+/// a piece touches one support group into one end when they are within `BRACE_END_GAP_MM` of
+/// height; a brace is at least `MIN_BRACE_MM` long, and the piece covers at least
+/// `BRACE_COVERAGE` of the line between its ends (the outer `BRACE_END_SKIP` of the line at
+/// each end, where it merges into the supports, is not tested), within `BRACE_MARGIN_MM`.
+const MIN_BRACE_BLOBS: usize = 3;
+const BRACE_END_GAP_MM: f32 = 1.0;
+const MIN_BRACE_MM: f32 = 2.0;
+const BRACE_COVERAGE: f32 = 0.8;
+const BRACE_END_SKIP: f32 = 0.15;
+const BRACE_MARGIN_MM: f32 = 0.15;
+const BRACE_SAMPLE_MM: f32 = 0.2;
+/// Braces whose ends are this close to an earlier brace's on the same supports are the same.
+const DUPLICATE_BRACE_MM: f32 = 1.0;
+/// A brace passing this close to a third support's end, when the piece also braces each of
+/// its ends to that support, runs on through it: the two shorter braces replace it.
+const BRACE_THROUGH_MM: f32 = 0.8;
+/// A brace whose middle lies along a traced shaft, within this cosine of its direction, is a
+/// sliver of that shaft rather than a brace.
+const BRACE_PARALLEL_COS: f32 = 0.9;
+/// The ends are refitted to a line through the piece's own cross-sections when those spread
+/// along at least this share of the brace (a level bar's slices do not, being one long slice).
+const BRACE_REFIT_SPREAD: f32 = 0.5;
+const MIN_BRACE_DIAMETER_MM: f32 = 0.3;
+const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
 pub const ROOT_DISK_HEIGHT_MM: f32 = 0.5;
 pub const ROOT_CONE_HEIGHT_MM: f32 = 1.5;
 /// Where a plate support's shaft leaves its root.
@@ -164,10 +189,27 @@ impl SupportPath {
 pub struct SupportLayout {
     /// A support's parent always comes before it.
     pub supports: Vec<SupportPath>,
+    pub braces: Vec<BraceLayout>,
+}
+
+/// A bar between two supports, each end on its support's shaft.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BraceLayout {
+    pub lower: BraceEnd,
+    pub upper: BraceEnd,
+    pub diameter_mm: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BraceEnd {
+    /// Index into [`SupportLayout::supports`].
+    pub support: usize,
+    /// A point on or next to the support's shaft; the knot goes on the shaft nearest it.
+    pub point: Vec3,
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 2;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 3;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -181,6 +223,9 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
     tops.sort_by(|a, b| graph.blobs[b.0 as usize].z.total_cmp(&graph.blobs[a.0 as usize].z));
 
     let mut claimed = vec![NONE; graph.blobs.len()];
+    // Every blob any walk passed, and the traced support that passed it first.
+    let mut seen = vec![false; graph.blobs.len()];
+    let mut owner = vec![NONE; graph.blobs.len()];
     let mut layout = SupportLayout::default();
     let (mut stranded, mut duplicate, mut too_low) = (0usize, 0usize, 0usize);
     for (top, top_contact) in tops {
@@ -198,6 +243,9 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
                 WalkEnd::Stranded => "stranded".to_string(),
             }
         );
+        for &node in &walk.visited {
+            seen[node as usize] = true;
+        }
         let lower = match walk.end {
             WalkEnd::Stranded => lower_end(&graph, &surface, &walk),
             _ => None,
@@ -218,12 +266,19 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
             for &node in &walk.nodes {
                 claimed[node as usize] = id;
             }
+            for &node in &walk.visited {
+                if owner[node as usize] == NONE {
+                    owner[node as usize] = id;
+                }
+            }
             layout.supports.push(support);
         }
     }
+    layout.braces = graph.braces(&seen, &owner, &layout.supports);
     log::debug!(
-        "Support layout: {} supports from {} support triangles ({} stranded, {} duplicate tips, {} too low)",
+        "Support layout: {} supports and {} braces from {} support triangles ({} stranded, {} duplicate tips, {} too low)",
         layout.supports.len(),
+        layout.braces.len(),
         supports.len(),
         stranded,
         duplicate,
@@ -471,6 +526,13 @@ impl Rect {
         (self.max[0] - self.min[0]) * (self.max[1] - self.min[1])
     }
 
+    fn holds(&self, p: [f32; 2], margin: f32) -> bool {
+        p[0] >= self.min[0] - margin
+            && p[0] <= self.max[0] + margin
+            && p[1] >= self.min[1] - margin
+            && p[1] <= self.max[1] + margin
+    }
+
     fn encloses(&self, other: &Rect) -> bool {
         self.min[0] <= other.min[0]
             && self.min[1] <= other.min[1]
@@ -504,6 +566,8 @@ struct Blob {
     z: f32,
     half_min: f32,
     half_max: f32,
+    layer: u32,
+    rect: Rect,
 }
 
 struct Graph {
@@ -512,6 +576,8 @@ struct Graph {
     down: Vec<Vec<u32>>,
     /// Height of the lowest slice.
     floor: f32,
+    /// Height between slices.
+    step: f32,
 }
 
 enum WalkEnd {
@@ -570,7 +636,15 @@ impl Graph {
                 let r = &section.rect;
                 let [x, y] = r.centre();
                 let (w, h) = (r.max[0] - r.min[0], r.max[1] - r.min[1]);
-                Blob { x, y, z: plane(k), half_min: section.width / 2.0, half_max: w.max(h) / 2.0 }
+                Blob {
+                    x,
+                    y,
+                    z: plane(k),
+                    half_min: section.width / 2.0,
+                    half_max: w.max(h) / 2.0,
+                    layer: k as u32,
+                    rect: *r,
+                }
             }));
         }
         offsets.push(blobs.len() as u32);
@@ -615,7 +689,7 @@ impl Graph {
             up[below as usize].push(above);
             down[above as usize].push(below);
         }
-        Some(Graph { blobs, up, down, floor: plane(0) })
+        Some(Graph { blobs, up, down, floor: plane(0), step })
     }
 
     fn centre(&self, i: u32) -> Vec3 {
@@ -713,6 +787,195 @@ impl Graph {
             return f32::MAX;
         }
         ((end.x - top.x).powi(2) + (end.y - top.y).powi(2)).sqrt() / drop
+    }
+
+    /// Braces: support geometry no walk passed that bridges two traced supports. The untraced
+    /// blobs are grouped into connected pieces, and each place a piece touches a traced
+    /// support is a candidate end. Two ends on different supports are braced when the piece's
+    /// own cross-sections cover the straight line between them, which tells an X of crossing
+    /// braces, or a V meeting on one post, from the lines its ends do not run along.
+    fn braces(&self, seen: &[bool], owner: &[u32], supports: &[SupportPath]) -> Vec<BraceLayout> {
+        // Traced shafts, tips included: a "brace" lying along one is a sliver of that shaft.
+        let shafts: Vec<(Vec3, Vec3, f32)> = supports
+            .iter()
+            .flat_map(|s| {
+                let mut line = vec![s.shaft_start()];
+                line.extend(s.joints.iter().copied());
+                line.extend([s.tip.socket, s.tip.contact]);
+                let radius = s.shaft_diameter_mm / 2.0;
+                line.windows(2).map(|w| (w[0], w[1], radius)).collect::<Vec<_>>()
+            })
+            .collect();
+        let along_shaft = |brace: &BraceLayout| {
+            let span = brace.upper.point - brace.lower.point;
+            let direction = span.normalized();
+            (1..4).all(|k| {
+                let p = brace.lower.point + span * (k as f32 / 4.0);
+                shafts.iter().any(|&(a, b, r)| {
+                    distance_to_segment(p, a, b) <= r.max(brace.diameter_mm / 2.0)
+                        && (b - a).normalized().dot(direction).abs() > BRACE_PARALLEL_COS
+                })
+            })
+        };
+        let n = self.blobs.len();
+        let mut parent: Vec<u32> = (0..n as u32).collect();
+        for i in (0..n).filter(|&i| !seen[i]) {
+            for &j in self.up[i].iter().filter(|&&j| !seen[j as usize]) {
+                union(&mut parent, i as u32, j);
+            }
+        }
+        let mut pieces: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
+        for i in (0..n).filter(|&i| !seen[i]) {
+            pieces.entry(find(&mut parent, i as u32)).or_default().push(i as u32);
+        }
+        let mut pieces: Vec<Vec<u32>> = pieces.into_values().filter(|p| p.len() >= MIN_BRACE_BLOBS).collect();
+        pieces.sort_by_key(|p| p[0]);
+
+        let mut braces: Vec<BraceLayout> = Vec::new();
+        for piece in &pieces {
+            // Where the piece touches traced supports, grouped per support by height.
+            let mut touches: Vec<(u32, Vec3)> = piece
+                .iter()
+                .flat_map(|&b| self.up[b as usize].iter().chain(&self.down[b as usize]))
+                .filter(|&&other| owner[other as usize] != NONE)
+                .map(|&other| (owner[other as usize], self.centre(other)))
+                .collect();
+            touches.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.z.total_cmp(&b.1.z)));
+            let mut ends: Vec<BraceEnd> = Vec::new();
+            for group in touches.chunk_by(|a, b| a.0 == b.0 && b.1.z - a.1.z <= BRACE_END_GAP_MM) {
+                let sum = group.iter().fold(Vec3::default(), |sum, t| sum + t.1);
+                ends.push(BraceEnd { support: group[0].0 as usize, point: sum * (1.0 / group.len() as f32) });
+            }
+            let mut by_layer: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
+            for &b in piece {
+                by_layer.entry(self.blobs[b as usize].layer).or_default().push(b);
+            }
+
+            // Every pair of ends on different supports that the piece runs between.
+            let mut found: Vec<(usize, usize, f32)> = Vec::new();
+            for (i, a) in ends.iter().enumerate() {
+                for (j, b) in ends.iter().enumerate().skip(i + 1) {
+                    if a.support == b.support
+                        || (b.point - a.point).length() < MIN_BRACE_MM
+                        || a.point.z.min(b.point.z) < ROOT_TOP_MM
+                    {
+                        continue;
+                    }
+                    if let Some(diameter_mm) = self.brace_along(&by_layer, a.point, b.point) {
+                        found.push((i, j, diameter_mm));
+                    }
+                }
+            }
+            let braced = |i: usize, j: usize| found.iter().any(|&(x, y, _)| (x, y) == (i.min(j), i.max(j)));
+            for &(i, j, diameter_mm) in &found {
+                let (a, b) = (ends[i], ends[j]);
+                let through = ends.iter().enumerate().any(|(k, e)| {
+                    e.support != a.support
+                        && e.support != b.support
+                        && distance_to_segment(e.point, a.point, b.point) < BRACE_THROUGH_MM
+                        && braced(i, k)
+                        && braced(k, j)
+                });
+                if through {
+                    continue;
+                }
+                let (lower, upper) = if a.point.z <= b.point.z { (a, b) } else { (b, a) };
+                let (lower, upper) = self.refit_brace(piece, lower, upper);
+                if lower.point.z < ROOT_TOP_MM {
+                    continue;
+                }
+                let same = |e: &BraceEnd, f: &BraceEnd| {
+                    e.support == f.support && (e.point - f.point).length() < DUPLICATE_BRACE_MM
+                };
+                if braces.iter().any(|x| same(&x.lower, &lower) && same(&x.upper, &upper)) {
+                    continue;
+                }
+                let brace = BraceLayout { lower, upper, diameter_mm };
+                if along_shaft(&brace) {
+                    continue;
+                }
+                log::trace!(
+                    "Brace from support {} at {} to support {} at {}, {:.2} mm across",
+                    lower.support,
+                    lower.point,
+                    upper.support,
+                    upper.point,
+                    diameter_mm
+                );
+                braces.push(brace);
+            }
+        }
+        braces
+    }
+
+    /// The brace's ends moved onto a line fitted through the piece's cross-sections between
+    /// them, each where that line passes closest to its support. An end found from where the
+    /// piece touches a support sits mid-way along the junction, which flattens a diagonal.
+    fn refit_brace(&self, piece: &[u32], lower: BraceEnd, upper: BraceEnd) -> (BraceEnd, BraceEnd) {
+        let axis = upper.point - lower.point;
+        let length_sq = axis.length_sq();
+        let along: Vec<Vec3> = piece
+            .iter()
+            .map(|&b| self.centre(b))
+            .filter(|c| {
+                let t = (*c - lower.point).dot(axis) / length_sq;
+                (BRACE_END_SKIP..=1.0 - BRACE_END_SKIP).contains(&t)
+                    && distance_to_segment(*c, lower.point, upper.point) < MIN_BRACE_MM / 2.0
+            })
+            .collect();
+        if along.len() < MIN_BRACE_BLOBS {
+            return (lower, upper);
+        }
+        let mean = along.iter().fold(Vec3::default(), |sum, c| sum + *c) * (1.0 / along.len() as f32);
+        // Principal direction by power iteration, starting from the end-to-end direction.
+        let mut direction = axis.normalized();
+        for _ in 0..20 {
+            let mut next = Vec3::default();
+            for c in &along {
+                let d = *c - mean;
+                next = next + d * d.dot(direction);
+            }
+            if next.length_sq() < 1e-12 {
+                return (lower, upper);
+            }
+            direction = next.normalized();
+        }
+        let (lo, hi) = along
+            .iter()
+            .map(|c| (*c - mean).dot(direction))
+            .fold((f32::MAX, f32::MIN), |(l, h), t| (l.min(t), h.max(t)));
+        if hi - lo < axis.length() * BRACE_REFIT_SPREAD {
+            return (lower, upper);
+        }
+        let onto = |end: BraceEnd| BraceEnd { point: mean + direction * (end.point - mean).dot(direction), ..end };
+        let (a, b) = (onto(lower), onto(upper));
+        if a.point.z <= b.point.z { (a, b) } else { (b, a) }
+    }
+
+    /// The diameter of the brace a piece forms from `p` to `q`, when the piece's
+    /// cross-sections (`by_layer`) cover the line between them.
+    fn brace_along(&self, by_layer: &FxHashMap<u32, Vec<u32>>, p: Vec3, q: Vec3) -> Option<f32> {
+        let tested = (q - p).length() * (1.0 - 2.0 * BRACE_END_SKIP);
+        let samples = ((tested / BRACE_SAMPLE_MM).ceil() as usize).max(3);
+        let mut widths = Vec::with_capacity(samples);
+        for k in 0..samples {
+            let t = BRACE_END_SKIP + (1.0 - 2.0 * BRACE_END_SKIP) * (k as f32 + 0.5) / samples as f32;
+            let s = p + (q - p) * t;
+            let layer = ((s.z - self.floor) / self.step).round() as i64;
+            let cover = (layer - 1..=layer + 1)
+                .filter_map(|l| u32::try_from(l).ok())
+                .flat_map(|l| by_layer.get(&l).into_iter().flatten())
+                .map(|&b| &self.blobs[b as usize])
+                .find(|blob| blob.rect.holds([s.x, s.y], BRACE_MARGIN_MM));
+            if let Some(blob) = cover {
+                widths.push(blob.half_min * 2.0);
+            }
+        }
+        if (widths.len() as f32) < samples as f32 * BRACE_COVERAGE {
+            return None;
+        }
+        widths.sort_by(f32::total_cmp);
+        Some(widths[widths.len() / 2].clamp(MIN_BRACE_DIAMETER_MM, MAX_BRACE_DIAMETER_MM))
     }
 
     /// Where the shaft through `nodes` (top down) continues at height `z`.
@@ -1121,6 +1384,7 @@ mod tests {
         };
         assert_eq!(parent, 0);
         assert!(point.x.abs() < 0.2 && (3.0..=5.0).contains(&point.z), "{point}");
+        assert!(layout.braces.is_empty(), "{:?}", layout.braces);
     }
 
     #[test]
@@ -1133,6 +1397,7 @@ mod tests {
         assert_eq!(layout.supports.len(), 1);
         let SupportBase::Plate { x, y, .. } = layout.supports[0].base else { panic!() };
         assert!((x - 1.0).abs() < 0.1 && (y - 1.0).abs() < 0.1, "{x} {y}");
+        assert!(layout.braces.is_empty(), "{:?}", layout.braces);
     }
 
     #[test]
@@ -1150,6 +1415,63 @@ mod tests {
             assert!((x - s.tip.contact.x).abs() < 0.2, "{x} under {}", s.tip.contact);
             assert!(s.joints.is_empty(), "{:?}", s.joints);
         }
+    }
+
+    /// Two posts 3 mm apart under the model, at x = 0 and x = 3, with `extra` between them.
+    fn two_posts(extra: &[Triangle]) -> SupportLayout {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend(support(Vec3::new(3.0, 0.0, 10.0), &[Vec3::new(3.0, 0.0, 8.0), Vec3::new(3.0, 0.0, 0.0)]));
+        supports.extend_from_slice(extra);
+        reconstruct(&model, &supports)
+    }
+
+    /// The post (0 or 1) whose shaft is at `x`.
+    fn post_at(layout: &SupportLayout, x: f32) -> usize {
+        layout.supports.iter().position(|s| (s.tip.contact.x - x).abs() < 0.2).expect("a post there")
+    }
+
+    #[test]
+    fn diagonal_brace_between_posts_is_found_with_its_ends_on_each_post() {
+        let layout = two_posts(&frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(3.0, 0.0, 3.0), 0.3, 0.3));
+
+        assert_eq!(layout.braces.len(), 1, "{:?}", layout.braces);
+        let brace = &layout.braces[0];
+        assert_eq!(brace.lower.support, post_at(&layout, 3.0));
+        assert_eq!(brace.upper.support, post_at(&layout, 0.0));
+        assert!(close(brace.lower.point, Vec3::new(3.0, 0.0, 3.0), 0.6), "{}", brace.lower.point);
+        assert!(close(brace.upper.point, Vec3::new(0.0, 0.0, 6.0), 0.6), "{}", brace.upper.point);
+        assert!((0.5..=0.75).contains(&brace.diameter_mm), "{}", brace.diameter_mm);
+    }
+
+    #[test]
+    fn crossing_braces_are_two_braces() {
+        let mut x = frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(3.0, 0.0, 3.0), 0.3, 0.3);
+        x.extend(frustum(Vec3::new(0.0, 0.0, 3.0), Vec3::new(3.0, 0.0, 6.0), 0.3, 0.3));
+        let layout = two_posts(&x);
+
+        assert_eq!(layout.braces.len(), 2, "{:?}", layout.braces);
+        for brace in &layout.braces {
+            assert_ne!(brace.lower.support, brace.upper.support);
+            assert!(brace.upper.point.z - brace.lower.point.z > 2.0, "{brace:?}");
+        }
+    }
+
+    #[test]
+    fn level_bar_between_posts_is_a_brace() {
+        let layout = two_posts(&frustum(Vec3::new(0.0, 0.0, 5.0), Vec3::new(3.0, 0.0, 5.0), 0.3, 0.3));
+
+        assert_eq!(layout.braces.len(), 1, "{:?}", layout.braces);
+        let brace = &layout.braces[0];
+        assert_ne!(brace.lower.support, brace.upper.support);
+        for end in [brace.lower, brace.upper] {
+            assert!((end.point.z - 5.0).abs() < 0.4, "{end:?}");
+        }
+    }
+
+    #[test]
+    fn posts_with_nothing_between_them_have_no_braces() {
+        assert!(two_posts(&[]).braces.is_empty());
     }
 
     #[test]
