@@ -29,6 +29,9 @@ const LAYERS_PER_BAND: usize = 32;
 /// Cut points closer than this are one point: neighbouring triangles cut a shared edge at the
 /// same place, which is what joins their segments into one outline.
 const OUTLINE_SNAP_MM: f32 = 0.0005;
+/// Directions a cross-section's width is measured across, every 5 degrees: a slanted shaft's
+/// elliptical slice then reads within about 1.5% of its diameter up to a 75 degree lean.
+const WIDTH_DIRECTIONS: usize = 36;
 /// Grid cell for blob containment and layer-to-layer overlap lookups.
 const BLOB_CELL_MM: f32 = 1.0;
 /// Blobs in neighbouring layers whose boxes come this close are linked.
@@ -164,7 +167,7 @@ pub struct SupportLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 1;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 2;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -541,7 +544,7 @@ impl Graph {
         let count = ((hi - lo) / step).floor() as usize;
         let plane = |k: usize| lo + (k as f32 + 0.5) * step;
 
-        let layers: Vec<Vec<Rect>> = (0..count)
+        let layers: Vec<Vec<Section>> = (0..count)
             .step_by(LAYERS_PER_BAND)
             .collect::<Vec<_>>()
             .into_par_iter()
@@ -561,12 +564,13 @@ impl Graph {
 
         let mut offsets = Vec::with_capacity(layers.len() + 1);
         let mut blobs = Vec::new();
-        for (k, rects) in layers.iter().enumerate() {
+        for (k, sections) in layers.iter().enumerate() {
             offsets.push(blobs.len() as u32);
-            blobs.extend(rects.iter().map(|r| {
+            blobs.extend(sections.iter().map(|section| {
+                let r = &section.rect;
                 let [x, y] = r.centre();
                 let (w, h) = (r.max[0] - r.min[0], r.max[1] - r.min[1]);
-                Blob { x, y, z: plane(k), half_min: w.min(h) / 2.0, half_max: w.max(h) / 2.0 }
+                Blob { x, y, z: plane(k), half_min: section.width / 2.0, half_max: w.max(h) / 2.0 }
             }));
         }
         offsets.push(blobs.len() as u32);
@@ -576,14 +580,15 @@ impl Graph {
             .flat_map_iter(|k| {
                 let (lower, upper) = (&layers[k], &layers[k + 1]);
                 let mut grid: FxHashMap<(i32, i32), Vec<u32>> = FxHashMap::default();
-                for (j, r) in upper.iter().enumerate() {
-                    for c in r.cells(BLOB_CELL_MM) {
+                for (j, section) in upper.iter().enumerate() {
+                    for c in section.rect.cells(BLOB_CELL_MM) {
                         grid.entry(c).or_default().push(j as u32);
                     }
                 }
                 let mut pairs = Vec::new();
                 let mut candidates = Vec::new();
-                for (i, r) in lower.iter().enumerate() {
+                for (i, section) in lower.iter().enumerate() {
+                    let r = &section.rect;
                     candidates.clear();
                     let reach = Rect {
                         min: [r.min[0] - LINK_MARGIN_MM, r.min[1] - LINK_MARGIN_MM],
@@ -595,7 +600,7 @@ impl Graph {
                     candidates.sort_unstable();
                     candidates.dedup();
                     for &j in &candidates {
-                        if r.overlaps(&upper[j as usize], LINK_MARGIN_MM) {
+                        if r.overlaps(&upper[j as usize].rect, LINK_MARGIN_MM) {
                             pairs.push((offsets[k] + i as u32, offsets[k + 1] + j));
                         }
                     }
@@ -727,7 +732,7 @@ impl Graph {
 /// One slice's cross-section as blobs. Each closed outline is its own blob, so separate
 /// shells stay apart even where they overlap, and an outline lying wholly inside another (a
 /// shaft inside its joint ball, or inside the raft) joins the one around it.
-fn layer_blobs(triangles: &[&Triangle], z: f32) -> Vec<Rect> {
+fn layer_blobs(triangles: &[&Triangle], z: f32) -> Vec<Section> {
     let segments: Vec<[[f32; 2]; 2]> = triangles.iter().filter_map(|t| cross_section(t, z)).collect();
     if segments.is_empty() {
         return Vec::new();
@@ -771,10 +776,24 @@ struct Outline {
     segments: Vec<u32>,
 }
 
+/// One blob of a slice: its box, and its width across its widest direction.
+struct Section {
+    rect: Rect,
+    width: f32,
+}
+
 /// Merges each outline lying wholly inside a larger one into it.
-fn merge_enclosed(segments: &[[[f32; 2]; 2]], outlines: Vec<Outline>) -> Vec<Rect> {
+fn merge_enclosed(segments: &[[[f32; 2]; 2]], outlines: Vec<Outline>) -> Vec<Section> {
+    let section = |members: &[&Outline]| {
+        let mut rect = members[0].rect;
+        for o in &members[1..] {
+            rect.union(&o.rect);
+        }
+        let points = members.iter().flat_map(|o| o.segments.iter().flat_map(|&i| segments[i as usize]));
+        Section { rect, width: cross_width(points) }
+    };
     if outlines.len() < 2 {
-        return outlines.into_iter().map(|o| o.rect).collect();
+        return outlines.iter().map(|o| section(&[o])).collect();
     }
     let mut grid: FxHashMap<(i32, i32), Vec<u32>> = FxHashMap::default();
     for (i, o) in outlines.iter().enumerate() {
@@ -796,19 +815,37 @@ fn merge_enclosed(segments: &[[[f32; 2]; 2]], outlines: Vec<Outline>) -> Vec<Rec
             }
         }
     }
-    let mut merged: Vec<Rect> = Vec::new();
+    let mut groups: Vec<Vec<&Outline>> = Vec::new();
     let mut slot: FxHashMap<u32, usize> = FxHashMap::default();
     for (i, o) in outlines.iter().enumerate() {
         let root = find(&mut parent, i as u32);
-        match slot.get(&root) {
-            Some(&s) => merged[s].union(&o.rect),
-            None => {
-                slot.insert(root, merged.len());
-                merged.push(o.rect);
-            }
-        }
+        let k = *slot.entry(root).or_insert_with(|| {
+            groups.push(Vec::new());
+            groups.len() - 1
+        });
+        groups[k].push(o);
     }
-    merged
+    groups.iter().map(|g| section(g)).collect()
+}
+
+/// The width of `points` across their widest direction, from [`WIDTH_DIRECTIONS`]
+/// directions. A horizontal slice of a tilted round shaft is an ellipse, and its width across
+/// the long axis is the shaft's own diameter, where its box would read wide. For a shaft
+/// modelled as a regular polygon it is the width across opposite corners, the size the shaft
+/// was modelled at, where the narrowest width would be across flats.
+fn cross_width(points: impl Iterator<Item = [f32; 2]> + Clone) -> f32 {
+    let extents: Vec<f32> = (0..WIDTH_DIRECTIONS)
+        .map(|k| {
+            let (s, c) = (std::f32::consts::PI * k as f32 / WIDTH_DIRECTIONS as f32).sin_cos();
+            let (lo, hi) = points
+                .clone()
+                .map(|[x, y]| x * c + y * s)
+                .fold((f32::MAX, f32::MIN), |(lo, hi), t| (lo.min(t), hi.max(t)));
+            hi - lo
+        })
+        .collect();
+    let widest = (0..WIDTH_DIRECTIONS).max_by(|&a, &b| extents[a].total_cmp(&extents[b])).unwrap_or(0);
+    extents[(widest + WIDTH_DIRECTIONS / 2) % WIDTH_DIRECTIONS]
 }
 
 /// Whether `p` lies inside the outline made of `outline`'s segments (even-odd rule).
@@ -1113,6 +1150,38 @@ mod tests {
             assert!((x - s.tip.contact.x).abs() < 0.2, "{x} under {}", s.tip.contact);
             assert!(s.joints.is_empty(), "{:?}", s.joints);
         }
+    }
+
+    #[test]
+    fn leaning_shaft_reads_its_own_diameter() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        // An 0.8 mm shaft leaning 50 degrees along the diagonal: its slices are ellipses turned
+        // 45 degrees, whose box reads about 1.05 mm wide.
+        let lean = 8.0 * 50f32.to_radians().tan() / 2f32.sqrt();
+        let supports = support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(lean, lean, 0.0)]);
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let shaft = layout.supports[0].shaft_diameter_mm;
+        assert!((0.75..=0.85).contains(&shaft), "{shaft}");
+    }
+
+    #[test]
+    fn cross_width_is_the_ellipse_minor_axis_and_a_polygon_corner_width() {
+        // A slice of a 0.5 mm shaft leaning 60 degrees, turned 30 degrees in the plane.
+        let (s, c) = 30f32.to_radians().sin_cos();
+        let ellipse = (0..64).map(|k| {
+            let t = std::f32::consts::TAU * k as f32 / 64.0;
+            let (x, y) = (0.25 / 60f32.to_radians().cos() * t.cos(), 0.25 * t.sin());
+            [x * c - y * s, x * s + y * c]
+        });
+        assert!((cross_width(ellipse) - 0.5).abs() < 0.01);
+        // A 16-sided shaft of 0.65 mm across corners reads 0.65, not 0.638 across flats.
+        let polygon = (0..16).map(|k| {
+            let t = std::f32::consts::TAU * k as f32 / 16.0;
+            [0.325 * t.cos(), 0.325 * t.sin()]
+        });
+        assert!((cross_width(polygon) - 0.65).abs() < 0.002);
     }
 
     #[test]
