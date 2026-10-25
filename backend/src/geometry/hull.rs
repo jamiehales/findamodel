@@ -19,10 +19,14 @@ const LOG_TARGET: &str = "findamodel.Hull";
 
 pub const DEFAULT_MAX_HULL_VERTICES: usize = 20;
 /// Bump whenever hull output changes; see `scan_config::compute`.
-pub const CURRENT_HULL_GENERATION_VERSION: i32 = 6;
+pub const CURRENT_HULL_GENERATION_VERSION: i32 = 7;
 pub const DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
 
+/// Concave hulls get a larger vertex budget than convex ones so they can follow notches.
+pub const MAX_CONCAVE_HULL_VERTICES: usize = 40;
 const MAX_CONCAVE_HULL_INPUT_POINTS: usize = 30_000;
+const MAX_CONCAVE_HULL_ATTEMPTS: usize = 3;
+const FOOTPRINT_SPACING_CELLS: f64 = 3.0;
 const MIN_CONCAVE_RATIO: f64 = 0.08;
 const MAX_CONCAVE_RATIO: f64 = 0.95;
 const DEDUPE_EPSILON: f64 = 1e-6;
@@ -52,6 +56,8 @@ pub struct Hulls {
 
 /// Calculates convex, concave and convex-sans-raft hulls. The sans-raft hull excludes
 /// vertices below `raft_height_mm` before projection, removing raft/brim geometry.
+/// `max_hull_vertices` caps the convex hulls; the concave hull uses
+/// `MAX_CONCAVE_HULL_VERTICES`. Every hull encloses all of the projected geometry.
 pub fn calculate_hulls(geometry: &LoadedGeometry, max_hull_vertices: usize, raft_height_mm: f32) -> Hulls {
     let all_points =
         dedupe(geometry.triangles.iter().flat_map(|t| [t.v0, t.v1, t.v2]).map(|v| Point::new(v.x as f64, v.z as f64)));
@@ -63,7 +69,7 @@ pub fn calculate_hulls(geometry: &LoadedGeometry, max_hull_vertices: usize, raft
 
     let convex = enclosing_convex_hull(&all_points, max_hull_vertices);
     let footprint_points = densify_footprint(geometry, &all_points);
-    let concave = concave_hull(&footprint_points, max_hull_vertices);
+    let concave = concave_hull(&footprint_points, MAX_CONCAVE_HULL_VERTICES);
 
     let sans_raft_points = dedupe(
         geometry
@@ -78,7 +84,7 @@ pub fn calculate_hulls(geometry: &LoadedGeometry, max_hull_vertices: usize, raft
 
     info!(
         target: LOG_TARGET,
-        "Hull calculation complete: {} convex vertices, {} concave vertices, {} sans-raft vertices (max {max_hull_vertices})",
+        "Hull calculation complete: {} convex vertices, {} concave vertices, {} sans-raft vertices (max {max_hull_vertices}, concave max {MAX_CONCAVE_HULL_VERTICES})",
         convex.as_ref().map_or(0, Vec::len),
         concave.as_ref().map_or(0, Vec::len),
         convex_sans_raft.as_ref().map_or(0, Vec::len),
@@ -288,6 +294,11 @@ pub fn signed_area(polygon: &[Point]) -> f64 {
 
 // ── Concave hull ─────────────────────────────────────────────────────────────
 
+/// Concave outline enclosing every point in `points`. The eroded triangulation outline
+/// passes through its input points, and the vertex budget is met by only ever pushing the
+/// outline outwards, so a ring can only miss points dropped by downsampling. Those are
+/// added back and the outline rebuilt; if that still fails, the enclosing convex hull is
+/// returned instead.
 fn concave_hull(points: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
     if points.len() < 3 {
         return None;
@@ -295,7 +306,7 @@ fn concave_hull(points: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
 
     let reduced = downsample_for_concave_hull(points, MAX_CONCAVE_HULL_INPUT_POINTS, DEDUPE_EPSILON);
     let convex_ring = normalize_ring(&convex_hull(points));
-    let input = dedupe(reduced.iter().copied().chain(convex_ring.iter().copied()));
+    let mut input = dedupe(reduced.iter().copied().chain(convex_ring.iter().copied()));
     let convex_area = signed_area(&convex_ring).abs().max(1e-9);
 
     let initial_ratio = estimate_initial_concave_ratio(reduced.len(), max_vertices);
@@ -308,38 +319,51 @@ fn concave_hull(points: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
     ];
     candidate_ratios.dedup();
 
-    let Some(triangulation) = HullTriangulation::new(&input) else {
-        debug!(target: LOG_TARGET, "Concave hull triangulation failed (degenerate input)");
-        return None;
-    };
-
-    // Ratios ascend from most to least concave; the first ring that survives
-    // simplification wins, and higher ratios only serve as fallbacks.
-    for ratio in candidate_ratios {
-        let Some(mut ring) = triangulation.concave_hull_by_length_ratio(ratio) else {
-            debug!(target: LOG_TARGET, "Concave hull attempt failed at ratio {ratio}");
-            continue;
+    for attempt in 0..MAX_CONCAVE_HULL_ATTEMPTS {
+        let Some(triangulation) = HullTriangulation::new(&input) else {
+            debug!(target: LOG_TARGET, "Concave hull triangulation failed (degenerate input)");
+            return None;
         };
-        ring = normalize_ring(&ring);
-        if ring.len() < 3 {
-            continue;
-        }
-        if ring.len() > max_vertices {
-            ring = simplify_ring_to_vertex_budget(&ring, max_vertices);
-        }
-        if ring.len() < 3 || !is_valid_ring(&ring) {
-            continue;
+
+        // Ratios ascend from most to least concave; the first ring that fits the budget
+        // wins, and higher ratios only serve as fallbacks.
+        let Some((ratio, ring)) = candidate_ratios.iter().find_map(|&ratio| {
+            let Some(ring) = triangulation.concave_hull_by_length_ratio(ratio) else {
+                debug!(target: LOG_TARGET, "Concave hull attempt failed at ratio {ratio}");
+                return None;
+            };
+            let ring = enclose_ring_to_vertex_budget(&normalize_ring(&ring), max_vertices)?;
+            is_valid_ring(&ring).then_some((ratio, ring))
+        }) else {
+            break;
+        };
+
+        let outside = points_outside_ring(&ring, points, DEDUPE_EPSILON);
+        if outside.is_empty() {
+            debug!(
+                target: LOG_TARGET,
+                "Concave hull at ratio {ratio}: {} vertices, {:.3} of convex area",
+                ring.len(),
+                signed_area(&ring).abs() / convex_area
+            );
+            // Fitting a very detailed outline (a gear with many teeth) into the budget can
+            // bulge past the convex hull; the enclosing convex hull is then the tighter fit.
+            let convex = enclosing_convex_hull(points, max_vertices);
+            return match convex {
+                Some(c) if signed_area(&c).abs() < signed_area(&ring).abs() => Some(c),
+                _ => Some(ring),
+            };
         }
         debug!(
             target: LOG_TARGET,
-            "Concave hull at ratio {ratio}: {} vertices, {:.3} of convex area",
-            ring.len(),
-            signed_area(&ring).abs() / convex_area
+            "Concave hull attempt {attempt} missed {} downsampled points, rebuilding",
+            outside.len()
         );
-        return Some(ring);
+        input.extend(outside);
     }
 
-    None
+    warn!(target: LOG_TARGET, "Concave hull could not enclose the geometry, using the convex hull");
+    enclosing_convex_hull(points, max_vertices)
 }
 
 /// Projected mesh vertices plus extra points along long projected triangle edges. A large
@@ -351,9 +375,10 @@ fn densify_footprint(geometry: &LoadedGeometry, vertices: &[Point]) -> Vec<Point
     let min_y = vertices.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
     let max_y = vertices.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
     let area = (max_x - min_x) * (max_y - min_y);
-    // Same spacing as the concave hull downsampling grid, so densifying never adds more
-    // detail than survives downsampling.
-    let step = (area / MAX_CONCAVE_HULL_INPUT_POINTS as f64).sqrt();
+    // A few downsampling grid cells apart: closer spacing adds little, and long runs of
+    // collinear points make the triangulation slow. Small bites the erosion takes between
+    // them are the cheapest notches to fill when meeting the vertex budget.
+    let step = (area / MAX_CONCAVE_HULL_INPUT_POINTS as f64).sqrt() * FOOTPRINT_SPACING_CELLS;
     if !step.is_finite() || step <= DEDUPE_EPSILON {
         return vertices.to_vec();
     }
@@ -447,10 +472,8 @@ impl Ord for QueueEntry {
 
 impl HullTriangulation {
     fn new(input: &[Point]) -> Option<Self> {
-        let mut dt: DelaunayTriangulation<Point2<f64>> = DelaunayTriangulation::new();
-        for p in input {
-            dt.insert(Point2::new(p.x, p.y)).ok()?;
-        }
+        let dt: DelaunayTriangulation<Point2<f64>> =
+            DelaunayTriangulation::bulk_load(input.iter().map(|p| Point2::new(p.x, p.y)).collect()).ok()?;
         if dt.num_inner_faces() == 0 {
             return None;
         }
@@ -635,95 +658,271 @@ fn num_adjacent(adj: &[Option<usize>; 3]) -> usize {
 
 // ── Ring simplification and validation ───────────────────────────────────────
 
-/// Binary-searches the smallest Douglas-Peucker tolerance whose topology-preserving
-/// simplification fits within `max_vertices`.
-fn simplify_ring_to_vertex_budget(ring: &[Point], max_vertices: usize) -> Vec<Point> {
-    if ring.len() <= max_vertices || max_vertices < 3 {
-        return ring.to_vec();
-    }
-    let min_x = ring.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
-    let max_x = ring.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
-    let min_y = ring.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
-    let max_y = ring.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
-    let diagonal = ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
-    if diagonal <= 0.0 {
-        return ring.to_vec();
-    }
-
-    let mut best = ring.to_vec();
-    let (mut low, mut high) = (0.0, diagonal);
-    for _ in 0..18 {
-        let mid = (low + high) / 2.0;
-        let candidate = normalize_ring(&simplify_ring(ring, mid));
-        if candidate.len() < 3 || candidate.len() > max_vertices {
-            low = mid;
-        } else if is_valid_ring(&candidate) {
-            best = candidate;
-            high = mid;
-        } else {
-            // Over-simplified into a self-intersection: retry with a finer tolerance.
-            high = mid;
-        }
-    }
-    best
+/// A pending change to a ring: dropping a reflex vertex, or replacing the two ends of an
+/// edge with the point where the edges either side of it meet.
+#[derive(Clone, Copy)]
+enum RingStep {
+    Drop(usize),
+    Extend(usize, Point),
 }
 
-/// Douglas-Peucker simplification of a closed ring that refuses any shortcut segment
-/// which would cross the rest of the ring, keeping the result simple.
-pub fn simplify_ring(ring: &[Point], tolerance: f64) -> Vec<Point> {
-    let n = ring.len();
-    if n < 4 {
-        return ring.to_vec();
+struct StepEntry {
+    cost: f64,
+    vertex: usize,
+    stamp: u32,
+    step: RingStep,
+}
+
+impl PartialEq for StepEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
     }
-    // Split the ring at its first vertex and the vertex farthest from it, so both halves
-    // are open polylines with fixed endpoints.
-    let far = (1..n)
-        .max_by(|a, b| ring[0].dist(ring[*a]).partial_cmp(&ring[0].dist(ring[*b])).unwrap_or(Ordering::Equal))
-        .unwrap_or(n / 2);
+}
+impl Eq for StepEntry {}
+impl PartialOrd for StepEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StepEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Smallest added area first; ties broken deterministically by vertex.
+        other.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal).then(other.vertex.cmp(&self.vertex))
+    }
+}
 
-    let mut keep = vec![false; n];
-    keep[0] = true;
-    keep[far] = true;
-    let closed: Vec<Point> = ring.iter().copied().chain(std::iter::once(ring[0])).collect();
-    let mut stack = vec![(0usize, far), (far, n)];
+/// A ring as a doubly linked list, so steps can be applied in place.
+struct EnclosingSimplifier {
+    points: Vec<Point>,
+    prev: Vec<usize>,
+    next: Vec<usize>,
+    alive: Vec<bool>,
+    /// Bumped whenever a vertex's neighbourhood changes, invalidating queued steps.
+    stamp: Vec<u32>,
+    count: usize,
+}
 
-    while let Some((start, end)) = stack.pop() {
-        if end <= start + 1 {
+/// Reduces a simple CCW ring to at most `max_vertices` vertices without ever moving its
+/// boundary inwards, so the result encloses the original ring. Each step adds the least
+/// area it can: either dropping a reflex vertex (filling a notch) or cutting a short edge
+/// off by extending its neighbouring edges until they meet. Returns None if no step keeps
+/// the ring simple before the budget is met.
+fn enclose_ring_to_vertex_budget(ring: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
+    if ring.len() < 3 || max_vertices < 3 {
+        return None;
+    }
+    if ring.len() <= max_vertices {
+        return Some(ring.to_vec());
+    }
+    let n = ring.len();
+    let mut s = EnclosingSimplifier {
+        points: ring.to_vec(),
+        prev: (0..n).map(|i| (i + n - 1) % n).collect(),
+        next: (0..n).map(|i| (i + 1) % n).collect(),
+        alive: vec![true; n],
+        stamp: vec![0; n],
+        count: n,
+    };
+
+    let mut queue = BinaryHeap::new();
+    // After a pass that makes no progress the queue is rebuilt once, since a step rejected
+    // earlier may have become valid when distant parts of the ring changed.
+    let mut progressed = true;
+    while s.count > max_vertices {
+        let Some(entry) = queue.pop() else {
+            if !progressed {
+                return None;
+            }
+            progressed = false;
+            for v in (0..n).filter(|v| s.alive[*v]) {
+                s.push_steps(v, &mut queue);
+            }
+            continue;
+        };
+        let StepEntry { vertex, stamp, step, .. } = entry;
+        if !s.alive[vertex] || s.stamp[vertex] != stamp || !s.is_step_valid(step) {
             continue;
         }
-        let (a, b) = (closed[start], closed[end]);
-        let mut max_dist = -1.0;
-        let mut max_index = start + 1;
-        for (i, p) in closed.iter().enumerate().take(end).skip(start + 1) {
-            let d = segment_distance(*p, a, b);
-            if d > max_dist {
-                max_dist = d;
-                max_index = i;
+        let touched = s.apply(step);
+        progressed = true;
+        // A step's validity depends on up to two vertices either side of it.
+        let mut v = s.prev[s.prev[s.prev[touched]]];
+        for _ in 0..6 {
+            s.stamp[v] = s.stamp[v].wrapping_add(1);
+            s.push_steps(v, &mut queue);
+            v = s.next[v];
+        }
+    }
+
+    let start = (0..n).find(|v| s.alive[*v])?;
+    let mut out = Vec::with_capacity(s.count);
+    let mut v = start;
+    loop {
+        out.push(s.points[v]);
+        v = s.next[v];
+        if v == start {
+            break;
+        }
+    }
+    Some(normalize_ring(&out))
+}
+
+impl EnclosingSimplifier {
+    fn push_steps(&self, v: usize, queue: &mut BinaryHeap<StepEntry>) {
+        if !self.alive[v] || self.count <= 3 {
+            return;
+        }
+        let (a, b) = (self.prev[v], self.next[v]);
+        let turn = cross(self.points[a], self.points[v], self.points[b]);
+        if turn <= 0.0 {
+            queue.push(StepEntry { cost: -turn / 2.0, vertex: v, stamp: self.stamp[v], step: RingStep::Drop(v) });
+        }
+        if let Some((x, cost)) = self.extension(v) {
+            queue.push(StepEntry { cost, vertex: v, stamp: self.stamp[v], step: RingStep::Extend(v, x) });
+        }
+    }
+
+    /// Where the edges before `v` and after `next[v]` meet, and the area that adds, if they
+    /// meet outside the ring.
+    fn extension(&self, v: usize) -> Option<(Point, f64)> {
+        let w = self.next[v];
+        let (p, q) = (self.points[self.prev[v]], self.points[self.next[w]]);
+        let (a, b) = (self.points[v], self.points[w]);
+        let (d1, d2) = ((a.x - p.x, a.y - p.y), (q.x - b.x, q.y - b.y));
+        let denom = d1.0 * d2.1 - d1.1 * d2.0;
+        if denom.abs() < 1e-12 {
+            return None;
+        }
+        let ab = (b.x - a.x, b.y - a.y);
+        let t = (ab.0 * d2.1 - ab.1 * d2.0) / denom;
+        let u = -(ab.0 * d1.1 - ab.1 * d1.0) / denom;
+        if !(t >= 0.0 && u >= 0.0) {
+            return None;
+        }
+        let x = Point::new(a.x + t * d1.0, a.y + t * d1.1);
+        let cost = -cross(a, b, x) / 2.0;
+        (x.x.is_finite() && x.y.is_finite() && cost >= 0.0).then_some((x, cost))
+    }
+
+    /// A step keeps the ring simple when its new edges cross no other edge and no other
+    /// vertex lies in the area it adds.
+    fn is_step_valid(&self, step: RingStep) -> bool {
+        // `first` and `last` are the outermost vertices the step touches; the ring from
+        // `last` round to `first` is left in place.
+        let (corners, new_edges, first, last): ([Point; 3], &[(Point, Point)], usize, usize) = match step {
+            RingStep::Drop(v) => {
+                let (a, b) = (self.prev[v], self.next[v]);
+                let (pa, pb) = (self.points[a], self.points[b]);
+                ([pa, self.points[v], pb], &[(pa, pb)], a, b)
+            }
+            RingStep::Extend(v, x) => {
+                let w = self.next[v];
+                let (p, q) = (self.prev[v], self.next[w]);
+                let (pp, pq) = (self.points[p], self.points[q]);
+                ([self.points[v], x, self.points[w]], &[(pp, x), (x, pq)], p, q)
+            }
+        };
+        let ends = new_edges.iter().flat_map(|&(a, b)| [a, b]);
+        let region = corners
+            .iter()
+            .copied()
+            .chain(ends)
+            .fold((f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY), |(x0, y0, x1, y1), p| {
+                (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y))
+            });
+
+        let mut k = last;
+        while k != first {
+            let (e1, e2) = (self.points[k], self.points[self.next[k]]);
+            // Most edges are nowhere near the step and fail this cheap bounds test.
+            let overlaps = e1.x.max(e2.x) >= region.0
+                && e1.x.min(e2.x) <= region.2
+                && e1.y.max(e2.y) >= region.1
+                && e1.y.min(e2.y) <= region.3;
+            if overlaps {
+                if k != last && point_in_triangle(e1, corners) {
+                    return false;
+                }
+                if new_edges.iter().any(|&(n1, n2)| edges_conflict(e1, e2, n1, n2)) {
+                    return false;
+                }
+            }
+            k = self.next[k];
+        }
+        true
+    }
+
+    /// Applies a step and returns a vertex at its centre.
+    fn apply(&mut self, step: RingStep) -> usize {
+        match step {
+            RingStep::Drop(v) => {
+                let (a, b) = (self.prev[v], self.next[v]);
+                self.next[a] = b;
+                self.prev[b] = a;
+                self.alive[v] = false;
+                self.count -= 1;
+                a
+            }
+            RingStep::Extend(v, x) => {
+                let w = self.next[v];
+                let q = self.next[w];
+                self.points[v] = x;
+                self.next[v] = q;
+                self.prev[q] = v;
+                self.alive[w] = false;
+                self.count -= 1;
+                v
             }
         }
-
-        let crosses = segment_crosses_ring(&closed, start, end);
-        if max_dist <= tolerance && !crosses {
-            continue;
-        }
-        keep[max_index % n] = true;
-        stack.push((start, max_index));
-        stack.push((max_index, end));
     }
+}
 
-    // A ring needs at least three vertices: if both halves collapsed onto the anchor
-    // segment, keep the vertex farthest from it.
-    if keep.iter().filter(|k| **k).count() < 3 {
-        let (a, b) = (ring[0], ring[far]);
-        if let Some(extra) = (1..n).filter(|i| *i != far).max_by(|x, y| {
-            segment_distance(ring[*x], a, b).partial_cmp(&segment_distance(ring[*y], a, b)).unwrap_or(Ordering::Equal)
-        }) {
-            keep[extra] = true;
-        }
+fn point_in_triangle(p: Point, [a, b, c]: [Point; 3]) -> bool {
+    let (d1, d2, d3) = (cross(a, b, p), cross(b, c, p), cross(c, a, p));
+    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    // The bounds check matters for degenerate (collinear) triangles, where every point on
+    // the line would otherwise pass the side tests.
+    !(has_neg && has_pos)
+        && p.x >= a.x.min(b.x).min(c.x)
+        && p.x <= a.x.max(b.x).max(c.x)
+        && p.y >= a.y.min(b.y).min(c.y)
+        && p.y <= a.y.max(b.y).max(c.y)
+}
+
+/// Whether two ring edges touch anywhere other than at a shared endpoint.
+fn edges_conflict(e1: Point, e2: Point, n1: Point, n2: Point) -> bool {
+    let shared = [(e1, n1, e2, n2), (e1, n2, e2, n1), (e2, n1, e1, n2), (e2, n2, e1, n1)]
+        .into_iter()
+        .find(|(a, b, _, _)| a == b);
+    match shared {
+        // Edges meeting at a vertex only conflict if they overlap along a line.
+        Some((_, _, e_other, n_other)) => point_on_segment(e_other, n1, n2) || point_on_segment(n_other, e1, e2),
+        None => segments_intersect_inclusive(e1, e2, n1, n2),
     }
+}
 
-    let simplified: Vec<Point> = (0..n).filter(|i| keep[*i]).map(|i| ring[i]).collect();
-    if simplified.len() < 3 { ring.to_vec() } else { simplified }
+fn point_on_segment(p: Point, a: Point, b: Point) -> bool {
+    cross(a, b, p) == 0.0 && p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y)
+}
+
+/// Points lying outside `ring` by more than `epsilon`.
+fn points_outside_ring(ring: &[Point], points: &[Point], epsilon: f64) -> Vec<Point> {
+    let n = ring.len();
+    points
+        .iter()
+        .copied()
+        .filter(|p| {
+            let mut inside = false;
+            for i in 0..n {
+                let (a, b) = (ring[i], ring[(i + 1) % n]);
+                if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                    inside = !inside;
+                }
+            }
+            !inside && (0..n).all(|i| segment_distance(*p, ring[i], ring[(i + 1) % n]) > epsilon)
+        })
+        .collect()
 }
 
 fn segment_distance(p: Point, a: Point, b: Point) -> f64 {
@@ -734,41 +933,6 @@ fn segment_distance(p: Point, a: Point, b: Point) -> f64 {
     }
     let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq).clamp(0.0, 1.0);
     p.dist(Point::new(a.x + t * dx, a.y + t * dy))
-}
-
-/// True when the shortcut from `closed[start]` to `closed[end]` properly intersects any
-/// ring edge outside the shortcut's own section.
-fn segment_crosses_ring(closed: &[Point], start: usize, end: usize) -> bool {
-    let (a, b) = (closed[start], closed[end]);
-    for i in 0..closed.len() - 1 {
-        if i >= start && i < end {
-            continue;
-        }
-        if segments_properly_intersect(a, b, closed[i], closed[i + 1]) {
-            return true;
-        }
-    }
-    false
-}
-
-fn segments_properly_intersect(p1: Point, p2: Point, q1: Point, q2: Point) -> bool {
-    if p1 == q1 || p1 == q2 || p2 == q1 || p2 == q2 {
-        return false;
-    }
-    let d1 = cross(q1, q2, p1);
-    let d2 = cross(q1, q2, p2);
-    let d3 = cross(p1, p2, q1);
-    let d4 = cross(p1, p2, q2);
-    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0)) {
-        return true;
-    }
-    let on_segment = |p: Point, a: Point, b: Point| {
-        p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y)
-    };
-    (d1 == 0.0 && on_segment(p1, q1, q2))
-        || (d2 == 0.0 && on_segment(p2, q1, q2))
-        || (d3 == 0.0 && on_segment(q1, p1, p2))
-        || (d4 == 0.0 && on_segment(q2, p1, p2))
 }
 
 /// A ring is valid when it has positive area and no two non-adjacent edges touch.
@@ -875,8 +1039,9 @@ mod tests {
         assert!(contains_all_points(&convex, &points, 1e-3));
 
         let concave = parse(hulls.concave.as_deref().expect("concave"));
-        assert!(concave.len() >= 3 && concave.len() <= DEFAULT_MAX_HULL_VERTICES);
+        assert!(concave.len() >= 3 && concave.len() <= MAX_CONCAVE_HULL_VERTICES);
         assert!(is_valid_ring(&concave));
+        assert!(points_outside_ring(&concave, &points, 1e-6).is_empty());
         // The L-shape covers 61% of its convex hull; the concave hull must follow the notch.
         assert!(signed_area(&concave).abs() < signed_area(&convex).abs() * 0.7);
     }
@@ -917,7 +1082,7 @@ mod tests {
     }
 
     #[test]
-    fn simplify_ring_never_produces_self_intersection() {
+    fn enclosing_simplification_stays_simple_and_encloses_ring() {
         // A comb-shaped ring with deep narrow notches.
         let mut ring = vec![Point::new(0.0, 0.0), Point::new(20.0, 0.0), Point::new(20.0, 10.0)];
         for i in (0..10).rev() {
@@ -930,9 +1095,11 @@ mod tests {
         ring.push(Point::new(0.0, 10.0));
         let ring = normalize_ring(&ring);
         assert!(is_valid_ring(&ring));
-        for tolerance in [0.1, 0.5, 1.0, 3.0, 8.0] {
-            let simplified = normalize_ring(&simplify_ring(&ring, tolerance));
-            assert!(is_valid_ring(&simplified), "invalid ring at tolerance {tolerance}");
+        for budget in [40, 20, 10, 6, 4, 3] {
+            let simplified = enclose_ring_to_vertex_budget(&ring, budget).expect("simplified ring");
+            assert!(simplified.len() <= budget, "{} vertices for budget {budget}", simplified.len());
+            assert!(is_valid_ring(&simplified), "invalid ring for budget {budget}");
+            assert!(points_outside_ring(&simplified, &ring, 1e-9).is_empty(), "ring escapes budget {budget}");
         }
     }
 
@@ -949,22 +1116,84 @@ mod tests {
             ]);
         }
         points.extend([Point::new(-30.0, 0.0), Point::new(-31.0, 0.0), Point::new(-31.0, 1.0), Point::new(-30.0, 1.0)]);
-        let ring = concave_hull(&dedupe(points.into_iter()), DEFAULT_MAX_HULL_VERTICES).expect("concave hull");
+        let points = dedupe(points.into_iter());
+        let ring = concave_hull(&points, DEFAULT_MAX_HULL_VERTICES).expect("concave hull");
         assert!(ring.len() <= DEFAULT_MAX_HULL_VERTICES, "{} vertices", ring.len());
         assert!(is_valid_ring(&ring));
+        assert!(points_outside_ring(&ring, &points, 1e-6).is_empty());
     }
 
     #[test]
-    fn simplify_ring_keeps_a_triangle_at_large_tolerance() {
+    fn enclosing_simplification_cuts_polygon_down_to_a_triangle() {
         let ring: Vec<Point> = (0..12)
             .map(|i| {
                 let a = i as f64 / 12.0 * std::f64::consts::TAU;
                 Point::new(a.cos() * 10.0, a.sin() * 10.0)
             })
             .collect();
-        let simplified = simplify_ring(&ring, 1000.0);
+        let simplified = enclose_ring_to_vertex_budget(&ring, 3).expect("triangle");
         assert_eq!(simplified.len(), 3);
-        assert!(is_valid_ring(&normalize_ring(&simplified)));
+        assert!(is_valid_ring(&simplified));
+        assert!(points_outside_ring(&simplified, &ring, 1e-9).is_empty());
+    }
+
+    #[test]
+    fn concave_hull_encloses_gear_teeth() {
+        // A flat gear with 24 teeth, fanned from its centre: far more outline detail than
+        // the vertex budget allows.
+        let outline: Vec<Vec3> = (0..96)
+            .map(|i| {
+                let a = i as f32 / 96.0 * std::f32::consts::TAU;
+                let r = if (i / 2) % 2 == 0 { 5.0 } else { 4.0 };
+                Vec3::new(a.cos() * r, 1.0, a.sin() * r)
+            })
+            .collect();
+        let centre = Vec3::new(0.0, 1.0, 0.0);
+        let triangles = (0..outline.len())
+            .map(|i| Triangle::new(centre, outline[(i + 1) % outline.len()], outline[i], Vec3::UP))
+            .collect();
+        let geometry = LoadedGeometry {
+            triangles,
+            sphere_centre: centre,
+            sphere_radius: 5.0,
+            dimension_x_mm: 10.0,
+            dimension_y_mm: 0.0,
+            dimension_z_mm: 10.0,
+        };
+        let hulls = calculate_hulls(&geometry, DEFAULT_MAX_HULL_VERTICES, DEFAULT_RAFT_HEIGHT_MM);
+        let concave = parse(hulls.concave.as_deref().expect("concave"));
+        assert!(concave.len() <= MAX_CONCAVE_HULL_VERTICES, "{} vertices", concave.len());
+        assert!(is_valid_ring(&concave));
+        // Every point along the outline, not just its vertices, must be inside.
+        let points: Vec<Point> = (0..outline.len())
+            .flat_map(|i| {
+                let (a, b) = (outline[i], outline[(i + 1) % outline.len()]);
+                (0..10).map(move |s| {
+                    let f = s as f32 / 10.0;
+                    Point::new((a.x + (b.x - a.x) * f) as f64, (a.z + (b.z - a.z) * f) as f64)
+                })
+            })
+            .collect();
+        assert!(points_outside_ring(&concave, &points, 1e-6).is_empty());
+        // Too many teeth to follow within the budget, so it is never looser than the
+        // enclosing convex hull.
+        let convex = enclosing_convex_hull(&points, MAX_CONCAVE_HULL_VERTICES).expect("convex");
+        assert!(signed_area(&concave).abs() <= signed_area(&convex).abs() + 1e-9);
+    }
+
+    #[test]
+    fn concave_hull_encloses_downsampled_points() {
+        // Over the downsampling limit, so the outline is built from a subset of the points.
+        let points: Vec<Point> = (0..=300)
+            .flat_map(|x| (0..=300).map(move |z| Point::new(x as f64 / 15.0 + (z % 7) as f64 * 1e-3, z as f64 / 15.0)))
+            .filter(|p| p.x <= 5.0 || p.y <= 5.0)
+            .collect();
+        assert!(points.len() > MAX_CONCAVE_HULL_INPUT_POINTS);
+        let ring = concave_hull(&points, MAX_CONCAVE_HULL_VERTICES).expect("concave hull");
+        assert!(is_valid_ring(&ring));
+        assert!(points_outside_ring(&ring, &points, 1e-6).is_empty());
+        let ratio = signed_area(&ring).abs() / signed_area(&convex_hull(&points)).abs();
+        assert!(ratio < 0.7, "area ratio {ratio}");
     }
 
     #[test]
