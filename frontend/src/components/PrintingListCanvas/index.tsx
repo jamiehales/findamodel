@@ -338,7 +338,7 @@ export default function PrintingListCanvas({
         ? centreSpawnPoint(canvasWidthPx, canvasHeightPx)
         : { x: spawnX, y: spawnY };
 
-      const { body, visualLocalVerts, borderLocalVerts } = createModelBody(
+      const { body, visualLocalVerts, visualPieces, borderLocalVerts } = createModelBody(
         world,
         start.x,
         start.y,
@@ -387,6 +387,7 @@ export default function PrintingListCanvas({
         instanceIndex: inst,
         color,
         visualLocalVerts,
+        visualPieces,
         borderLocalVerts,
       });
     }
@@ -765,7 +766,7 @@ export default function PrintingListCanvas({
                   y: spawnY,
                 };
 
-          const { body, visualLocalVerts, borderLocalVerts } = createModelBody(
+          const { body, visualLocalVerts, visualPieces, borderLocalVerts } = createModelBody(
             world,
             start.x,
             start.y,
@@ -802,6 +803,7 @@ export default function PrintingListCanvas({
             instanceIndex: inst,
             color,
             visualLocalVerts,
+            visualPieces,
             borderLocalVerts,
           });
         }
@@ -898,6 +900,7 @@ export default function PrintingListCanvas({
           <SelectContent>
             <SelectItem value="convex">Convex hull</SelectItem>
             <SelectItem value="sansRaft">Without raft</SelectItem>
+            <SelectItem value="concave">Concave hull</SelectItem>
           </SelectContent>
         </Select>
         <Checkbox

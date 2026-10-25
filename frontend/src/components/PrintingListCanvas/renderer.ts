@@ -57,13 +57,33 @@ export function satOverlap(a: Vec2Like[], b: Vec2Like[]): boolean {
   return true;
 }
 
-/** Returns the set of bodies whose visual hulls intersect any other entry. */
+function boundsOverlap(a: Vec2Like[], b: Vec2Like[]): boolean {
+  const ax = a.map((v) => v.x);
+  const ay = a.map((v) => v.y);
+  const bx = b.map((v) => v.x);
+  const by = b.map((v) => v.y);
+  return (
+    Math.max(...ax) >= Math.min(...bx) &&
+    Math.max(...bx) >= Math.min(...ax) &&
+    Math.max(...ay) >= Math.min(...by) &&
+    Math.max(...by) >= Math.min(...ay)
+  );
+}
+
+/**
+ * Returns the set of bodies whose visual hulls intersect any other entry.
+ * Concave hulls are compared piece by piece, since SAT only works on convex
+ * polygons.
+ */
 export function computeOverlapping(entries: Entry[]): Set<Body> {
   const overlapping = new Set<Body>();
   const worldVerts = entries.map((e) => toWorldVerts(e.body, e.visualLocalVerts));
+  const worldPieces = entries.map((e) => e.visualPieces.map((p) => toWorldVerts(e.body, p)));
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
-      if (satOverlap(worldVerts[i], worldVerts[j])) {
+      if (!boundsOverlap(worldVerts[i], worldVerts[j])) continue;
+      const hit = worldPieces[i].some((a) => worldPieces[j].some((b) => satOverlap(a, b)));
+      if (hit) {
         overlapping.add(entries[i].body);
         overlapping.add(entries[j].body);
       }

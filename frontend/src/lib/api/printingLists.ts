@@ -1,7 +1,7 @@
 import { apiFetch, apiUrl } from '../http';
 
 export type SpawnType = 'grouped' | 'random' | 'largestFirstFillGaps' | 'center';
-export type HullMode = 'convex' | 'sansRaft';
+export type HullMode = 'convex' | 'sansRaft' | 'concave';
 
 export interface PrintingListSummary {
   id: string;

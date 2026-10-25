@@ -27,6 +27,8 @@ export interface Entry {
   color: number;
   /** Original (non-inflated) spawn hull vertices in body-local pixel space, for rendering. */
   visualLocalVerts: Vec2Like[];
+  /** Convex pieces of `visualLocalVerts` (a single piece unless the hull is concave). */
+  visualPieces: Vec2Like[][];
   /** Border hull vertices in body-local pixel space (always with-raft), for bounds checking. */
   borderLocalVerts: Vec2Like[];
 }

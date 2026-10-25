@@ -3,7 +3,13 @@ import type { Body } from 'planck';
 import { CAT_OBJECT, CAT_BORDER, CAT_WALL, BODY_MARGIN_PX, toPhysics } from './constants';
 import type { Vec2Like } from './types';
 import type { Model } from '../../lib/api';
-import { getRectLocalVerts, getBounds, inflateVerts, toPhysicsVerts } from './hullHelpers';
+import {
+  getRectLocalVerts,
+  getBounds,
+  inflateVerts,
+  toPhysicsVerts,
+  decomposeConvex,
+} from './hullHelpers';
 
 // Allow complex convex hulls with many vertices
 Settings.maxPolygonVertices = 64;
@@ -31,11 +37,13 @@ export const BODY_DEF_DYNAMIC = {
 };
 
 /**
- * Create a dynamic body with two fixtures:
- *  1. Object-object collision fixture (spawn hull, inflated for gap)
+ * Create a dynamic body with two kinds of fixture:
+ *  1. Object-object collision fixtures (spawn hull, inflated for gap). A concave
+ *     spawn hull gets one fixture per convex piece.
  *  2. Border collision fixture (always with-raft hull, not inflated)
  *
- * Returns the body and the visual/border local verts in pixel space (for rendering).
+ * Returns the body, the visual/border local verts in pixel space (for rendering)
+ * and the convex pieces of the visual verts (for overlap tests).
  */
 export function createModelBody(
   world: InstanceType<typeof World>,
@@ -44,22 +52,47 @@ export function createModelBody(
   spawnLocalVerts: Vec2Like[] | null,
   borderLocalVerts: Vec2Like[] | null,
   model: Model,
-): { body: Body; visualLocalVerts: Vec2Like[]; borderLocalVerts: Vec2Like[] } {
+): {
+  body: Body;
+  visualLocalVerts: Vec2Like[];
+  visualPieces: Vec2Like[][];
+  borderLocalVerts: Vec2Like[];
+} {
   const body = world.createDynamicBody({
     ...BODY_DEF_DYNAMIC,
     position: Vec2(toPhysics(cxPx), toPhysics(cyPx)),
   });
 
   let visualLocal: Vec2Like[];
+  let visualPieces: Vec2Like[][];
   let borderLocal: Vec2Like[];
 
-  // ── Object-object fixture (spawn hull) ──────────────────────────────────
+  // ── Object-object fixtures (spawn hull) ─────────────────────────────────
   if (spawnLocalVerts && spawnLocalVerts.length >= 3) {
+    const pieces = decomposeConvex(spawnLocalVerts);
+    const created: ReturnType<Body['createFixture']>[] = [];
+    visualLocal = spawnLocalVerts;
     try {
-      const inflated = inflateVerts(spawnLocalVerts, BODY_MARGIN_PX);
-      body.createFixture(new Polygon(toPhysicsVerts(inflated)), FIXTURE_OPT_OBJECT);
-      visualLocal = spawnLocalVerts;
+      for (const piece of pieces) {
+        const inflated = inflateVerts(piece, BODY_MARGIN_PX);
+        created.push(body.createFixture(new Polygon(toPhysicsVerts(inflated)), FIXTURE_OPT_OBJECT));
+      }
+      visualPieces = pieces;
     } catch {
+      created.forEach((f) => body.destroyFixture(f));
+      visualPieces = [];
+    }
+    if (visualPieces.length === 0 && pieces.length > 1) {
+      // A piece was rejected - fall back to the whole outline, which planck makes convex
+      try {
+        const inflated = inflateVerts(spawnLocalVerts, BODY_MARGIN_PX);
+        body.createFixture(new Polygon(toPhysicsVerts(inflated)), FIXTURE_OPT_OBJECT);
+        visualPieces = [spawnLocalVerts];
+      } catch {
+        // Falls through to the rectangle below
+      }
+    }
+    if (visualPieces.length === 0) {
       // Hull rejected by planck – fall back to rectangle
       const rectVerts = getRectLocalVerts(model);
       const bounds = getBounds(rectVerts);
@@ -67,6 +100,7 @@ export function createModelBody(
       const hh = toPhysics((bounds.maxY - bounds.minY) / 2 + BODY_MARGIN_PX);
       body.createFixture(new Box(hw, hh), FIXTURE_OPT_OBJECT);
       visualLocal = rectVerts;
+      visualPieces = [rectVerts];
     }
   } else {
     const rectVerts = getRectLocalVerts(model);
@@ -75,6 +109,7 @@ export function createModelBody(
     const hh = toPhysics((bounds.maxY - bounds.minY) / 2 + BODY_MARGIN_PX);
     body.createFixture(new Box(hw, hh), FIXTURE_OPT_OBJECT);
     visualLocal = rectVerts;
+    visualPieces = [rectVerts];
   }
 
   // ── Border fixture (always with-raft hull) ──────────────────────────────
@@ -101,7 +136,7 @@ export function createModelBody(
     borderLocal = rectVerts;
   }
 
-  return { body, visualLocalVerts: visualLocal, borderLocalVerts: borderLocal };
+  return { body, visualLocalVerts: visualLocal, visualPieces, borderLocalVerts: borderLocal };
 }
 
 /**

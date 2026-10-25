@@ -34,10 +34,10 @@ pub fn normalize_spawn_type(spawn_type: Option<&str>) -> String {
 }
 
 pub fn normalize_hull_mode(hull_mode: Option<&str>) -> String {
-    if hull_mode.is_some_and(|h| h.eq_ignore_ascii_case("sansRaft")) {
-        "sansRaft".into()
-    } else {
-        DEFAULT_HULL_MODE.into()
+    match hull_mode.map(|h| h.trim().to_ascii_lowercase()).as_deref() {
+        Some("sansraft") => "sansRaft".into(),
+        Some("concave") => "concave".into(),
+        _ => DEFAULT_HULL_MODE.into(),
     }
 }
 
@@ -439,6 +439,7 @@ mod tests {
         assert_eq!(normalize_spawn_type(Some("Center")), "center");
         assert_eq!(normalize_spawn_type(None), "grouped");
         assert_eq!(normalize_hull_mode(Some("sansraft")), "sansRaft");
+        assert_eq!(normalize_hull_mode(Some("Concave")), "concave");
         assert_eq!(normalize_hull_mode(Some("other")), "convex");
     }
 }
