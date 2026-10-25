@@ -2,7 +2,9 @@
 //! `docs/dev/voxl-format-spec.md`): a 16-byte header, a chunk directory, then zlib-compressed
 //! chunks. Scene state is JSON (`META`, `SCNE`, `MODL`, `SUPP`) and each distinct mesh is one
 //! binary STL `MESH` chunk. Placements that share a mesh point at the first placement's chunk,
-//! which raises the container version from 2 to 3.
+//! which raises the container version from 2 to 3. A mesh's support layout is written to
+//! `SUPP` as DragonFruit roots, trunks, branches, twigs, sticks and knots for every placement
+//! of it.
 
 use std::io::{Seek, SeekFrom, Write};
 
@@ -13,6 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use super::support_layout::{
+    ContactTip, ROOT_CONE_HEIGHT_MM, ROOT_DISK_HEIGHT_MM, SupportBase, SupportLayout, SupportPath,
+};
 use super::{Triangle, Vec3, saver};
 
 const MAGIC: &[u8; 4] = b"VOXL";
@@ -25,11 +30,28 @@ const VERSION_UNIQUE_MESHES: u16 = 2;
 const VERSION_SHARED_MESHES: u16 = 3;
 /// DragonFruit's default model colour.
 const MODEL_COLOR: &str = "#a3a3a3";
+/// DragonFruit draws joints this much wider than their shaft.
+const JOINT_DIAMETER_OFFSET_MM: f32 = 0.1;
+/// Contact tip defaults DragonFruit's own tips use.
+const TIP_PENETRATION_MM: f32 = 0.1;
+const TIP_DISK_THICKNESS_MM: f32 = 0.1;
+const TIP_MAX_STANDOFF_MM: f32 = 0.25;
+/// DragonFruit places a strut between two model surfaces as a twig (contact disks) when its
+/// contacts are closer than this, and as a stick (contact cones) otherwise.
+const STICK_MIN_SPAN_MM: f32 = 5.0;
+/// A twig's end joints are this much wider than its contact disks, and stand off the disk by
+/// their radius plus this clearance.
+const TWIG_JOINT_RATIO: f32 = 1.1;
+const TWIG_JOINT_CLEARANCE_MM: f32 = 0.05;
+/// Support coordinates are rounded to this many decimal places.
+const COORDINATE_DECIMALS: i32 = 4;
 
 /// A mesh in the VOXL frame: millimetres, right-handed, Z-up.
 pub struct VoxlMesh<'a> {
     pub name: &'a str,
     pub triangles: &'a [Triangle],
+    /// Supports in the same frame as `triangles`, written for every placement of the mesh.
+    pub supports: Option<&'a SupportLayout>,
 }
 
 /// One model on the plate. A vertex `v` of `meshes[mesh]` lands at
@@ -123,6 +145,7 @@ pub fn write_voxl<W: Write + Seek>(
         scene["plateName"] = json!(name);
     }
 
+    let model_ids: Vec<String> = placements.iter().map(|_| Uuid::new_v4().to_string()).collect();
     let models: Vec<Value> = placements
         .iter()
         .enumerate()
@@ -143,7 +166,7 @@ pub fn write_voxl<W: Write + Seek>(
                 mesh_ref["chunkIndex"] = json!(mesh.owner);
             }
             json!({
-                "id": Uuid::new_v4().to_string(),
+                "id": model_ids[i],
                 "name": name,
                 "visible": true,
                 "color": MODEL_COLOR,
@@ -158,15 +181,23 @@ pub fn write_voxl<W: Write + Seek>(
         })
         .collect();
 
+    let mut supports = SupportDocument::default();
+    for (placement, model_id) in placements.iter().zip(&model_ids) {
+        if let Some(layout) = meshes[placement.mesh].supports {
+            supports.add(layout, model_id, placement);
+        }
+    }
     let supports = json!({
         "version": 1,
         "meta": { "source": "findamodel", "objectCenter": { "x": 0, "y": 0, "z": 0 } },
-        "roots": [],
-        "trunks": [],
-        "branches": [],
+        "roots": supports.roots,
+        "trunks": supports.trunks,
+        "branches": supports.branches,
         "leaves": [],
+        "twigs": supports.twigs,
+        "sticks": supports.sticks,
         "braces": [],
-        "knots": [],
+        "knots": supports.knots,
     });
 
     for (tag, value) in [(*b"META", meta), (*b"SCNE", scene), (*b"MODL", Value::Array(models)), (*b"SUPP", supports)] {
@@ -193,6 +224,266 @@ pub fn write_voxl<W: Write + Seek>(
     out.write_all(&preamble)?;
     out.seek(SeekFrom::End(0))?;
     Ok(out)
+}
+
+/// DragonFruit support entities (`DragonfruitImportFormat`), in plate coordinates.
+#[derive(Default)]
+struct SupportDocument {
+    roots: Vec<Value>,
+    trunks: Vec<Value>,
+    branches: Vec<Value>,
+    twigs: Vec<Value>,
+    sticks: Vec<Value>,
+    knots: Vec<Value>,
+}
+
+/// A shaft segment's id and its plate-coordinate ends.
+struct Span {
+    id: String,
+    start: [f64; 3],
+    end: [f64; 3],
+}
+
+impl SupportDocument {
+    fn add(&mut self, layout: &SupportLayout, model_id: &str, placement: &VoxlPlacement) {
+        let (s, c) = placement.rotation_z.sin_cos();
+        let turn = |v: Vec3| {
+            let (x, y) = (f64::from(v.x), f64::from(v.y));
+            [x * c - y * s, x * s + y * c, f64::from(v.z)]
+        };
+        let place = |v: Vec3| {
+            let [x, y, z] = turn(v);
+            let [tx, ty, tz] = placement.translation;
+            [x + tx, y + ty, z + tz]
+        };
+
+        // Each support's segments, so later supports can hang knots on them.
+        let mut shafts: Vec<Vec<Span>> = Vec::with_capacity(layout.supports.len());
+        for support in &layout.supports {
+            if let SupportBase::Model(lower) = &support.base {
+                shafts.push(self.add_strut(support, lower, model_id, &place, &turn));
+                continue;
+            }
+            let joint_diameter = support.shaft_diameter_mm + JOINT_DIAMETER_OFFSET_MM;
+            let socket_id = Uuid::new_v4().to_string();
+            let mut ends: Vec<[f64; 3]> = support.joints.iter().map(|&p| place(p)).collect();
+            ends.push(place(support.tip.socket));
+            let joints: Vec<Value> = ends
+                .iter()
+                .enumerate()
+                .map(|(i, &pos)| {
+                    let id = if i + 1 == ends.len() { socket_id.clone() } else { Uuid::new_v4().to_string() };
+                    json!({ "id": id, "pos": point(pos), "diameter": round(joint_diameter) })
+                })
+                .collect();
+
+            // Segment 0 starts at the root top or the knot; each later one at the joint below.
+            let mut start = place(support.shaft_start());
+            let mut spans = Vec::with_capacity(joints.len());
+            let mut segments = Vec::with_capacity(joints.len());
+            for (i, joint) in joints.iter().enumerate() {
+                let id = Uuid::new_v4().to_string();
+                let mut segment = json!({ "id": id, "diameter": round(support.shaft_diameter_mm), "topJoint": joint });
+                if i > 0 {
+                    segment["bottomJoint"] = joints[i - 1].clone();
+                }
+                segments.push(segment);
+                spans.push(Span { id, start, end: ends[i] });
+                start = ends[i];
+            }
+
+            let contact_cone = contact_cone(&support.tip, &socket_id, &place, &turn);
+            match &support.base {
+                SupportBase::Plate { x, y, diameter_mm } => {
+                    let root_id = Uuid::new_v4().to_string();
+                    self.roots.push(json!({
+                        "id": root_id,
+                        "modelId": model_id,
+                        "transform": {
+                            "pos": point(place(Vec3::new(*x, *y, 0.0))),
+                            "rot": { "x": 0, "y": 0, "z": 0, "w": 1 },
+                        },
+                        "diameter": round(*diameter_mm),
+                        "diskHeight": round(ROOT_DISK_HEIGHT_MM),
+                        "coneHeight": round(ROOT_CONE_HEIGHT_MM),
+                    }));
+                    self.trunks.push(json!({
+                        "id": Uuid::new_v4().to_string(),
+                        "modelId": model_id,
+                        "typeId": "trunk",
+                        "rootId": root_id,
+                        "baseDiameterMm": round(support.shaft_diameter_mm),
+                        "segments": segments,
+                        "contactCone": contact_cone,
+                    }));
+                }
+                SupportBase::Shaft { parent, point: at } => {
+                    let host = layout.supports[*parent].shaft_diameter_mm;
+                    let knot = knot_on(&shafts[*parent], place(*at), host);
+                    let knot_id = knot["id"].clone();
+                    self.knots.push(knot);
+                    self.branches.push(json!({
+                        "id": Uuid::new_v4().to_string(),
+                        "modelId": model_id,
+                        "typeId": "branch",
+                        "parentKnotId": knot_id,
+                        "segments": segments,
+                        "contactCone": contact_cone,
+                    }));
+                }
+                SupportBase::Model(_) => unreachable!("struts are written above"),
+            }
+            shafts.push(spans);
+        }
+    }
+
+    /// A strut between two parts of the model, lower end first (A), as DragonFruit's own
+    /// placement would make it: a twig when the contacts are close, otherwise a stick.
+    fn add_strut(
+        &mut self,
+        support: &SupportPath,
+        lower: &ContactTip,
+        model_id: &str,
+        place: &dyn Fn(Vec3) -> [f64; 3],
+        turn: &dyn Fn(Vec3) -> [f64; 3],
+    ) -> Vec<Span> {
+        let upper = &support.tip;
+        let diameter = support.shaft_diameter_mm;
+        let twig = (upper.contact - lower.contact).length() < STICK_MIN_SPAN_MM;
+        // A twig's shaft runs between joints standing off its disks; a stick's between its sockets.
+        let (joint_diameter, standoff) = if twig {
+            let joint = diameter * TWIG_JOINT_RATIO;
+            (joint, (joint / 2.0 + TWIG_JOINT_CLEARANCE_MM).max(TIP_DISK_THICKNESS_MM))
+        } else {
+            (diameter + JOINT_DIAMETER_OFFSET_MM, 0.0)
+        };
+        let end = |tip: &ContactTip| if twig { tip.contact + tip.surface_normal * standoff } else { tip.socket };
+        let (a, b) = (end(lower), end(upper));
+
+        let mut ends = vec![place(a)];
+        ends.extend(support.joints.iter().map(|&p| place(p)));
+        ends.push(place(b));
+        let joints: Vec<Value> = ends
+            .iter()
+            .map(|&pos| json!({ "id": Uuid::new_v4().to_string(), "pos": point(pos), "diameter": round(joint_diameter) }))
+            .collect();
+        let mut spans = Vec::with_capacity(ends.len() - 1);
+        let mut segments = Vec::with_capacity(ends.len() - 1);
+        for i in 1..ends.len() {
+            let id = Uuid::new_v4().to_string();
+            segments.push(json!({
+                "id": id,
+                "diameter": round(diameter),
+                "bottomJoint": joints[i - 1],
+                "topJoint": joints[i],
+            }));
+            spans.push(Span { id, start: ends[i - 1], end: ends[i] });
+        }
+
+        let mut strut = json!({
+            "id": Uuid::new_v4().to_string(),
+            "modelId": model_id,
+            "typeId": if twig { "twig" } else { "stick" },
+            "segments": segments,
+        });
+        if twig {
+            let disk = |tip: &ContactTip, toward: Vec3| {
+                json!({
+                    "id": Uuid::new_v4().to_string(),
+                    "pos": point(place(tip.contact)),
+                    "surfaceNormal": point(turn(tip.surface_normal)),
+                    "coneAxis": point(turn((toward - tip.contact).normalized())),
+                    "diskLengthOverride": round(standoff),
+                    "profile": {
+                        "type": "disk",
+                        "diskThicknessMm": round(TIP_DISK_THICKNESS_MM),
+                        "maxStandoffMm": round(TIP_MAX_STANDOFF_MM),
+                        "standoffAngleThreshold": std::f64::consts::FRAC_PI_4,
+                    },
+                    "contactDiameterMm": round(diameter),
+                })
+            };
+            strut["contactDiskA"] = disk(lower, b);
+            strut["contactDiskB"] = disk(upper, a);
+            self.twigs.push(strut);
+        } else {
+            let socket_id = |joint: &Value| joint["id"].as_str().expect("joint id").to_string();
+            strut["contactConeA"] = contact_cone(lower, &socket_id(&joints[0]), place, turn);
+            strut["contactConeB"] = contact_cone(upper, &socket_id(&joints[joints.len() - 1]), place, turn);
+            self.sticks.push(strut);
+        }
+        spans
+    }
+}
+
+/// The tip as a DragonFruit contact cone: a disk standing off the surface along its normal,
+/// then a cone from the disk to the socket.
+fn contact_cone(
+    tip: &ContactTip,
+    socket_id: &str,
+    place: &dyn Fn(Vec3) -> [f64; 3],
+    turn: &dyn Fn(Vec3) -> [f64; 3],
+) -> Value {
+    let disk = (tip.contact_diameter_mm / 2.0).max(TIP_DISK_THICKNESS_MM);
+    let axis = tip.socket - (tip.contact + tip.surface_normal * disk);
+    let length = axis.length();
+    let direction = if length > 1e-4 { axis * (1.0 / length) } else { tip.surface_normal };
+    json!({
+        "id": Uuid::new_v4().to_string(),
+        "pos": point(place(tip.contact)),
+        "normal": point(turn(direction)),
+        "surfaceNormal": point(turn(tip.surface_normal)),
+        "diskLengthOverride": round(disk),
+        "profile": {
+            "type": "disk",
+            "contactDiameterMm": round(tip.contact_diameter_mm),
+            "bodyDiameterMm": round(tip.body_diameter_mm),
+            "lengthMm": round(length),
+            "penetrationMm": round(TIP_PENETRATION_MM),
+            "diskThicknessMm": round(TIP_DISK_THICKNESS_MM),
+            "maxStandoffMm": round(TIP_MAX_STANDOFF_MM),
+            "standoffAngleThreshold": std::f64::consts::FRAC_PI_4,
+        },
+        "socketJointId": socket_id,
+    })
+}
+
+/// A knot at the point of `spans` closest to `at`.
+fn knot_on(spans: &[Span], at: [f64; 3], host_diameter_mm: f32) -> Value {
+    let project = |span: &Span| {
+        let d: Vec<f64> = (0..3).map(|k| span.end[k] - span.start[k]).collect();
+        let length_sq: f64 = d.iter().map(|v| v * v).sum();
+        let t = if length_sq > 0.0 {
+            ((0..3).map(|k| (at[k] - span.start[k]) * d[k]).sum::<f64>() / length_sq).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let pos = [0, 1, 2].map(|k| span.start[k] + d[k] * t);
+        let miss: f64 = (0..3).map(|k| (pos[k] - at[k]).powi(2)).sum();
+        (miss, t, pos)
+    };
+    let (span, (_, t, pos)) = spans
+        .iter()
+        .map(|span| (span, project(span)))
+        .min_by(|a, b| a.1.0.total_cmp(&b.1.0))
+        .expect("a support has at least one segment");
+    json!({
+        "id": Uuid::new_v4().to_string(),
+        "parentShaftId": span.id,
+        "t": t,
+        "pos": point(pos),
+        "diameter": round(host_diameter_mm + JOINT_DIAMETER_OFFSET_MM),
+        "normalizationHint": "project",
+    })
+}
+
+fn round(v: impl Into<f64>) -> f64 {
+    let scale = 10f64.powi(COORDINATE_DECIMALS);
+    (v.into() * scale).round() / scale
+}
+
+fn point([x, y, z]: [f64; 3]) -> Value {
+    json!({ "x": round(x), "y": round(y), "z": round(z) })
 }
 
 fn write_chunk<W: Write + Seek>(out: &mut W, tag: [u8; 4], index: u16, data: &[u8]) -> Result<ChunkEntry> {
@@ -273,7 +564,10 @@ mod tests {
         let a = [tri([0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 5.0])];
         let b =
             [tri([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 1.0]), tri([0.0; 3], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0])];
-        let meshes = [VoxlMesh { name: "a.stl", triangles: &a }, VoxlMesh { name: "b.stl", triangles: &b }];
+        let meshes = [
+            VoxlMesh { name: "a.stl", triangles: &a, supports: None },
+            VoxlMesh { name: "b.stl", triangles: &b, supports: None },
+        ];
         let bytes = write(&meshes, &[placement(0, 0.0), placement(0, 20.0), placement(1, 40.0)], None);
 
         let (version, chunks) = read_voxl(&bytes);
@@ -297,7 +591,10 @@ mod tests {
     #[test]
     fn unique_meshes_keep_version_two() {
         let a = [tri([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])];
-        let meshes = [VoxlMesh { name: "a.stl", triangles: &a }, VoxlMesh { name: "b.stl", triangles: &a }];
+        let meshes = [
+            VoxlMesh { name: "a.stl", triangles: &a, supports: None },
+            VoxlMesh { name: "b.stl", triangles: &a, supports: None },
+        ];
         let (version, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0), placement(1, 5.0)], None));
         assert_eq!(version, VERSION_UNIQUE_MESHES);
         let models = json_chunk(&chunks, b"MODL");
@@ -307,7 +604,7 @@ mod tests {
     #[test]
     fn placement_matches_dragonfruit_transform_rule() {
         let a = [tri([2.0, 4.0, 0.0], [12.0, 4.0, 0.0], [2.0, 9.0, 6.0])];
-        let meshes = [VoxlMesh { name: "a.stl", triangles: &a }];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: None }];
         let p = VoxlPlacement { mesh: 0, rotation_z: 0.7, translation: [30.0, -15.0, 0.0] };
         let (_, chunks) = read_voxl(&write(&meshes, &[p], None));
         let model = &json_chunk(&chunks, b"MODL")[0];
@@ -342,7 +639,7 @@ mod tests {
     #[test]
     fn plate_name_is_written_to_the_scene() {
         let a = [tri([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])];
-        let meshes = [VoxlMesh { name: "a.stl", triangles: &a }];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: None }];
         let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], Some(" Dragons ")));
         let scene = json_chunk(&chunks, b"SCNE");
         assert_eq!(scene["plates"][0]["name"], "Dragons");
@@ -352,6 +649,142 @@ mod tests {
         let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], Some("  ")));
         let scene = json_chunk(&chunks, b"SCNE");
         assert!(scene["plates"][0].get("name").is_none() && scene.get("plateName").is_none());
+    }
+
+    fn xyz(v: &Value) -> [f64; 3] {
+        ["x", "y", "z"].map(|k| v[k].as_f64().unwrap())
+    }
+
+    fn near(a: [f64; 3], b: [f64; 3]) -> bool {
+        (0..3).all(|k| (a[k] - b[k]).abs() < 1e-3)
+    }
+
+    #[test]
+    fn supports_are_written_as_dragonfruit_entities_in_plate_coordinates() {
+        use crate::geometry::support_layout::{ContactTip, ROOT_TOP_MM, SupportBase, SupportPath};
+
+        let tip = |contact: Vec3, socket: Vec3| ContactTip {
+            contact,
+            surface_normal: Vec3::new(0.0, 0.0, -1.0),
+            socket,
+            contact_diameter_mm: 0.3,
+            body_diameter_mm: 0.8,
+        };
+        let layout = SupportLayout {
+            supports: vec![
+                SupportPath {
+                    tip: tip(Vec3::new(1.0, 2.0, 10.0), Vec3::new(1.0, 2.0, 8.0)),
+                    base: SupportBase::Plate { x: 1.0, y: 2.0, diameter_mm: 3.0 },
+                    joints: vec![Vec3::new(1.0, 2.0, 5.0)],
+                    shaft_diameter_mm: 1.0,
+                },
+                SupportPath {
+                    tip: tip(Vec3::new(3.0, 2.0, 9.0), Vec3::new(3.0, 2.0, 7.0)),
+                    base: SupportBase::Shaft { parent: 0, point: Vec3::new(1.0, 2.0, 4.0) },
+                    joints: vec![],
+                    shaft_diameter_mm: 0.6,
+                },
+            ],
+        };
+        let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let p = VoxlPlacement { mesh: 0, rotation_z: std::f64::consts::FRAC_PI_2, translation: [10.0, 0.0, 0.0] };
+        let (_, chunks) = read_voxl(&write(&meshes, &[p], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+        let model_id = json_chunk(&chunks, b"MODL")[0]["id"].clone();
+        // Rotated a quarter turn about Z, then moved 10 mm along X.
+        let place = |x: f64, y: f64, z: f64| [10.0 - y, x, z];
+
+        let root = &supp["roots"][0];
+        assert_eq!(root["modelId"], model_id);
+        assert!(near(xyz(&root["transform"]["pos"]), place(1.0, 2.0, 0.0)));
+        let root_top = root["diskHeight"].as_f64().unwrap() + root["coneHeight"].as_f64().unwrap();
+        assert!((root_top - f64::from(ROOT_TOP_MM)).abs() < 1e-6);
+
+        let trunk = &supp["trunks"][0];
+        assert_eq!(
+            (trunk["typeId"].as_str(), &trunk["rootId"], &trunk["modelId"]),
+            (Some("trunk"), &root["id"], &model_id)
+        );
+        let segments = trunk["segments"].as_array().unwrap();
+        assert_eq!(segments.len(), 2);
+        assert!(segments[0].get("bottomJoint").is_none());
+        assert!(near(xyz(&segments[0]["topJoint"]["pos"]), place(1.0, 2.0, 5.0)));
+        assert_eq!(segments[1]["bottomJoint"]["id"], segments[0]["topJoint"]["id"]);
+        assert_eq!(segments[1]["topJoint"]["id"], trunk["contactCone"]["socketJointId"]);
+
+        // DragonFruit's socket: contact, out along the surface normal by the disk, then along
+        // the cone axis by the cone length.
+        let cone = &trunk["contactCone"];
+        let (pos, normal, surface) = (xyz(&cone["pos"]), xyz(&cone["normal"]), xyz(&cone["surfaceNormal"]));
+        let (disk, length) =
+            (cone["diskLengthOverride"].as_f64().unwrap(), cone["profile"]["lengthMm"].as_f64().unwrap());
+        let socket = [0, 1, 2].map(|k| pos[k] + surface[k] * disk + normal[k] * length);
+        assert!(near(socket, place(1.0, 2.0, 8.0)), "{socket:?}");
+        assert!(near(xyz(&segments[1]["topJoint"]["pos"]), place(1.0, 2.0, 8.0)));
+        assert_eq!(cone["profile"]["contactDiameterMm"], 0.3);
+
+        // The branch hangs from a knot on the trunk segment from the root top to z = 5.
+        let knot = &supp["knots"][0];
+        assert_eq!(knot["parentShaftId"], segments[0]["id"]);
+        assert!((knot["t"].as_f64().unwrap() - 2.0 / 3.0).abs() < 1e-3);
+        assert!(near(xyz(&knot["pos"]), place(1.0, 2.0, 4.0)));
+        let branch = &supp["branches"][0];
+        assert_eq!((branch["typeId"].as_str(), &branch["parentKnotId"]), (Some("branch"), &knot["id"]));
+        assert_eq!(branch["segments"].as_array().unwrap().len(), 1);
+        assert_eq!(supp["roots"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn struts_are_twigs_when_short_and_sticks_when_long() {
+        use crate::geometry::support_layout::{ContactTip, SupportBase, SupportPath};
+
+        let end = |contact: Vec3, socket: Vec3, normal: Vec3| ContactTip {
+            contact,
+            surface_normal: normal,
+            socket,
+            contact_diameter_mm: 0.4,
+            body_diameter_mm: 0.5,
+        };
+        let (down, up) = (Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 0.0, 1.0));
+        let strut = |top: f32| SupportPath {
+            tip: end(Vec3::new(0.0, 0.0, top), Vec3::new(0.0, 0.0, top - 0.8), down),
+            base: SupportBase::Model(end(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 10.8), up)),
+            joints: vec![],
+            shaft_diameter_mm: 0.5,
+        };
+        let layout = SupportLayout { supports: vec![strut(12.0), strut(18.0)] };
+        let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+        assert!(supp["trunks"].as_array().unwrap().is_empty() && supp["roots"].as_array().unwrap().is_empty());
+
+        // 2 mm apart: a twig, its joints standing off each disk along the surface normal.
+        let twig = &supp["twigs"][0];
+        assert_eq!(twig["typeId"], "twig");
+        let segment = &twig["segments"][0];
+        let standoff = twig["contactDiskA"]["diskLengthOverride"].as_f64().unwrap();
+        assert!(near(xyz(&twig["contactDiskA"]["pos"]), [0.0, 0.0, 10.0]));
+        assert!(near(xyz(&twig["contactDiskB"]["pos"]), [0.0, 0.0, 12.0]));
+        assert!(near(xyz(&segment["bottomJoint"]["pos"]), [0.0, 0.0, 10.0 + standoff]));
+        assert!(near(xyz(&segment["topJoint"]["pos"]), [0.0, 0.0, 12.0 - standoff]));
+        assert!(standoff * 2.0 > segment["bottomJoint"]["diameter"].as_f64().unwrap());
+        assert_eq!(twig["contactDiskA"]["contactDiameterMm"], 0.5);
+
+        // 8 mm apart: a stick, a contact cone at each end meeting the shaft at its sockets.
+        let stick = &supp["sticks"][0];
+        assert_eq!(stick["typeId"], "stick");
+        let segment = &stick["segments"][0];
+        assert_eq!(stick["contactConeA"]["socketJointId"], segment["bottomJoint"]["id"]);
+        assert_eq!(stick["contactConeB"]["socketJointId"], segment["topJoint"]["id"]);
+        assert!(near(xyz(&segment["bottomJoint"]["pos"]), [0.0, 0.0, 10.8]));
+        assert!(near(xyz(&segment["topJoint"]["pos"]), [0.0, 0.0, 17.2]));
+        let cone = &stick["contactConeA"];
+        let (pos, normal, surface) = (xyz(&cone["pos"]), xyz(&cone["normal"]), xyz(&cone["surfaceNormal"]));
+        let (disk, length) =
+            (cone["diskLengthOverride"].as_f64().unwrap(), cone["profile"]["lengthMm"].as_f64().unwrap());
+        assert!(near([0, 1, 2].map(|k| pos[k] + surface[k] * disk + normal[k] * length), [0.0, 0.0, 10.8]));
     }
 
     #[test]

@@ -281,7 +281,7 @@ function PrintingListPage() {
     updatePrinter({ id: list.id, printerConfigId: printerId });
   }
 
-  async function handleSavePlate(format: PlateFormat = '3mf') {
+  async function handleSavePlate(format: PlateFormat = 'voxl') {
     setPlateWarning(null);
     setPlateError(null);
     setPlateJob(null);
@@ -422,7 +422,7 @@ function PrintingListPage() {
               <div className={styles.split}>
                 <Button
                   variant="primary"
-                  onClick={() => handleSavePlate('3mf')}
+                  onClick={() => handleSavePlate('voxl')}
                   disabled={exportDisabled}
                 >
                   {plateBusy ? <Spinner label="Preparing plate" /> : null}
@@ -440,10 +440,10 @@ function PrintingListPage() {
                     </IconButton>
                   </MenuTrigger>
                   <MenuContent align="end">
+                    <MenuItem onSelect={() => handleSavePlate('voxl')}>Export as VOXL</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('3mf')}>Export as 3MF</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('stl')}>Export as STL</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('glb')}>Export as GLB</MenuItem>
-                    <MenuItem onSelect={() => handleSavePlate('voxl')}>Export as VOXL</MenuItem>
                   </MenuContent>
                 </Menu>
               </div>

@@ -165,6 +165,21 @@ async fn resolve_checksum(
     Ok((compute_checksum(path).await?, true))
 }
 
+/// What the support classifier found in a model's geometry.
+#[derive(Debug, Clone, Copy, Default)]
+struct SupportDetection {
+    /// Confidently a model plus supports.
+    confident: bool,
+    /// Any support parts, confident or not.
+    found: bool,
+}
+
+impl SupportDetection {
+    fn of(classification: Option<&support_separation::Classification>) -> Self {
+        Self { confident: classification.is_some_and(|c| c.confident), found: classification.is_some() }
+    }
+}
+
 /// Everything computed from a file's content.
 #[derive(Debug, Clone)]
 struct FileData {
@@ -175,7 +190,7 @@ struct FileData {
     hulls: hull::Hulls,
     hull_generated: bool,
     raft_height_mm: f32,
-    detected_supported: bool,
+    supports: SupportDetection,
     metadata: ComputedMetadata,
     dir_config_id: Option<Uuid>,
     geometry: Option<GeometrySummary>,
@@ -218,7 +233,7 @@ struct GeometryRefresh {
     hulls: hull::Hulls,
     hull_generated: bool,
     raft_height_mm: f32,
-    detected_supported: bool,
+    supports: SupportDetection,
     stages: StageTimings,
 }
 
@@ -283,9 +298,10 @@ fn apply_hull_data(
     hulls: &hull::Hulls,
     calculated: bool,
     raft_height_mm: f32,
-    detected_supported: bool,
+    supports: SupportDetection,
 ) {
-    model.detected_supported = (calculated && detected_supported).then_some(true);
+    model.detected_supported = (calculated && supports.confident).then_some(true);
+    model.support_parts_found = calculated.then_some(supports.found);
     model.hulls = Some(ModelHulls {
         convex_hull: hulls.convex.clone(),
         concave_hull: hulls.concave.clone(),
@@ -305,7 +321,7 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
     model.preview_image_path = data.preview_image_path.clone();
     model.preview_generated_at = data.preview_generated_at;
     model.preview_generation_version = data.preview_image_path.as_ref().map(|_| CURRENT_PREVIEW_GENERATION_VERSION);
-    apply_hull_data(model, &data.hulls, data.geometry.is_some(), data.raft_height_mm, data.detected_supported);
+    apply_hull_data(model, &data.hulls, data.geometry.is_some(), data.raft_height_mm, data.supports);
     store::apply_calculated_metadata(model, &data.metadata);
     let g = data.geometry;
     model.dimension_x_mm = g.and_then(|g| g.dimension_x_mm);
@@ -320,13 +336,7 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
 
 fn apply_geometry_refresh(model: &mut ModelRow, refresh: &GeometryRefresh) {
     if refresh.include_hulls {
-        apply_hull_data(
-            model,
-            &refresh.hulls,
-            refresh.geometry_loaded,
-            refresh.raft_height_mm,
-            refresh.detected_supported,
-        );
+        apply_hull_data(model, &refresh.hulls, refresh.geometry_loaded, refresh.raft_height_mm, refresh.supports);
     }
     if !refresh.include_preview || !refresh.geometry_loaded {
         return;
@@ -402,7 +412,7 @@ impl ModelService {
     }
 
     /// Loads geometry, detects supports, renders previews (when requested) and computes
-    /// hulls. Returns (summary, preview generated, hulls, supports detected).
+    /// hulls. Returns (summary, preview generated, hulls, support detection).
     #[allow(clippy::too_many_arguments)]
     async fn process_geometry(
         &self,
@@ -413,7 +423,7 @@ impl ModelService {
         include_hulls: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
-    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, bool, StageTimings) {
+    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, SupportDetection, StageTimings) {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
         let stem = preview::preview_stem(checksum, raft_height_mm, supported);
@@ -424,11 +434,11 @@ impl ModelService {
             let geometry = loader::load_model(&path, &file_type);
             stages.load_ms = elapsed_ms(started);
             let Some(geometry) = geometry else {
-                return (None, false, None, false, stages);
+                return (None, false, None, SupportDetection::default(), stages);
             };
             let started = Instant::now();
             let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
-            let detected = classification.as_ref().is_some_and(|c| c.confident);
+            let detected = SupportDetection::of(classification.as_ref());
             let support_mask = classification.and_then(|c| c.mask_for(supported));
             stages.supports_ms = elapsed_ms(started);
             let preview_generated = preview.is_some_and(|p| {
@@ -446,7 +456,7 @@ impl ModelService {
             (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected, stages)
         })
         .await
-        .unwrap_or((None, false, None, false, StageTimings::default()))
+        .unwrap_or((None, false, None, SupportDetection::default(), StageTimings::default()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -478,7 +488,7 @@ impl ModelService {
             hulls: hull::Hulls::default(),
             hull_generated: false,
             raft_height_mm,
-            detected_supported: false,
+            supports: SupportDetection::default(),
             metadata,
             dir_config_id: dir_config.map(|d| d.id),
             geometry: None,
@@ -500,7 +510,7 @@ impl ModelService {
         if let Some(summary) = summary {
             data.hulls = hulls.unwrap_or_default();
             data.hull_generated = true;
-            data.detected_supported = detected;
+            data.supports = detected;
             data.geometry = Some(summary);
         }
         Ok(data)
@@ -530,7 +540,7 @@ impl ModelService {
             hulls: hulls.unwrap_or_default(),
             hull_generated: false,
             raft_height_mm,
-            detected_supported: detected,
+            supports: detected,
             stages,
         };
         if summary.is_none() {
@@ -1396,9 +1406,10 @@ mod tests {
         let cancel = CancellationToken::new();
 
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 3);
-        type Row = (String, String, Option<bool>, Option<bool>, Option<bool>);
+        type Row = (String, String, Option<bool>, Option<bool>, Option<bool>, Option<bool>);
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT directory, file_name, calculated_supported, detected_supported, effective_supported
+            "SELECT directory, file_name, calculated_supported, detected_supported, effective_supported,
+                support_parts_found
              FROM models ORDER BY directory, file_name",
         )
         .fetch_all(&t.db)
@@ -1407,9 +1418,9 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                ("".into(), "plain.stl".into(), None, None, None),
-                ("".into(), "supported.stl".into(), None, Some(true), Some(true)),
-                ("flagged".into(), "supported.stl".into(), Some(false), Some(true), Some(false)),
+                ("".into(), "plain.stl".into(), None, None, None, Some(false)),
+                ("".into(), "supported.stl".into(), None, Some(true), Some(true), Some(true)),
+                ("flagged".into(), "supported.stl".into(), Some(false), Some(true), Some(false), Some(true)),
             ]
         );
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);

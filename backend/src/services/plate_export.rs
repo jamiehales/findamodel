@@ -12,7 +12,7 @@ use crate::dto::GeneratePlateRequest;
 use crate::error::{AppError, AppResult, bad_request};
 use crate::geometry::saver::{self, MeshObject};
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
-use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis};
+use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis, to_z_up};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
 
@@ -33,7 +33,7 @@ pub struct PlateExportResult {
 }
 
 pub fn normalize_format(format: Option<&str>) -> AppResult<String> {
-    let normalized = format.unwrap_or("3mf").to_ascii_lowercase();
+    let normalized = format.unwrap_or("voxl").to_ascii_lowercase();
     if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | "voxl") {
         return Err(bad_request(format!(
             "Unsupported format '{}'. Supported: 3mf, stl, glb, voxl",
@@ -105,13 +105,6 @@ pub fn voxl_placement(
         rotation_z: -angle_rad,
         translation: [bed_width_mm / 2.0 - x_mm, y_mm - bed_depth_mm / 2.0, 0.0],
     }
-}
-
-fn to_z_up(triangles: &[Triangle]) -> Vec<Triangle> {
-    triangles
-        .iter()
-        .map(|t| Triangle::new(swap_up_axis(t.v0), swap_up_axis(t.v1), swap_up_axis(t.v2), swap_up_axis(t.normal)))
-        .collect()
 }
 
 fn place_vertex(v: Vec3, sin: f32, cos: f32, x: f32, y: f32) -> Vec3 {
@@ -256,7 +249,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                 let meshes: Vec<VoxlMesh<'_>> = geometry_ids
                     .iter()
                     .zip(&z_up)
-                    .map(|(id, triangles)| VoxlMesh { name: &names[id], triangles })
+                    .map(|(id, triangles)| VoxlMesh { name: &names[id], triangles, supports: None })
                     .collect();
                 let items: Vec<VoxlPlacement> = placements
                     .iter()
@@ -312,7 +305,7 @@ mod tests {
 
     #[test]
     fn format_validation_and_names() {
-        assert_eq!(normalize_format(None).unwrap(), "3mf");
+        assert_eq!(normalize_format(None).unwrap(), "voxl");
         assert_eq!(normalize_format(Some("STL")).unwrap(), "stl");
         assert!(matches!(normalize_format(Some("obj")), Err(AppError::BadRequest(_))));
         assert_eq!(file_name("glb"), "plate.glb");

@@ -8,13 +8,15 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{CurrentUser, IdPath, serve_file};
+use super::{CurrentUser, IdPath, content_disposition, serve_file};
 use crate::app::AppState;
 use crate::dto::{ModelQueryRequest, ModelsByIdsRequest, UpdateModelMetadataRequest};
+use crate::entities::ModelRow;
 use crate::error::{AppError, AppResult, bad_request, not_found};
 use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
-use crate::geometry::{LoadedGeometry, loader, mesh_transfer, support_separation};
-use crate::services::query;
+use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
+use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_layout, support_separation, to_z_up};
+use crate::services::{plate_export, query, store};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -27,6 +29,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/models/{id}/metadata", get(get_metadata).put(update_metadata))
         .route("/api/models/{id}/geometry", get(get_geometry))
         .route("/api/models/{id}/geometry/split", get(get_split_geometry))
+        .route("/api/models/{id}/voxl", get(get_voxl))
         .route("/api/query", get(query_models))
         .route("/api/query/options", get(query_options))
 }
@@ -201,6 +204,46 @@ async fn get_geometry(
     Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE)], payload).into_response())
 }
 
+/// A pre-supported model's geometry split into body and supports.
+struct SupportSplit {
+    model: ModelRow,
+    geometry: LoadedGeometry,
+    body: Vec<Triangle>,
+    supports: Vec<Triangle>,
+}
+
+/// Splits the supports off a supported model and records whether support parts were found.
+/// None when the model is not supported, cannot be loaded or has no supports to split.
+async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<SupportSplit>> {
+    let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+    if model.supported() != Some(true) {
+        return Ok(None);
+    }
+    let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+    let metadata_supported = model.calculated_supported;
+    let (_, geometry) = load_geometry(state, id).await?;
+    let Some(geometry) = geometry else {
+        return Ok(None);
+    };
+
+    let (geometry, split, found) = tokio::task::spawn_blocking(move || {
+        let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
+        let found = classification.is_some();
+        let split = classification
+            .and_then(|c| c.mask_for(metadata_supported))
+            .map(|mask| support_separation::split(&geometry.triangles, &mask))
+            .filter(|(_, supports)| !supports.is_empty());
+        (geometry, split, found)
+    })
+    .await
+    .map_err(anyhow::Error::from)?;
+
+    if model.support_parts_found != Some(found) {
+        state.models.set_support_parts_found(id, found).await?;
+    }
+    Ok(split.map(|(body, supports)| SupportSplit { model, geometry, body, supports }))
+}
+
 /// Body and support geometry of a pre-supported model in one envelope:
 /// `[bodyLength:u32][body FMSH][supportLength:u32][support FMSH]`. 204 when the model is
 /// not supported (by metadata or detection), has no detectable supports, or cannot be
@@ -210,31 +253,42 @@ async fn get_split_geometry(
     _user: CurrentUser,
     IdPath(id): IdPath,
 ) -> AppResult<Response> {
-    let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
-    if model.supported() != Some(true) {
-        return Ok(StatusCode::NO_CONTENT.into_response());
-    }
-    let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
-    let metadata_supported = model.calculated_supported;
-    let (_, geometry) = load_geometry(&state, id).await?;
-    let Some(geometry) = geometry else {
+    let Some(split) = split_supports(&state, id).await? else {
         return Ok(StatusCode::NO_CONTENT.into_response());
     };
-
     let envelope = tokio::task::spawn_blocking(move || {
-        let (body, supports) = support_separation::separate(&geometry.triangles, raft_height_mm, metadata_supported);
-        let supports = supports.filter(|s| !s.is_empty())?;
-        let body_payload = mesh_transfer::encode(&geometry.with_triangles(body));
-        let support_payload = mesh_transfer::encode(&geometry.with_triangles(supports));
-        Some(mesh_transfer::encode_split_envelope(&body_payload, &support_payload))
+        let body_payload = mesh_transfer::encode(&split.geometry.with_triangles(split.body));
+        let support_payload = mesh_transfer::encode(&split.geometry.with_triangles(split.supports));
+        mesh_transfer::encode_split_envelope(&body_payload, &support_payload)
     })
     .await
     .map_err(anyhow::Error::from)?;
+    Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE_SPLIT)], envelope).into_response())
+}
 
-    Ok(match envelope {
-        Some(bytes) => ([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE_SPLIT)], bytes).into_response(),
-        None => StatusCode::NO_CONTENT.into_response(),
+/// The model stripped of its supports, with their layout rebuilt as DragonFruit supports,
+/// as a VOXL scene. 404 when the supports cannot be split off.
+async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
+    let split = split_supports(&state, id).await?.ok_or_else(not_found)?;
+    let file_name = split.model.file_name.clone();
+    let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        let body = to_z_up(&split.body);
+        let layout = support_layout::reconstruct(&body, &to_z_up(&split.supports));
+        let mesh = VoxlMesh { name: &split.model.file_name, triangles: &body, supports: Some(&layout) };
+        let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
+        Ok(voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner())
     })
+    .await
+    .map_err(anyhow::Error::from)??;
+    let download_name = format!("{}.voxl", store::file_stem(&file_name));
+    Ok((
+        [
+            (header::CONTENT_TYPE, plate_export::content_type("voxl").parse().expect("valid header")),
+            (header::CONTENT_DISPOSITION, content_disposition(&download_name)),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn query_models(

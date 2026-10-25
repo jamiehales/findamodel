@@ -53,6 +53,7 @@ pub fn to_model_dto(m: &ModelRow) -> ModelDto {
         item_type: m.calculated_type.clone(),
         material: m.calculated_material.clone(),
         supported: m.supported(),
+        support_split: m.support_split(),
         convex_hull: m.hulls.as_ref().and_then(|h| h.convex_hull.clone()),
         concave_hull: m.hulls.as_ref().and_then(|h| h.concave_hull.clone()),
         convex_sans_raft_hull: m.hulls.as_ref().and_then(|h| h.convex_sans_raft_hull.clone()),
@@ -91,7 +92,7 @@ pub fn apply_calculated_metadata(model: &mut ModelRow, metadata: &ComputedMetada
     model.calculated_part_name = metadata.part_name.clone();
 }
 
-const MODEL_COLUMNS: [&str; 35] = [
+const MODEL_COLUMNS: [&str; 36] = [
     "id",
     "checksum",
     "file_name",
@@ -113,6 +114,7 @@ const MODEL_COLUMNS: [&str; 35] = [
     "calculated_material",
     "calculated_supported",
     "detected_supported",
+    "support_parts_found",
     "calculated_model_name",
     "calculated_part_name",
     "hull_generation_version",
@@ -151,6 +153,7 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(&m.calculated_material)
         .push_bind(m.calculated_supported)
         .push_bind(m.detected_supported)
+        .push_bind(m.support_parts_found)
         .push_bind(&m.calculated_model_name)
         .push_bind(&m.calculated_part_name)
         .push_bind(m.hull_generation_version)
@@ -478,6 +481,24 @@ mod tests {
             model.calculated_supported = calculated;
             model.detected_supported = detected;
             assert_eq!(to_model_dto(&model).supported, expected, "{calculated:?} {detected:?}");
+        }
+    }
+
+    #[test]
+    fn model_dto_support_split_needs_a_supported_model_with_support_parts() {
+        let mut model = full_model();
+        for (calculated, detected, found, expected) in [
+            (Some(true), None, Some(true), Some(true)),
+            (Some(true), None, Some(false), Some(false)),
+            (Some(true), None, None, None),
+            (None, Some(true), Some(true), Some(true)),
+            (Some(false), Some(true), Some(true), Some(false)),
+            (None, None, Some(true), Some(false)),
+        ] {
+            model.calculated_supported = calculated;
+            model.detected_supported = detected;
+            model.support_parts_found = found;
+            assert_eq!(to_model_dto(&model).support_split, expected, "{calculated:?} {detected:?} {found:?}");
         }
     }
 

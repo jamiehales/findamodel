@@ -38,6 +38,9 @@ pub struct ModelDto {
     pub item_type: Option<String>,
     pub material: Option<String>,
     pub supported: Option<bool>,
+    /// The supports can be split from the model (None = not known until it is indexed or
+    /// its split geometry is loaded).
+    pub support_split: Option<bool>,
     pub convex_hull: Option<String>,
     pub concave_hull: Option<String>,
     pub convex_sans_raft_hull: Option<String>,

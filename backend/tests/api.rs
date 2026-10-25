@@ -10,6 +10,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use findamodel::app::AppState;
 use findamodel::config::{RuntimeMode, Settings};
+use findamodel::geometry::{Triangle, Vec3};
 use findamodel::{LogBuffer, routes};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -405,4 +406,113 @@ async fn serves_frontend_with_spa_fallback() {
     assert_eq!((status, body.as_slice()), (StatusCode::OK, b"<html>app</html>".as_slice()));
     let (status, _, body) = app.send(Request::get("/app.js").body(Body::empty()).unwrap()).await;
     assert_eq!((status, body.as_slice()), (StatusCode::OK, b"console.log(1)".as_slice()));
+}
+
+/// Closed box split into an n x n grid per face, wound outward. Z-up.
+fn cuboid(min: [f32; 3], max: [f32; 3], n: usize) -> Vec<Triangle> {
+    let faces = [
+        (2, min[2], 1, 0),
+        (2, max[2], 0, 1),
+        (0, min[0], 2, 1),
+        (0, max[0], 1, 2),
+        (1, min[1], 0, 2),
+        (1, max[1], 2, 0),
+    ];
+    let mut out = Vec::new();
+    for (axis, value, u, v) in faces {
+        let point = |i: usize, j: usize| {
+            let mut p = [0.0; 3];
+            p[axis] = value;
+            p[u] = min[u] + (max[u] - min[u]) * i as f32 / n as f32;
+            p[v] = min[v] + (max[v] - min[v]) * j as f32 / n as f32;
+            Vec3::new(p[0], p[1], p[2])
+        };
+        for i in 0..n {
+            for j in 0..n {
+                out.push(Triangle::new(point(i, j), point(i + 1, j), point(i + 1, j + 1), Vec3::new(0.0, 0.0, 1.0)));
+                out.push(Triangle::new(point(i, j), point(i + 1, j + 1), point(i, j + 1), Vec3::new(0.0, 0.0, 1.0)));
+            }
+        }
+    }
+    out
+}
+
+/// Closed vertical frustum from `bottom` (radius `rb`) up to `top` (radius `rt`).
+fn post(x: f32, y: f32, bottom: f32, top: f32, rb: f32, rt: f32) -> Vec<Triangle> {
+    let ring = |z: f32, r: f32, k: usize| {
+        let t = std::f32::consts::TAU * k as f32 / 12.0;
+        Vec3::new(x + r * t.cos(), y + r * t.sin(), z)
+    };
+    let (b, t) = (Vec3::new(x, y, bottom), Vec3::new(x, y, top));
+    let up = Vec3::new(0.0, 0.0, 1.0);
+    (0..12)
+        .flat_map(|k| {
+            let (p0, p1, q0, q1) =
+                (ring(bottom, rb, k), ring(bottom, rb, k + 1), ring(top, rt, k), ring(top, rt, k + 1));
+            [
+                Triangle::new(p0, p1, q1, up),
+                Triangle::new(p0, q1, q0, up),
+                Triangle::new(b, p1, p0, up),
+                Triangle::new(t, q0, q1, up),
+            ]
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn presupported_model_downloads_as_voxl_with_its_supports() {
+    let app = TestApp::new().await;
+    let mut mesh = cuboid([-5.0, -5.0, 10.0], [5.0, 5.0, 15.0], 12);
+    for (x, y) in [(-3.0, -3.0), (3.0, -3.0), (-3.0, 3.0), (3.0, 3.0)] {
+        mesh.extend(post(x, y, 0.0, 8.0, 0.4, 0.4));
+        mesh.extend(post(x, y, 8.0, 10.2, 0.4, 0.12));
+    }
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&mesh, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.write("Mini/plain.stl", STL);
+    app.index_and_wait(3).await;
+
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id_of = |name: &str| {
+        result["models"].as_array().unwrap().iter().find(|m| m["name"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (knight, plain) = (id_of("knight"), id_of("plain"));
+    let (_, detail) = app.get(&format!("/api/models/{knight}")).await;
+    assert_eq!(detail["supportSplit"], true);
+
+    let (status, headers, bytes) =
+        app.send(Request::get(format!("/api/models/{knight}/voxl")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("knight.voxl"));
+    assert_eq!(&bytes[..4], b"VOXL");
+    let supports = voxl_chunk(&bytes, b"SUPP");
+    assert_eq!(supports["roots"].as_array().unwrap().len(), 4);
+    assert_eq!(supports["trunks"].as_array().unwrap().len(), 4);
+    let models = voxl_chunk(&bytes, b"MODL");
+    assert_eq!(models[0]["polygonCount"], 12 * 12 * 12, "the model is stored without its supports");
+    for trunk in supports["trunks"].as_array().unwrap() {
+        assert_eq!(trunk["modelId"], models[0]["id"]);
+        let contact = &trunk["contactCone"]["pos"];
+        assert!((contact["z"].as_f64().unwrap() - 10.0).abs() < 0.1, "{contact}");
+    }
+
+    let (status, _, _) = app.send(Request::get(format!("/api/models/{plain}/voxl")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, detail) = app.get(&format!("/api/models/{plain}")).await;
+    assert_eq!(detail["supportSplit"], false);
+}
+
+/// Decompresses a VOXL JSON chunk.
+fn voxl_chunk(bytes: &[u8], tag: &[u8; 4]) -> Value {
+    use std::io::Read;
+    let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    let entry = (0..u32_at(8)).map(|i| 16 + i * 20).find(|&base| &bytes[base..base + 4] == tag).unwrap();
+    let (offset, size) = (u32_at(entry + 8), u32_at(entry + 12));
+    let mut data = Vec::new();
+    flate2::read::ZlibDecoder::new(&bytes[offset..offset + size]).read_to_end(&mut data).unwrap();
+    serde_json::from_slice(&data).unwrap()
 }

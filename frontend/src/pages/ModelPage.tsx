@@ -1,9 +1,13 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ChevronLeft, Download, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, RefreshCw } from 'lucide-react';
 import {
   Button,
   IconButton,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   Spinner,
   Tag,
   TextLink,
@@ -16,7 +20,9 @@ import {
   useUpsertPrintingListItem,
   useIndexModel,
   useIsModelIndexing,
+  useSplitGeometry,
 } from '../lib/queries';
+import { getModelVoxlUrl } from '../lib/api';
 import ModelViewer from '../components/ModelViewer';
 import ErrorView from '../components/ErrorView';
 import HullPreview from '../components/HullPreview';
@@ -59,6 +65,9 @@ function ModelPage() {
   const { data: activeList } = useActivePrintingList();
   const { mutate: upsertItem } = useUpsertPrintingListItem();
   const qty = model ? (activeList?.items.find((i) => i.modelId === model.id)?.quantity ?? 0) : 0;
+
+  // Shares the viewer's split geometry query, so it costs no extra request.
+  const { data: splitGeometry } = useSplitGeometry(decodedId, model?.supported === true);
 
   const { mutate: indexModel } = useIndexModel(model?.relativePath ?? '');
   const indexingStatus = useIsModelIndexing(model?.relativePath ?? '');
@@ -125,6 +134,8 @@ function ModelPage() {
   ].filter(Boolean) as { label: string; value: React.ReactNode; mono?: boolean }[];
 
   const hasHulls = !!(model.convexHull || model.concaveHull || model.convexSansRaftHull);
+  const originalName = `${model.name}.${model.fileType}`;
+  const canDownloadVoxl = model.supportSplit ?? splitGeometry?.supports != null;
 
   return (
     <PageLayout>
@@ -171,13 +182,38 @@ function ModelPage() {
             <Button variant="secondary" onClick={() => setMetadataOpen(true)}>
               Edit
             </Button>
-            <Tooltip content={`Download .${model.fileType}`}>
-              <IconButton asChild aria-label={`Download .${model.fileType}`}>
-                <a href={model.fileUrl} download={`${model.name}.${model.fileType}`}>
-                  <Download size={18} strokeWidth={1.5} />
-                </a>
-              </IconButton>
-            </Tooltip>
+            {canDownloadVoxl ? (
+              <Menu>
+                <Tooltip content="Download">
+                  <MenuTrigger asChild>
+                    <Button aria-label="Download">
+                      <Download size={18} strokeWidth={1.5} />
+                      <ChevronDown size={14} strokeWidth={1.5} />
+                    </Button>
+                  </MenuTrigger>
+                </Tooltip>
+                <MenuContent align="end">
+                  <MenuItem asChild>
+                    <a href={model.fileUrl} download={originalName}>
+                      Original .{model.fileType}
+                    </a>
+                  </MenuItem>
+                  <MenuItem asChild>
+                    <a href={getModelVoxlUrl(model.id)} download={`${model.name}.voxl`}>
+                      DragonFruit .voxl
+                    </a>
+                  </MenuItem>
+                </MenuContent>
+              </Menu>
+            ) : (
+              <Tooltip content={`Download .${model.fileType}`}>
+                <IconButton asChild aria-label={`Download .${model.fileType}`}>
+                  <a href={model.fileUrl} download={originalName}>
+                    <Download size={18} strokeWidth={1.5} />
+                  </a>
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip
               content={
                 indexingStatus === 'running'

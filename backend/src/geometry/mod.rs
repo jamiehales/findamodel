@@ -5,6 +5,7 @@ pub mod hull;
 pub mod loader;
 pub mod mesh_transfer;
 pub mod saver;
+pub mod support_layout;
 pub mod support_separation;
 pub mod voxl;
 
@@ -143,6 +144,14 @@ impl LoadedGeometry {
 /// internally. The mapping `(x, y, z) -> (-x, z, y)` is its own inverse.
 pub fn swap_up_axis(v: Vec3) -> Vec3 {
     Vec3::new(-v.x, v.z, v.y)
+}
+
+/// Triangles converted to the Z-up convention of CAD/slicer files.
+pub fn to_z_up(triangles: &[Triangle]) -> Vec<Triangle> {
+    triangles
+        .iter()
+        .map(|t| Triangle::new(swap_up_axis(t.v0), swap_up_axis(t.v1), swap_up_axis(t.v2), swap_up_axis(t.normal)))
+        .collect()
 }
 
 #[cfg(test)]

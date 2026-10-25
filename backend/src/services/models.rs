@@ -123,6 +123,16 @@ impl ModelService {
         Ok(self.get_model(id).await?.as_ref().map(store::to_model_dto))
     }
 
+    /// Records whether the support classifier found support parts in the model's geometry.
+    pub async fn set_support_parts_found(&self, id: Uuid, found: bool) -> AppResult<()> {
+        sqlx::query("UPDATE models SET support_parts_found = ? WHERE id = ?")
+            .bind(found)
+            .bind(id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn preview_path_candidates(
         &self,
         id: Uuid,

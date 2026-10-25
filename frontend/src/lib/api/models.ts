@@ -35,6 +35,8 @@ export interface Model {
   type: string | null;
   material: string | null;
   supported: boolean | null;
+  /** The supports can be split from the model; null until it is indexed or split. */
+  supportSplit: boolean | null;
   convexHull: string | null;
   concaveHull: string | null;
   convexSansRaftHull: string | null;
@@ -445,7 +447,7 @@ export interface PlateGenerationJob {
 
 export async function generatePlate(
   placements: PlatePlacement[],
-  format: PlateFormat = '3mf',
+  format: PlateFormat = 'voxl',
   options: PlateOptions = {},
 ): Promise<PlateGenerationResult> {
   const r = await apiFetch('/api/plate/generate', {
@@ -476,7 +478,7 @@ export async function generatePlate(
 
 export async function createPlateGenerationJob(
   placements: PlatePlacement[],
-  format: PlateFormat = '3mf',
+  format: PlateFormat = 'voxl',
   options: PlateOptions = {},
 ): Promise<PlateGenerationJob> {
   const r = await apiFetch('/api/plate/jobs', {
@@ -496,6 +498,11 @@ export async function fetchPlateGenerationJob(jobId: string): Promise<PlateGener
   const r = await apiFetch(`/api/plate/jobs/${jobId}`);
   if (!r.ok) throw new Error('Failed to fetch plate generation status');
   return r.json();
+}
+
+/** The model without its supports, with their layout as DragonFruit supports. */
+export function getModelVoxlUrl(id: string): string {
+  return apiUrl(`/api/models/${id}/voxl`);
 }
 
 export function getPlateGenerationDownloadUrl(jobId: string): string {

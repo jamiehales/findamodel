@@ -1,1 +1,2 @@
 * Logs is constantly being called from the frontend
+* VOXL plate exports can land models off the plate when imported into DragonFruit - check the coordinate system. `voxl_placement` (`backend/src/services/plate_export.rs`) assumes the bed centre is the origin and mirrors plate X, but DragonFruit has an `originMode` preference (`center` default, or `front_left`) and places from each mesh's bbox centre

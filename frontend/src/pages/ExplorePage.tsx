@@ -44,6 +44,7 @@ function toProcessedModel(model: ExplorerModel): Model | null {
     type: model.resolvedMetadata?.type ?? null,
     material: model.resolvedMetadata?.material ?? null,
     supported: model.resolvedMetadata?.supported ?? null,
+    supportSplit: null,
     convexHull: null,
     concaveHull: null,
     convexSansRaftHull: null,

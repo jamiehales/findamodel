@@ -77,6 +77,9 @@ pub struct ModelRow {
     /// Supports found in the geometry (true only when confident, otherwise None). Shares the
     /// scan config checksum with the hulls.
     pub detected_supported: Option<bool>,
+    /// The geometry classifier found support parts, confident or not (None = not yet
+    /// indexed or split). Set when indexing and whenever the split geometry is computed.
+    pub support_parts_found: Option<bool>,
     pub calculated_model_name: Option<String>,
     pub calculated_part_name: Option<String>,
 
@@ -121,6 +124,14 @@ impl ModelRow {
     /// Mirrors the `effective_supported` column.
     pub fn supported(&self) -> Option<bool> {
         self.calculated_supported.or(self.detected_supported)
+    }
+
+    /// Whether the supports can be split from the model (None = not yet known).
+    pub fn support_split(&self) -> Option<bool> {
+        match self.supported() {
+            Some(true) => self.support_parts_found,
+            _ => Some(false),
+        }
     }
 }
 
