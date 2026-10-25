@@ -45,6 +45,21 @@ pub struct FileResult {
     pub generated_hull: bool,
     pub message: String,
     pub duration_ms: f64,
+    pub stages: StageTimings,
+}
+
+/// Time a file spent in each indexing stage, in milliseconds; stages that didn't run stay 0.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct StageTimings {
+    pub checksum_ms: f64,
+    pub load_ms: f64,
+    pub supports_ms: f64,
+    pub preview_ms: f64,
+    pub hull_ms: f64,
+}
+
+fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1000.0
 }
 
 /// Receives progress from a scan (persisted by the indexer).
@@ -164,6 +179,7 @@ struct FileData {
     metadata: ComputedMetadata,
     dir_config_id: Option<Uuid>,
     geometry: Option<GeometrySummary>,
+    stages: StageTimings,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -203,6 +219,7 @@ struct GeometryRefresh {
     hull_generated: bool,
     raft_height_mm: f32,
     detected_supported: bool,
+    stages: StageTimings,
 }
 
 /// (id, directory, file_name, checksum, file_modified_at, scan_config_checksum,
@@ -234,6 +251,7 @@ struct Prepared {
     stat: FileStat,
     change: Option<Change>,
     preparation_ms: f64,
+    stages: StageTimings,
 }
 
 #[derive(Clone)]
@@ -395,28 +413,40 @@ impl ModelService {
         include_hulls: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
-    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, bool) {
+    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, bool, StageTimings) {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
         let stem = preview::preview_stem(checksum, raft_height_mm, supported);
         let preview = self.preview.clone().filter(|_| include_preview);
         tokio::task::spawn_blocking(move || {
-            let Some(geometry) = loader::load_model(&path, &file_type) else {
-                return (None, false, None, false);
+            let mut stages = StageTimings::default();
+            let started = Instant::now();
+            let geometry = loader::load_model(&path, &file_type);
+            stages.load_ms = elapsed_ms(started);
+            let Some(geometry) = geometry else {
+                return (None, false, None, false, stages);
             };
+            let started = Instant::now();
             let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
             let detected = classification.as_ref().is_some_and(|c| c.confident);
             let support_mask = classification.and_then(|c| c.mask_for(supported));
+            stages.supports_ms = elapsed_ms(started);
             let preview_generated = preview.is_some_and(|p| {
+                let started = Instant::now();
                 let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true);
+                stages.preview_ms = elapsed_ms(started);
                 result.with_supports.generated || result.without_supports.generated
             });
-            let hulls = include_hulls
-                .then(|| hull::calculate_hulls(&geometry, hull::DEFAULT_MAX_HULL_VERTICES, raft_height_mm));
-            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected)
+            let hulls = include_hulls.then(|| {
+                let started = Instant::now();
+                let hulls = hull::calculate_hulls(&geometry, hull::DEFAULT_MAX_HULL_VERTICES, raft_height_mm);
+                stages.hull_ms = elapsed_ms(started);
+                hulls
+            });
+            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected, stages)
         })
         .await
-        .unwrap_or((None, false, None, false))
+        .unwrap_or((None, false, None, false, StageTimings::default()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -430,10 +460,12 @@ impl ModelService {
         include_preview: bool,
         existing_preview_path: Option<&str>,
     ) -> anyhow::Result<FileData> {
+        let started = Instant::now();
         let checksum = match known_checksum {
             Some(c) => c,
             None => compute_checksum(file).await?,
         };
+        let checksum_ms = elapsed_ms(started);
         let dir_config: Option<&DirectoryConfig> = ctx.configs.get(directory);
         let (metadata, raft_height_mm) = ctx.resolve(&file.to_string_lossy(), directory);
         let supported = metadata.supported;
@@ -450,14 +482,16 @@ impl ModelService {
             metadata,
             dir_config_id: dir_config.map(|d| d.id),
             geometry: None,
+            stages: StageTimings { checksum_ms, ..Default::default() },
         };
 
         if is_non_geometry_type(file_type) {
             return Ok(data);
         }
 
-        let (summary, preview_generated, hulls, detected) =
+        let (summary, preview_generated, hulls, detected, stages) =
             self.process_geometry(file, file_type, &checksum, include_preview, true, raft_height_mm, supported).await;
+        data.stages = StageTimings { checksum_ms, ..stages };
         (data.preview_image_path, data.preview_generated_at) = self.resolve_cached_preview_metadata(
             &preview::preview_stem(&checksum, raft_height_mm, supported),
             existing_preview_path,
@@ -483,7 +517,7 @@ impl ModelService {
         include_preview: bool,
         include_hulls: bool,
     ) -> GeometryRefresh {
-        let (summary, preview_generated, hulls, detected) = self
+        let (summary, preview_generated, hulls, detected, stages) = self
             .process_geometry(file, file_type, checksum, include_preview, include_hulls, raft_height_mm, supported)
             .await;
         let mut refresh = GeometryRefresh {
@@ -497,6 +531,7 @@ impl ModelService {
             hull_generated: false,
             raft_height_mm,
             detected_supported: detected,
+            stages,
         };
         if summary.is_none() {
             return refresh;
@@ -532,19 +567,23 @@ impl ModelService {
             stat: FileStat { size: file_stat.size, modified: file_stat.modified },
             change: None,
             preparation_ms: 0.0,
+            stages: StageTimings::default(),
         };
 
         let Some(existing) = existing else {
             let data =
                 self.compute_file_data(ctx, &file, &file_type, &directory, None, ctx.generate_previews, None).await?;
+            prepared.stages = data.stages;
             prepared.change = Some(Change::Content(Box::new(data)));
             prepared.preparation_ms = started.elapsed().as_secs_f64() * 1000.0;
             return Ok(Some(prepared));
         };
 
+        let checksum_started = Instant::now();
         let (checksum, recomputed) =
             resolve_checksum(&file, file_stat.modified, Some(&existing.checksum), Some(existing.file_modified_at))
                 .await?;
+        let checksum_ms = elapsed_ms(checksum_started);
         let (metadata, expected_raft) = ctx.resolve(&full, &directory);
         let supported = metadata.supported;
         let geometry_type = !is_non_geometry_type(&file_type);
@@ -609,6 +648,13 @@ impl ModelService {
             ))
         };
 
+        prepared.stages = match &prepared.change {
+            Some(Change::Content(data)) => {
+                StageTimings { checksum_ms: checksum_ms + data.stages.checksum_ms, ..data.stages }
+            }
+            Some(Change::Geometry(refresh)) => StageTimings { checksum_ms, ..refresh.stages },
+            _ => StageTimings { checksum_ms, ..Default::default() },
+        };
         prepared.preparation_ms = started.elapsed().as_secs_f64() * 1000.0;
         Ok(Some(prepared))
     }
@@ -768,6 +814,7 @@ impl ModelService {
                             generated_hull: false,
                             message: format!("Unable to compute file data: {err}"),
                             duration_ms: 0.0,
+                            stages: StageTimings::default(),
                         })
                         .await;
                     }
@@ -836,6 +883,7 @@ impl ModelService {
                         generated_hull,
                         message,
                         duration_ms: prepared.preparation_ms + timer.elapsed().as_secs_f64() * 1000.0,
+                        stages: prepared.stages,
                     })
                     .await;
                 }
@@ -855,6 +903,7 @@ impl ModelService {
                         generated_hull: false,
                         message: "Skipped due to scan limit".into(),
                         duration_ms: timer.elapsed().as_secs_f64() * 1000.0,
+                        stages: prepared.stages,
                     })
                     .await;
                 }
@@ -887,6 +936,7 @@ impl ModelService {
                     generated_hull: data.hulls != hull::Hulls::default(),
                     message: "Indexed new model file".into(),
                     duration_ms: prepared.preparation_ms + timer.elapsed().as_secs_f64() * 1000.0,
+                    stages: prepared.stages,
                 })
                 .await;
             }
@@ -911,6 +961,7 @@ impl ModelService {
                     generated_hull: false,
                     message: "Already up-to-date".into(),
                     duration_ms: 0.0,
+                    stages: StageTimings::default(),
                 })
                 .await;
             }
@@ -983,6 +1034,7 @@ impl ModelService {
             .await?;
         let is_new = existing.is_none();
 
+        let checksum_started = Instant::now();
         let (checksum, recomputed) = resolve_checksum(
             &full_path,
             file_stat.modified,
@@ -990,6 +1042,7 @@ impl ModelService {
             existing.as_ref().map(|e| e.file_modified_at),
         )
         .await?;
+        let checksum_ms = elapsed_ms(checksum_started);
         if cancel.is_cancelled() {
             return Err(Cancelled.into());
         }
@@ -1034,13 +1087,14 @@ impl ModelService {
                     generated_hull: false,
                     message: "Already up-to-date".into(),
                     duration_ms: timer.elapsed().as_secs_f64() * 1000.0,
+                    stages: StageTimings { checksum_ms, ..Default::default() },
                 })
                 .await;
             }
             return Ok(false);
         }
 
-        let (entity, generated_preview, generated_hull) = match existing {
+        let (entity, generated_preview, generated_hull, stages) = match existing {
             None => {
                 info!(target: LOG_TARGET, "Indexing single model file: {full_text}");
                 let data = self
@@ -1066,7 +1120,7 @@ impl ModelService {
                 if let Some(r) = reporter {
                     r.on_log("info", "Discovered new model", Some(&normalized)).await;
                 }
-                (entity, data.preview_generated, data.hull_generated)
+                (entity, data.preview_generated, data.hull_generated, data.stages)
             }
             Some(mut entity) if entity.checksum != checksum => {
                 info!(target: LOG_TARGET, "Model content changed, updating single file: {full_text}");
@@ -1084,7 +1138,7 @@ impl ModelService {
                 entity.file_type = file_type.clone();
                 entity.directory_config_id = data.dir_config_id;
                 apply_file_data(&mut entity, &data, &file_stat);
-                (entity, data.preview_generated, data.hull_generated)
+                (entity, data.preview_generated, data.hull_generated, data.stages)
             }
             Some(mut entity) if hull_stale => {
                 info!(
@@ -1112,7 +1166,7 @@ impl ModelService {
                 entity.cached_at = now();
                 entity.file_modified_at = file_stat.modified;
                 entity.file_size = file_stat.size;
-                (entity, refresh.preview_generated, refresh.hull_generated)
+                (entity, refresh.preview_generated, refresh.hull_generated, refresh.stages)
             }
             Some(mut entity) => {
                 info!(target: LOG_TARGET, "Single-model index refreshing preview due to version mismatch: {full_text}");
@@ -1131,7 +1185,7 @@ impl ModelService {
                 entity.cached_at = now();
                 entity.file_modified_at = file_stat.modified;
                 entity.file_size = file_stat.size;
-                (entity, refresh.preview_generated, false)
+                (entity, refresh.preview_generated, false, refresh.stages)
             }
         };
 
@@ -1151,6 +1205,7 @@ impl ModelService {
                 generated_hull,
                 message: "Indexed single model".into(),
                 duration_ms: timer.elapsed().as_secs_f64() * 1000.0,
+                stages: StageTimings { checksum_ms: checksum_ms + stages.checksum_ms, ..stages },
             })
             .await;
         }
@@ -1370,5 +1425,43 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    #[derive(Default)]
+    struct RecordingReporter {
+        results: parking_lot::Mutex<Vec<FileResult>>,
+    }
+
+    #[async_trait]
+    impl ProgressReporter for RecordingReporter {
+        async fn on_scan_started(&self, _: usize) {}
+        async fn on_files_discovered(&self, _: &[FilePlan]) {}
+        async fn on_file_processed(&self, result: FileResult) {
+            self.results.lock().push(result);
+        }
+        async fn on_log(&self, _: &str, _: &str, _: Option<&str>) {}
+    }
+
+    #[tokio::test]
+    async fn scans_report_time_per_stage() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "part.stl", SIMPLE_ASCII_STL);
+        let svc = service(&t, root.path());
+        let reporter = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&reporter), &CancellationToken::new()).await.unwrap();
+
+        let results = reporter.results.lock();
+        let stages = results.iter().find(|r| r.relative_path == "part.stl").unwrap().stages;
+        for (stage, ms) in [
+            ("checksum", stages.checksum_ms),
+            ("load", stages.load_ms),
+            ("supports", stages.supports_ms),
+            ("hull", stages.hull_ms),
+        ] {
+            assert!(ms > 0.0, "{stage} was not timed: {stages:?}");
+        }
+        assert_eq!(stages.preview_ms, 0.0, "previews are disabled");
     }
 }

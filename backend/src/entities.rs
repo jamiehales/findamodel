@@ -217,6 +217,11 @@ pub struct IndexRunFile {
     pub message: Option<String>,
     pub duration_ms: Option<f64>,
     pub processed_at: Option<DateTime<Utc>>,
+    pub checksum_ms: Option<f64>,
+    pub load_ms: Option<f64>,
+    pub supports_ms: Option<f64>,
+    pub preview_ms: Option<f64>,
+    pub hull_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]

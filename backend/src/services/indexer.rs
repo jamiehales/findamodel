@@ -9,13 +9,14 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
+use sqlx::Row;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::db::{Db, now};
 use crate::dto::{
-    CompletedIndexRequestDto, IndexRequestDto, IndexRunDetailDto, IndexRunEventDto, IndexRunFileDto,
+    CompletedIndexRequestDto, IndexRequestDto, IndexRunDetailDto, IndexRunEventDto, IndexRunFileDto, IndexRunStageDto,
     IndexRunSummaryDto, IndexerStatusDto, PagedResultDto, index_flags,
 };
 use crate::entities::{IndexRun, IndexRunEvent, IndexRunFile};
@@ -25,6 +26,31 @@ use crate::services::models::ModelService;
 use crate::services::scan::{Cancelled, FilePlan, FileResult, ProgressReporter};
 
 const LOG_TARGET: &str = "findamodel.Indexing";
+
+/// Indexing stages in pipeline order, named as their `index_run_files` timing columns.
+const STAGES: [&str; 5] = ["checksum", "load", "supports", "preview", "hull"];
+
+/// Stage timings are stored as NULL for stages that didn't run.
+fn stage_ms(ms: f64) -> Option<f64> {
+    (ms > 0.0).then_some(ms)
+}
+
+async fn run_stage_totals(db: &Db, run_id: Uuid) -> sqlx::Result<Vec<IndexRunStageDto>> {
+    let columns: Vec<String> = STAGES.iter().map(|s| format!("COALESCE(SUM({s}_ms), 0.0), COUNT({s}_ms)")).collect();
+    let sql = format!("SELECT {} FROM index_run_files WHERE index_run_id = ?", columns.join(", "));
+    let row = sqlx::query(&sql).bind(run_id).fetch_one(db).await?;
+    STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            Ok(IndexRunStageDto {
+                stage: stage.to_string(),
+                total_ms: row.try_get(i * 2)?,
+                file_count: row.try_get(i * 2 + 1)?,
+            })
+        })
+        .collect()
+}
 const RECENT_LIMIT: usize = 15;
 const HISTORY_RETENTION_DAYS: i64 = 7;
 const CANCELLED_LIVE_STATUS_VISIBILITY: Duration = Duration::from_secs(2);
@@ -580,8 +606,11 @@ impl IndexerService {
         .fetch_all(&self.db)
         .await?;
 
+        let stages = run_stage_totals(&self.db, run_id).await?;
+
         Ok(Some(IndexRunDetailDto {
             run: to_summary(&run),
+            stages,
             files: PagedResultDto {
                 items: files
                     .into_iter()
@@ -700,12 +729,14 @@ impl ProgressReporter for RunProgressReporter {
             let mut tx = self.db().begin().await?;
             sqlx::query(
                 "INSERT INTO index_run_files (id, index_run_id, relative_path, file_type, status, is_new, was_updated,
-                    generated_preview, generated_hull, message, duration_ms, processed_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    generated_preview, generated_hull, message, duration_ms, processed_at,
+                    checksum_ms, load_ms, supports_ms, preview_ms, hull_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(index_run_id, relative_path) DO UPDATE SET status = excluded.status, is_new = excluded.is_new,
                     was_updated = excluded.was_updated, generated_preview = excluded.generated_preview,
                     generated_hull = excluded.generated_hull, message = excluded.message, duration_ms = excluded.duration_ms,
-                    processed_at = excluded.processed_at",
+                    processed_at = excluded.processed_at, checksum_ms = excluded.checksum_ms, load_ms = excluded.load_ms,
+                    supports_ms = excluded.supports_ms, preview_ms = excluded.preview_ms, hull_ms = excluded.hull_ms",
             )
             .bind(Uuid::new_v4())
             .bind(self.run_id)
@@ -719,6 +750,11 @@ impl ProgressReporter for RunProgressReporter {
             .bind(&r.message)
             .bind(r.duration_ms)
             .bind(now())
+            .bind(stage_ms(r.stages.checksum_ms))
+            .bind(stage_ms(r.stages.load_ms))
+            .bind(stage_ms(r.stages.supports_ms))
+            .bind(stage_ms(r.stages.preview_ms))
+            .bind(stage_ms(r.stages.hull_ms))
             .execute(&mut *tx)
             .await?;
             sqlx::query("UPDATE index_runs SET total_files = ?, processed_files = ? WHERE id = ?")
@@ -990,5 +1026,69 @@ mod tests {
         assert!(detail.events.items.iter().any(|e| e.message == "Run completed successfully"));
         assert_eq!(detail.files.page_size, 200);
         assert!(sut.get_run_detail(Uuid::new_v4(), 1, 10, "all", 1, 10).await.unwrap().is_none());
+    }
+
+    /// Reports two models with stage timings; the second skipped its preview.
+    struct TimedWorker;
+
+    #[async_trait]
+    impl IndexWorker for TimedWorker {
+        async fn sync_directories(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn scan_models(
+            &self,
+            _: Option<&str>,
+            reporter: &dyn ProgressReporter,
+            _: &CancellationToken,
+        ) -> anyhow::Result<()> {
+            use crate::services::scan::StageTimings;
+            let stages = [
+                StageTimings { checksum_ms: 10.0, load_ms: 100.0, supports_ms: 40.0, preview_ms: 30.0, hull_ms: 60.0 },
+                StageTimings { checksum_ms: 20.0, load_ms: 300.0, supports_ms: 80.0, preview_ms: 0.0, hull_ms: 140.0 },
+            ];
+            for (i, stages) in stages.into_iter().enumerate() {
+                reporter
+                    .on_file_processed(FileResult {
+                        relative_path: format!("m{i}.stl"),
+                        file_type: "stl".into(),
+                        status: "processed".into(),
+                        is_new: true,
+                        was_updated: false,
+                        generated_preview: stages.preview_ms > 0.0,
+                        generated_hull: true,
+                        message: String::new(),
+                        duration_ms: 0.0,
+                        stages,
+                    })
+                    .await;
+            }
+            Ok(())
+        }
+        async fn scan_single(&self, _: &str, _: &dyn ProgressReporter, _: &CancellationToken) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn run_detail_totals_time_per_stage_counting_only_files_it_ran_for() {
+        let t = TestDb::new().await;
+        let sut = IndexerService::new(t.db.clone(), Arc::new(TimedWorker));
+        let request = sut.enqueue(None, None, index_flags::MODELS);
+        wait_until(|| sut.get_status().recent.iter().any(|r| r.id == request.id), Duration::from_secs(5)).await;
+
+        let detail = sut.get_run_detail(request.run_id.unwrap(), 1, 25, "all", 1, 25).await.unwrap().unwrap();
+        let totals: Vec<(&str, f64, i64)> =
+            detail.stages.iter().map(|s| (s.stage.as_str(), s.total_ms, s.file_count)).collect();
+        assert_eq!(
+            totals,
+            vec![
+                ("checksum", 30.0, 2),
+                ("load", 400.0, 2),
+                ("supports", 120.0, 2),
+                ("preview", 30.0, 1),
+                ("hull", 200.0, 2)
+            ]
+        );
     }
 }

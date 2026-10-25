@@ -30,6 +30,7 @@ import {
   useIndexerStatus,
 } from '../lib/queries';
 import ErrorView from '../components/ErrorView';
+import IndexRunStages from '../components/IndexRunStages';
 import LoadingView from '../components/LoadingView';
 import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
 import Pagination from '../components/Pagination';
@@ -601,6 +602,7 @@ function RunDetailWithPaging({
           {flagsLabel(run.flags)} · Started {formatDate(run.startedAt)} ·{' '}
           {formatDuration(run.startedAt, run.completedAt)}
         </span>
+        {detail.stages && <IndexRunStages stages={detail.stages} />}
         {run.error && (
           <p role="alert" className={styles.error}>
             {run.error}

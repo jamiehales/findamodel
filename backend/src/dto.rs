@@ -311,6 +311,18 @@ pub struct IndexRunDetailDto {
     pub run: IndexRunSummaryDto,
     pub files: PagedResultDto<IndexRunFileDto>,
     pub events: PagedResultDto<IndexRunEventDto>,
+    /// Time spent in each indexing stage across the run's files, in pipeline order.
+    pub stages: Vec<IndexRunStageDto>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexRunStageDto {
+    /// checksum | load | supports | preview | hull
+    pub stage: String,
+    pub total_ms: f64,
+    /// Files the stage ran for.
+    pub file_count: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -79,10 +79,19 @@ export interface IndexRunEvent {
   relativePath: string | null;
 }
 
+export type IndexRunStageName = 'checksum' | 'load' | 'supports' | 'preview' | 'hull';
+
+export interface IndexRunStage {
+  stage: IndexRunStageName;
+  totalMs: number;
+  fileCount: number;
+}
+
 export interface IndexRunDetail {
   run: IndexRunSummary;
   files: PagedResult<IndexRunFile>;
   events: PagedResult<IndexRunEvent>;
+  stages: IndexRunStage[];
 }
 
 export type IndexRunFilesView = 'all' | 'pending' | 'processed';
