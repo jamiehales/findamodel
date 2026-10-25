@@ -303,6 +303,23 @@ async fn index_query_preview_geometry_and_plate_export() {
     assert_eq!(headers["x-plate-skipped-models"], "print.ctb");
     assert_eq!(u32::from_le_bytes(stl[80..84].try_into().unwrap()), 4);
 
+    let mut voxl_plate = plate.clone();
+    voxl_plate["format"] = json!("voxl");
+    voxl_plate["bedWidthMm"] = json!(200);
+    voxl_plate["bedDepthMm"] = json!(120);
+    voxl_plate["plateName"] = json!("Dragons");
+    let request = Request::post("/api/plate/generate")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(voxl_plate.to_string()))
+        .unwrap();
+    let (status, headers, voxl) = app.send(request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("plate.voxl"));
+    assert_eq!(&voxl[0..4], b"VOXL");
+    // Two placements of one model share a MESH chunk, which raises the container version.
+    assert_eq!(u16::from_le_bytes(voxl[4..6].try_into().unwrap()), 3);
+
     let (status, message) = app
         .json("POST", "/api/plate/generate", json!({ "placements": [{ "modelId": "nope", "xMm": 0, "yMm": 0 }] }))
         .await;

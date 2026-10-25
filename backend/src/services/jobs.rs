@@ -510,6 +510,7 @@ mod tests {
         let request = GeneratePlateRequest {
             placements: vec![placement(first.id, 0.0), placement(first.id, 20.0), placement(second.id, 40.0)],
             format: Some("3mf".into()),
+            ..Default::default()
         };
         let started = sut.create_job(request).await.unwrap();
         assert_eq!(started.status, "queued");
@@ -540,6 +541,7 @@ mod tests {
         let request = GeneratePlateRequest {
             placements: vec![placement(skipped.id, 0.0), placement(printable.id, 20.0)],
             format: Some("stl".into()),
+            ..Default::default()
         };
         let started = sut.create_job(request).await.unwrap();
         let done = wait_for_plate(&sut, started.job_id).await;
@@ -552,12 +554,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn voxl_plate_shares_meshes_and_places_models_like_stl() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "first.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "second.stl", SIMPLE_ASCII_STL);
+        let (first, second) = (model("first.stl", ""), model("second.stl", ""));
+        t.insert_model(&first).await;
+        t.insert_model(&second).await;
+        let sut = PlateJobService::new(service(&t, root.path()));
+
+        let mut placements = vec![placement(first.id, 30.0), placement(first.id, 60.0), placement(second.id, 90.0)];
+        placements[1].y_mm = 40.0;
+        placements[1].angle_rad = 1.2;
+        let run = |format: &str| {
+            let request = GeneratePlateRequest {
+                placements: placements.clone(),
+                format: Some(format.into()),
+                bed_width_mm: Some(200.0),
+                bed_depth_mm: Some(120.0),
+                plate_name: Some("Dragons".into()),
+            };
+            let sut = &sut;
+            async move {
+                let started = sut.create_job(request).await.unwrap();
+                let done = wait_for_plate(sut, started.job_id).await;
+                assert_eq!(done.status, "completed", "{:?}", done.error_message);
+                std::fs::read(sut.completed_file(started.job_id).unwrap().path).unwrap()
+            }
+        };
+        let (voxl_bytes, stl) = (run("voxl").await, run("stl").await);
+
+        let (version, chunks) = crate::geometry::voxl::read_voxl(&voxl_bytes);
+        assert_eq!(version, 3);
+        let chunk = |tag: &[u8; 4], index: u16| &chunks.iter().find(|(t, i, _)| t == tag && *i == index).unwrap().2;
+        let models: serde_json::Value = serde_json::from_slice(chunk(b"MODL", 0)).unwrap();
+        let scene: serde_json::Value = serde_json::from_slice(chunk(b"SCNE", 0)).unwrap();
+        assert_eq!(scene["plates"][0]["name"], "Dragons");
+        assert_eq!(chunks.iter().filter(|(t, _, _)| t == b"MESH").count(), 2);
+        assert_eq!(models[1]["name"], "first.stl");
+        assert_eq!(models[1]["mesh"]["chunkIndex"], 0);
+
+        // Flatten the VOXL the way DragonFruit does, then undo the bed centring: every vertex
+        // must land where the STL export puts it.
+        let f = |b: &[u8], at: usize| f64::from(f32::from_le_bytes(b[at..at + 4].try_into().unwrap()));
+        for (i, m) in models.as_array().unwrap().iter().enumerate() {
+            let stored = chunk(b"MESH", m["mesh"]["chunkIndex"].as_u64().unwrap_or(i as u64) as u16);
+            let rz = m["transform"]["rotation"]["z"].as_f64().unwrap();
+            let pos = ["x", "y", "z"].map(|k| m["transform"]["position"][k].as_f64().unwrap());
+            let (s, c) = rz.sin_cos();
+            for v in 0..3 {
+                let (lx, ly, lz) = (f(stored, 96 + v * 12), f(stored, 100 + v * 12), f(stored, 104 + v * 12));
+                let placed = [lx * c - ly * s + pos[0] - 100.0, lx * s + ly * c + pos[1] + 60.0, lz + pos[2]];
+                let expected = [0, 4, 8].map(|k| f(&stl, 84 + i * 50 + 12 + v * 12 + k));
+                for k in 0..3 {
+                    assert!((placed[k] - expected[k]).abs() < 1e-3, "model {i}: {placed:?} != {expected:?}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn plate_job_fails_for_unknown_model() {
         let t = TestDb::new().await;
         let root = tempfile::tempdir().unwrap();
         let sut = PlateJobService::new(service(&t, root.path()));
         let started = sut
-            .create_job(GeneratePlateRequest { placements: vec![placement(Uuid::new_v4(), 0.0)], format: None })
+            .create_job(GeneratePlateRequest { placements: vec![placement(Uuid::new_v4(), 0.0)], ..Default::default() })
             .await
             .unwrap();
         let done = wait_for_plate(&sut, started.job_id).await;

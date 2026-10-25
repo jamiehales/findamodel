@@ -77,11 +77,8 @@ async fn download_job_file(
     IdPath(id): IdPath,
 ) -> AppResult<Response> {
     let file = state.plate_jobs.completed_file(id).ok_or_else(not_found)?;
-    let content_type = match file.path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
-        Some("stl") => "model/stl",
-        Some("glb") => "model/gltf-binary",
-        _ => "application/vnd.ms-3mf",
-    };
+    let format = file.path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let content_type = plate_export::content_type(&format);
     let jobs = state.plate_jobs.clone();
     serve_temp_download(
         &file.path,

@@ -6,6 +6,7 @@ pub mod loader;
 pub mod mesh_transfer;
 pub mod saver;
 pub mod support_separation;
+pub mod voxl;
 
 use std::ops::{Add, Mul, Neg, Sub};
 

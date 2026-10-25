@@ -345,11 +345,19 @@ pub struct PlacementDto {
     pub angle_rad: f64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeneratePlateRequest {
     pub placements: Vec<PlacementDto>,
     pub format: Option<String>,
+    /// Bed size, used to centre the plate for formats whose origin is the bed centre (VOXL).
+    #[serde(default)]
+    pub bed_width_mm: Option<f64>,
+    #[serde(default)]
+    pub bed_depth_mm: Option<f64>,
+    /// Plate name for formats that carry one (VOXL).
+    #[serde(default)]
+    pub plate_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

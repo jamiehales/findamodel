@@ -20,6 +20,7 @@ import {
   fetchPrintingListArchiveJob,
   getPlateGenerationDownloadUrl,
   getPrintingListArchiveDownloadUrl,
+  type PlateFormat,
   type PlateGenerationJob,
   type PrintingListArchiveJob,
   type SpawnType,
@@ -78,6 +79,8 @@ function PrintingListPage() {
   );
 
   const listName = list?.name ?? 'Printing list';
+  const bedWidthMm = list?.printer?.bedWidthMm ?? 228;
+  const bedDepthMm = list?.printer?.bedDepthMm ?? 128;
   const modelsPending = modelIds.length > 0 && modelsQueryPending;
   const isPending = listPending || modelsPending;
   const hasNonExportableModels = listedModels.some((m) => !m.canExportToPlate);
@@ -278,7 +281,7 @@ function PrintingListPage() {
     updatePrinter({ id: list.id, printerConfigId: printerId });
   }
 
-  async function handleSavePlate(format: '3mf' | 'stl' | 'glb' = '3mf') {
+  async function handleSavePlate(format: PlateFormat = '3mf') {
     setPlateWarning(null);
     setPlateError(null);
     setPlateJob(null);
@@ -315,7 +318,11 @@ function PrintingListPage() {
         /* proceed with empty placements */
       }
 
-      const job = await createPlateGenerationJob(placements, format);
+      const job = await createPlateGenerationJob(placements, format, {
+        bedWidthMm,
+        bedDepthMm,
+        plateName: list?.name,
+      });
       setPlateJob(job);
     } catch (error) {
       setPlateError(error instanceof Error ? error.message : 'Failed to generate plate');
@@ -436,6 +443,7 @@ function PrintingListPage() {
                     <MenuItem onSelect={() => handleSavePlate('3mf')}>Export as 3MF</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('stl')}>Export as STL</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('glb')}>Export as GLB</MenuItem>
+                    <MenuItem onSelect={() => handleSavePlate('voxl')}>Export as VOXL</MenuItem>
                   </MenuContent>
                 </Menu>
               </div>
@@ -503,8 +511,8 @@ function PrintingListPage() {
                 items={items}
                 selectedPrinterId={list?.printer?.id ?? null}
                 printers={printers}
-                bedWidthMm={list?.printer?.bedWidthMm ?? 228}
-                bedDepthMm={list?.printer?.bedDepthMm ?? 128}
+                bedWidthMm={bedWidthMm}
+                bedDepthMm={bedDepthMm}
                 onPrinterChange={handlePrinterChange}
                 spawnOrder={list?.spawnType ?? 'grouped'}
                 hullMode={list?.hullMode ?? 'convex'}

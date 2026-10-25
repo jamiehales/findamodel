@@ -1,4 +1,5 @@
-//! Print plate export: combines placed models into one 3MF (instanced), STL or GLB file.
+//! Print plate export: combines placed models into one 3MF (instanced), STL, GLB or VOXL
+//! (instanced) file.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Seek, Write};
@@ -10,6 +11,7 @@ use uuid::Uuid;
 use crate::dto::GeneratePlateRequest;
 use crate::error::{AppError, AppResult, bad_request};
 use crate::geometry::saver::{self, MeshObject};
+use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
@@ -32,9 +34,9 @@ pub struct PlateExportResult {
 
 pub fn normalize_format(format: Option<&str>) -> AppResult<String> {
     let normalized = format.unwrap_or("3mf").to_ascii_lowercase();
-    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb") {
+    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | "voxl") {
         return Err(bad_request(format!(
-            "Unsupported format '{}'. Supported: 3mf, stl, glb",
+            "Unsupported format '{}'. Supported: 3mf, stl, glb, voxl",
             format.unwrap_or_default()
         )));
     }
@@ -45,6 +47,7 @@ pub fn file_name(format: &str) -> &'static str {
     match format {
         "stl" => "plate.stl",
         "glb" => "plate.glb",
+        "voxl" => "plate.voxl",
         _ => "plate.3mf",
     }
 }
@@ -53,6 +56,7 @@ pub fn content_type(format: &str) -> &'static str {
     match format {
         "stl" => "model/stl",
         "glb" => "model/gltf-binary",
+        "voxl" => "application/vnd.dragonfruit.voxl",
         _ => "application/vnd.ms-3mf",
     }
 }
@@ -84,6 +88,30 @@ pub fn transform_3mf(angle_rad: f64, x_mm: f64, y_mm: f64) -> String {
 pub fn transform_glb(angle_rad: f64, x_mm: f64, y_mm: f64) -> [f32; 16] {
     let (s, c) = (angle_rad as f32).sin_cos();
     [c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, x_mm as f32, 0.0, y_mm as f32, 1.0]
+}
+
+/// VOXL placement: the same rotation and translation as `transform_3mf` (a rotation about Z
+/// by -angle, plate X mirrored), shifted so the bed centre is the origin, as DragonFruit expects.
+pub fn voxl_placement(
+    mesh: usize,
+    angle_rad: f64,
+    x_mm: f64,
+    y_mm: f64,
+    bed_width_mm: f64,
+    bed_depth_mm: f64,
+) -> VoxlPlacement {
+    VoxlPlacement {
+        mesh,
+        rotation_z: -angle_rad,
+        translation: [bed_width_mm / 2.0 - x_mm, y_mm - bed_depth_mm / 2.0, 0.0],
+    }
+}
+
+fn to_z_up(triangles: &[Triangle]) -> Vec<Triangle> {
+    triangles
+        .iter()
+        .map(|t| Triangle::new(swap_up_axis(t.v0), swap_up_axis(t.v1), swap_up_axis(t.v2), swap_up_axis(t.normal)))
+        .collect()
 }
 
 fn place_vertex(v: Vec3, sin: f32, cos: f32, x: f32, y: f32) -> Vec3 {
@@ -198,6 +226,9 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
 
     let warning = (!skipped.is_empty())
         .then(|| "Some models were skipped because they do not contain exportable geometry (LYS/LYT/CTB).".to_string());
+    let names: HashMap<Uuid, String> = geometry_ids.iter().map(|id| (*id, infos[id].file_name.clone())).collect();
+    let (bed_width_mm, bed_depth_mm) = (request.bed_width_mm.unwrap_or(0.0), request.bed_depth_mm.unwrap_or(0.0));
+    let plate_name = request.plate_name.clone();
     let result = PlateExportResult {
         content_type: content_type(&format),
         file_name: file_name(&format),
@@ -209,24 +240,8 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
         let mut out = out;
         match format.as_str() {
             "3mf" => {
-                let z_up: Vec<(u32, Vec<Triangle>)> = geometry_ids
-                    .iter()
-                    .map(|id| {
-                        let tris = geometries[id]
-                            .triangles
-                            .iter()
-                            .map(|t| {
-                                Triangle::new(
-                                    swap_up_axis(t.v0),
-                                    swap_up_axis(t.v1),
-                                    swap_up_axis(t.v2),
-                                    swap_up_axis(t.normal),
-                                )
-                            })
-                            .collect();
-                        (object_ids[id], tris)
-                    })
-                    .collect();
+                let z_up: Vec<(u32, Vec<Triangle>)> =
+                    geometry_ids.iter().map(|id| (object_ids[id], to_z_up(&geometries[id].triangles))).collect();
                 let objects: Vec<MeshObject<'_>> =
                     z_up.iter().map(|(id, tris)| MeshObject { id: *id, triangles: tris }).collect();
                 let items: Vec<(u32, String)> = placements
@@ -234,6 +249,23 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     .map(|p| (object_ids[&p.model_id], transform_3mf(p.angle_rad, p.x_mm, p.y_mm)))
                     .collect();
                 out = saver::write_3mf(out, &objects, &items)?;
+            }
+            "voxl" => {
+                let z_up: Vec<Vec<Triangle>> =
+                    geometry_ids.iter().map(|id| to_z_up(&geometries[id].triangles)).collect();
+                let meshes: Vec<VoxlMesh<'_>> = geometry_ids
+                    .iter()
+                    .zip(&z_up)
+                    .map(|(id, triangles)| VoxlMesh { name: &names[id], triangles })
+                    .collect();
+                let items: Vec<VoxlPlacement> = placements
+                    .iter()
+                    .map(|p| {
+                        let mesh = object_ids[&p.model_id] as usize - 1;
+                        voxl_placement(mesh, p.angle_rad, p.x_mm, p.y_mm, bed_width_mm, bed_depth_mm)
+                    })
+                    .collect();
+                out = voxl::write_voxl(out, &meshes, &items, plate_name.as_deref())?;
             }
             "stl" => {
                 let total: u32 = placements.iter().map(|p| geometries[&p.model_id].triangles.len() as u32).sum();
@@ -284,6 +316,9 @@ mod tests {
         assert_eq!(normalize_format(Some("STL")).unwrap(), "stl");
         assert!(matches!(normalize_format(Some("obj")), Err(AppError::BadRequest(_))));
         assert_eq!(file_name("glb"), "plate.glb");
+        assert_eq!(normalize_format(Some("VOXL")).unwrap(), "voxl");
+        assert_eq!(file_name("voxl"), "plate.voxl");
+        assert_eq!(content_type("voxl"), "application/vnd.dragonfruit.voxl");
         assert_eq!(content_type("3mf"), "application/vnd.ms-3mf");
     }
 
@@ -297,5 +332,17 @@ mod tests {
 
         let m = transform_glb(0.0, 5.0, 7.0);
         assert_eq!((m[0], m[12], m[14], m[15]), (1.0, 5.0, 7.0, 1.0));
+    }
+
+    #[test]
+    fn voxl_placement_matches_3mf_transform_on_a_centred_bed() {
+        let (angle, x, y) = (0.6, 40.0, 25.0);
+        let p = voxl_placement(3, angle, x, y, 200.0, 120.0);
+        assert_eq!(p.mesh, 3);
+        let m: Vec<f64> = transform_3mf(angle, x, y).split(' ').map(|v| v.parse().unwrap()).collect();
+        // 3MF uses row vectors: v' = v * M, so a point (1, 0) maps to the first row plus translation.
+        let (s, c) = p.rotation_z.sin_cos();
+        assert!((c - m[0]).abs() < 1e-6 && (s - m[1]).abs() < 1e-6);
+        assert_eq!(p.translation, [m[9] + 100.0, m[10] - 60.0, 0.0]);
     }
 }

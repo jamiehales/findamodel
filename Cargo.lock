@@ -1163,6 +1163,7 @@ dependencies = [
  "chrono",
  "croner",
  "fancy-regex",
+ "flate2",
  "futures",
  "glam",
  "hex",
