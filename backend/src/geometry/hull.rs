@@ -19,7 +19,7 @@ const LOG_TARGET: &str = "findamodel.Hull";
 
 pub const DEFAULT_MAX_HULL_VERTICES: usize = 20;
 /// Bump whenever hull output changes; see `scan_config::compute`.
-pub const CURRENT_HULL_GENERATION_VERSION: i32 = 5;
+pub const CURRENT_HULL_GENERATION_VERSION: i32 = 6;
 pub const DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
 
 const MAX_CONCAVE_HULL_INPUT_POINTS: usize = 30_000;
@@ -62,7 +62,8 @@ pub fn calculate_hulls(geometry: &LoadedGeometry, max_hull_vertices: usize, raft
     }
 
     let convex = enclosing_convex_hull(&all_points, max_hull_vertices);
-    let concave = concave_hull(&all_points, max_hull_vertices);
+    let footprint_points = densify_footprint(geometry, &all_points);
+    let concave = concave_hull(&footprint_points, max_hull_vertices);
 
     let sans_raft_points = dedupe(
         geometry
@@ -312,16 +313,9 @@ fn concave_hull(points: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
         return None;
     };
 
-    let mut best: Option<Vec<Point>> = None;
-    let mut best_area_ratio = f64::NEG_INFINITY;
-    let mut tried: Vec<f64> = Vec::new();
-
+    // Ratios ascend from most to least concave; the first ring that survives
+    // simplification wins, and higher ratios only serve as fallbacks.
     for ratio in candidate_ratios {
-        if tried.contains(&ratio) {
-            continue;
-        }
-        tried.push(ratio);
-
         let Some(mut ring) = triangulation.concave_hull_by_length_ratio(ratio) else {
             debug!(target: LOG_TARGET, "Concave hull attempt failed at ratio {ratio}");
             continue;
@@ -336,19 +330,54 @@ fn concave_hull(points: &[Point], max_vertices: usize) -> Option<Vec<Point>> {
         if ring.len() < 3 || !is_valid_ring(&ring) {
             continue;
         }
-
-        let area_ratio = signed_area(&ring).abs() / convex_area;
-        // Reject unstable shapes that collapse too far inside the outer envelope.
-        if area_ratio < 0.60 {
-            continue;
-        }
-        if area_ratio > best_area_ratio {
-            best_area_ratio = area_ratio;
-            best = Some(ring);
-        }
+        debug!(
+            target: LOG_TARGET,
+            "Concave hull at ratio {ratio}: {} vertices, {:.3} of convex area",
+            ring.len(),
+            signed_area(&ring).abs() / convex_area
+        );
+        return Some(ring);
     }
 
-    best
+    None
+}
+
+/// Projected mesh vertices plus extra points along long projected triangle edges. A large
+/// flat face (a square base or raft) has vertices only at its corners, and without points
+/// along its outline the erosion would cut straight through it.
+fn densify_footprint(geometry: &LoadedGeometry, vertices: &[Point]) -> Vec<Point> {
+    let min_x = vertices.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+    let max_x = vertices.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+    let min_y = vertices.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+    let max_y = vertices.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+    let area = (max_x - min_x) * (max_y - min_y);
+    // Same spacing as the concave hull downsampling grid, so densifying never adds more
+    // detail than survives downsampling.
+    let step = (area / MAX_CONCAVE_HULL_INPUT_POINTS as f64).sqrt();
+    if !step.is_finite() || step <= DEDUPE_EPSILON {
+        return vertices.to_vec();
+    }
+
+    let mut extra = Vec::new();
+    for t in &geometry.triangles {
+        let corners = [t.v0, t.v1, t.v2].map(|v| Point::new(v.x as f64, v.z as f64));
+        for i in 0..3 {
+            let (a, b) = (corners[i], corners[(i + 1) % 3]);
+            let steps = (a.dist(b) / step).floor();
+            if !steps.is_finite() || steps < 1.0 {
+                continue;
+            }
+            let steps = steps as usize;
+            for s in 1..=steps {
+                let f = s as f64 / (steps + 1) as f64;
+                extra.push(Point::new(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f));
+            }
+        }
+    }
+    if extra.is_empty() {
+        return vertices.to_vec();
+    }
+    dedupe(vertices.iter().copied().chain(extra))
 }
 
 fn estimate_initial_concave_ratio(point_count: usize, max_vertices: usize) -> f64 {
@@ -848,8 +877,8 @@ mod tests {
         let concave = parse(hulls.concave.as_deref().expect("concave"));
         assert!(concave.len() >= 3 && concave.len() <= DEFAULT_MAX_HULL_VERTICES);
         assert!(is_valid_ring(&concave));
-        // The L-shape's concave hull must be noticeably smaller than its convex hull.
-        assert!(signed_area(&concave).abs() < signed_area(&convex).abs() * 0.95);
+        // The L-shape covers 61% of its convex hull; the concave hull must follow the notch.
+        assert!(signed_area(&concave).abs() < signed_area(&convex).abs() * 0.7);
     }
 
     #[test]
@@ -941,5 +970,50 @@ mod tests {
     #[test]
     fn json_output_uses_invariant_number_formatting() {
         assert_eq!(to_json(&[Point::new(1.5, -2.0), Point::new(0.25, 3.0)]), "[[1.5,-2],[0.25,3]]");
+    }
+
+    #[test]
+    fn concave_hull_follows_deep_notch() {
+        // A dense U-shaped point cloud: 20x20 with a 10-wide, 15-deep notch (62.5% of the
+        // convex area).
+        let points: Vec<Point> = (0..=80)
+            .flat_map(|x| (0..=80).map(move |z| Point::new(x as f64 / 4.0, z as f64 / 4.0)))
+            .filter(|p| p.x <= 5.0 || p.x >= 15.0 || p.y <= 5.0)
+            .collect();
+        let ring = concave_hull(&points, DEFAULT_MAX_HULL_VERTICES).expect("concave hull");
+        let ratio = signed_area(&ring).abs() / signed_area(&convex_hull(&points)).abs();
+        assert!(ratio < 0.66, "area ratio {ratio}");
+    }
+
+    #[test]
+    fn concave_hull_keeps_sparse_base() {
+        // A 20x20 base whose top and bottom faces only have corner vertices, with a dense
+        // small figure in the middle. The hull must cover the base, not hug the figure.
+        let mut triangles = Vec::new();
+        for y in [0.0, 1.0] {
+            let v = |x: f32, z: f32| Vec3::new(x, y, z);
+            triangles.push(Triangle::new(v(0.0, 0.0), v(20.0, 0.0), v(20.0, 20.0), Vec3::UP));
+            triangles.push(Triangle::new(v(0.0, 0.0), v(20.0, 20.0), v(0.0, 20.0), Vec3::UP));
+        }
+        for x in 0..16 {
+            for z in 0..16 {
+                let (x, z) = (8.0 + x as f32 * 0.25, 8.0 + z as f32 * 0.25);
+                let v = |dx: f32, dz: f32| Vec3::new(x + dx, 10.0, z + dz);
+                triangles.push(Triangle::new(v(0.0, 0.0), v(0.25, 0.0), v(0.25, 0.25), Vec3::UP));
+                triangles.push(Triangle::new(v(0.0, 0.0), v(0.25, 0.25), v(0.0, 0.25), Vec3::UP));
+            }
+        }
+        let geometry = LoadedGeometry {
+            triangles,
+            sphere_centre: Vec3::new(10.0, 5.0, 10.0),
+            sphere_radius: 15.0,
+            dimension_x_mm: 20.0,
+            dimension_y_mm: 10.0,
+            dimension_z_mm: 20.0,
+        };
+        let hulls = calculate_hulls(&geometry, DEFAULT_MAX_HULL_VERTICES, DEFAULT_RAFT_HEIGHT_MM);
+        let concave = parse(hulls.concave.as_deref().expect("concave"));
+        let area = signed_area(&concave).abs();
+        assert!(area > 400.0 * 0.95, "concave area {area}");
     }
 }
