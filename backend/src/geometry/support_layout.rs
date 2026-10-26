@@ -14,6 +14,11 @@
 //! the shaft, or off its line (raft, braces, crossing shafts), are passed through without
 //! bending the shaft's centre line or ending the walk.
 //!
+//! Many support exports model each tip as a cone of its own, a closed shell apart from the
+//! joint ball and shaft it overlaps. Such a tip is measured from the cone itself (its narrow
+//! end is the contact size, its wide end the socket), which slices of a leaning tip only
+//! roughly show. Other tips are fitted to the walk's slices.
+//!
 //! Support geometry no walk passed is left in connected pieces. A piece bridging two traced
 //! supports is a brace; one standing on the plate and leaning against a traced support (the
 //! legs splaying from a tree's trunk) is a kickstand.
@@ -164,6 +169,22 @@ const MIN_SHAFT_LENGTH_MM: f32 = 0.2;
 
 const NONE: u32 = u32::MAX;
 
+/// Support vertices this close are one vertex when joining triangles into shells.
+const SHELL_WELD_MM: f32 = 0.001;
+/// Shells with more triangles than this are never a single cone.
+const MAX_CONE_TRIANGLES: usize = 2_000;
+/// A cone's ends are read from the vertices within this share of its length of each end.
+const CONE_END_BAND: f32 = 0.05;
+/// A cone tapers: its narrow end is at most this share of its wide end.
+const CONE_TAPER: f32 = 0.85;
+/// Vertices lie this close to a cone's wall, plus a share of its wide radius.
+const CONE_TOLERANCE_MM: f32 = 0.02;
+const CONE_TOLERANCE_RATIO: f32 = 0.05;
+/// A cone shell is a tip when its narrow end is this close to the contact.
+const CONE_CONTACT_MM: f32 = 1.0;
+/// A longer taper is not a tip cone (a whole support modelled as one long cone).
+const MAX_CONE_TIP_MM: f32 = 10.0;
+
 /// The tip where a support touches the model.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContactTip {
@@ -248,11 +269,14 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 5;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 6;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
-    let Some(graph) = Graph::slice(supports) else { return SupportLayout::default() };
+    let shells = Shells::new(supports);
+    let Some(graph) = Graph::slice(supports, &shells.of) else {
+        return SupportLayout::default();
+    };
     let surface = SurfaceIndex::new(model);
 
     let mut tops: Vec<(u32, SurfacePoint)> = (0..graph.blobs.len() as u32)
@@ -296,7 +320,8 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
             duplicate += 1;
             None
         } else {
-            let support = build_support(&graph, &walk, &contact, entry, lower);
+            let cone = shells.cone(graph.blobs[top as usize].shell);
+            let support = build_support(&graph, &walk, &contact, entry, lower, cone);
             too_low += usize::from(support.is_none());
             support
         };
@@ -420,6 +445,22 @@ fn fit_tip(
     TipFit { socket_index, socket: points[socket_index], socket_width: widths[socket_index], contact_diameter }
 }
 
+/// The tip fit of a tip that is a cone shell of its own: the socket is the cone's wide end, the
+/// contact is as wide as its narrow end (the tip's designed contact size; the part buried in the
+/// model is that end's cap) and the socket as its wide end. `nodes` run from the first blob
+/// outside the model outward; the socket's index is the last of them no farther from the
+/// contact than the socket.
+fn cone_fit(graph: &Graph, nodes: &[u32], contact: Vec3, cone: &Cone) -> TipFit {
+    let length = (cone.wide - contact).length();
+    let socket_index = nodes.iter().rposition(|&i| (graph.centre(i) - contact).length() <= length).unwrap_or(0);
+    TipFit {
+        socket_index,
+        socket: cone.wide,
+        socket_width: cone.wide_radius * 2.0,
+        contact_diameter: (cone.narrow_radius * 2.0).clamp(MIN_CONTACT_DIAMETER_MM, MAX_CONTACT_DIAMETER_MM),
+    }
+}
+
 /// The contact tip for a fit, with the surface normal turned to face the support.
 fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> ContactTip {
     let toward_socket = fit.socket - contact.point;
@@ -452,6 +493,7 @@ fn build_support(
     contact: &SurfacePoint,
     entry: usize,
     lower: Option<LowerEnd>,
+    cone: Option<Cone>,
 ) -> Option<SupportPath> {
     if let Some(lower) = lower {
         return Some(build_strut(graph, walk, contact, entry, &lower));
@@ -462,7 +504,15 @@ fn build_support(
         _ => None,
     };
     let (nodes, walked) = walk.tip();
-    let fit = fit_tip(graph, &nodes, &walked, entry, contact.point, knot, TIP_SHARE);
+    let mut fit = fit_tip(graph, &nodes, &walked, entry, contact.point, knot, TIP_SHARE);
+    // A cone reaching down into the root is the whole support rather than its tip.
+    let leaves_shaft = |c: &Cone| !matches!(walk.end, WalkEnd::Plate) || c.wide.z >= ROOT_TOP_MM + MIN_SHAFT_LENGTH_MM;
+    if let Some(cone) = cone.filter(|c| (c.narrow - contact.point).length() <= CONE_CONTACT_MM && leaves_shaft(c)) {
+        // The shaft line still starts below the slices fitted as the tip: those around the
+        // joint the cone ends in are off the shaft's line.
+        let cone_fit = cone_fit(graph, &nodes[entry..], contact.point, &cone);
+        fit = TipFit { socket_index: fit.socket_index.max(cone_fit.socket_index), ..cone_fit };
+    }
     let below = walk.nodes_below(entry + fit.socket_index);
     let widths: Vec<f32> = below.iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
     let shaft_diameter = shaft_diameter(widths, fit.socket_width);
@@ -692,6 +742,8 @@ struct Blob {
     half_max: f32,
     layer: u32,
     rect: Rect,
+    /// The support shell the blob's (largest) outline belongs to.
+    shell: u32,
 }
 
 struct Graph {
@@ -763,7 +815,7 @@ struct Piece {
 }
 
 impl Graph {
-    fn slice(triangles: &[Triangle]) -> Option<Graph> {
+    fn slice(triangles: &[Triangle], shell_of: &[u32]) -> Option<Graph> {
         let (lo, hi) = triangles
             .iter()
             .flat_map(|t| [t.v0.z, t.v1.z, t.v2.z])
@@ -782,11 +834,13 @@ impl Graph {
             .map(|start| {
                 let end = (start + LAYERS_PER_BAND).min(count);
                 let (band_lo, band_hi) = (plane(start), plane(end - 1));
-                let band: Vec<&Triangle> = triangles
-                    .iter()
-                    .filter(|t| t.v0.z.min(t.v1.z).min(t.v2.z) <= band_hi && t.v0.z.max(t.v1.z).max(t.v2.z) >= band_lo)
+                let band: Vec<u32> = (0..triangles.len() as u32)
+                    .filter(|&i| {
+                        let t = &triangles[i as usize];
+                        t.v0.z.min(t.v1.z).min(t.v2.z) <= band_hi && t.v0.z.max(t.v1.z).max(t.v2.z) >= band_lo
+                    })
                     .collect();
-                (start..end).map(|k| layer_blobs(&band, plane(k))).collect::<Vec<_>>()
+                (start..end).map(|k| layer_blobs(triangles, &band, shell_of, plane(k))).collect::<Vec<_>>()
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -809,6 +863,7 @@ impl Graph {
                     half_max: w.max(h) / 2.0,
                     layer: k as u32,
                     rect: *r,
+                    shell: section.shell,
                 }
             }));
         }
@@ -1427,8 +1482,11 @@ impl Graph {
 /// One slice's cross-section as blobs. Each closed outline is its own blob, so separate
 /// shells stay apart even where they overlap, and an outline lying wholly inside another (a
 /// shaft inside its joint ball, or inside the raft) joins the one around it.
-fn layer_blobs(triangles: &[&Triangle], z: f32) -> Vec<Section> {
-    let segments: Vec<[[f32; 2]; 2]> = triangles.iter().filter_map(|t| cross_section(t, z)).collect();
+fn layer_blobs(triangles: &[Triangle], band: &[u32], shell_of: &[u32], z: f32) -> Vec<Section> {
+    let (segments, shells): (Vec<[[f32; 2]; 2]>, Vec<u32>) = band
+        .iter()
+        .filter_map(|&i| cross_section(&triangles[i as usize], z).map(|segment| (segment, shell_of[i as usize])))
+        .unzip();
     if segments.is_empty() {
         return Vec::new();
     }
@@ -1455,7 +1513,7 @@ fn layer_blobs(triangles: &[&Triangle], z: f32) -> Vec<Section> {
     for (i, segment) in segments.iter().enumerate() {
         let root = find(&mut parent, i as u32);
         let k = *slot.entry(root).or_insert_with(|| {
-            outlines.push(Outline { rect: Rect::point(segment[0]), segments: Vec::new() });
+            outlines.push(Outline { rect: Rect::point(segment[0]), segments: Vec::new(), shell: shells[i] });
             outlines.len() - 1
         });
         outlines[k].rect.grow(segment[0]);
@@ -1469,12 +1527,15 @@ fn layer_blobs(triangles: &[&Triangle], z: f32) -> Vec<Section> {
 struct Outline {
     rect: Rect,
     segments: Vec<u32>,
+    shell: u32,
 }
 
-/// One blob of a slice: its box, and its width across its widest direction.
+/// One blob of a slice: its box, its width across its widest direction, and the shell of its
+/// largest outline.
 struct Section {
     rect: Rect,
     width: f32,
+    shell: u32,
 }
 
 /// Merges each outline lying wholly inside a larger one into it.
@@ -1485,7 +1546,8 @@ fn merge_enclosed(segments: &[[[f32; 2]; 2]], outlines: Vec<Outline>) -> Vec<Sec
             rect.union(&o.rect);
         }
         let points = members.iter().flat_map(|o| o.segments.iter().flat_map(|&i| segments[i as usize]));
-        Section { rect, width: cross_width(points) }
+        let shell = members.iter().max_by(|a, b| a.rect.area().total_cmp(&b.rect.area())).map_or(NONE, |o| o.shell);
+        Section { rect, width: cross_width(points), shell }
     };
     if outlines.len() < 2 {
         return outlines.iter().map(|o| section(&[o])).collect();
@@ -1591,6 +1653,129 @@ fn union(parent: &mut [u32], a: u32, b: u32) {
 struct SurfacePoint {
     point: Vec3,
     normal: Vec3,
+}
+
+/// A support shell that is a single tapered rod, such as a tip cone.
+#[derive(Debug, Clone, Copy)]
+struct Cone {
+    narrow: Vec3,
+    narrow_radius: f32,
+    wide: Vec3,
+    wide_radius: f32,
+}
+
+/// The support mesh's closed shells: triangles joined by shared vertices.
+struct Shells {
+    /// Each triangle's shell.
+    of: Vec<u32>,
+    /// Each shell's cone, when it is one.
+    cones: Vec<Option<Cone>>,
+}
+
+impl Shells {
+    fn new(triangles: &[Triangle]) -> Self {
+        let key = |v: Vec3| {
+            let q = |c: f32| (c / SHELL_WELD_MM).round() as i32;
+            (q(v.x), q(v.y), q(v.z))
+        };
+        let mut parent: Vec<u32> = (0..triangles.len() as u32).collect();
+        let mut first: FxHashMap<(i32, i32, i32), u32> = FxHashMap::default();
+        for (i, t) in triangles.iter().enumerate() {
+            for v in [t.v0, t.v1, t.v2] {
+                let other = *first.entry(key(v)).or_insert(i as u32);
+                union(&mut parent, i as u32, other);
+            }
+        }
+        let mut id: FxHashMap<u32, u32> = FxHashMap::default();
+        let mut members: Vec<Vec<u32>> = Vec::new();
+        let of: Vec<u32> = (0..triangles.len() as u32)
+            .map(|i| {
+                let root = find(&mut parent, i);
+                let shell = *id.entry(root).or_insert_with(|| {
+                    members.push(Vec::new());
+                    members.len() as u32 - 1
+                });
+                members[shell as usize].push(i);
+                shell
+            })
+            .collect();
+        let cones = members
+            .par_iter()
+            .map(|m| if m.len() <= MAX_CONE_TRIANGLES { fit_cone(triangles, m) } else { None })
+            .collect();
+        Shells { of, cones }
+    }
+
+    fn cone(&self, shell: u32) -> Option<Cone> {
+        self.cones.get(shell as usize).copied().flatten()
+    }
+}
+
+/// The tip cone a shell is: a rod that tapers from its narrow end and may then run on at its
+/// full width (a tip and a stretch of shaft modelled as one piece). Every vertex lies on that
+/// wall or on an end cap; the cone ends where the taper reaches the full width.
+fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
+    let verts: Vec<Vec3> = members
+        .iter()
+        .flat_map(|&i| {
+            let t = &triangles[i as usize];
+            [t.v0, t.v1, t.v2]
+        })
+        .collect();
+    let mean = verts.iter().fold(Vec3::default(), |sum, v| sum + *v) * (1.0 / verts.len() as f32);
+    // Principal direction by power iteration.
+    let mut axis = Vec3::new(0.3, 0.2, 1.0).normalized();
+    for _ in 0..30 {
+        let next = verts.iter().fold(Vec3::default(), |sum, v| {
+            let d = *v - mean;
+            sum + d * d.dot(axis)
+        });
+        if next.length_sq() < 1e-12 {
+            return None;
+        }
+        axis = next.normalized();
+    }
+    let along: Vec<(f32, f32)> = verts
+        .iter()
+        .map(|v| {
+            let d = *v - mean;
+            let t = d.dot(axis);
+            (t, (d - axis * t).length())
+        })
+        .collect();
+    let (lo, hi) = along.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.0), hi.max(p.0)));
+    let length = hi - lo;
+    let band = length * CONE_END_BAND;
+    let end_radius = |end: f32| along.iter().filter(|p| (p.0 - end).abs() <= band).map(|p| p.1).fold(0.0, f32::max);
+    // The narrow end is the thinner one; distances are measured from it.
+    let (narrow_t, narrow_radius, toward) =
+        if end_radius(lo) <= end_radius(hi) { (lo, end_radius(lo), 1.0) } else { (hi, end_radius(hi), -1.0) };
+    let wide_radius = along.iter().map(|p| p.1).fold(0.0, f32::max);
+    if length < 2.0 * wide_radius || narrow_radius > wide_radius * CONE_TAPER {
+        return None;
+    }
+    let tolerance = CONE_TOLERANCE_MM + wide_radius * CONE_TOLERANCE_RATIO;
+    // The taper ends at the first vertex as wide as the rod.
+    let taper = along
+        .iter()
+        .filter(|p| p.1 >= wide_radius - tolerance)
+        .map(|p| (p.0 - narrow_t) * toward)
+        .fold(f32::MAX, f32::min);
+    if taper <= band || taper > MAX_CONE_TIP_MM {
+        return None;
+    }
+    let wall = |s: f32| narrow_radius + (wide_radius - narrow_radius) * (s / taper).min(1.0);
+    let on_rod = along.iter().all(|&(t, r)| {
+        let s = (t - narrow_t) * toward;
+        let at_cap = s <= band || s >= length - band;
+        r <= wall(s) + tolerance && (r >= wall(s) - tolerance || at_cap)
+    });
+    on_rod.then(|| Cone {
+        narrow: mean + axis * narrow_t,
+        narrow_radius,
+        wide: mean + axis * (narrow_t + taper * toward),
+        wide_radius,
+    })
 }
 
 /// Nearest-point lookups on the model surface.
@@ -1747,6 +1932,27 @@ mod tests {
         out
     }
 
+    /// One closed upright tube through rings of the given radii, capped only at its ends.
+    fn tube(rings: &[(Vec3, f32)]) -> Vec<Triangle> {
+        let ring = |c: Vec3, r: f32, k: usize| {
+            let t = std::f32::consts::TAU * k as f32 / 16.0;
+            c + Vec3::new(r * t.cos(), r * t.sin(), 0.0)
+        };
+        let (first, last) = (rings[0], rings[rings.len() - 1]);
+        let mut out = Vec::new();
+        for k in 0..16 {
+            for w in rings.windows(2) {
+                let ((a, ra), (b, rb)) = (w[0], w[1]);
+                let (p0, p1, q0, q1) = (ring(a, ra, k), ring(a, ra, k + 1), ring(b, rb, k), ring(b, rb, k + 1));
+                out.push(Triangle::new(p0, p1, q1, Vec3::UP));
+                out.push(Triangle::new(p0, q1, q0, Vec3::UP));
+            }
+            out.push(Triangle::new(first.0, ring(first.0, first.1, k + 1), ring(first.0, first.1, k), Vec3::UP));
+            out.push(Triangle::new(last.0, ring(last.0, last.1, k), ring(last.0, last.1, k + 1), Vec3::UP));
+        }
+        out
+    }
+
     /// A support in DragonFruit's anatomy: a tip cone buried 0.2 mm into the model at
     /// `contact`, a joint ball at the socket, then a shaft through `path` to the plate.
     fn support(contact: Vec3, path: &[Vec3]) -> Vec<Triangle> {
@@ -1857,6 +2063,56 @@ mod tests {
         assert!(close(s.tip.socket, socket, 0.3), "{}", s.tip.socket);
         assert!((0.55..=0.7).contains(&s.tip.body_diameter_mm), "{}", s.tip.body_diameter_mm);
         assert!(s.joints.is_empty(), "{:?}", s.joints);
+    }
+
+    #[test]
+    fn cone_tip_takes_its_socket_and_widths_from_the_cone() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        // A tip cone of its own, 0.3 mm at its buried narrow end and 0.8 mm at its wide end,
+        // leaning 40 degrees into a joint ball on top of an upright shaft.
+        let lean = Vec3::new(40f32.to_radians().sin(), 0.0, -40f32.to_radians().cos());
+        let contact = Vec3::new(0.0, 0.0, 10.0);
+        let socket = contact + lean * 2.0;
+        let mut supports = frustum(contact - lean * 0.25, socket, 0.15, 0.4);
+        supports.extend(frustum(socket + Vec3::new(0.0, 0.0, 0.5), socket - Vec3::new(0.0, 0.0, 0.5), 0.5, 0.5));
+        supports.extend(frustum(socket - Vec3::new(0.0, 0.0, 0.05), Vec3::new(socket.x, 0.0, 0.0), 0.4, 0.4));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let tip = &layout.supports[0].tip;
+        assert!(close(tip.socket, socket, 0.05), "{}", tip.socket);
+        assert!((tip.contact_diameter_mm - 0.3).abs() < 0.02, "{}", tip.contact_diameter_mm);
+        assert!((tip.body_diameter_mm - 0.8).abs() < 0.03, "{}", tip.body_diameter_mm);
+        assert!(layout.supports[0].joints.is_empty(), "{:?}", layout.supports[0].joints);
+    }
+
+    #[test]
+    fn support_that_is_one_cone_into_its_root_keeps_a_shaft() {
+        // A short support modelled as a single cone from the model down to its root's top, with
+        // the root below.
+        let model = box_model(Vec3::new(-5.0, -5.0, 6.2), Vec3::new(5.0, 5.0, 10.0));
+        let mut supports = frustum(Vec3::new(0.0, 0.0, 6.4), Vec3::new(0.0, 0.0, 2.1), 0.12, 0.5);
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 2.05), Vec3::new(0.0, 0.0, 0.0), 0.5, 1.5));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        assert!(matches!(s.base, SupportBase::Plate { .. }), "{:?}", s.base);
+        assert!(s.tip.socket.z >= ROOT_TOP_MM + MIN_SHAFT_LENGTH_MM, "{}", s.tip.socket);
+    }
+
+    #[test]
+    fn cone_fit_reads_a_taper_then_a_shaft_and_rejects_rods_and_balls() {
+        let all = |t: &[Triangle]| fit_cone(t, &(0..t.len() as u32).collect::<Vec<_>>());
+        // A tip and a stretch of shaft modelled as one piece: the cone ends where the taper does.
+        let (narrow, wide) = (Vec3::new(1.0, 2.0, 10.0), Vec3::new(1.0, 2.0, 8.0));
+        let piece = tube(&[(narrow, 0.15), (wide, 0.5), (Vec3::new(1.0, 2.0, 5.0), 0.5)]);
+        let cone = all(&piece).expect("a cone");
+        assert!(close(cone.narrow, narrow, 0.02) && close(cone.wide, wide, 0.05), "{cone:?}");
+        assert!((cone.narrow_radius - 0.15).abs() < 0.01 && (cone.wide_radius - 0.5).abs() < 0.01, "{cone:?}");
+
+        assert!(all(&frustum(narrow, wide, 0.4, 0.4)).is_none());
+        assert!(all(&frustum(narrow, narrow - Vec3::new(0.0, 0.0, 0.8), 0.5, 0.5)).is_none());
     }
 
     #[test]
