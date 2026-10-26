@@ -10,12 +10,17 @@
 //! end in a ball inside it).
 //! Walking down from the tip, at each fork taking the most vertical way (a brace leaves its
 //! post at an angle) and then the one that best continues the shaft, traces the shaft to the
-//! plate (a trunk) or into a shaft an earlier walk claimed (a branch). Tips are walked from
-//! the highest down, so the tallest support of a tree is its trunk. Blobs much wider than
-//! the shaft, or off its line (raft, braces, crossing shafts), are passed through without
-//! bending the shaft's centre line or ending the walk. Where a post the walk is following
-//! merges with a brace or rung, the blob's middle lies off the post, so the walk keeps to the
-//! post's own line through it (struts tied by rungs inside a hollowed model).
+//! plate (a trunk) or into a shaft an earlier walk claimed (a branch). A way beside the shaft
+//! rather than below it (another support whose slices touch the shaft's) is passed up, unless
+//! that loses the support. Tips are walked from the highest down, so the tallest support of a
+//! tree is its trunk. Blobs much wider than the shaft, or off its line (raft, braces, crossing
+//! shafts), are passed through without bending the shaft's centre line or ending the walk.
+//! Where a post the walk is following merges with a brace or rung, the blob's middle lies off
+//! the post, so the walk keeps to the post's own line through it (struts tied by rungs inside a
+//! hollowed model). Below a tip leaning steeply away from its contact, or past a bend, the walk
+//! takes the shaft up again as soon as the slices it passed settle into a straight run of one
+//! width. Joint balls and junctions, wider than the slices around them, are left out of the
+//! shaft's line and width.
 //!
 //! Many support exports model each tip as a cone of its own, a closed shell apart from the
 //! joint ball and shaft it overlaps. Such a tip is measured from the cone itself (its narrow
@@ -88,6 +93,17 @@ const DRIFT_LAG_MM: f32 = 0.5;
 /// really is thicker than its tip or really does bend, so the walk takes the blob as is.
 const SKIP_RESET_MM: f32 = 1.5;
 const MAX_RESET_WIDTH_MM: f32 = 2.0;
+/// A run of skipped blobs this tall that keep one width and one step from slice to slice is a
+/// shaft (below a leaning tip, or past a bend): the walk picks it up from where the run began
+/// and steers by its lean until it has come far enough along it to measure its own direction.
+const PICKUP_RUN_MM: f32 = 0.6;
+/// The run's slices keep within this slope of the line its first slices set, and their widths
+/// within `RUN_WIDTH_MM + width * RUN_WIDTH_RATIO` of its first slice's.
+const RUN_SLOPE_TOLERANCE: f32 = 0.2;
+const RUN_WIDTH_MM: f32 = 0.03;
+const RUN_WIDTH_RATIO: f32 = 0.1;
+/// A run leans no more than this (horizontal run per unit of height, about 56 degrees).
+const MAX_RUN_LEAN: f32 = 1.5;
 /// Height over which the shaft direction is measured.
 const DIRECTION_SPAN_MM: f32 = 1.0;
 /// Where the structure forks going down, each way is followed this far and the most
@@ -120,12 +136,18 @@ const MIN_CONTACT_DIAMETER_MM: f32 = 0.2;
 const MAX_CONTACT_DIAMETER_MM: f32 = 1.5;
 const MAX_BODY_DIAMETER_MM: f32 = 3.0;
 const MIN_SHAFT_DIAMETER_MM: f32 = 0.3;
-/// The shaft diameter is this quantile (1/N) of its cross-sections: a shaft keeps one width,
-/// and joint balls, root flares and merged braces only ever widen a section.
-const SHAFT_WIDTH_QUANTILE: usize = 4;
+/// The shaft diameter is this quantile (1/N) of its cross-sections above the root: a shaft keeps
+/// one width, or tapers towards its foot, and the joint balls and merged braces left in only ever
+/// widen a section.
+const SHAFT_WIDTH_QUANTILE: usize = 3;
 const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
 /// Bends smaller than this are dropped from the shaft path.
 const SIMPLIFY_MM: f32 = 0.3;
+/// A shaft blob wider than `WIDE_NODE_RATIO` times those within `LOCAL_WIDTH_MM` of its height
+/// (their median), plus `WIDE_NODE_SLACK_MM`, is left out of the shaft's line.
+const LOCAL_WIDTH_MM: f32 = 0.5;
+const WIDE_NODE_RATIO: f32 = 1.1;
+const WIDE_NODE_SLACK_MM: f32 = 0.03;
 /// A contact this close to an earlier support's contact is a second top of that tip.
 const DUPLICATE_CONTACT_MM: f32 = 0.5;
 /// A walk ending within this height of the lowest support layer stands on the plate, when that
@@ -432,7 +454,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 9;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 10;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -455,9 +477,30 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
     let mut layout = SupportLayout::default();
     let (mut stranded, mut duplicate, mut too_low) = (0usize, 0usize, 0usize);
     for (top, top_contact) in tops {
-        let walk = graph.walk(top, &claimed);
-        let points: Vec<Vec3> = walk.nodes.iter().map(|&i| graph.centre(i)).collect();
-        let (contact, entry) = surface.entry(&points).unwrap_or((top_contact, 0));
+        let traced = |pass_beside: bool| {
+            let walk = graph.walk(top, &claimed, pass_beside);
+            let points: Vec<Vec3> = walk.nodes.iter().map(|&i| graph.centre(i)).collect();
+            let (contact, entry) = surface.entry(&points).unwrap_or((top_contact, 0));
+            let lower = match walk.end {
+                WalkEnd::Stranded => lower_end(&graph, &surface, &shells, &walk),
+                _ => None,
+            };
+            let outcome = if matches!(walk.end, WalkEnd::Stranded) && lower.is_none() {
+                Traced::Stranded
+            } else if layout.supports.iter().any(|s| (s.tip.contact - contact.point).length() < DUPLICATE_CONTACT_MM) {
+                Traced::Duplicate
+            } else {
+                let cone = shells.cone(graph.blobs[top as usize].shell);
+                build_support(&graph, &walk, &contact, entry, lower, cone).map_or(Traced::TooLow, Traced::Support)
+            };
+            (walk, contact, outcome)
+        };
+        // Passing up the ways beside the shaft can lead the walk into a dead end that loses the
+        // support (a sliver of its tip); then it may take them.
+        let (mut walk, mut contact, mut outcome) = traced(true);
+        if matches!(outcome, Traced::Stranded | Traced::TooLow) {
+            (walk, contact, outcome) = traced(false);
+        }
         log::trace!(
             "Tip candidate top {} contact {} ({} shaft blobs, ends {})",
             graph.centre(top),
@@ -472,21 +515,20 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
         for &node in &walk.visited {
             seen[node as usize] = true;
         }
-        let lower = match walk.end {
-            WalkEnd::Stranded => lower_end(&graph, &surface, &shells, &walk),
-            _ => None,
-        };
-        let support = if matches!(walk.end, WalkEnd::Stranded) && lower.is_none() {
-            stranded += 1;
-            None
-        } else if layout.supports.iter().any(|s| (s.tip.contact - contact.point).length() < DUPLICATE_CONTACT_MM) {
-            duplicate += 1;
-            None
-        } else {
-            let cone = shells.cone(graph.blobs[top as usize].shell);
-            let support = build_support(&graph, &walk, &contact, entry, lower, cone);
-            too_low += usize::from(support.is_none());
-            support
+        let support = match outcome {
+            Traced::Support(support) => Some(support),
+            Traced::Stranded => {
+                stranded += 1;
+                None
+            }
+            Traced::Duplicate => {
+                duplicate += 1;
+                None
+            }
+            Traced::TooLow => {
+                too_low += 1;
+                None
+            }
         };
         if let Some(support) = support {
             let id = layout.supports.len() as u32;
@@ -516,6 +558,17 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
         too_low,
     );
     layout
+}
+
+/// What a walk from a contact tip came to.
+enum Traced {
+    Support(SupportPath),
+    /// It stopped in mid-air.
+    Stranded,
+    /// Its contact is a second top of an earlier support's tip.
+    Duplicate,
+    /// Its socket is too low for a shaft to leave a root.
+    TooLow,
 }
 
 /// The far end of a walk that stopped short of the plate, when it stops in the model.
@@ -697,14 +750,20 @@ fn build_support(
     let leaves_shaft = |c: &Cone| !matches!(walk.end, WalkEnd::Plate) || c.wide.z >= ROOT_TOP_MM + MIN_SHAFT_LENGTH_MM;
     let fit = with_cone(graph, &nodes[entry..], contact.point, cone.filter(leaves_shaft), fit);
     let below = walk.nodes_below(entry + fit.socket_index);
-    let widths: Vec<f32> = below.iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
+    let shaft = shaft_slices(graph, below);
+    let widths: Vec<f32> = shaft
+        .iter()
+        .map(|&i| &graph.blobs[i as usize])
+        .filter(|b| b.z >= ROOT_TOP_MM)
+        .map(|b| b.half_min * 2.0)
+        .collect();
     let shaft_diameter = shaft_diameter(widths, fit.socket_width);
     let tip = contact_tip(contact, &fit, shaft_diameter);
     let socket = fit.socket;
 
     // Shaft centre line from the socket down, ending at the base.
     let mut line: Vec<Vec3> = vec![socket];
-    line.extend(below.iter().map(|&i| graph.centre(i)));
+    line.extend(shaft.iter().map(|&i| graph.centre(i)));
     let base = match walk.end {
         WalkEnd::Joined(parent, node) => {
             let point = graph.centre(node);
@@ -762,18 +821,16 @@ fn build_strut(
         lower_fit.socket = contact.point + span * (2.0 / 3.0);
     }
     let (upper_socket, lower_socket) = (upper_fit.socket, lower_fit.socket);
-    let between: Vec<f32> = walk
-        .visited
-        .iter()
-        .map(|&i| &graph.blobs[i as usize])
-        .filter(|b| b.z < upper_socket.z && b.z > lower_socket.z)
-        .map(|b| b.half_min * 2.0)
+    let shaft: Vec<u32> = shaft_slices(graph, &walk.nodes)
+        .into_iter()
+        .filter(|&i| (lower_socket.z..upper_socket.z).contains(&graph.blobs[i as usize].z))
         .collect();
+    let between: Vec<f32> = shaft.iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
     let shaft_diameter = shaft_diameter(between, upper_fit.socket_width.min(lower_fit.socket_width));
 
     // Shaft centre line from the upper socket down to the lower one.
     let mut line = vec![upper_socket];
-    line.extend(walk.nodes.iter().map(|&i| graph.centre(i)).filter(|p| p.z < upper_socket.z && p.z > lower_socket.z));
+    line.extend(shaft.iter().map(|&i| graph.centre(i)));
     line.push(lower_socket);
     SupportPath {
         tip: contact_tip(contact, &upper_fit, shaft_diameter),
@@ -781,6 +838,31 @@ fn build_strut(
         joints: bends(&line),
         shaft_diameter_mm: shaft_diameter,
     }
+}
+
+/// The shaft blobs `nodes` (top down) that are the shaft on its own, for its line and width:
+/// those notably wider than the blobs around them are a joint ball, or the shaft merged with a
+/// brace or another shaft, whose middle can lie off the shaft's line.
+fn shaft_slices(graph: &Graph, nodes: &[u32]) -> Vec<u32> {
+    let blob = |k: usize| &graph.blobs[nodes[k] as usize];
+    let (mut lo, mut hi) = (0, 0);
+    let mut around = Vec::new();
+    (0..nodes.len())
+        .filter(|&k| {
+            let z = blob(k).z;
+            while blob(lo).z > z + LOCAL_WIDTH_MM {
+                lo += 1;
+            }
+            while hi < nodes.len() && blob(hi).z >= z - LOCAL_WIDTH_MM {
+                hi += 1;
+            }
+            around.clear();
+            around.extend((lo..hi).map(|j| blob(j).half_max));
+            around.sort_by(f32::total_cmp);
+            blob(k).half_max <= around[around.len() / 2] * WIDE_NODE_RATIO + WIDE_NODE_SLACK_MM
+        })
+        .map(|k| nodes[k])
+        .collect()
 }
 
 /// The bends of a shaft line running from the top down, bottom to top.
@@ -1121,8 +1203,12 @@ impl Graph {
     /// shaft were upright, so it skips the slices of a tip leaning steeply away from its
     /// contact as drifting. The run of those that each carry on the tip's step from the slice
     /// before (as narrow as the tip, and unclaimed) is kept for fitting the tip. The walk does
-    /// not steer by them: the shaft below a tip seldom carries on at the tip's lean.
-    fn walk(&self, start: u32, claimed: &[u32]) -> Walk {
+    /// not steer by them: the shaft below a tip seldom carries on at the tip's lean. Once the
+    /// slices it skips settle into a straight run of one width (the shaft below the tip, or past
+    /// a bend), the walk takes the run as the shaft from where it began, and steers by the run's
+    /// lean rather than by the nodes above it. With `pass_beside`, a way at a fork beside the
+    /// blob the walk is on is passed up.
+    fn walk(&self, start: u32, claimed: &[u32], pass_beside: bool) -> Walk {
         let mut nodes = vec![start];
         let mut visited = vec![start];
         let mut width = self.blobs[start as usize].half_max;
@@ -1133,6 +1219,11 @@ impl Graph {
         // A leaning tip's skipped slices, where they go among the nodes, the tip's width, and
         // whether the run of them may go on.
         let (mut leaning, mut leaning_at, mut leaning_width, mut leaning_open) = (Vec::new(), 0, width, true);
+        // The walk steers by `nodes[from..]`, and by the lean of the run of skipped blobs it last
+        // picked up, until those nodes give the shaft's direction; and the current run of
+        // skipped blobs that may be the shaft.
+        let (mut from, mut lean): (usize, Option<[f32; 2]>) = (0, None);
+        let mut run: Vec<u32> = Vec::new();
         let mut current = start;
         loop {
             let below = &self.down[current as usize];
@@ -1142,28 +1233,41 @@ impl Graph {
             // direction.
             let z = self.blobs[first as usize].z;
             let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
+            let course = &nodes[from..];
             let tracking = last.z - z <= DRIFT_LAG_MM
                 && picked_up.is_none_or(|top| top - last.z >= DIRECTION_SPAN_MM)
-                && self.heading(&nodes, z).is_some();
+                && self.course(course, lean, z).is_some();
             let next = match below.as_slice() {
                 [only] => *only,
                 many => {
-                    let (px, py) = self.predict(&nodes, z);
+                    let (px, py) = self.predict(course, lean, z);
                     let miss = |i: u32| {
                         let b = &self.blobs[i as usize];
                         (b.x - px).powi(2) + (b.y - py).powi(2)
                     };
-                    let slopes: Vec<f32> = many
+                    // A way beside the blob the walk is on (neither holds the other's middle) is
+                    // another support touching it, not where its own shaft goes on.
+                    let here = self.blobs[current as usize];
+                    let beside = |i: u32| {
+                        let b = &self.blobs[i as usize];
+                        !(here.rect.holds([b.x, b.y], 0.0) || b.rect.holds([here.x, here.y], 0.0))
+                    };
+                    let ways: Vec<u32> = if pass_beside && many.iter().any(|&i| !beside(i)) {
+                        many.iter().copied().filter(|&i| !beside(i)).collect()
+                    } else {
+                        many.to_vec()
+                    };
+                    let slopes: Vec<f32> = ways
                         .iter()
                         .map(|&i| {
                             tracking
-                                .then(|| self.merged_descent_slope(i, &nodes, width))
+                                .then(|| self.merged_descent_slope(i, course, lean, width))
                                 .flatten()
                                 .unwrap_or_else(|| self.descent_slope(i))
                         })
                         .collect();
                     let steepest = slopes.iter().copied().fold(f32::MAX, f32::min);
-                    many.iter()
+                    ways.iter()
                         .zip(&slopes)
                         .filter(|(_, slope)| **slope <= steepest + FORK_SLOPE_TOLERANCE)
                         .map(|(&i, _)| i)
@@ -1174,8 +1278,11 @@ impl Graph {
             visited.push(next);
             let blob = &self.blobs[next as usize];
             let last_z = self.blobs[*nodes.last().expect("walk has a start") as usize].z;
-            let settled = nodes.iter().rposition(|&i| self.blobs[i as usize].z >= last_z + DRIFT_LAG_MM);
-            let (px, py) = self.predict(&nodes[..=settled.unwrap_or(nodes.len() - 1)], blob.z);
+            let settled = nodes[from..]
+                .iter()
+                .rposition(|&i| self.blobs[i as usize].z >= last_z + DRIFT_LAG_MM)
+                .map(|s| from + s);
+            let (px, py) = self.predict(&nodes[from..=settled.unwrap_or(nodes.len() - 1)], lean, blob.z);
             let drift = ((blob.x - px).powi(2) + (blob.y - py).powi(2)).sqrt();
             let narrow = blob.half_max <= width * WIDEN_RATIO + WIDEN_SLACK_MM;
             // On a shaft the walk is following, a blob wider than it is a joint ball centred on
@@ -1200,9 +1307,11 @@ impl Graph {
                 }
                 skipped_from = None;
                 leaning_open &= leaning.is_empty();
+                run.clear();
                 nodes.push(next);
             } else {
                 skipped_from.get_or_insert(blob.z);
+                let mut tip_slice = false;
                 if leaning_open {
                     if leaning.is_empty() {
                         (leaning_at, leaning_width) = (nodes.len(), width);
@@ -1221,7 +1330,37 @@ impl Graph {
                         leaning_width +=
                             ((blob.half_max - leaning_width) * WIDTH_SMOOTHING).min(MAX_WIDTH_GROWTH * step);
                         leaning.push(next);
+                        tip_slice = true;
                     }
+                }
+                if tip_slice || !self.carries_run(&run, next) {
+                    run.clear();
+                }
+                if !tip_slice && blob.half_max <= MAX_RESET_WIDTH_MM {
+                    run.push(next);
+                }
+                let top = run.first().map_or(blob.z, |&i| self.blobs[i as usize].z);
+                if top - blob.z >= PICKUP_RUN_MM {
+                    // A shaft: picked up from where the run began, steering by its lean.
+                    for &i in &run {
+                        let owner = claimed[i as usize];
+                        if owner != NONE {
+                            let end = WalkEnd::Joined(owner as usize, i);
+                            return Walk { nodes, leaning, leaning_at, visited, end };
+                        }
+                        nodes.push(i);
+                    }
+                    let (a, b) = (self.centre(run[0]), self.centre(next));
+                    let height = a.z - b.z;
+                    lean = Some([(b.x - a.x) / height, (b.y - a.y) / height]);
+                    from = nodes.len() - run.len();
+                    let run_width =
+                        run.iter().map(|&i| self.blobs[i as usize].half_max).sum::<f32>() / run.len() as f32;
+                    width = width.max(run_width);
+                    picked_up = None;
+                    skipped_from = None;
+                    leaning_open &= leaning.is_empty();
+                    run.clear();
                 }
             }
             current = next;
@@ -1279,9 +1418,9 @@ impl Graph {
     /// holding where the walk is heading), the [`Graph::descent_slope`] of the shaft running on
     /// from it: the blob's middle lies off the shaft's line, so the way is followed from where
     /// the walk is heading, down the shaft's line, to the last blob as wide as the shaft.
-    fn merged_descent_slope(&self, start: u32, nodes: &[u32], width: f32) -> Option<f32> {
+    fn merged_descent_slope(&self, start: u32, nodes: &[u32], lean: Option<[f32; 2]>, width: f32) -> Option<f32> {
         let top = self.blobs[start as usize];
-        let (px, py) = self.predict(nodes, top.z);
+        let (px, py) = self.predict(nodes, lean, top.z);
         let merged = top.half_max > width * MERGED_RATIO + MERGED_SLACK_MM
             && top.half_max <= width * WIDEN_RATIO + WIDEN_SLACK_MM
             && top.z >= ROOT_TOP_MM
@@ -1305,7 +1444,7 @@ impl Graph {
                     let t = (origin.z - z) / (origin.z - a.z);
                     (origin.x + (a.x - origin.x) * t, origin.y + (a.y - origin.y) * t)
                 }
-                None => self.predict(nodes, z),
+                None => self.predict(nodes, lean, z),
             };
             current = below
                 .iter()
@@ -1753,11 +1892,41 @@ impl Graph {
     }
 
     /// Where the shaft through `nodes` (top down) continues at height `z`.
-    fn predict(&self, nodes: &[u32], z: f32) -> (f32, f32) {
-        self.heading(nodes, z).unwrap_or_else(|| {
+    fn predict(&self, nodes: &[u32], lean: Option<[f32; 2]>, z: f32) -> (f32, f32) {
+        self.course(nodes, lean, z).unwrap_or_else(|| {
             let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
             (last.x, last.y)
         })
+    }
+
+    /// Where the shaft through `nodes` (top down) is heading at height `z`: along its own
+    /// direction once they give it, or else along `lean` (horizontal run per unit of descent)
+    /// from the last of them.
+    fn course(&self, nodes: &[u32], lean: Option<[f32; 2]>, z: f32) -> Option<(f32, f32)> {
+        self.heading(nodes, z).or_else(|| {
+            let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
+            lean.map(|[dx, dy]| (last.x + dx * (last.z - z), last.y + dy * (last.z - z)))
+        })
+    }
+
+    /// Whether skipped blob `next`, a slice below the last of `run`, carries the run on: as wide
+    /// as its first slice, and in line with its slices (within [`MAX_RUN_LEAN`] of upright when
+    /// the run is one slice).
+    fn carries_run(&self, run: &[u32], next: u32) -> bool {
+        let b = &self.blobs[next as usize];
+        let Some(&first) = run.first() else { return true };
+        let f = &self.blobs[first as usize];
+        if (b.half_min - f.half_min).abs() > RUN_WIDTH_MM + f.half_min * RUN_WIDTH_RATIO {
+            return false;
+        }
+        let last = &self.blobs[*run.last().expect("non-empty") as usize];
+        let steps = (run.len() - 1) as f32;
+        let (ex, ey, tolerance) = if run.len() >= 2 {
+            (last.x + (last.x - f.x) / steps, last.y + (last.y - f.y) / steps, RUN_SLOPE_TOLERANCE * self.step)
+        } else {
+            (last.x, last.y, MAX_RUN_LEAN * self.step)
+        };
+        (b.x - ex).hypot(b.y - ey) <= tolerance
     }
 
     /// [`Graph::predict`] when `nodes` are long enough to give the shaft's direction.
@@ -1940,6 +2109,7 @@ fn union(parent: &mut [u32], a: u32, b: u32) {
     }
 }
 
+#[derive(Clone, Copy)]
 struct SurfacePoint {
     point: Vec3,
     normal: Vec3,
@@ -2518,7 +2688,7 @@ mod tests {
             blobs.extend(neighbour.into_iter().flat_map(|x| (0..=60).map(move |layer| (x, layer, 0.71))));
             let graph = hand_graph(&blobs);
             let top = graph.blobs.iter().position(|b| b.layer == 60 && b.x.abs() < 0.01).expect("the post's top");
-            let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()]);
+            let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
             assert!(matches!(walk.end, WalkEnd::Plate));
             walk.nodes.iter().map(|&i| graph.blobs[i as usize].x).collect::<Vec<_>>()
         };
@@ -2530,6 +2700,63 @@ mod tests {
         // comes out of the junction upright, not the neighbour.
         let xs = walk_post((0.45, 1.15), Some(2.0));
         assert!(xs.iter().all(|x| x.abs() < 0.01), "{xs:?}");
+    }
+
+    #[test]
+    fn walk_keeps_to_its_own_leaning_shaft_beside_an_upright_post() {
+        // A shaft leaning 0.3 mm per mm away from an upright post whose slices touch its first
+        // ones: the post is the more upright way down, but its middle lies beside the shaft.
+        let mut blobs: Vec<(f32, u32, f32)> =
+            (0..=40).map(|layer| (-0.03 * (40 - layer) as f32, layer, 0.33)).collect();
+        blobs.extend((0..=45).map(|layer| (0.45, layer, 0.33)));
+        let graph = hand_graph(&blobs);
+        let top = graph.blobs.iter().position(|b| b.layer == 40 && b.x.abs() < 0.01).expect("the shaft's top");
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
+
+        assert!(matches!(walk.end, WalkEnd::Plate));
+        let xs: Vec<f32> = walk.visited.iter().map(|&i| graph.blobs[i as usize].x).collect();
+        assert!(xs.iter().all(|&x| x < 0.1), "{xs:?}");
+    }
+
+    #[test]
+    fn shaft_below_a_steeply_leaning_tip_is_walked_from_where_the_tip_ends() {
+        // A tip leaning 0.8 mm per mm from its contact for 1.5 mm, widening into an upright shaft.
+        let mut blobs: Vec<(f32, u32, f32)> = (45..=60)
+            .map(|layer| (0.08 * (60 - layer) as f32, layer, 0.1 + 0.25 * (60 - layer) as f32 / 15.0))
+            .collect();
+        blobs.extend((0..45).map(|layer| (1.2, layer, 0.35)));
+        let graph = hand_graph(&blobs);
+        let top = graph.blobs.iter().position(|b| b.layer == 60).expect("the tip's top");
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
+
+        assert!(matches!(walk.end, WalkEnd::Plate));
+        // Every slice of the shaft from just below the tip down is a shaft point (the first few,
+        // carrying on from the tip's last slice, are kept with the tip's).
+        let layers: Vec<u32> = walk.nodes.iter().map(|&i| graph.blobs[i as usize].layer).filter(|&l| l < 45).collect();
+        assert!(layers.first().is_some_and(|&l| l >= 38), "{layers:?}");
+        assert!(layers.windows(2).all(|w| w[0] == w[1] + 1), "{layers:?}");
+    }
+
+    #[test]
+    fn shaft_line_passes_by_a_junction_off_its_line() {
+        // A 2 mm post that a junction off its line widens for 0.3 mm, as where it merges with a
+        // brace: the junction's middle is no point on the post's line.
+        let at = |x: f32, z: f32| Vec3::new(x, 0.0, z);
+        let mut supports = frustum(at(0.0, 10.2), at(0.0, 8.0), 0.15, 1.0);
+        supports.extend(tube(&[
+            (at(0.0, 0.0), 1.0),
+            (at(0.0, 5.0), 1.0),
+            (at(0.35, 5.1), 1.2),
+            (at(0.35, 5.4), 1.2),
+            (at(0.0, 5.5), 1.0),
+            (at(0.0, 8.05), 1.0),
+        ]));
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        assert!(s.joints.is_empty(), "{:?}", s.joints);
     }
 
     #[test]
@@ -2845,6 +3072,29 @@ mod tests {
         out.extend(frustum(Vec3::new(x, 0.0, 16.05), Vec3::new(x, 0.0, 5.0), 0.75, 0.75));
         out.extend(frustum(Vec3::new(x, 0.0, 3.8), Vec3::new(x, 0.0, 5.05), 0.22, 0.75));
         out
+    }
+
+    #[test]
+    fn strut_whose_foot_leans_off_beside_an_upright_strut_keeps_its_own_foot() {
+        // Two struts side by side, their 1.5 mm shafts overlapping; one runs straight down to the
+        // floor, the other bends 50 degrees into a foot leaning away from it.
+        let mut supports = hollow_strut(1.0);
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 20.3), Vec3::new(0.0, 0.0, 16.0), 0.27, 0.75));
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 16.05), Vec3::new(0.0, 0.0, 7.0), 0.75, 0.75));
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 7.05), Vec3::new(-3.8, 0.0, 3.8), 0.75, 0.22));
+        let layout = reconstruct(&hollow(), &supports);
+
+        assert_eq!(layout.supports.len(), 2, "{:?}", layout.supports);
+        let feet: Vec<Vec3> = layout
+            .supports
+            .iter()
+            .map(|s| match &s.base {
+                SupportBase::Model(lower) => lower.contact,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert!(feet.iter().any(|f| close(*f, Vec3::new(-3.4, 0.0, 4.0), 0.6)), "{feet:?}");
+        assert!(feet.iter().any(|f| close(*f, Vec3::new(1.0, 0.0, 4.0), 0.3)), "{feet:?}");
     }
 
     #[test]
