@@ -64,6 +64,7 @@ If you want NVIDIA GPU acceleration for preview rendering, add:
 | `FINDAMODEL_INDEX_ON_STARTUP` | `false` | Sync directory configs when the server starts |
 | `FINDAMODEL_FILE_SCAN_THREADS` | `10` | Number of model files processed in parallel while indexing |
 | `FINDAMODEL_PREVIEW_USE_GPU` | `true` | Render previews on the GPU when one is available |
+| `FINDAMODEL_VOXL_CACHE_SIZE_MB` | `1024` | Disk space for pre-supported model VOXL downloads kept in the cache, `0` to turn the cache off |
 | `FINDAMODEL_LOG` | `warn,findamodel=info` | Log filter (e.g. `findamodel=debug`) |
 | `PUID` | `1000` | Run the app process as this user id (LinuxServer style) |
 | `PGID` | `1000` | Run the app process as this group id (LinuxServer style) |

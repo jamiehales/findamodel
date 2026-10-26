@@ -21,6 +21,7 @@ use crate::services::indexer::{IndexerService, ScanWorker, run_scheduler};
 use crate::services::jobs::{ArchiveJobService, PlateJobService};
 use crate::services::metadata_config::MetadataConfigService;
 use crate::services::models::ModelService;
+use crate::services::voxl_cache::VoxlCache;
 use crate::services::{printing_lists, users};
 
 const LOG_TARGET: &str = "findamodel.Startup";
@@ -34,6 +35,8 @@ pub struct AppState {
     pub metadata_config: MetadataConfigService,
     pub models: ModelService,
     pub preview: PreviewService,
+    /// Generated model VOXLs (`/api/models/{id}/voxl`).
+    pub voxl_cache: VoxlCache,
     pub indexer: Arc<IndexerService>,
     pub plate_jobs: PlateJobService,
     pub archive_jobs: ArchiveJobService,
@@ -105,6 +108,8 @@ impl AppState {
             printing_lists::ensure_default_list(&db, admin.id).await?;
         }
 
+        let voxl_cache = VoxlCache::new(settings.voxl_cache_path(), settings.voxl_cache_max_bytes);
+
         Ok(AppState {
             settings: Arc::new(settings),
             plate_jobs: PlateJobService::new(models.clone()),
@@ -115,6 +120,7 @@ impl AppState {
             metadata_config,
             models,
             preview,
+            voxl_cache,
             indexer,
             log_buffer,
         })

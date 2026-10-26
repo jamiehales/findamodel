@@ -5,6 +5,9 @@
 //! which raises the container version from 2 to 3. A mesh's support layout is written to
 //! `SUPP` as DragonFruit roots, trunks, branches, twigs, sticks, braces, kickstands and knots
 //! for every placement of it.
+//!
+//! Model VOXL downloads are cached by `CURRENT_SUPPORT_LAYOUT_VERSION`
+//! (`services::voxl_cache`): bump it when what is written for a support layout changes.
 
 use std::io::{Seek, SeekFrom, Write};
 

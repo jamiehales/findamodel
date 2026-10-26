@@ -17,6 +17,7 @@ use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::support_layout::{self, SupportLayout};
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
+use crate::services::voxl_cache::VoxlCacheKey;
 use crate::services::{plate_export, query, scan_config, store};
 
 pub fn routes() -> Router<AppState> {
@@ -290,28 +291,48 @@ async fn get_split_geometry(
 }
 
 /// The model stripped of its supports, with their layout rebuilt as DragonFruit supports,
-/// as a VOXL scene. 404 when the supports cannot be split off.
+/// as a VOXL scene. 404 when the supports cannot be split off. Served from the VOXL cache
+/// when the model, its raft height and the support layout are unchanged since it was written.
 async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
+    let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+    let download_name = format!("{}.voxl", store::file_stem(&model.file_name));
+    let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+    let key = (model.supported() == Some(true)).then(|| VoxlCacheKey::for_model(&model, raft_height_mm)).flatten();
+    if let Some(key) = key.clone() {
+        let cache = state.voxl_cache.clone();
+        let cached = tokio::task::spawn_blocking(move || cache.get(&key)).await.map_err(anyhow::Error::from)?;
+        if let Some(bytes) = cached {
+            return Ok(voxl_response(&download_name, bytes));
+        }
+    }
+
     let split = split_supports(&state, id, true).await?.ok_or_else(not_found)?;
-    let file_name = split.model.file_name.clone();
+    let cache = state.voxl_cache.clone();
     let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
         let body = to_z_up(&split.body);
         let layout = split.layout.as_ref().expect("split_supports rebuilds the layout when asked");
         let mesh = VoxlMesh { name: &split.model.file_name, triangles: &body, supports: Some(layout) };
         let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
-        Ok(voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner())
+        let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();
+        if let Some(key) = key {
+            cache.put(&key, &bytes);
+        }
+        Ok(bytes)
     })
     .await
     .map_err(anyhow::Error::from)??;
-    let download_name = format!("{}.voxl", store::file_stem(&file_name));
-    Ok((
+    Ok(voxl_response(&download_name, bytes))
+}
+
+fn voxl_response(download_name: &str, bytes: Vec<u8>) -> Response {
+    (
         [
             (header::CONTENT_TYPE, plate_export::content_type("voxl").parse().expect("valid header")),
-            (header::CONTENT_DISPOSITION, content_disposition(&download_name)),
+            (header::CONTENT_DISPOSITION, content_disposition(download_name)),
         ],
         bytes,
     )
-        .into_response())
+        .into_response()
 }
 
 async fn query_models(

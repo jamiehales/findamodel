@@ -459,15 +459,20 @@ fn post(x: f32, y: f32, bottom: f32, top: f32, rb: f32, rt: f32) -> Vec<Triangle
         .collect()
 }
 
-#[tokio::test]
-async fn presupported_model_downloads_as_voxl_with_its_supports() {
-    let app = TestApp::new().await;
+/// A block standing on four posts with tapered tips.
+fn presupported_knight() -> Vec<Triangle> {
     let mut mesh = cuboid([-5.0, -5.0, 10.0], [5.0, 5.0, 15.0], 12);
     for (x, y) in [(-3.0, -3.0), (3.0, -3.0), (-3.0, 3.0), (3.0, 3.0)] {
         mesh.extend(post(x, y, 0.0, 8.0, 0.4, 0.4));
         mesh.extend(post(x, y, 8.0, 10.2, 0.4, 0.12));
     }
-    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&mesh, None));
+    mesh
+}
+
+#[tokio::test]
+async fn presupported_model_downloads_as_voxl_with_its_supports() {
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
     app.write("Mini/findamodel.yaml", "supported: true\n");
     app.write("Mini/plain.stl", STL);
     app.index_and_wait(3).await;
@@ -512,6 +517,50 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
     assert_eq!(status, StatusCode::OK);
     let (_, detail) = app.get(&format!("/api/models/{knight}")).await;
     assert_eq!(detail["supportSplit"], true);
+}
+
+#[tokio::test]
+async fn model_voxls_are_cached_until_the_raft_height_changes() {
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let cache_dir = app.state.settings.voxl_cache_path();
+    let entries = || std::fs::read_dir(&cache_dir).map(|d| d.count()).unwrap_or(0);
+
+    // Every VOXL written gets new scene ids and timestamps, so identical bytes were cached.
+    let first = download_voxl(&app, &id).await;
+    assert_eq!(entries(), 1);
+    assert_eq!(download_voxl(&app, &id).await, first);
+
+    sqlx::query("UPDATE models SET hull_raft_height_mm = 1.5").execute(&app.state.db).await.unwrap();
+    let rebuilt = download_voxl(&app, &id).await;
+    assert_ne!(rebuilt, first);
+    assert_eq!(entries(), 2);
+    assert_eq!(download_voxl(&app, &id).await, rebuilt);
+}
+
+#[tokio::test]
+async fn model_voxls_are_not_cached_when_the_cache_size_is_zero() {
+    let app = TestApp::with(|settings| settings.voxl_cache_max_bytes = 0).await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+
+    assert_ne!(download_voxl(&app, &id).await, download_voxl(&app, &id).await);
+    assert!(!app.state.settings.voxl_cache_path().exists());
+}
+
+async fn download_voxl(app: &TestApp, id: &str) -> Vec<u8> {
+    let (status, _, bytes) =
+        app.send(Request::get(format!("/api/models/{id}/voxl")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&bytes[..4], b"VOXL");
+    bytes
 }
 
 #[tokio::test]

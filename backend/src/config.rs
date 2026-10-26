@@ -41,11 +41,15 @@ pub struct Settings {
     pub file_scan_threads: usize,
     pub directory_batch_size: usize,
     pub preview_use_gpu: bool,
+    /// Most disk space generated model VOXLs may take up in the cache (0 = no cache).
+    pub voxl_cache_max_bytes: u64,
     pub app_config_defaults: AppConfigDefaults,
 }
 
 pub const DEFAULT_FILE_SCAN_THREADS: usize = 10;
 pub const DEFAULT_INDEX_SCHEDULE: &str = "0 3 * * *";
+pub const DEFAULT_VOXL_CACHE_SIZE_MB: u64 = 1024;
+const BYTES_PER_MB: u64 = 1024 * 1024;
 
 fn env(names: &[&str]) -> Option<String> {
     names.iter().find_map(|n| std::env::var(n).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()))
@@ -139,6 +143,9 @@ impl Settings {
                 .filter(|n: &usize| *n > 0)
                 .unwrap_or(1000),
             preview_use_gpu: env_bool(&["FINDAMODEL_PREVIEW_USE_GPU", "Preview__UseGpu"]).unwrap_or(true),
+            voxl_cache_max_bytes: env_parse::<u64>(&["FINDAMODEL_VOXL_CACHE_SIZE_MB"])
+                .unwrap_or(DEFAULT_VOXL_CACHE_SIZE_MB)
+                .saturating_mul(BYTES_PER_MB),
             app_config_defaults: AppConfigDefaults {
                 default_raft_height_mm: env_parse(&["AppConfig__DefaultRaftHeightMm"]),
                 generate_previews_enabled: env_bool(&["AppConfig__GeneratePreviewsEnabled"]),
@@ -163,6 +170,7 @@ impl Settings {
             file_scan_threads: DEFAULT_FILE_SCAN_THREADS,
             directory_batch_size: 1000,
             preview_use_gpu: false,
+            voxl_cache_max_bytes: DEFAULT_VOXL_CACHE_SIZE_MB * BYTES_PER_MB,
             app_config_defaults: AppConfigDefaults::default(),
         }
     }
@@ -177,6 +185,10 @@ impl Settings {
 
     pub fn renders_path(&self) -> PathBuf {
         self.data_path.join("cache").join("renders")
+    }
+
+    pub fn voxl_cache_path(&self) -> PathBuf {
+        self.data_path.join("cache").join("voxl")
     }
 }
 
