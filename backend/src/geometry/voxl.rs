@@ -9,8 +9,8 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, anyhow, bail};
-use flate2::Compression;
-use flate2::write::ZlibEncoder;
+use flate2::{Compress, Compression, FlushCompress, Status};
+use rayon::prelude::*;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -48,6 +48,12 @@ const TWIG_JOINT_CLEARANCE_MM: f32 = 0.05;
 const BRACE_KNOT_END_SHARE: f64 = 0.025;
 /// Support coordinates are rounded to this many decimal places.
 const COORDINATE_DECIMALS: i32 = 4;
+/// Chunks are deflated in pieces of this size, in parallel. Each piece but the last ends in a
+/// sync flush, so the pieces join into one ordinary zlib stream; starting each piece without
+/// the previous one's history costs well under 1% in size.
+const COMPRESSION_PIECE_BYTES: usize = 256 * 1024;
+/// zlib stream header: deflate with a 32 KiB window at the default level.
+const ZLIB_HEADER: [u8; 2] = [0x78, 0x9c];
 
 /// A mesh in the VOXL frame: millimetres, right-handed, Z-up.
 pub struct VoxlMesh<'a> {
@@ -116,8 +122,8 @@ pub fn write_voxl<W: Write + Seek>(
         let centred =
             mesh.triangles.iter().map(|t| Triangle::new(t.v0 - centre, t.v1 - centre, t.v2 - centre, t.normal));
         saver::write_stl(&mut stl, triangle_count, centred, Some(mesh.name))?;
-        let sha256 = hex::encode(Sha256::digest(&stl));
-        entries.push(write_chunk(&mut out, *b"MESH", owner as u16, &stl)?);
+        let (sha256, compressed) = rayon::join(|| hex::encode(Sha256::digest(&stl)), || zlib_compress(&stl));
+        entries.push(write_compressed_chunk(&mut out, *b"MESH", owner as u16, &compressed?, stl.len())?);
         stored[mesh_index] =
             Some(StoredMesh { owner, centre, triangle_count: mesh.triangles.len(), size_bytes: stl.len(), sha256 });
     }
@@ -614,12 +620,67 @@ fn point([x, y, z]: [f64; 3]) -> Value {
 }
 
 fn write_chunk<W: Write + Seek>(out: &mut W, tag: [u8; 4], index: u16, data: &[u8]) -> Result<ChunkEntry> {
+    write_compressed_chunk(out, tag, index, &zlib_compress(data)?, data.len())
+}
+
+/// Writes a chunk already compressed by [`zlib_compress`] from `uncompressed_size` bytes.
+fn write_compressed_chunk<W: Write + Seek>(
+    out: &mut W,
+    tag: [u8; 4],
+    index: u16,
+    compressed: &[u8],
+    uncompressed_size: usize,
+) -> Result<ChunkEntry> {
     let offset = out.stream_position()?;
-    let mut encoder = ZlibEncoder::new(&mut *out, Compression::default());
-    encoder.write_all(data)?;
-    encoder.finish()?;
-    let compressed_size = out.stream_position()? - offset;
-    Ok(ChunkEntry { tag, index, offset, compressed_size, uncompressed_size: data.len() as u64 })
+    out.write_all(compressed)?;
+    Ok(ChunkEntry {
+        tag,
+        index,
+        offset,
+        compressed_size: compressed.len() as u64,
+        uncompressed_size: uncompressed_size as u64,
+    })
+}
+
+/// Compresses `data` into one zlib stream, deflating [`COMPRESSION_PIECE_BYTES`] pieces of it
+/// in parallel (as pigz does).
+fn zlib_compress(data: &[u8]) -> Result<Vec<u8>> {
+    let pieces: Vec<&[u8]> = if data.is_empty() { vec![data] } else { data.chunks(COMPRESSION_PIECE_BYTES).collect() };
+    let last = pieces.len() - 1;
+    let (deflated, checksum) = rayon::join(
+        || pieces.par_iter().enumerate().map(|(i, piece)| deflate_piece(piece, i == last)).collect::<Result<Vec<_>>>(),
+        || {
+            let mut adler = adler2::Adler32::new();
+            adler.write_slice(data);
+            adler.checksum()
+        },
+    );
+    let deflated = deflated?;
+    let mut out = Vec::with_capacity(ZLIB_HEADER.len() + deflated.iter().map(Vec::len).sum::<usize>() + 4);
+    out.extend_from_slice(&ZLIB_HEADER);
+    for piece in &deflated {
+        out.extend_from_slice(piece);
+    }
+    out.extend_from_slice(&checksum.to_be_bytes());
+    Ok(out)
+}
+
+/// Raw deflate of one piece, ended by a sync flush (byte-aligned, not final) unless it is the
+/// last piece of the stream.
+fn deflate_piece(piece: &[u8], last: bool) -> Result<Vec<u8>> {
+    let mut compress = Compress::new(Compression::default(), false);
+    // Room for deflate's worst case (stored blocks), so one call takes the whole piece and
+    // flushes it.
+    let mut out = Vec::with_capacity(piece.len() + piece.len() / 1024 + 1024);
+    let flush = if last { FlushCompress::Finish } else { FlushCompress::Sync };
+    let status = compress.compress_vec(piece, &mut out, flush)?;
+    let complete = compress.total_in() == piece.len() as u64
+        && out.len() < out.capacity()
+        && (!last || status == Status::StreamEnd);
+    if !complete {
+        bail!("Compressing a VOXL chunk stopped early");
+    }
+    Ok(out)
 }
 
 fn bbox_centre(triangles: &[Triangle]) -> Vec3 {
@@ -1215,5 +1276,30 @@ mod tests {
     fn unknown_mesh_index_is_rejected() {
         let result = write_voxl(std::io::Cursor::new(Vec::new()), &[], &[placement(0, 0.0)], None);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn chunks_compressed_in_pieces_inflate_as_one_zlib_stream() {
+        use std::io::Read;
+
+        // Half repetitive, half noisy, so pieces hold both compressed and stored blocks.
+        let mut seed = 0x2545_f491_u32;
+        let mut noise = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        };
+        let piece = COMPRESSION_PIECE_BYTES;
+        for len in [0, 1, 1000, piece - 1, piece, piece + 1, 3 * piece + 17] {
+            let data: Vec<u8> = (0..len).map(|i| if i % 2 == 0 { (i / 7) as u8 } else { noise() }).collect();
+            let compressed = zlib_compress(&data).unwrap();
+            let mut inflated = Vec::new();
+            flate2::read::ZlibDecoder::new(compressed.as_slice()).read_to_end(&mut inflated).unwrap();
+            assert_eq!(inflated, data, "{len} bytes");
+            if len > 2 * piece {
+                assert!(compressed.len() < data.len(), "{len} bytes compress");
+            }
+        }
     }
 }

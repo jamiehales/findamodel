@@ -15,6 +15,7 @@ name = "findamodel"
 path = "src/main.rs"
 
 [dependencies]
+adler2 = "2"
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
