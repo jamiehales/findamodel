@@ -6,7 +6,8 @@
 //! shafts), while an outline lying inside another (a shaft inside its joint ball) joins it.
 //! Blobs in neighbouring layers that overlap are linked. That graph follows every shaft
 //! whether the supports are separate primitives or one unioned mesh. A blob with nothing above it that touches the model is a contact tip; the contact
-//! itself is where the shaft leaves the model, since tips are buried a little way into it.
+//! itself is where the shaft leaves the model, since tips are buried a little way into it (some
+//! end in a ball inside it).
 //! Walking down from the tip, at each fork taking the most vertical way (a brace leaves its
 //! post at an angle) and then the one that best continues the shaft, traces the shaft to the
 //! plate (a trunk) or into a shaft an earlier walk claimed (a branch). Tips are walked from
@@ -24,6 +25,8 @@
 //! legs splaying from a tree's trunk) is a kickstand.
 //!
 //! Coordinates are Z-up millimetres with the plate at Z = 0.
+
+use std::cell::Cell;
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -49,8 +52,12 @@ const LINK_MARGIN_MM: f32 = 0.05;
 const SURFACE_CELL_MM: f32 = 1.0;
 /// A blob top within this distance of the model surface is a contact tip.
 const CONTACT_MAX_MM: f32 = 1.0;
-/// How far from the shaft the model surface is searched for where the tip enters it.
-const ENTRY_SEARCH_MM: f32 = 1.5;
+/// A blob top inside the model within this distance of its surface is a contact tip too: some
+/// exports end a tip in a ball buried in the model.
+const BURIED_CONTACT_MAX_MM: f32 = 2.5;
+/// How far from the shaft the model surface is searched for where the tip enters it: as deep as
+/// a buried tip reaches.
+const ENTRY_SEARCH_MM: f32 = BURIED_CONTACT_MAX_MM;
 /// A blob wider than `width * WIDEN_RATIO + WIDEN_SLACK_MM` of the shaft being walked is a
 /// raft, brace or crossing: walked through, but neither a shaft point nor a branch point.
 const WIDEN_RATIO: f32 = 1.5;
@@ -78,6 +85,8 @@ const DIRECTION_SPAN_MM: f32 = 1.0;
 /// vertical one taken: a brace leaves the post it hangs from at an angle, and a bent shaft
 /// can point straight at it.
 const FORK_LOOKAHEAD_MM: f32 = 2.0;
+/// The ways followed down from a fork, at each slice those nearest the line straight down.
+const FORK_WAYS: usize = 8;
 /// Ways whose slopes differ by less than this are told apart by the shaft's direction.
 const FORK_SLOPE_TOLERANCE: f32 = 0.15;
 /// How far down the shaft the model surface is looked for, from the buried tip top.
@@ -269,7 +278,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 6;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 7;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -281,7 +290,7 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
 
     let mut tops: Vec<(u32, SurfacePoint)> = (0..graph.blobs.len() as u32)
         .filter(|&i| graph.up[i as usize].is_empty())
-        .filter_map(|i| surface.nearest(graph.centre(i), CONTACT_MAX_MM).map(|hit| (i, hit)))
+        .filter_map(|i| surface.contact(graph.centre(i)).map(|hit| (i, hit)))
         .collect();
     tops.sort_by(|a, b| graph.blobs[b.0 as usize].z.total_cmp(&graph.blobs[a.0 as usize].z));
 
@@ -370,7 +379,7 @@ struct LowerEnd {
 /// parts of it. None when it stopped in mid-air.
 fn lower_end(graph: &Graph, surface: &SurfaceIndex, walk: &Walk) -> Option<LowerEnd> {
     let nodes: Vec<u32> = walk.visited.iter().rev().copied().collect();
-    surface.nearest(graph.centre(nodes[0]), CONTACT_MAX_MM)?;
+    surface.contact(graph.centre(nodes[0]))?;
     let points: Vec<Vec3> = nodes.iter().map(|&i| graph.centre(i)).collect();
     let (contact, entry) = surface.entry(&points)?;
     Some(LowerEnd { contact, nodes, entry })
@@ -754,6 +763,9 @@ struct Graph {
     floor: f32,
     /// Height between slices.
     step: f32,
+    /// Each blob's [`Graph::descent_slope`], once measured (NaN until then): every walk passing a
+    /// fork weighs the same ways down.
+    slopes: Vec<Cell<f32>>,
 }
 
 enum WalkEnd {
@@ -909,7 +921,8 @@ impl Graph {
             up[below as usize].push(above);
             down[above as usize].push(below);
         }
-        Some(Graph { blobs, up, down, floor: plane(0), step })
+        let slopes = vec![Cell::new(f32::NAN); blobs.len()];
+        Some(Graph { blobs, up, down, floor: plane(0), step, slopes })
     }
 
     fn centre(&self, i: u32) -> Vec3 {
@@ -1013,31 +1026,44 @@ impl Graph {
         Walk { nodes, leaning, leaning_at, visited, end }
     }
 
-    /// Horizontal run per unit of height going down from `start` for [`FORK_LOOKAHEAD_MM`],
-    /// staying on the blob nearest above at each fork.
+    /// Horizontal run per unit of height of the most vertical way down from `start`: to the blob
+    /// [`FORK_LOOKAHEAD_MM`] below (or where the structure ends, if sooner) nearest the start's
+    /// line, among those reachable from it. Only where a way ends counts, so a joint or brace
+    /// junction on the way, whose slices sit off the shaft's line, does not make a post read as
+    /// leaning.
     fn descent_slope(&self, start: u32) -> f32 {
+        let cached = self.slopes[start as usize].get();
+        if !cached.is_nan() {
+            return cached;
+        }
+        let slope = self.measure_descent_slope(start);
+        self.slopes[start as usize].set(slope);
+        slope
+    }
+
+    fn measure_descent_slope(&self, start: u32) -> f32 {
         let top = self.blobs[start as usize];
-        let mut current = start;
+        let off = |i: u32| {
+            let b = &self.blobs[i as usize];
+            (b.x - top.x).hypot(b.y - top.y)
+        };
+        let mut layer = vec![start];
         loop {
-            let here = self.blobs[current as usize];
-            let next = self.down[current as usize].iter().copied().min_by(|&a, &b| {
-                let d = |i: u32| {
-                    let b = &self.blobs[i as usize];
-                    (b.x - here.x).powi(2) + (b.y - here.y).powi(2)
-                };
-                d(a).total_cmp(&d(b))
-            });
-            match next {
-                Some(next) if top.z - here.z < FORK_LOOKAHEAD_MM => current = next,
-                _ => break,
+            let z = self.blobs[layer[0] as usize].z;
+            let mut below: Vec<u32> = layer.iter().flat_map(|&i| self.down[i as usize].iter().copied()).collect();
+            if top.z - z >= FORK_LOOKAHEAD_MM || below.is_empty() {
+                let drop = top.z - z;
+                if drop <= 0.0 {
+                    return f32::MAX;
+                }
+                return layer.iter().map(|&i| off(i)).fold(f32::MAX, f32::min) / drop;
             }
+            below.sort_unstable();
+            below.dedup();
+            below.sort_by(|&a, &b| off(a).total_cmp(&off(b)));
+            below.truncate(FORK_WAYS);
+            layer = below;
         }
-        let end = self.blobs[current as usize];
-        let drop = top.z - end.z;
-        if drop <= 0.0 {
-            return f32::MAX;
-        }
-        ((end.x - top.x).powi(2) + (end.y - top.y).powi(2)).sqrt() / drop
     }
 
     /// Support geometry no walk passed, grouped into connected pieces, each with the places
@@ -1713,7 +1739,8 @@ impl Shells {
 
 /// The tip cone a shell is: a rod that tapers from its narrow end and may then run on at its
 /// full width (a tip and a stretch of shaft modelled as one piece). Every vertex lies on that
-/// wall or on an end cap; the cone ends where the taper reaches the full width.
+/// wall or on an end cap (flat, or rounded at the wide end); the cone ends where the taper
+/// reaches the full width.
 fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
     let verts: Vec<Vec3> = members
         .iter()
@@ -1767,7 +1794,8 @@ fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
     let wall = |s: f32| narrow_radius + (wide_radius - narrow_radius) * (s / taper).min(1.0);
     let on_rod = along.iter().all(|&(t, r)| {
         let s = (t - narrow_t) * toward;
-        let at_cap = s <= band || s >= length - band;
+        // The wide end may close in a rounded cap, no longer than the rod's radius.
+        let at_cap = s <= band || s >= length - band || (s >= taper && s >= length - wide_radius - tolerance);
         r <= wall(s) + tolerance && (r >= wall(s) - tolerance || at_cap)
     });
     on_rod.then(|| Cone {
@@ -1844,20 +1872,37 @@ impl<'a> SurfaceIndex<'a> {
         None
     }
 
+    /// The model surface an end of the support at `p` touches: within [`CONTACT_MAX_MM`], or
+    /// within [`BURIED_CONTACT_MAX_MM`] when `p` is inside the model.
+    fn contact(&self, p: Vec3) -> Option<SurfacePoint> {
+        let hit = self.nearest(p, BURIED_CONTACT_MAX_MM)?;
+        ((p - hit.point).length() <= CONTACT_MAX_MM || (p - hit.point).dot(hit.normal) < 0.0).then_some(hit)
+    }
+
     /// The closest surface point within `max` of `p`, with its triangle's face normal.
     fn nearest(&self, p: Vec3, max: f32) -> Option<SurfacePoint> {
         let reach = (max / SURFACE_CELL_MM).ceil() as i32;
         let (cx, cy, cz) = cell3(p);
         let mut best: Option<(f32, Vec3, u32)> = None;
-        for x in cx - reach..=cx + reach {
-            for y in cy - reach..=cy + reach {
-                for z in cz - reach..=cz + reach {
-                    for &i in self.cells.get(&(x, y, z)).into_iter().flatten() {
-                        let t = &self.triangles[i as usize];
-                        let q = closest_on_triangle(p, t.v0, t.v1, t.v2);
-                        let d = (q - p).length_sq();
-                        if d <= max * max && best.is_none_or(|(b, _, _)| d < b) {
-                            best = Some((d, q, i));
+        // Ring by ring outward from p's own cell: nothing in ring `k` is nearer than `k - 1` cells.
+        for k in 0..=reach {
+            let nearest_in_ring = ((k - 1).max(0) as f32 * SURFACE_CELL_MM).powi(2);
+            if best.is_some_and(|(d, _, _)| d <= nearest_in_ring) {
+                break;
+            }
+            for x in -k..=k {
+                for y in -k..=k {
+                    for z in -k..=k {
+                        if x.abs().max(y.abs()).max(z.abs()) != k {
+                            continue;
+                        }
+                        for &i in self.cells.get(&(cx + x, cy + y, cz + z)).into_iter().flatten() {
+                            let t = &self.triangles[i as usize];
+                            let q = closest_on_triangle(p, t.v0, t.v1, t.v2);
+                            let d = (q - p).length_sq();
+                            if d <= max * max && best.is_none_or(|(b, _, j)| d < b || (d == b && i < j)) {
+                                best = Some((d, q, i));
+                            }
                         }
                     }
                 }
@@ -2084,6 +2129,110 @@ mod tests {
         assert!((tip.contact_diameter_mm - 0.3).abs() < 0.02, "{}", tip.contact_diameter_mm);
         assert!((tip.body_diameter_mm - 0.8).abs() < 0.03, "{}", tip.body_diameter_mm);
         assert!(layout.supports[0].joints.is_empty(), "{:?}", layout.supports[0].joints);
+    }
+
+    #[test]
+    fn cone_tip_closed_by_a_rounded_cap_ends_where_its_taper_does() {
+        // A tip cone 3.7 mm long from 0.53 mm to 1.49 mm across, its wide end closed by a
+        // hemisphere, as one shell.
+        let (narrow, wide, radius) = (Vec3::new(1.0, 2.0, 10.0), Vec3::new(1.0, 2.0, 6.3), 0.744);
+        let mut rings = vec![(narrow, 0.265), (wide, radius)];
+        for degrees in [30.0f32, 55.0, 80.0] {
+            let (sin, cos) = degrees.to_radians().sin_cos();
+            rings.push((wide - Vec3::new(0.0, 0.0, radius * sin), radius * cos));
+        }
+        let piece = tube(&rings);
+        let cone = fit_cone(&piece, &(0..piece.len() as u32).collect::<Vec<_>>()).expect("a cone");
+        assert!(close(cone.narrow, narrow, 0.02) && close(cone.wide, wide, 0.05), "{cone:?}");
+        assert!((cone.wide_radius - radius).abs() < 0.01, "{cone:?}");
+    }
+
+    /// A graph of round blobs `(x, layer, radius)` on 0.1 mm layers, linked layer to layer
+    /// where their boxes overlap, as slicing links them.
+    fn hand_graph(blobs: &[(f32, u32, f32)]) -> Graph {
+        let step = 0.1;
+        let blobs: Vec<Blob> = blobs
+            .iter()
+            .map(|&(x, layer, r)| Blob {
+                x,
+                y: 0.0,
+                z: layer as f32 * step,
+                half_min: r,
+                half_max: r,
+                layer,
+                rect: Rect { min: [x - r, -r], max: [x + r, r] },
+                shell: 0,
+            })
+            .collect();
+        let (mut up, mut down) = (vec![Vec::new(); blobs.len()], vec![Vec::new(); blobs.len()]);
+        for (i, a) in blobs.iter().enumerate() {
+            for (j, b) in blobs.iter().enumerate() {
+                if b.layer == a.layer + 1 && a.rect.overlaps(&b.rect, LINK_MARGIN_MM) {
+                    up[i].push(j as u32);
+                    down[j].push(i as u32);
+                }
+            }
+        }
+        let slopes = vec![Cell::new(f32::NAN); blobs.len()];
+        Graph { blobs, up, down, floor: 0.0, step, slopes }
+    }
+
+    #[test]
+    fn post_through_a_brace_junction_reads_upright() {
+        // An upright post (x = 0) that a junction off its line (x = 0.5) swallows for four
+        // layers, with a brace leaving the junction downward at 45 degrees. The slice nearest
+        // each slice runs from the junction down the brace; the post carries on straight.
+        let mut blobs: Vec<(f32, u32, f32)> =
+            (0..=40).filter(|l| !(22..=25).contains(l)).map(|layer| (0.0, layer, 0.4)).collect();
+        blobs.extend((22..=25).map(|layer| (0.5, layer, 0.9)));
+        blobs.extend((0..=21).map(|layer| (0.6 + 0.1 * (21 - layer) as f32, layer, 0.3)));
+        let graph = hand_graph(&blobs);
+        let at = |x: f32, layer: u32| {
+            graph.blobs.iter().position(|b| b.layer == layer && (b.x - x).abs() < 0.01).expect("a blob") as u32
+        };
+
+        let post = graph.descent_slope(at(0.0, 40));
+        assert!(post < 0.05, "{post}");
+        let brace = graph.descent_slope(at(0.9, 18));
+        assert!(brace > 0.9, "{brace}");
+    }
+
+    #[test]
+    fn support_ending_in_a_ball_buried_in_the_model_touches_where_it_enters() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        // A post whose top end is buried 1.9 mm into the model's underside.
+        let mut supports = frustum(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 10.0), 0.75, 0.75);
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 9.9), Vec3::new(0.0, 0.0, 11.9), 0.8, 0.4));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        assert!(close(s.tip.contact, Vec3::new(0.0, 0.0, 10.0), 0.2), "{}", s.tip.contact);
+        assert!(s.tip.socket.z < 10.0, "{}", s.tip.socket);
+        let SupportBase::Plate { x, y, .. } = s.base else { panic!("{:?}", s.base) };
+        assert!(x.abs() < 0.1 && y.abs() < 0.1, "{x} {y}");
+    }
+
+    #[test]
+    fn nearest_surface_point_matches_a_search_of_every_triangle() {
+        let model = cuboid(Vec3::new(-3.0, -2.0, 1.0), Vec3::new(4.0, 3.5, 6.0), 7);
+        let surface = SurfaceIndex::new(&model);
+        for p in [
+            Vec3::new(0.3, 0.2, 3.1),
+            Vec3::new(-2.6, -1.7, 1.4),
+            Vec3::new(4.9, 0.0, 3.0),
+            Vec3::new(1.1, 3.9, 6.8),
+            Vec3::new(0.0, 0.0, 8.7),
+        ] {
+            let brute =
+                model.iter().map(|t| (closest_on_triangle(p, t.v0, t.v1, t.v2) - p).length()).fold(f32::MAX, f32::min);
+            let found = surface.nearest(p, 2.5).map(|hit| (hit.point - p).length());
+            if brute <= 2.5 {
+                assert!(found.is_some_and(|d| (d - brute).abs() < 1e-5), "{p}: {found:?} vs {brute}");
+            } else {
+                assert!(found.is_none(), "{p}: {found:?}");
+            }
+        }
     }
 
     #[test]
