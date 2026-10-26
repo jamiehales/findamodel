@@ -4,7 +4,8 @@
 //! binary STL `MESH` chunk. Placements that share a mesh point at the first placement's chunk,
 //! which raises the container version from 2 to 3. A mesh's support layout is written to
 //! `SUPP` as DragonFruit roots, trunks, branches, twigs, sticks, braces, kickstands and knots
-//! for every placement of it.
+//! for every placement of it; posts with no contact of their own are trunks without a contact
+//! cone.
 //!
 //! Model VOXL downloads are cached by `CURRENT_SUPPORT_LAYOUT_VERSION`
 //! (`services::voxl_cache`): bump it when what is written for a support layout changes.
@@ -356,11 +357,48 @@ impl SupportDocument {
             shafts.push(spans);
         }
 
+        // Each post is a trunk with no contact cone, numbered on from the supports: its last
+        // segment ends at its top joint.
+        for post in &layout.posts {
+            let joint_diameter = round(post.diameter_mm + JOINT_DIAMETER_OFFSET_MM);
+            let line = post.line();
+            let ends: Vec<[f64; 3]> = line.iter().map(|&p| place(p)).collect();
+            let joints: Vec<Value> = ends[1..]
+                .iter()
+                .map(|&pos| json!({ "id": Uuid::new_v4().to_string(), "pos": point(pos), "diameter": joint_diameter }))
+                .collect();
+            let mut spans = Vec::with_capacity(joints.len());
+            let segments: Vec<Value> = joints
+                .iter()
+                .enumerate()
+                .map(|(i, joint)| {
+                    let id = Uuid::new_v4().to_string();
+                    let mut segment = json!({ "id": id, "diameter": round(post.diameter_mm), "topJoint": joint });
+                    if i > 0 {
+                        segment["bottomJoint"] = joints[i - 1].clone();
+                    }
+                    spans.push(Span { id, start: ends[i], end: ends[i + 1] });
+                    segment
+                })
+                .collect();
+            let root = root(model_id, place(Vec3::new(post.foot.x, post.foot.y, 0.0)), post.root_diameter_mm);
+            self.trunks.push(json!({
+                "id": Uuid::new_v4().to_string(),
+                "modelId": model_id,
+                "typeId": "trunk",
+                "rootId": root["id"],
+                "baseDiameterMm": round(post.diameter_mm),
+                "segments": segments,
+            }));
+            self.roots.push(root);
+            shafts.push(spans);
+        }
+
         // Each kickstand stands on its own root and hangs from a knot on the support it holds
         // up: a column segment up to each joint, then the leaning segment up to the knot.
         let mut legs: Vec<Vec<Span>> = Vec::with_capacity(layout.kickstands.len());
         for kickstand in &layout.kickstands {
-            let host = layout.supports[kickstand.support].shaft_diameter_mm + JOINT_DIAMETER_OFFSET_MM;
+            let host = layout.shaft_diameter_mm(kickstand.support) + JOINT_DIAMETER_OFFSET_MM;
             let knot = knot_on(&shafts[kickstand.support], place(kickstand.knot), host, KnotUse::Host);
             let foot = kickstand.foot;
             let root = root(model_id, place(Vec3::new(foot.x, foot.y, 0.0)), kickstand.root_diameter_mm);
@@ -864,6 +902,7 @@ mod tests {
         };
         let layout = SupportLayout {
             braces: vec![],
+            posts: vec![],
             kickstands: vec![],
             supports: vec![
                 SupportPath {
@@ -1006,6 +1045,7 @@ mod tests {
                 upper: BraceEnd { support: 0, kickstand: None, point: Vec3::new(0.0, 0.0, 6.0) },
                 diameter_mm: 0.6,
             }],
+            posts: vec![],
             kickstands: vec![],
         };
         let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
@@ -1054,6 +1094,7 @@ mod tests {
                 joints: vec![],
                 shaft_diameter_mm: 0.8,
             }],
+            posts: vec![],
             // A post 4 mm from the trunk leaning onto it from 8 mm up, braced to it lower down.
             kickstands: vec![KickstandLayout {
                 support: 0,
@@ -1110,6 +1151,7 @@ mod tests {
                 upper: BraceEnd { support: 1, kickstand: None, point: Vec3::new(3.0, 0.0, 1.0) },
                 diameter_mm: 0.6,
             }],
+            posts: vec![],
             kickstands: vec![],
         };
         let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
@@ -1163,6 +1205,7 @@ mod tests {
                 upper: BraceEnd { support: 1, kickstand: None, point: Vec3::new(2.0, 0.0, 6.0) },
                 diameter_mm: 0.5,
             }],
+            posts: vec![],
             kickstands: vec![],
         };
         let a = [tri([0.0, 0.0, 12.0], [4.0, 0.0, 12.0], [0.0, 4.0, 14.0])];
@@ -1273,6 +1316,85 @@ mod tests {
         assert_eq!(bent[0]["topJoint"]["id"], bent[1]["bottomJoint"]["id"]);
         assert!(near(xyz(&bent[0]["topJoint"]["pos"]), place(0.0, 4.0, 5.0)));
         assert_eq!(bent[0]["topJoint"]["diameter"], 0.7);
+    }
+
+    #[test]
+    fn posts_are_trunks_without_a_contact_cone_that_kickstands_and_braces_hang_from() {
+        use crate::geometry::support_layout::{
+            BraceEnd, BraceLayout, ContactTip, KickstandLayout, PostLayout, ROOT_TOP_MM, SupportBase, SupportPath,
+        };
+
+        let layout = SupportLayout {
+            supports: vec![SupportPath {
+                tip: ContactTip {
+                    contact: Vec3::new(0.0, 0.0, 12.0),
+                    surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                    from_outside: true,
+                    socket: Vec3::new(0.0, 0.0, 10.0),
+                    contact_diameter_mm: 0.3,
+                    body_diameter_mm: 0.8,
+                },
+                base: SupportBase::Plate { x: 0.0, y: 0.0, diameter_mm: 3.0 },
+                joints: vec![],
+                shaft_diameter_mm: 0.8,
+            }],
+            // A post 4 mm from the trunk, bending at 5 mm and ending 7 mm up, held up by a leg and
+            // braced to the trunk.
+            posts: vec![PostLayout {
+                foot: Vec3::new(4.0, 0.0, ROOT_TOP_MM),
+                joints: vec![Vec3::new(4.0, 0.0, 5.0)],
+                top: Vec3::new(4.5, 0.0, 7.0),
+                root_diameter_mm: 2.0,
+                diameter_mm: 0.6,
+            }],
+            kickstands: vec![KickstandLayout {
+                support: 1,
+                knot: Vec3::new(4.0, 0.0, 4.0),
+                joints: vec![],
+                foot: Vec3::new(7.0, 0.0, ROOT_TOP_MM),
+                root_diameter_mm: 2.0,
+                diameter_mm: 0.6,
+            }],
+            braces: vec![BraceLayout {
+                lower: BraceEnd { support: 1, kickstand: None, point: Vec3::new(4.25, 0.0, 6.0) },
+                upper: BraceEnd { support: 0, kickstand: None, point: Vec3::new(0.0, 0.0, 9.0) },
+                diameter_mm: 0.5,
+            }],
+        };
+        let a = [tri([0.0, 0.0, 12.0], [4.0, 0.0, 12.0], [0.0, 4.0, 14.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+
+        let trunks = supp["trunks"].as_array().unwrap();
+        assert_eq!(trunks.len(), 2);
+        let post = &trunks[1];
+        assert!(post.get("contactCone").is_none(), "{post}");
+        assert_eq!(post["typeId"], "trunk");
+        assert_eq!(post["baseDiameterMm"], 0.6);
+        let root = supp["roots"].as_array().unwrap().iter().find(|r| r["id"] == post["rootId"]).expect("its root");
+        assert!(near(xyz(&root["transform"]["pos"]), [4.0, 0.0, 0.0]), "{}", root["transform"]["pos"]);
+        assert_eq!(root["diameter"], 2.0);
+        // Segment 0 leaves the root top; every segment ends at a joint, the last at the top.
+        let segments = post["segments"].as_array().unwrap();
+        assert_eq!(segments.len(), 2);
+        assert!(segments[0].get("bottomJoint").is_none());
+        assert_eq!(segments[0]["topJoint"]["id"], segments[1]["bottomJoint"]["id"]);
+        assert!(near(xyz(&segments[0]["topJoint"]["pos"]), [4.0, 0.0, 5.0]));
+        assert!(near(xyz(&segments[1]["topJoint"]["pos"]), [4.5, 0.0, 7.0]));
+        assert_eq!(segments[1]["topJoint"]["diameter"], 0.7);
+        assert_eq!(segments[1]["diameter"], 0.6);
+
+        // The leg hangs from a knot on the post's lower segment, the brace from its upper one.
+        let kickstand = &supp["kickstands"][0];
+        assert_eq!(kickstand["hostKnot"]["parentShaftId"], segments[0]["id"]);
+        assert!(near(xyz(&kickstand["hostKnot"]["pos"]), [4.0, 0.0, 4.0]), "{}", kickstand["hostKnot"]["pos"]);
+        let brace = &supp["braces"][0];
+        let knot = |id: &Value| supp["knots"].as_array().unwrap().iter().find(|k| k["id"] == *id).unwrap().clone();
+        let (start, end) = (knot(&brace["startKnotId"]), knot(&brace["endKnotId"]));
+        assert_eq!(start["parentShaftId"], segments[1]["id"]);
+        assert!(near(xyz(&start["pos"]), [4.25, 0.0, 6.0]), "{}", start["pos"]);
+        assert_eq!(end["parentShaftId"], trunks[0]["segments"][0]["id"]);
     }
 
     #[test]
