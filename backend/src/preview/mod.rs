@@ -22,7 +22,7 @@ const LOG_TARGET: &str = "findamodel.Preview";
 
 /// Increment when the preview rendering implementation changes so existing cached
 /// previews are invalidated on the next scan.
-pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 15;
+pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 16;
 
 const RENDER_WIDTH: u32 = 512;
 const RENDER_HEIGHT: u32 = 512;

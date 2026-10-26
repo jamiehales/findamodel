@@ -194,6 +194,20 @@ const CONE_CONTACT_MM: f32 = 1.0;
 /// A longer taper is not a tip cone (a whole support modelled as one long cone).
 const MAX_CONE_TIP_MM: f32 = 10.0;
 
+/// The rebuilt supports account for a support's surface within this distance of their own.
+const COVERAGE_MARGIN_MM: f32 = 0.3;
+/// Support surface is counted from this far above the raft (or the root tops, if higher);
+/// rafts and roots are not rebuilt as pieces.
+const COVERAGE_FLOOR_MM: f32 = 0.5;
+/// Support triangles are sampled about this far apart.
+const COVERAGE_SAMPLE_MM: f32 = 0.25;
+const MAX_COVERAGE_SAMPLES: usize = 16;
+const COVERAGE_CELL_MM: f32 = 2.0;
+/// Real supports rebuild into supports accounting for at least this share of their surface
+/// (82% or more on the sample pre-supported models); separate parts of a model without
+/// supports (rivets, straps, panels) mostly rebuild into little (18% at the median).
+const MIN_SUPPORT_COVERAGE: f32 = 0.7;
+
 /// The tip where a support touches the model.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContactTip {
@@ -243,6 +257,103 @@ pub struct SupportLayout {
     pub supports: Vec<SupportPath>,
     pub braces: Vec<BraceLayout>,
     pub kickstands: Vec<KickstandLayout>,
+}
+
+impl SupportLayout {
+    /// Whether the layout accounts for the support geometry it was rebuilt from (see
+    /// [`MIN_SUPPORT_COVERAGE`]). False when the geometry classed as supports is really
+    /// separate parts of a model without supports.
+    pub fn accounts_for(&self, supports: &[Triangle], raft_height_mm: f32) -> bool {
+        self.coverage(supports, raft_height_mm).is_some_and(|c| c >= MIN_SUPPORT_COVERAGE)
+    }
+
+    /// Share of the support surface above the raft (by area) within a rebuilt shaft, tip,
+    /// brace or kickstand. None when no support surface rises above the raft.
+    pub fn coverage(&self, supports: &[Triangle], raft_height_mm: f32) -> Option<f32> {
+        let pieces = self.pieces();
+        // Each piece is listed in every cell a point within its reach can fall in: the cells
+        // around samples along it no more than a cell apart.
+        let key = |p: Vec3| {
+            let k = |v: f32| (v / COVERAGE_CELL_MM).floor() as i32;
+            (k(p.x), k(p.y), k(p.z))
+        };
+        let mut cells: FxHashMap<(i32, i32, i32), Vec<u32>> = FxHashMap::default();
+        for (i, &(a, b, radius)) in pieces.iter().enumerate() {
+            let steps = ((b - a).length() / COVERAGE_CELL_MM).ceil().max(1.0) as usize;
+            let reach = Vec3::new(1.0, 1.0, 1.0) * (radius + COVERAGE_MARGIN_MM + COVERAGE_CELL_MM / 2.0);
+            for k in 0..=steps {
+                let p = a + (b - a) * (k as f32 / steps as f32);
+                let (lo, hi) = (key(p - reach), key(p + reach));
+                for x in lo.0..=hi.0 {
+                    for y in lo.1..=hi.1 {
+                        for z in lo.2..=hi.2 {
+                            let listed = cells.entry((x, y, z)).or_default();
+                            if listed.last() != Some(&(i as u32)) {
+                                listed.push(i as u32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let covered = |p: Vec3| {
+            cells.get(&key(p)).is_some_and(|listed| {
+                listed.iter().any(|&i| {
+                    let (a, b, radius) = pieces[i as usize];
+                    distance_to_segment(p, a, b) <= radius + COVERAGE_MARGIN_MM
+                })
+            })
+        };
+
+        // Samples, not whole triangles, are counted from the floor up: a shaft is often one
+        // ring of triangles from the plate to its top.
+        let floor = raft_height_mm.max(ROOT_TOP_MM) + COVERAGE_FLOOR_MM;
+        let (mut total, mut rebuilt) = (0.0f64, 0.0f64);
+        for t in supports {
+            if t.v0.z.max(t.v1.z).max(t.v2.z) <= floor {
+                continue;
+            }
+            let (u, v) = (t.v1 - t.v0, t.v2 - t.v0);
+            let area = f64::from(u.cross(v).length()) / 2.0;
+            let n = ((2.0 * area).sqrt() as f32 / COVERAGE_SAMPLE_MM).ceil().clamp(1.0, MAX_COVERAGE_SAMPLES as f32)
+                as usize;
+            let (mut above, mut hits, mut samples) = (0usize, 0usize, 0usize);
+            for i in 0..n {
+                for j in 0..n - i {
+                    let p = t.v0 + u * ((i as f32 + 1.0 / 3.0) / n as f32) + v * ((j as f32 + 1.0 / 3.0) / n as f32);
+                    samples += 1;
+                    if p.z > floor {
+                        above += 1;
+                        hits += usize::from(covered(p));
+                    }
+                }
+            }
+            total += area * above as f64 / samples as f64;
+            rebuilt += area * hits as f64 / samples as f64;
+        }
+        (total > 0.0).then(|| (rebuilt / total) as f32)
+    }
+
+    /// Every rebuilt piece as a segment with its radius: shafts, tips, braces and kickstands.
+    fn pieces(&self) -> Vec<Shaft> {
+        let mut pieces = Vec::new();
+        for s in &self.supports {
+            let line = shaft_line(s);
+            pieces.extend(line.windows(2).map(|w| (w[0], w[1], s.shaft_diameter_mm / 2.0)));
+            pieces.push((s.tip.socket, s.tip.contact, s.tip.body_diameter_mm / 2.0));
+            if let SupportBase::Model(lower) = &s.base {
+                pieces.push((lower.socket, lower.contact, lower.body_diameter_mm / 2.0));
+            }
+        }
+        pieces.extend(self.braces.iter().map(|b| (b.lower.point, b.upper.point, b.diameter_mm / 2.0)));
+        for k in &self.kickstands {
+            let mut line = vec![k.foot];
+            line.extend(k.joints.iter().copied());
+            line.push(k.knot);
+            pieces.extend(line.windows(2).map(|w| (w[0], w[1], k.diameter_mm / 2.0)));
+        }
+        pieces
+    }
 }
 
 /// A bar between two supports, each end on its support's shaft.
@@ -2505,6 +2616,37 @@ mod tests {
         let low = support(Vec3::new(0.0, 0.0, 1.5), &[Vec3::new(0.0, 0.0, 1.0), Vec3::new(0.0, 0.0, 0.0)]);
         assert!(reconstruct(&low_model, &low).supports.is_empty());
         assert!(reconstruct(&model, &[]).supports.is_empty());
+    }
+
+    #[test]
+    fn rebuilt_supports_account_for_supports_but_not_for_model_parts() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = support(Vec3::new(-2.0, 0.0, 10.0), &[Vec3::new(-2.0, 0.0, 8.0), Vec3::new(-2.0, 0.0, 0.0)]);
+        supports.extend(support(Vec3::new(2.0, 1.0, 10.0), &[Vec3::new(2.0, 1.0, 8.0), Vec3::new(2.0, 1.0, 0.0)]));
+        supports.extend(cuboid(Vec3::new(-6.0, -6.0, 0.0), Vec3::new(6.0, 6.0, 1.0), 4));
+        let layout = reconstruct(&model, &supports);
+        assert_eq!(layout.supports.len(), 2);
+        let coverage = layout.coverage(&supports, 2.0).expect("support surface above the raft");
+        assert!(coverage > 0.95, "{coverage}");
+        assert!(layout.accounts_for(&supports, 2.0));
+        // Counted from the top of a 6 mm raft, the posts above it are still covered.
+        assert!(layout.coverage(&supports, 6.0).is_some_and(|c| c > 0.95));
+
+        // Thin straps along the model's side: they rebuild into a stub at most.
+        let straps: Vec<Triangle> = [11.0, 13.0]
+            .iter()
+            .flat_map(|&z| cuboid(Vec3::new(5.0, -4.0, z), Vec3::new(6.0, 4.0, z + 1.0), 2))
+            .collect();
+        let layout = reconstruct(&model, &straps);
+        let coverage = layout.coverage(&straps, 2.0).expect("strap surface");
+        assert!(coverage < 0.3, "{coverage}");
+        assert!(!layout.accounts_for(&straps, 2.0));
+
+        // Nothing above the raft: nothing to account for.
+        let raft = cuboid(Vec3::new(-6.0, -6.0, 0.0), Vec3::new(6.0, 6.0, 1.0), 4);
+        let layout = reconstruct(&model, &raft);
+        assert_eq!(layout.coverage(&raft, 2.0), None);
+        assert!(!layout.accounts_for(&raft, 2.0));
     }
 
     #[test]

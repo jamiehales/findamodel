@@ -25,13 +25,22 @@
 //! posts and tips are far lower-poly than sculpted parts, so this keeps multi-part models
 //! without supports from being split. The approach follows DragonFruit's model/support
 //! classifier.
+//!
+//! A model without supports made of separate low-poly parts (hard-surface kits: panels,
+//! pipes, rivets) can still have parts labelled as supports. Supports are thin rods, cones
+//! and balls, so when thicker closed parts make up more than [`MAX_THICK_SUPPORT_SHARE`] of
+//! the support surface above the raft, nothing is classified. Thin parts that are not
+//! supports are caught by [`Classification::holds_supports`]: the supports rebuilt from them
+//! account for little of their surface. The rebuild is the costly part of detection, so it
+//! is skipped for supports that are clearly generated: many components made almost
+//! entirely of repeated triangles.
 
 use rustc_hash::FxHashMap;
 
-use super::{Triangle, Vec3};
+use super::{Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 2;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 3;
 
 /// Components with at least 1/N of the seed's triangles are model parts.
 const MODEL_SEED_DIVISOR: u32 = 8;
@@ -63,6 +72,22 @@ const MIN_SUPPORT_TRIANGLES: u64 = 2_000;
 /// Components with a signed volume below this (mm³) are inner shells.
 const INNER_SHELL_MAX_VOLUME_MM3: f64 = -0.01;
 
+/// Closed support components thicker than this (mean thickness 2V/A: a rod's radius, a
+/// slab's thickness) are thicker than a support's shafts and joints.
+const MAX_SUPPORT_THICKNESS_MM: f64 = 1.0;
+
+/// Supports have at most this share of their surface above the raft in thick components.
+/// Pre-supported models have next to none; on hard-surface kits without supports, the
+/// parts classed as supports are often mostly thick.
+const MAX_THICK_SUPPORT_SHARE: f64 = 0.25;
+
+/// Support parts with at least this many components, at least this fraction of whose
+/// triangles are repeated (see [`REPEATED_MIN_COPIES`]), are generated supports. Most
+/// pre-supported models qualify; hard-surface kits with that many parts have at most 81%
+/// of their triangles repeated.
+const GENERATED_MIN_COMPONENTS: u64 = 100;
+const GENERATED_MIN_REPEATED_FRACTION: f64 = 0.9;
+
 /// Vertex quantisation grid size in mm. Vertices within this distance are treated as
 /// coincident, which handles floating-point rounding at shared edges.
 const VERTEX_GRID_SIZE: f32 = 0.01;
@@ -75,9 +100,17 @@ pub struct Classification {
     pub is_support: Vec<bool>,
     /// The split looks like a model plus support scaffolding rather than a multi-part model.
     pub confident: bool,
+    /// The support parts are clearly generated supports (see [`GENERATED_MIN_COMPONENTS`]).
+    pub generated: bool,
 }
 
 impl Classification {
+    /// Whether the support parts are supports: generated ones are, and others must rebuild
+    /// into supports ([`rebuilds_as_supports`]).
+    pub fn holds_supports(&self, triangles: &[Triangle], raft_height_mm: f32) -> bool {
+        self.generated || rebuilds_as_supports(triangles, &self.is_support, raft_height_mm)
+    }
+
     /// The support flags to split with, given the model's supported metadata: never when
     /// it is unsupported, whenever supports were found when it is supported, and only for a
     /// confident split when unknown.
@@ -139,10 +172,16 @@ impl ComponentStats {
     fn density(&self) -> f64 {
         if self.area > 0.0 { f64::from(self.triangles) / self.area } else { 0.0 }
     }
+
+    /// Mean thickness in mm (2V/A); only meaningful for a closed shell.
+    fn thickness(&self) -> f64 {
+        if self.area > 0.0 { 2.0 * self.volume.abs() / self.area } else { 0.0 }
+    }
 }
 
 /// Labels each triangle as model or support. `None` when the mesh has no component that
-/// classifies as support (or none that classifies as model).
+/// classifies as support (or none that classifies as model), or when the support components
+/// are too thick to be supports (see [`MAX_THICK_SUPPORT_SHARE`]).
 pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classification> {
     let Components { component_of, closed } = components(triangles);
     if closed.len() < 2 {
@@ -208,18 +247,53 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         return None;
     }
 
+    let (mut above_raft, mut thick) = (0.0, 0.0);
+    for (s, &support) in stats.iter().zip(&component_is_support) {
+        if support && s.top > raft_height_mm {
+            above_raft += s.area;
+            if s.closed && s.thickness() > MAX_SUPPORT_THICKNESS_MM {
+                thick += s.area;
+            }
+        }
+    }
+    if thick > above_raft * MAX_THICK_SUPPORT_SHARE {
+        return None;
+    }
+
+    let generated = support_components >= GENERATED_MIN_COMPONENTS && {
+        let fractions = repeated_fractions(triangles, &component_of, &component_is_support);
+        let repeated: f64 = stats
+            .iter()
+            .zip(&fractions)
+            .zip(&component_is_support)
+            .filter(|(_, support)| **support)
+            .map(|((s, fraction), _)| fraction * f64::from(s.triangles))
+            .sum();
+        repeated >= GENERATED_MIN_REPEATED_FRACTION * support_triangles as f64
+    };
+
     // Average support component < average model component / ratio, cross-multiplied.
     let low_poly_supports =
         support_triangles * model_components * SUPPORT_DENSITY_RATIO < model_triangles * support_components;
     let confident = low_poly_supports && support_triangles >= MIN_SUPPORT_TRIANGLES;
 
     let is_support = component_of.iter().map(|c| component_is_support[*c as usize]).collect();
-    Some(Classification { is_support, confident })
+    Some(Classification { is_support, confident, generated })
 }
 
 /// Whether the geometry confidently has supports.
 pub fn detect(triangles: &[Triangle], raft_height_mm: f32) -> bool {
     classify(triangles, raft_height_mm).is_some_and(|c| c.confident)
+}
+
+/// Whether the triangles flagged in `is_support` rebuild into supports that account for
+/// them ([`support_layout::SupportLayout::accounts_for`]). Thin separate parts of a model
+/// without supports (rivets, spikes, straps) can classify as supports, but rebuild into
+/// next to nothing.
+pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_height_mm: f32) -> bool {
+    let (model, supports) = split(triangles, is_support);
+    let supports = to_z_up(&supports);
+    support_layout::reconstruct(&to_z_up(&model), &supports).accounts_for(&supports, raft_height_mm)
 }
 
 /// Flags the `candidate` components that are generated primitives (see
@@ -396,6 +470,15 @@ pub(crate) mod tests {
             .collect()
     }
 
+    /// Three thin straps (48 triangles each) along the body's side, like the panels of a
+    /// hard-surface kit: they classify as supports but are model parts.
+    pub(crate) fn straps() -> Vec<Triangle> {
+        [6.0, 9.0, 11.5]
+            .into_iter()
+            .flat_map(|y| cuboid(Vec3::new(10.0, y, 1.0), Vec3::new(11.0, y + 2.0, 9.0), 2))
+            .collect()
+    }
+
     fn support_count(c: &Classification) -> usize {
         c.is_support.iter().filter(|s| **s).count()
     }
@@ -552,8 +635,8 @@ pub(crate) mod tests {
         mesh.extend(posts(50));
         // 1 mm button, 300 triangles over 6 mm² (the body has 18 per mm²).
         let dense = sculpted(cuboid(Vec3::new(20.0, 8.0, 0.0), Vec3::new(21.0, 9.0, 1.0), 5), 0.01);
-        // 8 mm block, 300 triangles over 384 mm²: a merged support structure.
-        let sparse = cuboid(Vec3::new(30.0, 0.0, 0.0), Vec3::new(38.0, 8.0, 8.0), 5);
+        // 12 mm bar, 300 triangles over 77 mm²: a merged support structure.
+        let sparse = cuboid(Vec3::new(30.0, 0.0, 0.0), Vec3::new(31.5, 12.0, 1.5), 5);
         mesh.extend(&dense);
         mesh.extend(&sparse);
         let c = classify(&mesh, RAFT).expect("classification");
@@ -562,6 +645,63 @@ pub(crate) mod tests {
         assert!(c.is_support[sparse_start - dense.len()..sparse_start].iter().all(|s| !*s));
         assert!(c.is_support[sparse_start..].iter().all(|s| *s));
         assert_eq!(support_count(&c), 50 * 48 + sparse.len());
+    }
+
+    #[test]
+    fn thick_parts_classed_as_supports_are_not_supports() {
+        // 8 mm blocks (2V/A = 2.7 mm) beside the posts: hull pieces of a kit, not supports.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        for x in [20.0, 30.0] {
+            mesh.extend(cuboid(Vec3::new(x, 0.0, 0.0), Vec3::new(x + 8.0, 8.0, 8.0), 5));
+        }
+        assert!(classify(&mesh, RAFT).is_none());
+
+        // One 3.5 mm block (2V/A = 1.2 mm) among the posts is tolerated.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(cuboid(Vec3::new(20.0, 1.0, 0.0), Vec3::new(23.5, 4.5, 3.5), 2));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert_eq!(support_count(&c), 50 * 48 + 48);
+
+        // A thick raft is not counted against the supports.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        mesh.extend(cuboid(Vec3::new(-5.0, 0.0, -5.0), Vec3::new(15.0, 1.5, 15.0), 10));
+        assert!(classify(&mesh, RAFT).is_some());
+    }
+
+    #[test]
+    fn many_repeated_support_parts_are_generated_supports() {
+        let mut mesh = body();
+        mesh.extend(posts(150));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.generated);
+        assert!(c.holds_supports(&mesh, RAFT));
+
+        let mut few = body();
+        few.extend(posts(50));
+        assert!(!classify(&few, RAFT).expect("classification").generated);
+
+        // As many parts, but no two triangles alike.
+        let mut irregular = body();
+        irregular.extend(sculpted(posts(150), 0.01));
+        assert!(!classify(&irregular, RAFT).expect("classification").generated);
+    }
+
+    #[test]
+    fn posts_rebuild_as_supports_and_straps_do_not() {
+        let mut supported = body();
+        supported.extend(posts(50));
+        let c = classify(&supported, RAFT).expect("classification");
+        assert!(rebuilds_as_supports(&supported, &c.is_support, RAFT));
+
+        let mut strapped = body();
+        strapped.extend(straps());
+        let c = classify(&strapped, RAFT).expect("thin straps classify as supports");
+        assert_eq!(support_count(&c), straps().len());
+        assert!(!rebuilds_as_supports(&strapped, &c.is_support, RAFT));
+        assert!(!c.holds_supports(&strapped, RAFT));
     }
 
     #[test]

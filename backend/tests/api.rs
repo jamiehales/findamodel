@@ -504,6 +504,55 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, detail) = app.get(&format!("/api/models/{plain}")).await;
     assert_eq!(detail["supportSplit"], false);
+
+    // A detection from before the current scan config is checked again when split.
+    forget_support_detection(&app).await;
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{knight}/geometry/split")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, detail) = app.get(&format!("/api/models/{knight}")).await;
+    assert_eq!(detail["supportSplit"], true);
+}
+
+#[tokio::test]
+async fn model_parts_classed_as_supports_are_not_split_off() {
+    let app = TestApp::new().await;
+    // A kit part with thin straps along its side, in a folder marked pre-supported.
+    let mut mesh = cuboid([-5.0, -5.0, 0.0], [5.0, 5.0, 10.0], 30);
+    for z in [2.0, 5.0, 7.5] {
+        mesh.extend(cuboid([5.0, -4.0, z], [6.0, 4.0, z + 1.0], 2));
+    }
+    app.write("Kit/hull.stl", findamodel::geometry::saver::save_stl(&mesh, None));
+    app.write("Kit/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supported"], true);
+    assert_eq!(detail["supportSplit"], false);
+    let (status, _, _) = app.send(Request::get(format!("/api/models/{id}/voxl")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    forget_support_detection(&app).await;
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], Value::Null);
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], false);
+}
+
+/// Makes every model's support detection look like it predates the current scan config.
+async fn forget_support_detection(app: &TestApp) {
+    sqlx::query("UPDATE models SET scan_config_checksum = NULL, support_parts_found = NULL")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
 }
 
 /// Decompresses a VOXL JSON chunk.

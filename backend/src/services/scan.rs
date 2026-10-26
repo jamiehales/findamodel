@@ -437,7 +437,8 @@ impl ModelService {
                 return (None, false, None, SupportDetection::default(), stages);
             };
             let started = Instant::now();
-            let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
+            let classification = support_separation::classify(&geometry.triangles, raft_height_mm)
+                .filter(|c| c.holds_supports(&geometry.triangles, raft_height_mm));
             let detected = SupportDetection::of(classification.as_ref());
             let support_mask = classification.and_then(|c| c.mask_for(supported));
             stages.supports_ms = elapsed_ms(started);
@@ -1424,6 +1425,27 @@ mod tests {
             ]
         );
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn scan_finds_no_support_parts_in_model_parts_that_do_not_rebuild_as_supports() {
+        use crate::geometry::support_separation::tests::{body, straps};
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        let mut strapped = body();
+        strapped.extend(straps());
+        write_stl(root.path(), "kit/strapped.stl", &strapped);
+        write_file(root.path(), "kit/findamodel.yaml", "supported: true\n");
+        let svc = service(&t, root.path());
+
+        assert_eq!(svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap(), 1);
+        let row: (Option<bool>, Option<bool>, Option<bool>) =
+            sqlx::query_as("SELECT calculated_supported, detected_supported, support_parts_found FROM models")
+                .fetch_one(&t.db)
+                .await
+                .unwrap();
+        assert_eq!(row, (Some(true), None, Some(false)));
     }
 
     #[tokio::test]
