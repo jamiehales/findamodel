@@ -23,6 +23,11 @@
 //!    are nearly all distinct.
 //! 5. Smaller components reaching within [`TOP_MODEL_BAND_MM`] of the model's top are
 //!    model details; the rest are supports.
+//! 6. A support component wholly above the raft that touches no other support part must hold
+//!    the model up on its own. One that is sculpted (next to no repeated triangles) and rests
+//!    on an upward-facing model surface without meeting a downward-facing one at its top is a
+//!    piece of the sculpt lying apart from the model (a pebble on the ground): a loose piece,
+//!    kept with the model like a scrap.
 //!
 //! The split is confident only when support components average under a third of the
 //! triangles of model components and add up to at least [`MIN_SUPPORT_TRIANGLES`]. Support
@@ -42,10 +47,11 @@
 
 use rustc_hash::FxHashMap;
 
+use super::support_layout::closest_on_triangle;
 use super::{Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 4;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 5;
 
 /// Components with at least 1/N of the seed's triangles are model parts.
 const MODEL_SEED_DIVISOR: u32 = 8;
@@ -100,6 +106,21 @@ const MAX_THICK_SUPPORT_SHARE: f64 = 0.25;
 /// of their triangles repeated.
 const GENERATED_MIN_COMPONENTS: u64 = 100;
 const GENERATED_MIN_REPEATED_FRACTION: f64 = 0.9;
+
+/// Support components whose boxes are this far apart or more touch no other support part.
+const LOOSE_MARGIN_MM: f32 = 0.05;
+
+/// Lone support components with less than this fraction of repeated triangles are sculpted.
+/// Even a distorted support primitive keeps a third or more (tip cones of 28 triangles at
+/// 43%), while pieces of a sculpt have none.
+const LOOSE_MAX_REPEATED_FRACTION: f64 = 0.1;
+
+/// How far from a lone support component's top and bottom the model surface it meets is
+/// looked for.
+const LOOSE_CONTACT_MM: f32 = 1.0;
+
+/// A model face is turned down (or up) when the vertical part of its normal is beyond this.
+const LOOSE_MIN_TILT: f32 = 0.05;
 
 /// Vertex quantisation grid size in mm. Vertices within this distance are treated as
 /// coincident, which handles floating-point rounding at shared edges.
@@ -174,11 +195,45 @@ struct ComponentStats {
     volume: f64,
     area: f64,
     closed: bool,
+    /// Bounding box corners.
+    lo: Vec3,
+    hi: Vec3,
+    /// The highest and lowest vertices.
+    peak: Vec3,
+    bottom: Vec3,
 }
 
 impl ComponentStats {
     fn new(closed: bool) -> Self {
-        Self { triangles: 0, top: f32::NEG_INFINITY, volume: 0.0, area: 0.0, closed }
+        let (low, high) = (Vec3::new(f32::MAX, f32::MAX, f32::MAX), Vec3::new(f32::MIN, f32::MIN, f32::MIN));
+        Self {
+            triangles: 0,
+            top: f32::NEG_INFINITY,
+            volume: 0.0,
+            area: 0.0,
+            closed,
+            lo: low,
+            hi: high,
+            peak: high,
+            bottom: low,
+        }
+    }
+
+    fn add(&mut self, tri: &Triangle) {
+        self.triangles += 1;
+        self.volume += signed_volume(tri);
+        self.area += f64::from((tri.v1 - tri.v0).cross(tri.v2 - tri.v0).length()) / 2.0;
+        for v in [tri.v0, tri.v1, tri.v2] {
+            self.lo = Vec3::new(self.lo.x.min(v.x), self.lo.y.min(v.y), self.lo.z.min(v.z));
+            self.hi = Vec3::new(self.hi.x.max(v.x), self.hi.y.max(v.y), self.hi.z.max(v.z));
+            if v.y > self.peak.y {
+                self.peak = v;
+            }
+            if v.y < self.bottom.y {
+                self.bottom = v;
+            }
+        }
+        self.top = self.hi.y;
     }
 
     /// Triangles per mm² of surface.
@@ -203,11 +258,7 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
 
     let mut stats: Vec<ComponentStats> = closed.iter().map(|&closed| ComponentStats::new(closed)).collect();
     for (tri, &c) in triangles.iter().zip(&component_of) {
-        let s = &mut stats[c as usize];
-        s.triangles += 1;
-        s.top = s.top.max(tri.v0.y).max(tri.v1.y).max(tri.v2.y);
-        s.volume += signed_volume(tri);
-        s.area += f64::from((tri.v1 - tri.v0).cross(tri.v2 - tri.v0).length()) / 2.0;
+        stats[c as usize].add(tri);
     }
 
     // Volume only means something for a closed shell.
@@ -236,7 +287,7 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         .collect();
     let primitive = primitives(triangles, &component_of, &dense_detail);
 
-    let component_is_support: Vec<bool> = stats
+    let mut component_is_support: Vec<bool> = stats
         .iter()
         .enumerate()
         .map(|(c, s)| {
@@ -251,10 +302,14 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
             }
         })
         .collect();
+    let loose = loose_pieces(triangles, &component_of, &stats, &component_is_support, raft_height_mm);
+    for (support, &loose) in component_is_support.iter_mut().zip(&loose) {
+        *support &= !loose;
+    }
 
     let (mut model_components, mut model_triangles, mut support_components, mut support_triangles) =
         (0u64, 0u64, 0u64, 0u64);
-    for (c, s) in parts() {
+    for (c, s) in parts().filter(|(c, _)| !loose[*c]) {
         if component_is_support[c] {
             support_components += 1;
             support_triangles += u64::from(s.triangles);
@@ -314,6 +369,122 @@ pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_he
     let (model, supports) = split(triangles, is_support);
     let supports = to_z_up(&supports);
     support_layout::reconstruct(&to_z_up(&model), &supports).accounts_for(&supports, raft_height_mm)
+}
+
+/// Flags the support components that are loose pieces of the sculpt (see step 6 of the module
+/// docs): wholly above the raft, touching no other support part, sculpted (see
+/// [`LOOSE_MAX_REPEATED_FRACTION`]), with an upward-facing model surface nearest their
+/// lowest point and no downward-facing one nearest their highest (within [`LOOSE_CONTACT_MM`]).
+fn loose_pieces(
+    triangles: &[Triangle],
+    component_of: &[u32],
+    stats: &[ComponentStats],
+    is_support: &[bool],
+    raft_height_mm: f32,
+) -> Vec<bool> {
+    let mut loose = vec![false; stats.len()];
+    let alone = standalone(stats, is_support, raft_height_mm);
+    if !alone.contains(&true) {
+        return loose;
+    }
+    let fractions = repeated_fractions(triangles, component_of, &alone);
+    let candidates: Vec<usize> =
+        (0..stats.len()).filter(|&c| alone[c] && fractions[c] < LOOSE_MAX_REPEATED_FRACTION).collect();
+    if candidates.is_empty() {
+        return loose;
+    }
+    let ends: Vec<Vec3> = candidates.iter().flat_map(|&c| [stats[c].peak, stats[c].bottom]).collect();
+    let faces = nearest_faces(triangles, |i| !is_support[component_of[i] as usize], &ends);
+    for (k, &c) in candidates.iter().enumerate() {
+        let holds = faces[2 * k].is_some_and(|n| n.y < -LOOSE_MIN_TILT);
+        let rests = faces[2 * k + 1].is_some_and(|n| n.y > LOOSE_MIN_TILT);
+        loose[c] = rests && !holds;
+    }
+    loose
+}
+
+/// Flags the support components wholly above the raft whose boxes come within
+/// [`LOOSE_MARGIN_MM`] of no other support component's (sweep and prune along X).
+fn standalone(stats: &[ComponentStats], is_support: &[bool], raft_height_mm: f32) -> Vec<bool> {
+    let mut order: Vec<usize> = (0..stats.len()).filter(|&c| is_support[c]).collect();
+    order.sort_unstable_by(|&a, &b| stats[a].lo.x.total_cmp(&stats[b].lo.x));
+    let mut touched = vec![false; stats.len()];
+    let mut active: Vec<usize> = Vec::new();
+    for &c in &order {
+        let s = &stats[c];
+        active.retain(|&a| stats[a].hi.x + LOOSE_MARGIN_MM >= s.lo.x);
+        for &a in &active {
+            let t = &stats[a];
+            if t.lo.y <= s.hi.y + LOOSE_MARGIN_MM
+                && s.lo.y <= t.hi.y + LOOSE_MARGIN_MM
+                && t.lo.z <= s.hi.z + LOOSE_MARGIN_MM
+                && s.lo.z <= t.hi.z + LOOSE_MARGIN_MM
+            {
+                touched[a] = true;
+                touched[c] = true;
+            }
+        }
+        active.push(c);
+    }
+    (0..stats.len()).map(|c| is_support[c] && !touched[c] && stats[c].bottom.y > raft_height_mm).collect()
+}
+
+/// For each point, the outward normal of the nearest triangle within [`LOOSE_CONTACT_MM`]
+/// among those `include` accepts. Each triangle is checked against the points in the grid
+/// cells within its reach, or against every point when there are fewer points than cells.
+fn nearest_faces(triangles: &[Triangle], include: impl Fn(usize) -> bool, points: &[Vec3]) -> Vec<Option<Vec3>> {
+    let cell = |p: Vec3| {
+        let k = |v: f32| (v / LOOSE_CONTACT_MM).floor() as i32;
+        (k(p.x), k(p.y), k(p.z))
+    };
+    let corner =
+        |pick: fn(f32, f32) -> f32, a: Vec3, b: Vec3| Vec3::new(pick(a.x, b.x), pick(a.y, b.y), pick(a.z, b.z));
+    let reach = Vec3::new(LOOSE_CONTACT_MM, LOOSE_CONTACT_MM, LOOSE_CONTACT_MM);
+    let mut grid: FxHashMap<(i32, i32, i32), Vec<u32>> = FxHashMap::default();
+    let (mut lo, mut hi) = (points[0], points[0]);
+    for (k, &p) in points.iter().enumerate() {
+        grid.entry(cell(p)).or_default().push(k as u32);
+        (lo, hi) = (corner(f32::min, lo, p), corner(f32::max, hi, p));
+    }
+    let (lo, hi) = (lo - reach, hi + reach);
+
+    let mut best: Vec<Option<(f32, u32)>> = vec![None; points.len()];
+    for (i, t) in triangles.iter().enumerate() {
+        let t_lo = corner(f32::min, corner(f32::min, t.v0, t.v1), t.v2);
+        let t_hi = corner(f32::max, corner(f32::max, t.v0, t.v1), t.v2);
+        let apart = t_hi.x < lo.x || t_hi.y < lo.y || t_hi.z < lo.z || t_lo.x > hi.x || t_lo.y > hi.y || t_lo.z > hi.z;
+        if apart || !include(i) {
+            continue;
+        }
+        let mut check = |k: u32| {
+            let p = points[k as usize];
+            let d = (closest_on_triangle(p, t.v0, t.v1, t.v2) - p).length();
+            if d <= LOOSE_CONTACT_MM && best[k as usize].is_none_or(|(b, _)| d < b) {
+                best[k as usize] = Some((d, i as u32));
+            }
+        };
+        let (a, b) = (cell(t_lo - reach), cell(t_hi + reach));
+        let span = (b.0 - a.0 + 1) as usize * (b.1 - a.1 + 1) as usize * (b.2 - a.2 + 1) as usize;
+        if span < points.len() {
+            for x in a.0..=b.0 {
+                for y in a.1..=b.1 {
+                    for z in a.2..=b.2 {
+                        grid.get(&(x, y, z)).into_iter().flatten().for_each(|&k| check(k));
+                    }
+                }
+            }
+        } else {
+            (0..points.len() as u32).for_each(check);
+        }
+    }
+    best.into_iter()
+        .map(|hit| {
+            hit.map(|(_, i)| {
+                let t = &triangles[i as usize];
+                (t.v1 - t.v0).cross(t.v2 - t.v0).normalized()
+            })
+        })
+        .collect()
 }
 
 /// Flags the `candidate` components that are generated primitives (see
@@ -725,6 +896,26 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_part_resting_against_a_side_face_under_another_part_is_not_a_support() {
+        // A box standing on the plate with a bullet beside it, flush with its top, and the
+        // bullet's casing under it, its foot against the box's side: the casing rebuilds as a
+        // strut, but its lower end meets the side face, so it holds nothing up.
+        let mut mesh = cuboid(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 15.0, 10.0), 30);
+        mesh.extend(cuboid(Vec3::new(10.3, 12.0, 4.3), Vec3::new(11.7, 15.0, 5.7), 12));
+        mesh.extend(cuboid(Vec3::new(10.2, 3.0, 4.2), Vec3::new(11.8, 12.0, 5.8), 2));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert_eq!(support_count(&c), 48);
+        let (model, supports) = split(&mesh, &c.is_support);
+        let supports = to_z_up(&supports);
+        let layout = support_layout::reconstruct(&to_z_up(&model), &supports);
+        assert_eq!(layout.supports.len(), 1);
+        assert!(matches!(layout.supports[0].base, support_layout::SupportBase::Model(_)));
+        assert!(layout.coverage(&supports, RAFT).is_some_and(|c| c > 0.9));
+        assert_eq!(layout.holding_share(), Some(0.0));
+        assert!(!rebuilds_as_supports(&mesh, &c.is_support, RAFT));
+    }
+
+    #[test]
     fn dense_support_joint_balls_are_support() {
         let mut mesh = body();
         mesh.extend(posts(50));
@@ -769,6 +960,34 @@ pub(crate) mod tests {
         assert_eq!(support_count(&c), 50 * 48);
         // Counted as model parts, the 201 scraps would bring the average part down to near a
         // post's size.
+        assert!(c.confident);
+    }
+
+    #[test]
+    fn loose_pieces_lying_on_the_model_are_model() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        // A slab beside the body and a ledge over part of it, both model parts.
+        mesh.extend(cuboid(Vec3::new(12.0, 5.0, 0.0), Vec3::new(22.0, 8.0, 10.0), 30));
+        mesh.extend(cuboid(Vec3::new(14.0, 10.0, 3.0), Vec3::new(20.0, 12.0, 7.0), 30));
+        let model = mesh.len();
+        // A sculpted pebble lying on the slab, clear of the ledge.
+        let pebble = sculpted(sphere(Vec3::new(16.5, 8.25, 1.5), 0.25, 8, 6), 0.01);
+        mesh.extend(&pebble);
+        let pebble = model..mesh.len();
+        // A sculpted strut on its own from the slab up into the ledge's underside, and a
+        // sculpted twig hanging from the body's underside: they hold the model up.
+        mesh.extend(sculpted(cuboid(Vec3::new(19.0, 8.0, 6.0), Vec3::new(19.3, 10.2, 6.3), 2), 0.01));
+        mesh.extend(sculpted(cuboid(Vec3::new(9.6, 3.0, 9.5), Vec3::new(9.9, 5.2, 9.8), 2), 0.01));
+        let twigs = pebble.end..mesh.len();
+        // The same pebble as a generated primitive is left as support.
+        mesh.extend(sphere(Vec3::new(16.5, 8.25, 0.5), 0.25, 8, 6));
+        let primitive = twigs.end..mesh.len();
+
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[pebble].iter().all(|s| !*s));
+        assert!(c.is_support[twigs].iter().all(|s| *s));
+        assert!(c.is_support[primitive].iter().all(|s| *s));
         assert!(c.confident);
     }
 

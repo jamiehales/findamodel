@@ -250,7 +250,8 @@ const COVERAGE_CELL_MM: f32 = 2.0;
 /// supports (rivets, straps, panels) mostly rebuild into little (18% at the median).
 const MIN_SUPPORT_COVERAGE: f32 = 0.7;
 /// A tip holds the model up when the model surface it meets faces down by at least this much
-/// (the z of its outward normal is below minus this) and the support meets it from outside.
+/// (the z of its outward normal is below minus this) and the support meets it from outside. A
+/// strut stands on the model when its lower contact faces up by as much.
 const HOLDING_MIN_DOWN: f32 = 0.05;
 /// Supports shorter than this (from the tip's contact to where the shaft starts) are not
 /// counted towards holding the model up: rivets and pegs rebuild into stubs.
@@ -258,8 +259,9 @@ const HOLDING_MIN_LENGTH_MM: f32 = 1.0;
 /// Real supports hold the model up: at least this share of the supports (counting those at
 /// least [`HOLDING_MIN_LENGTH_MM`] long) have tips that do (56% or more on the sample
 /// pre-supported models, where the rest mostly lean on side faces). Separate parts of a model
-/// without supports that rebuild like supports stick out of side faces (pegs, spikes) or sit
-/// inside the model (pins, panels), so at most 6% of theirs do.
+/// without supports that rebuild like supports stick out of side faces (pegs, spikes), sit
+/// inside the model (pins, panels) or rest against a side face beside the part they meet (a
+/// casing under its bullet), so at most 6% of theirs do.
 const MIN_HOLDING_SHARE: f32 = 0.25;
 
 /// The tip where a support touches the model.
@@ -328,9 +330,10 @@ impl SupportLayout {
             && self.holding_share().is_some_and(|share| share >= MIN_HOLDING_SHARE)
     }
 
-    /// Share of the supports at least [`HOLDING_MIN_LENGTH_MM`] long whose tip holds the model
-    /// up: it meets a downward-facing model surface from outside, below it. None when no
-    /// support is that long.
+    /// Share of the supports at least [`HOLDING_MIN_LENGTH_MM`] long that hold the model up:
+    /// the tip meets a downward-facing model surface from outside, below it, and a strut stands
+    /// on an upward-facing one (a strut whose lower end meets a side face holds nothing up).
+    /// None when no support is that long.
     pub fn holding_share(&self) -> Option<f32> {
         let (mut counted, mut holding) = (0usize, 0usize);
         for s in &self.supports {
@@ -338,7 +341,11 @@ impl SupportLayout {
                 continue;
             }
             counted += 1;
-            holding += usize::from(s.tip.from_outside && s.tip.surface_normal.z < -HOLDING_MIN_DOWN);
+            let stands = match &s.base {
+                SupportBase::Model(lower) => lower.from_outside && lower.surface_normal.z > HOLDING_MIN_DOWN,
+                SupportBase::Plate { .. } | SupportBase::Shaft { .. } => true,
+            };
+            holding += usize::from(stands && s.tip.from_outside && s.tip.surface_normal.z < -HOLDING_MIN_DOWN);
         }
         (counted > 0).then(|| holding as f32 / counted as f32)
     }
@@ -2611,7 +2618,7 @@ impl<'a> SurfaceIndex<'a> {
 }
 
 /// Closest point to `p` on triangle `abc` (Ericson, Real-Time Collision Detection 5.1.5).
-fn closest_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+pub(super) fn closest_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
     let (ab, ac, ap) = (b - a, c - a, p - a);
     let (d1, d2) = (ab.dot(ap), ac.dot(ap));
     if d1 <= 0.0 && d2 <= 0.0 {
@@ -3644,6 +3651,30 @@ mod tests {
         let stubs = SupportLayout { supports: layout.supports[4..].to_vec(), ..SupportLayout::default() };
         assert_eq!(stubs.holding_share(), None);
         assert_eq!(SupportLayout::default().holding_share(), None);
+
+        // Struts under a downward face: one standing on a floor, one against a side face, one
+        // meeting a floor from inside the model.
+        let strut = |lower_normal: Vec3, from_outside: bool| {
+            let mut s = support(Vec3::new(0.0, 0.0, 10.0), down, true);
+            s.base = SupportBase::Model(ContactTip {
+                contact: Vec3::new(0.0, 0.0, 5.0),
+                surface_normal: lower_normal,
+                from_outside,
+                socket: Vec3::new(0.0, 0.0, 5.3),
+                contact_diameter_mm: 0.3,
+                body_diameter_mm: 0.6,
+            });
+            s
+        };
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let struts = |bases: &[(Vec3, bool)]| SupportLayout {
+            supports: bases.iter().map(|&(n, outside)| strut(n, outside)).collect(),
+            ..SupportLayout::default()
+        };
+        assert_eq!(struts(&[(up, true)]).holding_share(), Some(1.0));
+        assert_eq!(struts(&[(side, true)]).holding_share(), Some(0.0));
+        assert_eq!(struts(&[(up, false)]).holding_share(), Some(0.0));
+        assert_eq!(struts(&[(up, true), (side, true)]).holding_share(), Some(0.5));
     }
 
     #[test]
