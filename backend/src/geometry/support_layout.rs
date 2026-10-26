@@ -14,6 +14,10 @@
 //! the shaft, or off its line (raft, braces, crossing shafts), are passed through without
 //! bending the shaft's centre line or ending the walk.
 //!
+//! Support geometry no walk passed is left in connected pieces. A piece bridging two traced
+//! supports is a brace; one standing on the plate and leaning against a traced support (the
+//! legs splaying from a tree's trunk) is a kickstand.
+//!
 //! Coordinates are Z-up millimetres with the plate at Z = 0.
 
 use rayon::prelude::*;
@@ -119,7 +123,9 @@ const BRACE_SAMPLE_MM: f32 = 0.2;
 /// Braces whose ends are this close to an earlier brace's on the same supports are the same.
 const DUPLICATE_BRACE_MM: f32 = 1.0;
 /// A brace passing this close to a third support's end, when the piece also braces each of
-/// its ends to that support, runs on through it: the two shorter braces replace it.
+/// its ends to that support, runs on through it: the two shorter braces replace it. A
+/// kickstand passing this close to another support's shaft is likewise a shorter kickstand
+/// from that support, with a brace running on in line with it.
 const BRACE_THROUGH_MM: f32 = 0.8;
 /// A brace whose middle lies along a traced shaft, within this cosine of its direction, is a
 /// sliver of that shaft rather than a brace.
@@ -129,6 +135,22 @@ const BRACE_PARALLEL_COS: f32 = 0.9;
 const BRACE_REFIT_SPREAD: f32 = 0.5;
 const MIN_BRACE_DIAMETER_MM: f32 = 0.3;
 const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
+/// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on
+/// the plate or a raft) and runs up to where the piece touches a support, straight or leaning
+/// off the top of a column rising from that bottom. Its leaning strut is at least
+/// `MIN_KICKSTAND_MM` long and leans between `MIN_KICKSTAND_LEAN` and `MAX_KICKSTAND_LEAN`
+/// (horizontal run per unit of height, about 20 to 63 degrees), and the piece covers it as a
+/// brace's line is covered.
+const MIN_KICKSTAND_MM: f32 = 2.0;
+const MIN_KICKSTAND_LEAN: f32 = 0.36;
+const MAX_KICKSTAND_LEAN: f32 = 2.0;
+/// Where a strut meets its support is looked for every `KNOT_STEP_MM` along the junction.
+const KNOT_STEP_MM: f32 = 0.5;
+/// A column rising from a kickstand's foot stays within this distance of the foot's centre,
+/// and nothing carries on in line with it from a third of `COLUMN_END_MM` above its top to
+/// `COLUMN_END_MM` above it.
+const COLUMN_DRIFT_MM: f32 = 0.1;
+const COLUMN_END_MM: f32 = 1.5;
 pub const ROOT_DISK_HEIGHT_MM: f32 = 0.5;
 pub const ROOT_CONE_HEIGHT_MM: f32 = 1.5;
 /// Where a plate support's shaft leaves its root.
@@ -190,6 +212,7 @@ pub struct SupportLayout {
     /// A support's parent always comes before it.
     pub supports: Vec<SupportPath>,
     pub braces: Vec<BraceLayout>,
+    pub kickstands: Vec<KickstandLayout>,
 }
 
 /// A bar between two supports, each end on its support's shaft.
@@ -208,8 +231,24 @@ pub struct BraceEnd {
     pub point: Vec3,
 }
 
+/// A leg from a root on the plate up to the shaft of the support it holds up.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KickstandLayout {
+    /// Index into [`SupportLayout::supports`] of the trunk or branch the leg holds up.
+    pub support: usize,
+    /// Where the leg meets that support's shaft; the knot goes on the shaft nearest it.
+    pub knot: Vec3,
+    /// Bends between the foot and the knot, bottom to top: the top of a column rising
+    /// straight from the root, where the leg leans off towards the knot.
+    pub joints: Vec<Vec3>,
+    /// Where the leg leaves its root's top ([`ROOT_TOP_MM`]); the root stands on the plate below.
+    pub foot: Vec3,
+    pub root_diameter_mm: f32,
+    pub diameter_mm: f32,
+}
+
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 4;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 5;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -274,11 +313,15 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
             layout.supports.push(support);
         }
     }
-    layout.braces = graph.braces(&seen, &owner, &layout.supports);
+    let pieces = graph.untraced(&seen, &owner);
+    let shafts = traced_shafts(&layout.supports);
+    layout.braces = graph.braces(&pieces, &shafts);
+    layout.kickstands = graph.kickstands(&pieces, &seen, &layout.supports, &shafts);
     log::debug!(
-        "Support layout: {} supports and {} braces from {} support triangles ({} stranded, {} duplicate tips, {} too low)",
+        "Support layout: {} supports, {} braces and {} kickstands from {} support triangles ({} stranded, {} duplicate tips, {} too low)",
         layout.supports.len(),
         layout.braces.len(),
+        layout.kickstands.len(),
         supports.len(),
         stranded,
         duplicate,
@@ -531,6 +574,52 @@ fn distance_to_segment(p: Vec3, a: Vec3, b: Vec3) -> f32 {
     (p - (a + ab * t)).length()
 }
 
+/// The point of segment `ab` closest to the line through `origin` along the unit `direction`.
+fn closest_to_line(a: Vec3, b: Vec3, origin: Vec3, direction: Vec3) -> Vec3 {
+    let off_line = |v: Vec3| v - direction * v.dot(direction);
+    let (w, u) = (off_line(a - origin), off_line(b - a));
+    let t = if u.length_sq() > 1e-12 { (-w.dot(u) / u.length_sq()).clamp(0.0, 1.0) } else { 0.5 };
+    a + (b - a) * t
+}
+
+/// A traced shaft segment: its ends and radius.
+type Shaft = (Vec3, Vec3, f32);
+
+/// A support's shaft from where it starts up to the socket.
+fn shaft_line(support: &SupportPath) -> Vec<Vec3> {
+    let mut line = vec![support.shaft_start()];
+    line.extend(support.joints.iter().copied());
+    line.push(support.tip.socket);
+    line
+}
+
+/// Every traced shaft segment, tips included.
+fn traced_shafts(supports: &[SupportPath]) -> Vec<Shaft> {
+    supports
+        .iter()
+        .flat_map(|s| {
+            let mut line = shaft_line(s);
+            line.push(s.tip.contact);
+            let radius = s.shaft_diameter_mm / 2.0;
+            line.windows(2).map(|w| (w[0], w[1], radius)).collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Whether a bar from `p` to `q` lies along a traced shaft all through its middle: then it is
+/// a sliver of that shaft rather than a brace or kickstand.
+fn along_shaft(shafts: &[Shaft], p: Vec3, q: Vec3, diameter_mm: f32) -> bool {
+    let span = q - p;
+    let direction = span.normalized();
+    (1..4).all(|k| {
+        let at = p + span * (k as f32 / 4.0);
+        shafts.iter().any(|&(a, b, r)| {
+            distance_to_segment(at, a, b) <= r.max(diameter_mm / 2.0)
+                && (b - a).normalized().dot(direction).abs() > BRACE_PARALLEL_COS
+        })
+    })
+}
+
 /// An axis-aligned box on a slice plane.
 #[derive(Debug, Clone, Copy)]
 struct Rect {
@@ -659,6 +748,18 @@ impl Walk {
             if i < self.leaning_at { i + 1 } else { (i + 1).saturating_sub(self.leaning.len()).max(self.leaning_at) };
         &self.nodes[from..]
     }
+}
+
+/// A connected piece of the support geometry no walk passed.
+struct Piece {
+    blobs: Vec<u32>,
+    /// Where the piece touches traced supports, grouped per support by height: the mean of
+    /// each group, and the group's touches from the bottom up.
+    ends: Vec<BraceEnd>,
+    touches: Vec<Vec<Vec3>>,
+    /// The piece's blobs by layer and grid cell ([`BLOB_CELL_MM`]), each in every cell its box
+    /// (grown by [`BRACE_MARGIN_MM`]) covers.
+    cells: FxHashMap<(u32, i32, i32), Vec<u32>>,
 }
 
 impl Graph {
@@ -884,34 +985,9 @@ impl Graph {
         ((end.x - top.x).powi(2) + (end.y - top.y).powi(2)).sqrt() / drop
     }
 
-    /// Braces: support geometry no walk passed that bridges two traced supports. The untraced
-    /// blobs are grouped into connected pieces, and each place a piece touches a traced
-    /// support is a candidate end. Two ends on different supports are braced when the piece's
-    /// own cross-sections cover the straight line between them, which tells an X of crossing
-    /// braces, or a V meeting on one post, from the lines its ends do not run along.
-    fn braces(&self, seen: &[bool], owner: &[u32], supports: &[SupportPath]) -> Vec<BraceLayout> {
-        // Traced shafts, tips included: a "brace" lying along one is a sliver of that shaft.
-        let shafts: Vec<(Vec3, Vec3, f32)> = supports
-            .iter()
-            .flat_map(|s| {
-                let mut line = vec![s.shaft_start()];
-                line.extend(s.joints.iter().copied());
-                line.extend([s.tip.socket, s.tip.contact]);
-                let radius = s.shaft_diameter_mm / 2.0;
-                line.windows(2).map(|w| (w[0], w[1], radius)).collect::<Vec<_>>()
-            })
-            .collect();
-        let along_shaft = |brace: &BraceLayout| {
-            let span = brace.upper.point - brace.lower.point;
-            let direction = span.normalized();
-            (1..4).all(|k| {
-                let p = brace.lower.point + span * (k as f32 / 4.0);
-                shafts.iter().any(|&(a, b, r)| {
-                    distance_to_segment(p, a, b) <= r.max(brace.diameter_mm / 2.0)
-                        && (b - a).normalized().dot(direction).abs() > BRACE_PARALLEL_COS
-                })
-            })
-        };
+    /// Support geometry no walk passed, grouped into connected pieces, each with the places
+    /// it touches traced supports as candidate brace and kickstand ends.
+    fn untraced(&self, seen: &[bool], owner: &[u32]) -> Vec<Piece> {
         let n = self.blobs.len();
         let mut parent: Vec<u32> = (0..n as u32).collect();
         for i in (0..n).filter(|&i| !seen[i]) {
@@ -926,26 +1002,49 @@ impl Graph {
         let mut pieces: Vec<Vec<u32>> = pieces.into_values().filter(|p| p.len() >= MIN_BRACE_BLOBS).collect();
         pieces.sort_by_key(|p| p[0]);
 
-        let mut braces: Vec<BraceLayout> = Vec::new();
-        for piece in &pieces {
-            // Where the piece touches traced supports, grouped per support by height.
-            let mut touches: Vec<(u32, Vec3)> = piece
-                .iter()
-                .flat_map(|&b| self.up[b as usize].iter().chain(&self.down[b as usize]))
-                .filter(|&&other| owner[other as usize] != NONE)
-                .map(|&other| (owner[other as usize], self.centre(other)))
-                .collect();
-            touches.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.z.total_cmp(&b.1.z)));
-            let mut ends: Vec<BraceEnd> = Vec::new();
-            for group in touches.chunk_by(|a, b| a.0 == b.0 && b.1.z - a.1.z <= BRACE_END_GAP_MM) {
-                let sum = group.iter().fold(Vec3::default(), |sum, t| sum + t.1);
-                ends.push(BraceEnd { support: group[0].0 as usize, point: sum * (1.0 / group.len() as f32) });
-            }
-            let mut by_layer: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
-            for &b in piece {
-                by_layer.entry(self.blobs[b as usize].layer).or_default().push(b);
-            }
+        pieces
+            .into_iter()
+            .map(|blobs| {
+                // Where the piece touches traced supports, grouped per support by height.
+                let mut touches: Vec<(u32, Vec3)> = blobs
+                    .iter()
+                    .flat_map(|&b| self.up[b as usize].iter().chain(&self.down[b as usize]))
+                    .filter(|&&other| owner[other as usize] != NONE)
+                    .map(|&other| (owner[other as usize], self.centre(other)))
+                    .collect();
+                touches.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.z.total_cmp(&b.1.z)));
+                let mut ends: Vec<BraceEnd> = Vec::new();
+                let mut grouped: Vec<Vec<Vec3>> = Vec::new();
+                for group in touches.chunk_by(|a, b| a.0 == b.0 && b.1.z - a.1.z <= BRACE_END_GAP_MM) {
+                    let sum = group.iter().fold(Vec3::default(), |sum, t| sum + t.1);
+                    ends.push(BraceEnd { support: group[0].0 as usize, point: sum * (1.0 / group.len() as f32) });
+                    grouped.push(group.iter().map(|t| t.1).collect());
+                }
+                let mut cells: FxHashMap<(u32, i32, i32), Vec<u32>> = FxHashMap::default();
+                for &b in &blobs {
+                    let blob = &self.blobs[b as usize];
+                    let r = &blob.rect;
+                    let reach = Rect {
+                        min: [r.min[0] - BRACE_MARGIN_MM, r.min[1] - BRACE_MARGIN_MM],
+                        max: [r.max[0] + BRACE_MARGIN_MM, r.max[1] + BRACE_MARGIN_MM],
+                    };
+                    for (x, y) in reach.cells(BLOB_CELL_MM) {
+                        cells.entry((blob.layer, x, y)).or_default().push(b);
+                    }
+                }
+                Piece { blobs, ends, touches: grouped, cells }
+            })
+            .collect()
+    }
 
+    /// Braces: untraced pieces that bridge two traced supports. Two of a piece's ends on
+    /// different supports are braced when the piece's own cross-sections cover the straight
+    /// line between them, which tells an X of crossing braces, or a V meeting on one post, from
+    /// the lines its ends do not run along.
+    fn braces(&self, pieces: &[Piece], shafts: &[Shaft]) -> Vec<BraceLayout> {
+        let mut braces: Vec<BraceLayout> = Vec::new();
+        for piece in pieces {
+            let ends = &piece.ends;
             // Every pair of ends on different supports that the piece runs between.
             let mut found: Vec<(usize, usize, f32)> = Vec::new();
             for (i, a) in ends.iter().enumerate() {
@@ -956,7 +1055,7 @@ impl Graph {
                     {
                         continue;
                     }
-                    if let Some(diameter_mm) = self.brace_along(&by_layer, a.point, b.point) {
+                    if let Some(diameter_mm) = self.brace_along(piece, a.point, b.point) {
                         found.push((i, j, diameter_mm));
                     }
                 }
@@ -975,7 +1074,7 @@ impl Graph {
                     continue;
                 }
                 let (lower, upper) = if a.point.z <= b.point.z { (a, b) } else { (b, a) };
-                let (lower, upper) = self.refit_brace(piece, lower, upper);
+                let (lower, upper) = self.refit_brace(&piece.blobs, lower, upper);
                 if lower.point.z < ROOT_TOP_MM {
                     continue;
                 }
@@ -985,8 +1084,7 @@ impl Graph {
                 if braces.iter().any(|x| same(&x.lower, &lower) && same(&x.upper, &upper)) {
                     continue;
                 }
-                let brace = BraceLayout { lower, upper, diameter_mm };
-                if along_shaft(&brace) {
+                if along_shaft(shafts, lower.point, upper.point, diameter_mm) {
                     continue;
                 }
                 log::trace!(
@@ -997,7 +1095,7 @@ impl Graph {
                     upper.point,
                     diameter_mm
                 );
-                braces.push(brace);
+                braces.push(BraceLayout { lower, upper, diameter_mm });
             }
         }
         braces
@@ -1007,19 +1105,30 @@ impl Graph {
     /// them, each where that line passes closest to its support. An end found from where the
     /// piece touches a support sits mid-way along the junction, which flattens a diagonal.
     fn refit_brace(&self, piece: &[u32], lower: BraceEnd, upper: BraceEnd) -> (BraceEnd, BraceEnd) {
-        let axis = upper.point - lower.point;
+        let Some((mean, direction)) = self.fit_line(piece, lower.point, upper.point, MIN_BRACE_MM / 2.0) else {
+            return (lower, upper);
+        };
+        let onto = |end: BraceEnd| BraceEnd { point: mean + direction * (end.point - mean).dot(direction), ..end };
+        let (a, b) = (onto(lower), onto(upper));
+        if a.point.z <= b.point.z { (a, b) } else { (b, a) }
+    }
+
+    /// A line (a point on it and its direction) fitted through the piece's cross-sections
+    /// within `radius` of the line from `p` to `q`, leaving out the outer [`BRACE_END_SKIP`] at
+    /// each end. None when they do not spread along at least [`BRACE_REFIT_SPREAD`] of it.
+    fn fit_line(&self, piece: &[u32], p: Vec3, q: Vec3, radius: f32) -> Option<(Vec3, Vec3)> {
+        let axis = q - p;
         let length_sq = axis.length_sq();
         let along: Vec<Vec3> = piece
             .iter()
             .map(|&b| self.centre(b))
             .filter(|c| {
-                let t = (*c - lower.point).dot(axis) / length_sq;
-                (BRACE_END_SKIP..=1.0 - BRACE_END_SKIP).contains(&t)
-                    && distance_to_segment(*c, lower.point, upper.point) < MIN_BRACE_MM / 2.0
+                let t = (*c - p).dot(axis) / length_sq;
+                (BRACE_END_SKIP..=1.0 - BRACE_END_SKIP).contains(&t) && distance_to_segment(*c, p, q) < radius
             })
             .collect();
         if along.len() < MIN_BRACE_BLOBS {
-            return (lower, upper);
+            return None;
         }
         let mean = along.iter().fold(Vec3::default(), |sum, c| sum + *c) * (1.0 / along.len() as f32);
         // Principal direction by power iteration, starting from the end-to-end direction.
@@ -1031,7 +1140,7 @@ impl Graph {
                 next = next + d * d.dot(direction);
             }
             if next.length_sq() < 1e-12 {
-                return (lower, upper);
+                return None;
             }
             direction = next.normalized();
         }
@@ -1039,35 +1148,260 @@ impl Graph {
             .iter()
             .map(|c| (*c - mean).dot(direction))
             .fold((f32::MAX, f32::MIN), |(l, h), t| (l.min(t), h.max(t)));
-        if hi - lo < axis.length() * BRACE_REFIT_SPREAD {
-            return (lower, upper);
+        (hi - lo >= axis.length() * BRACE_REFIT_SPREAD).then_some((mean, direction))
+    }
+
+    /// Kickstands: untraced pieces standing on the plate that lean against a trunk or branch.
+    /// Each bottom of a piece below the root top (nothing untraced below it, so the plate, a
+    /// raft or a root) is a candidate foot, and each place the piece touches a trunk or branch
+    /// above the root top a candidate knot. A foot and a knot are joined by a leg when the
+    /// piece's own cross-sections cover the line between them, as a brace's do, or the line to
+    /// the knot from the top of a column rising straight up from the foot (a post with a strut
+    /// leaning from its top, the shape DragonFruit gives its own kickstands).
+    fn kickstands(
+        &self,
+        pieces: &[Piece],
+        seen: &[bool],
+        supports: &[SupportPath],
+        shafts: &[Shaft],
+    ) -> Vec<KickstandLayout> {
+        let mut kickstands: Vec<KickstandLayout> = Vec::new();
+        if self.floor > PLATE_REACH_MM {
+            return kickstands;
         }
-        let onto = |end: BraceEnd| BraceEnd { point: mean + direction * (end.point - mean).dot(direction), ..end };
-        let (a, b) = (onto(lower), onto(upper));
-        if a.point.z <= b.point.z { (a, b) } else { (b, a) }
+        for piece in pieces {
+            let feet: Vec<(Vec3, Option<Vec3>)> = piece
+                .blobs
+                .iter()
+                .filter(|&&b| {
+                    self.blobs[b as usize].z < ROOT_TOP_MM
+                        && self.down[b as usize].iter().all(|&below| seen[below as usize])
+                })
+                .map(|&b| (self.centre(b), self.column_top(seen, b)))
+                .collect();
+            if feet.is_empty() {
+                continue;
+            }
+            for (&mean, touches) in piece.ends.iter().zip(&piece.touches) {
+                if matches!(supports[mean.support].base, SupportBase::Model(_)) {
+                    continue;
+                }
+                // Where along the support the strut meets it: the touches run the length of the
+                // junction, and further when other struts and braces meet the support next to it.
+                let mut tops: Vec<Vec3> = Vec::new();
+                for &touch in touches {
+                    if touch.z >= ROOT_TOP_MM && tops.last().is_none_or(|last| touch.z - last.z >= KNOT_STEP_MM) {
+                        tops.push(touch);
+                    }
+                }
+                tops.sort_by(|a, b| (a.z - mean.point.z).abs().total_cmp(&(b.z - mean.point.z).abs()));
+                for &(foot, column) in &feet {
+                    // The strut runs from the foot itself, or else from the top of its column.
+                    let starts = [Some(foot), column].into_iter().flatten();
+                    let found =
+                        starts.flat_map(|start| tops.iter().map(move |&top| (start, top))).find_map(|(start, top)| {
+                            let span = top - start;
+                            let lean = (span.x * span.x + span.y * span.y).sqrt() / span.z;
+                            if span.length() < MIN_KICKSTAND_MM
+                                || !(MIN_KICKSTAND_LEAN..=MAX_KICKSTAND_LEAN).contains(&lean)
+                            {
+                                return None;
+                            }
+                            let diameter_mm = self.brace_along(piece, start, top)?;
+                            let end = BraceEnd { point: top, ..mean };
+                            if self.runs_through(piece, supports, start, end) {
+                                return None;
+                            }
+                            let column = (start != foot).then_some(foot);
+                            self.fit_leg(piece, supports, end, start, column, diameter_mm, shafts)
+                        });
+                    let Some(kickstand) = found else { continue };
+                    // Supports meeting at one hub each touch a leg leaving it: it is one leg.
+                    let same = |k: &KickstandLayout| {
+                        (k.knot - kickstand.knot).length() < DUPLICATE_BRACE_MM
+                            && (k.foot - kickstand.foot).length() < DUPLICATE_BRACE_MM
+                    };
+                    if kickstands.iter().any(same) {
+                        continue;
+                    }
+                    log::trace!(
+                        "Kickstand from {} to support {} at {} ({} joints), {:.2} mm across",
+                        kickstand.foot,
+                        kickstand.support,
+                        kickstand.knot,
+                        kickstand.joints.len(),
+                        kickstand.diameter_mm
+                    );
+                    kickstands.push(kickstand);
+                }
+            }
+        }
+        kickstands
+    }
+
+    /// The top of the column rising straight up from foot blob `foot`, when it reaches at least
+    /// [`MIN_KICKSTAND_MM`] above the root top.
+    fn column_top(&self, seen: &[bool], foot: u32) -> Option<Vec3> {
+        let base = self.blobs[foot as usize];
+        let drift = |i: u32| {
+            let b = &self.blobs[i as usize];
+            (b.x - base.x).hypot(b.y - base.y)
+        };
+        let mut current = foot;
+        while let Some(next) = self.up[current as usize]
+            .iter()
+            .copied()
+            .filter(|&i| !seen[i as usize] && drift(i) <= COLUMN_DRIFT_MM)
+            .min_by(|&a, &b| drift(a).total_cmp(&drift(b)))
+        {
+            current = next;
+        }
+        let top = self.centre(current);
+        if top.z < ROOT_TOP_MM + MIN_KICKSTAND_MM {
+            return None;
+        }
+        // A column ends at its top: support geometry carrying on straight above it, past where
+        // a strut leaning off the top has moved aside, is a post running further up (a support
+        // whose tip was not traced).
+        let mut above = vec![current];
+        while let Some(&first) = above.first() {
+            let rise = self.blobs[first as usize].z - top.z;
+            if rise > COLUMN_END_MM {
+                break;
+            }
+            if rise >= COLUMN_END_MM / 3.0 && above.iter().any(|&i| drift(i) <= COLUMN_DRIFT_MM) {
+                return None;
+            }
+            above = above.iter().flat_map(|&i| self.up[i as usize].iter().copied()).collect();
+            above.sort_unstable();
+            above.dedup();
+        }
+        Some(top)
+    }
+
+    /// Whether the strut from `start` up to `end` runs through the shaft of another support the
+    /// piece touches, with the piece covering the way to it: then it is a shorter strut from
+    /// that support, and a brace runs on in line with it.
+    fn runs_through(&self, piece: &Piece, supports: &[SupportPath], start: Vec3, end: BraceEnd) -> bool {
+        let direction = (end.point - start).normalized();
+        let mut others: Vec<usize> = piece.ends.iter().map(|e| e.support).filter(|&s| s != end.support).collect();
+        others.sort_unstable();
+        others.dedup();
+        others.into_iter().any(|other| {
+            shaft_line(&supports[other]).windows(2).any(|w| {
+                let at = closest_to_line(w[0], w[1], start, direction);
+                at.z >= ROOT_TOP_MM
+                    && distance_to_segment(at, start, end.point) < BRACE_THROUGH_MM
+                    && (at - start).length() >= MIN_BRACE_MM
+                    && (at - end.point).length() >= MIN_BRACE_MM
+                    && self.brace_along(piece, start, at).is_some()
+            })
+        })
+    }
+
+    /// The kickstand a piece forms from `start` up to `top` on its support's shaft, standing on
+    /// the plate below `start`, or on a column standing at `column` when given: a strut fitted
+    /// through the piece's cross-sections, meeting the support's shaft where it passes closest.
+    /// None when the piece does not cover the fitted strut, the strut runs along that shaft (the
+    /// support's own lower segment) or along any traced shaft, or it is too short.
+    #[allow(clippy::too_many_arguments)]
+    fn fit_leg(
+        &self,
+        piece: &Piece,
+        supports: &[SupportPath],
+        top: BraceEnd,
+        start: Vec3,
+        column: Option<Vec3>,
+        diameter_mm: f32,
+        shafts: &[Shaft],
+    ) -> Option<KickstandLayout> {
+        let (origin, direction) = self
+            .fit_line(&piece.blobs, start, top.point, diameter_mm / 2.0 + BRACE_MARGIN_MM)
+            .unwrap_or((start, (top.point - start).normalized()));
+        let direction = if direction.z < 0.0 { -direction } else { direction };
+        if direction.z <= 0.0 {
+            return None;
+        }
+        let along = |z: f32| origin + direction * ((z - origin.z) / direction.z);
+        // The knot goes where the strut's line passes closest to the support's shaft, near
+        // where the piece touches it.
+        let line = shaft_line(&supports[top.support]);
+        let (knot, near) = line
+            .windows(2)
+            .map(|w| (closest_to_line(w[0], w[1], origin, direction), w))
+            .filter(|(at, _)| (*at - top.point).length() <= MIN_BRACE_MM)
+            .min_by(|(a, _), (b, _)| {
+                let miss = |p: Vec3| (p - along(p.z)).length();
+                miss(*a).total_cmp(&miss(*b))
+            })?;
+        // The strut leaves the root top, or the top of the column, where the strut's line
+        // passes closest to the column.
+        let (foot, joints) = match column {
+            None => (along(ROOT_TOP_MM), Vec::new()),
+            Some(base) => {
+                let foot = Vec3::new(base.x, base.y, ROOT_TOP_MM);
+                let joint = closest_to_line(foot, Vec3::new(base.x, base.y, start.z + 1.0), origin, direction);
+                if joint.z < ROOT_TOP_MM + MIN_SHAFT_LENGTH_MM || along_shaft(shafts, foot, joint, diameter_mm) {
+                    return None;
+                }
+                (foot, vec![joint])
+            }
+        };
+        let bottom = joints.last().copied().unwrap_or(foot);
+        let strut = along(knot.z) - along(bottom.z);
+        let lean = (strut.x * strut.x + strut.y * strut.y).sqrt() / strut.z;
+        if knot.z < bottom.z + MIN_SHAFT_LENGTH_MM
+            || strut.length() < MIN_KICKSTAND_MM
+            || !(MIN_KICKSTAND_LEAN..=MAX_KICKSTAND_LEAN).contains(&lean)
+        {
+            return None;
+        }
+        // The shaft the strut meets, the one below when the knot is at a joint: a strut carrying
+        // on in line with it is that support's own lower segment.
+        let radius = supports[top.support].shaft_diameter_mm / 2.0;
+        let host = line
+            .windows(2)
+            .filter(|w| distance_to_segment(knot, w[0], w[1]) <= radius)
+            .min_by(|a, b| a[0].z.total_cmp(&b[0].z))
+            .unwrap_or(near);
+        if (host[1] - host[0]).normalized().dot(strut.normalized()).abs() > BRACE_PARALLEL_COS
+            || along_shaft(shafts, bottom, knot, diameter_mm)
+            || self.brace_along(piece, along(bottom.z.max(start.z)), knot).is_none()
+        {
+            return None;
+        }
+        Some(KickstandLayout {
+            support: top.support,
+            knot,
+            joints,
+            foot,
+            root_diameter_mm: (diameter_mm * ROOT_DIAMETER_RATIO).clamp(MIN_ROOT_DIAMETER_MM, MAX_ROOT_DIAMETER_MM),
+            diameter_mm,
+        })
     }
 
     /// The diameter of the brace a piece forms from `p` to `q`, when the piece's
-    /// cross-sections (`by_layer`) cover the line between them.
-    fn brace_along(&self, by_layer: &FxHashMap<u32, Vec<u32>>, p: Vec3, q: Vec3) -> Option<f32> {
+    /// cross-sections cover the line between them.
+    fn brace_along(&self, piece: &Piece, p: Vec3, q: Vec3) -> Option<f32> {
         let tested = (q - p).length() * (1.0 - 2.0 * BRACE_END_SKIP);
         let samples = ((tested / BRACE_SAMPLE_MM).ceil() as usize).max(3);
+        let allowed_misses = samples - (samples as f32 * BRACE_COVERAGE).ceil() as usize;
         let mut widths = Vec::with_capacity(samples);
         for k in 0..samples {
             let t = BRACE_END_SKIP + (1.0 - 2.0 * BRACE_END_SKIP) * (k as f32 + 0.5) / samples as f32;
             let s = p + (q - p) * t;
             let layer = ((s.z - self.floor) / self.step).round() as i64;
+            let (x, y) = cell2([s.x, s.y], BLOB_CELL_MM);
             let cover = (layer - 1..=layer + 1)
                 .filter_map(|l| u32::try_from(l).ok())
-                .flat_map(|l| by_layer.get(&l).into_iter().flatten())
+                .flat_map(|l| piece.cells.get(&(l, x, y)).into_iter().flatten())
                 .map(|&b| &self.blobs[b as usize])
                 .find(|blob| blob.rect.holds([s.x, s.y], BRACE_MARGIN_MM));
-            if let Some(blob) = cover {
-                widths.push(blob.half_min * 2.0);
+            match cover {
+                Some(blob) => widths.push(blob.half_min * 2.0),
+                None if k + 1 - widths.len() > allowed_misses => return None,
+                None => {}
             }
-        }
-        if (widths.len() as f32) < samples as f32 * BRACE_COVERAGE {
-            return None;
         }
         widths.sort_by(f32::total_cmp);
         Some(widths[widths.len() / 2].clamp(MIN_BRACE_DIAMETER_MM, MAX_BRACE_DIAMETER_MM))
@@ -1536,6 +1870,7 @@ mod tests {
         let SupportBase::Plate { x, y, .. } = layout.supports[0].base else { panic!() };
         assert!((x - 1.0).abs() < 0.1 && (y - 1.0).abs() < 0.1, "{x} {y}");
         assert!(layout.braces.is_empty(), "{:?}", layout.braces);
+        assert!(layout.kickstands.is_empty(), "{:?}", layout.kickstands);
     }
 
     #[test]
@@ -1610,6 +1945,82 @@ mod tests {
     #[test]
     fn posts_with_nothing_between_them_have_no_braces() {
         assert!(two_posts(&[]).braces.is_empty());
+    }
+
+    /// The model over a trunk at the origin, the trunk's support geometry, and `extra`.
+    fn trunk_with(extra: &[Triangle]) -> SupportLayout {
+        let model = box_model(Vec3::new(-6.0, -6.0, 12.0), Vec3::new(6.0, 6.0, 16.0));
+        let mut supports = support(Vec3::new(0.0, 0.0, 12.0), &[Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend_from_slice(extra);
+        reconstruct(&model, &supports)
+    }
+
+    #[test]
+    fn legs_splayed_from_a_trunk_to_the_plate_are_kickstands() {
+        // Two legs leaving the trunk 6 mm up, leaning 30 degrees out to the plate.
+        let mut legs = frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(3.5, 0.0, 0.0), 0.3, 0.3);
+        legs.extend(frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(0.0, -3.5, 0.0), 0.3, 0.3));
+        let layout = trunk_with(&legs);
+
+        assert_eq!(layout.supports.len(), 1);
+        let SupportBase::Plate { x, y, .. } = layout.supports[0].base else { panic!("{:?}", layout.supports[0].base) };
+        assert!(x.abs() < 0.1 && y.abs() < 0.1, "{x} {y}");
+        assert!(layout.braces.is_empty(), "{:?}", layout.braces);
+        assert_eq!(layout.kickstands.len(), 2, "{:?}", layout.kickstands);
+        for out in [Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, -1.0, 0.0)] {
+            let leg = layout.kickstands.iter().find(|k| k.foot.dot(out) > 1.0).expect("a leg that way");
+            assert_eq!(leg.support, 0);
+            assert!(leg.joints.is_empty(), "{:?}", leg.joints);
+            assert!(close(leg.knot, Vec3::new(0.0, 0.0, 6.0), 0.3), "{}", leg.knot);
+            // Where the leg passes the root top: 4 mm down from the knot, 7/3 mm out.
+            let expected = out * (3.5 / 3.0 * 2.0) + Vec3::new(0.0, 0.0, ROOT_TOP_MM);
+            assert!(close(leg.foot, expected, 0.2), "{} for {}", leg.foot, expected);
+            assert!((0.55..=0.75).contains(&leg.diameter_mm), "{}", leg.diameter_mm);
+            assert!((MIN_ROOT_DIAMETER_MM..=MAX_ROOT_DIAMETER_MM).contains(&leg.root_diameter_mm));
+        }
+    }
+
+    #[test]
+    fn post_with_a_strut_leaning_off_its_top_is_a_kickstand_with_a_column() {
+        // A post rising from the plate 4 mm from the trunk, and a strut from its top to the trunk.
+        let mut post = frustum(Vec3::new(4.0, 0.0, 0.0), Vec3::new(4.0, 0.0, 5.0), 0.3, 0.3);
+        post.extend(frustum(Vec3::new(4.0, 0.0, 5.0), Vec3::new(0.0, 0.0, 9.0), 0.3, 0.3));
+        let layout = trunk_with(&post);
+
+        assert_eq!(layout.supports.len(), 1);
+        assert_eq!(layout.kickstands.len(), 1, "{:?}", layout.kickstands);
+        let kickstand = &layout.kickstands[0];
+        assert!(close(kickstand.foot, Vec3::new(4.0, 0.0, ROOT_TOP_MM), 0.1), "{}", kickstand.foot);
+        assert_eq!(kickstand.joints.len(), 1);
+        assert!(close(kickstand.joints[0], Vec3::new(4.0, 0.0, 5.0), 0.3), "{:?}", kickstand.joints);
+        assert!(close(kickstand.knot, Vec3::new(0.0, 0.0, 9.0), 0.3), "{}", kickstand.knot);
+    }
+
+    #[test]
+    fn braces_rafts_root_cones_and_bent_trunks_are_not_kickstands() {
+        let brace = two_posts(&frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(3.0, 0.0, 3.0), 0.3, 0.3));
+        assert_eq!(brace.braces.len(), 1);
+        assert!(brace.kickstands.is_empty(), "{:?}", brace.kickstands);
+
+        // A brace from just above one post's root up to the other post joins two supports.
+        let low = two_posts(&frustum(Vec3::new(3.0, 0.0, 2.6), Vec3::new(0.0, 0.0, 6.0), 0.3, 0.3));
+        assert!(low.kickstands.is_empty(), "{:?}", low.kickstands);
+
+        let mut raft = cuboid(Vec3::new(-10.0, -10.0, -1.0), Vec3::new(10.0, 10.0, 0.5), 4);
+        // A root cone around the trunk's foot, the raft under it.
+        raft.extend(frustum(Vec3::new(0.0, 0.0, -0.5), Vec3::new(0.0, 0.0, 2.0), 1.5, 0.45));
+        let rooted = trunk_with(&raft);
+        assert_eq!(rooted.supports.len(), 1);
+        assert!(rooted.kickstands.is_empty(), "{:?}", rooted.kickstands);
+
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let path = [Vec3::new(0.0, 0.0, 8.0), Vec3::new(3.0, 0.0, 5.0), Vec3::new(3.0, 0.0, 0.0)];
+        let bent = reconstruct(&model, &support(Vec3::new(0.0, 0.0, 10.0), &path));
+        assert!(bent.kickstands.is_empty(), "{:?}", bent.kickstands);
+
+        // A second, untraced post standing beside the trunk.
+        let post = trunk_with(&frustum(Vec3::new(0.65, 0.0, 0.0), Vec3::new(0.65, 0.0, 7.0), 0.3, 0.3));
+        assert!(post.kickstands.is_empty(), "{:?}", post.kickstands);
     }
 
     #[test]
