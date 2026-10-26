@@ -5,7 +5,11 @@
 //! form components of their own. Each component is then labelled from its height,
 //! triangle count and volume (Y is up and the base sits at Y=0):
 //!
-//! 1. A component with negative volume is the inner shell of a hollowed model.
+//! 1. A closed component with negative volume is wound inside out: the inner shell of a
+//!    hollowed model, or when smaller than [`INNER_SHELL_MAX_VOLUME_MM3`] a void inside the
+//!    model. A component with next to no surface ([`SLIVER_MAX_AREA_MM2`]) is a sliver of
+//!    degenerate triangles. Voids and slivers are scraps of the model: model geometry, but
+//!    not counted as parts in the steps below.
 //! 2. A component that stays below the raft height is raft.
 //! 3. The seed is the largest component above the raft. Components with at least
 //!    1/[`MODEL_SEED_DIVISOR`] of its triangles are model parts.
@@ -31,16 +35,17 @@
 //! and balls, so when thicker closed parts make up more than [`MAX_THICK_SUPPORT_SHARE`] of
 //! the support surface above the raft, nothing is classified. Thin parts that are not
 //! supports are caught by [`Classification::holds_supports`]: the supports rebuilt from them
-//! account for little of their surface. The rebuild is the costly part of detection, so it
-//! is skipped for supports that are clearly generated: many components made almost
-//! entirely of repeated triangles.
+//! account for little of their surface, or do not hold the model up (pegs and spikes stick
+//! out of side faces, pins sit inside the model). The rebuild is the costly part of
+//! detection, so it is skipped for supports that are clearly generated: many components made
+//! almost entirely of repeated triangles.
 
 use rustc_hash::FxHashMap;
 
 use super::{Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 3;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 4;
 
 /// Components with at least 1/N of the seed's triangles are model parts.
 const MODEL_SEED_DIVISOR: u32 = 8;
@@ -69,8 +74,16 @@ const SUPPORT_DENSITY_RATIO: u64 = 3;
 /// Fewest support triangles for a confident split.
 const MIN_SUPPORT_TRIANGLES: u64 = 2_000;
 
-/// Components with a signed volume below this (mm³) are inner shells.
+/// Closed components with a signed volume below this (mm³) are wound inside out. A flat
+/// shell's volume can come out a hair either side of zero.
+const INSIDE_OUT_MAX_VOLUME_MM3: f64 = -1e-6;
+
+/// Inside-out components with a signed volume below this (mm³) are inner shells; the rest
+/// are voids (scraps left inside the model by hollowing or repair tools).
 const INNER_SHELL_MAX_VOLUME_MM3: f64 = -0.01;
+
+/// Components with less surface than this (mm²) are slivers of degenerate triangles.
+const SLIVER_MAX_AREA_MM2: f64 = 0.01;
 
 /// Closed support components thicker than this (mean thickness 2V/A: a rod's radius, a
 /// slab's thickness) are thicker than a support's shafts and joints.
@@ -197,18 +210,25 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         s.area += f64::from((tri.v1 - tri.v0).cross(tri.v2 - tri.v0).length()) / 2.0;
     }
 
-    let (_, seed) =
-        stats.iter().enumerate().filter(|(_, s)| s.top > raft_height_mm).max_by_key(|(_, s)| s.triangles)?;
+    // Volume only means something for a closed shell.
+    let inside_out = |s: &ComponentStats| s.closed && s.volume < INSIDE_OUT_MAX_VOLUME_MM3;
+    let is_inner_shell = |s: &ComponentStats| inside_out(s) && s.volume < INNER_SHELL_MAX_VOLUME_MM3;
+    let scrap: Vec<bool> =
+        stats.iter().map(|s| s.area < SLIVER_MAX_AREA_MM2 || (inside_out(s) && !is_inner_shell(s))).collect();
+    let parts = || stats.iter().enumerate().filter(|(c, _)| !scrap[*c]);
+
+    let (_, seed) = parts().filter(|(_, s)| s.top > raft_height_mm).max_by_key(|(_, s)| s.triangles)?;
     let model_min_triangles = (seed.triangles / MODEL_SEED_DIVISOR).max(MODEL_MIN_TRIANGLES);
     let model_min_density = seed.density() / MODEL_DENSITY_DIVISOR;
-    let model_top = stats.iter().filter(|s| s.triangles >= model_min_triangles).map(|s| s.top).fold(seed.top, f32::max);
+    let model_top =
+        parts().filter(|(_, s)| s.triangles >= model_min_triangles).map(|(_, s)| s.top).fold(seed.top, f32::max);
 
-    // Volume only means something for a closed shell.
-    let is_inner_shell = |s: &ComponentStats| s.closed && s.volume < INNER_SHELL_MAX_VOLUME_MM3;
     let dense_detail: Vec<bool> = stats
         .iter()
-        .map(|s| {
-            !is_inner_shell(s)
+        .zip(&scrap)
+        .map(|(s, &scrap)| {
+            !scrap
+                && !is_inner_shell(s)
                 && s.top > raft_height_mm
                 && (MODEL_MIN_TRIANGLES..model_min_triangles).contains(&s.triangles)
                 && s.density() >= model_min_density
@@ -220,7 +240,7 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         .iter()
         .enumerate()
         .map(|(c, s)| {
-            if is_inner_shell(s) {
+            if scrap[c] || is_inner_shell(s) {
                 false
             } else if s.top <= raft_height_mm {
                 true
@@ -234,8 +254,8 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
 
     let (mut model_components, mut model_triangles, mut support_components, mut support_triangles) =
         (0u64, 0u64, 0u64, 0u64);
-    for (s, support) in stats.iter().zip(&component_is_support) {
-        if *support {
+    for (c, s) in parts() {
+        if component_is_support[c] {
             support_components += 1;
             support_triangles += u64::from(s.triangles);
         } else {
@@ -288,8 +308,8 @@ pub fn detect(triangles: &[Triangle], raft_height_mm: f32) -> bool {
 
 /// Whether the triangles flagged in `is_support` rebuild into supports that account for
 /// them ([`support_layout::SupportLayout::accounts_for`]). Thin separate parts of a model
-/// without supports (rivets, spikes, straps) can classify as supports, but rebuild into
-/// next to nothing.
+/// without supports (rivets, spikes, straps) can classify as supports, but rebuild into next
+/// to nothing, or into supports that do not hold the model up.
 pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_height_mm: f32) -> bool {
     let (model, supports) = split(triangles, is_support);
     let supports = to_z_up(&supports);
@@ -726,6 +746,30 @@ pub(crate) mod tests {
         let c = classify(&mesh, RAFT).expect("classification");
         assert!(c.is_support[mesh.len() - 192..].iter().all(|s| !*s));
         assert_eq!(support_count(&c), 50 * 48);
+    }
+
+    /// Two triangles on the same corners facing opposite ways: a closed sliver with no area.
+    fn sliver(at: Vec3) -> Vec<Triangle> {
+        let (a, b, c) = (at, at + Vec3::new(0.05, 0.0, 0.0), at + Vec3::new(0.0, 0.0, 0.05));
+        vec![Triangle::new(a, b, c, Vec3::UP), Triangle::new(a, c, b, Vec3::UP)]
+    }
+
+    #[test]
+    fn slivers_and_voids_are_model_scraps() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let scraps = mesh.len();
+        // A 0.2 mm void inside the body (0.008 mm³, wound inside out) and slivers beside it.
+        mesh.extend(inverted(cuboid(Vec3::new(4.0, 9.0, 4.0), Vec3::new(4.2, 9.2, 4.2), 1)));
+        for k in 0..200 {
+            mesh.extend(sliver(Vec3::new(20.0 + (k % 20) as f32 * 0.1, 6.0 + (k / 20) as f32 * 0.1, 0.0)));
+        }
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[scraps..].iter().all(|s| !*s));
+        assert_eq!(support_count(&c), 50 * 48);
+        // Counted as model parts, the 201 scraps would bring the average part down to near a
+        // post's size.
+        assert!(c.confident);
     }
 
     #[test]

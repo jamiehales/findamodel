@@ -781,6 +781,7 @@ mod tests {
         let tip = |contact: Vec3, socket: Vec3| ContactTip {
             contact,
             surface_normal: Vec3::new(0.0, 0.0, -1.0),
+            from_outside: true,
             socket,
             contact_diameter_mm: 0.3,
             body_diameter_mm: 0.8,
@@ -859,6 +860,7 @@ mod tests {
         let end = |contact: Vec3, socket: Vec3, normal: Vec3| ContactTip {
             contact,
             surface_normal: normal,
+            from_outside: true,
             socket,
             contact_diameter_mm: 0.4,
             body_diameter_mm: 0.5,
@@ -912,6 +914,7 @@ mod tests {
             tip: ContactTip {
                 contact: Vec3::new(x, 0.0, 10.0),
                 surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                from_outside: true,
                 socket: Vec3::new(x, 0.0, 8.0),
                 contact_diameter_mm: 0.3,
                 body_diameter_mm: 0.8,
@@ -965,6 +968,7 @@ mod tests {
             tip: ContactTip {
                 contact: Vec3::new(x, 0.0, 10.0),
                 surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                from_outside: true,
                 socket: Vec3::new(x, 0.0, 8.0),
                 contact_diameter_mm: 0.3,
                 body_diameter_mm: 0.8,
@@ -1006,6 +1010,7 @@ mod tests {
         let tip = |x: f32, z: f32| ContactTip {
             contact: Vec3::new(x, 0.0, z),
             surface_normal: Vec3::new(0.0, 0.0, -1.0),
+            from_outside: true,
             socket: Vec3::new(x, 0.0, z - 2.0),
             contact_diameter_mm: 0.3,
             body_diameter_mm: 0.8,
@@ -1063,6 +1068,7 @@ mod tests {
                 tip: ContactTip {
                     contact: Vec3::new(0.0, 0.0, 12.0),
                     surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                    from_outside: true,
                     socket: Vec3::new(0.0, 0.0, 10.0),
                     contact_diameter_mm: 0.3,
                     body_diameter_mm: 0.8,

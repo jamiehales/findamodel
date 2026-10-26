@@ -216,6 +216,18 @@ const COVERAGE_CELL_MM: f32 = 2.0;
 /// (82% or more on the sample pre-supported models); separate parts of a model without
 /// supports (rivets, straps, panels) mostly rebuild into little (18% at the median).
 const MIN_SUPPORT_COVERAGE: f32 = 0.7;
+/// A tip holds the model up when the model surface it meets faces down by at least this much
+/// (the z of its outward normal is below minus this) and the support meets it from outside.
+const HOLDING_MIN_DOWN: f32 = 0.05;
+/// Supports shorter than this (from the tip's contact to where the shaft starts) are not
+/// counted towards holding the model up: rivets and pegs rebuild into stubs.
+const HOLDING_MIN_LENGTH_MM: f32 = 1.0;
+/// Real supports hold the model up: at least this share of the supports (counting those at
+/// least [`HOLDING_MIN_LENGTH_MM`] long) have tips that do (56% or more on the sample
+/// pre-supported models, where the rest mostly lean on side faces). Separate parts of a model
+/// without supports that rebuild like supports stick out of side faces (pegs, spikes) or sit
+/// inside the model (pins, panels), so at most 6% of theirs do.
+const MIN_HOLDING_SHARE: f32 = 0.25;
 
 /// The tip where a support touches the model.
 #[derive(Debug, Clone, PartialEq)]
@@ -224,6 +236,9 @@ pub struct ContactTip {
     pub contact: Vec3,
     /// Model surface normal at the contact, facing the support.
     pub surface_normal: Vec3,
+    /// The support meets the model surface from the side it faces outward. A real support
+    /// always does; a part inside the model (a pin through it) meets it from within.
+    pub from_outside: bool,
     /// Where the tip meets the shaft.
     pub socket: Vec3,
     /// Width where the tip leaves the model, which is where DragonFruit starts it: the part of
@@ -271,11 +286,28 @@ pub struct SupportLayout {
 }
 
 impl SupportLayout {
-    /// Whether the layout accounts for the support geometry it was rebuilt from (see
-    /// [`MIN_SUPPORT_COVERAGE`]). False when the geometry classed as supports is really
+    /// Whether the layout accounts for the support geometry it was rebuilt from as supports:
+    /// it covers their surface (see [`MIN_SUPPORT_COVERAGE`]) and its supports hold the model
+    /// up (see [`MIN_HOLDING_SHARE`]). False when the geometry classed as supports is really
     /// separate parts of a model without supports.
     pub fn accounts_for(&self, supports: &[Triangle], raft_height_mm: f32) -> bool {
         self.coverage(supports, raft_height_mm).is_some_and(|c| c >= MIN_SUPPORT_COVERAGE)
+            && self.holding_share().is_some_and(|share| share >= MIN_HOLDING_SHARE)
+    }
+
+    /// Share of the supports at least [`HOLDING_MIN_LENGTH_MM`] long whose tip holds the model
+    /// up: it meets a downward-facing model surface from outside, below it. None when no
+    /// support is that long.
+    pub fn holding_share(&self) -> Option<f32> {
+        let (mut counted, mut holding) = (0usize, 0usize);
+        for s in &self.supports {
+            if (s.tip.contact - s.shaft_start()).length() < HOLDING_MIN_LENGTH_MM {
+                continue;
+            }
+            counted += 1;
+            holding += usize::from(s.tip.from_outside && s.tip.surface_normal.z < -HOLDING_MIN_DOWN);
+        }
+        (counted > 0).then(|| holding as f32 / counted as f32)
     }
 
     /// Share of the support surface above the raft (by area) within a rebuilt shaft, tip,
@@ -615,13 +647,14 @@ fn with_cone(graph: &Graph, nodes: &[u32], contact: Vec3, cone: Option<Cone>, fi
 
 /// The contact tip for a fit, with the surface normal turned to face the support.
 fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> ContactTip {
-    let toward_socket = fit.socket - contact.point;
-    let surface_normal = if contact.normal.dot(toward_socket) < 0.0 { -contact.normal } else { contact.normal };
+    let from_outside = contact.normal.dot(fit.socket - contact.point) >= 0.0;
+    let surface_normal = if from_outside { contact.normal } else { -contact.normal };
     // DragonFruit never makes a tip wider than its shaft.
     let contact_diameter = fit.contact_diameter.min(shaft_diameter);
     ContactTip {
         contact: contact.point,
         surface_normal,
+        from_outside,
         socket: fit.socket,
         contact_diameter_mm: contact_diameter,
         body_diameter_mm: fit.socket_width.min(shaft_diameter).clamp(contact_diameter, MAX_BODY_DIAMETER_MM),
@@ -2920,6 +2953,68 @@ mod tests {
         let layout = reconstruct(&model, &raft);
         assert_eq!(layout.coverage(&raft, 2.0), None);
         assert!(!layout.accounts_for(&raft, 2.0));
+    }
+
+    #[test]
+    fn supports_hold_the_model_up_and_pins_through_it_do_not() {
+        // Posts under the model meet its underside from below.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut posts = support(Vec3::new(-2.0, 0.0, 10.0), &[Vec3::new(-2.0, 0.0, 8.0), Vec3::new(-2.0, 0.0, 0.0)]);
+        posts.extend(support(Vec3::new(2.0, 1.0, 10.0), &[Vec3::new(2.0, 1.0, 8.0), Vec3::new(2.0, 1.0, 0.0)]));
+        let layout = reconstruct(&model, &posts);
+        assert_eq!(layout.supports.len(), 2);
+        assert!(layout.supports.iter().all(|s| s.tip.from_outside));
+        assert_eq!(layout.holding_share(), Some(1.0));
+
+        // Pins from the plate up through a block standing on it, flush with its top: they meet
+        // the top face from within.
+        let block = box_model(Vec3::new(-5.0, -5.0, 0.0), Vec3::new(5.0, 5.0, 6.0));
+        let pins: Vec<Triangle> = [-2.0, 2.0]
+            .iter()
+            .flat_map(|&x| frustum(Vec3::new(x, 0.0, 0.0), Vec3::new(x, 0.0, 6.0), 0.6, 0.6))
+            .collect();
+        let layout = reconstruct(&block, &pins);
+        assert_eq!(layout.supports.len(), 2);
+        assert!(layout.supports.iter().all(|s| !s.tip.from_outside));
+        assert_eq!(layout.holding_share(), Some(0.0));
+        assert!(!layout.accounts_for(&pins, 2.0));
+    }
+
+    #[test]
+    fn holding_share_counts_tips_meeting_a_downward_face_from_outside() {
+        let support = |contact: Vec3, surface_normal: Vec3, from_outside: bool| SupportPath {
+            tip: ContactTip {
+                contact,
+                surface_normal,
+                from_outside,
+                socket: contact - Vec3::new(0.0, 0.0, 0.3),
+                contact_diameter_mm: 0.3,
+                body_diameter_mm: 0.6,
+            },
+            base: SupportBase::Plate { x: contact.x, y: contact.y, diameter_mm: 3.0 },
+            joints: vec![],
+            shaft_diameter_mm: 0.6,
+        };
+        let (down, side, tilted) =
+            (Vec3::new(0.0, 0.0, -1.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.99, 0.0, -0.1).normalized());
+        let layout = SupportLayout {
+            supports: vec![
+                support(Vec3::new(0.0, 0.0, 10.0), down, true),
+                // A face leaning a little over the support still rests on it.
+                support(Vec3::new(1.0, 0.0, 10.0), tilted, true),
+                // A peg out of a side face, and a pin meeting a face from inside the model.
+                support(Vec3::new(2.0, 0.0, 10.0), side, true),
+                support(Vec3::new(3.0, 0.0, 10.0), down, false),
+                // Under 1 mm from its root's top: not counted.
+                support(Vec3::new(4.0, 0.0, ROOT_TOP_MM + 0.5), side, true),
+            ],
+            ..SupportLayout::default()
+        };
+        assert_eq!(layout.holding_share(), Some(0.5));
+
+        let stubs = SupportLayout { supports: layout.supports[4..].to_vec(), ..SupportLayout::default() };
+        assert_eq!(stubs.holding_share(), None);
+        assert_eq!(SupportLayout::default().holding_share(), None);
     }
 
     #[test]
