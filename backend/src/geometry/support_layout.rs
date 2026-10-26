@@ -13,12 +13,14 @@
 //! plate (a trunk) or into a shaft an earlier walk claimed (a branch). Tips are walked from
 //! the highest down, so the tallest support of a tree is its trunk. Blobs much wider than
 //! the shaft, or off its line (raft, braces, crossing shafts), are passed through without
-//! bending the shaft's centre line or ending the walk.
+//! bending the shaft's centre line or ending the walk. Where a post the walk is following
+//! merges with a brace or rung, the blob's middle lies off the post, so the walk keeps to the
+//! post's own line through it (struts tied by rungs inside a hollowed model).
 //!
 //! Many support exports model each tip as a cone of its own, a closed shell apart from the
 //! joint ball and shaft it overlaps. Such a tip is measured from the cone itself (its narrow
 //! end is the contact size, its wide end the socket), which slices of a leaning tip only
-//! roughly show. Other tips are fitted to the walk's slices.
+//! roughly show; so are both tips of a strut. Other tips are fitted to the walk's slices.
 //!
 //! Support geometry no walk passed is left in connected pieces. A piece bridging two traced
 //! supports is a brace; one standing on the plate and leaning against a traced support (the
@@ -62,6 +64,13 @@ const ENTRY_SEARCH_MM: f32 = BURIED_CONTACT_MAX_MM;
 /// raft, brace or crossing: walked through, but neither a shaft point nor a branch point.
 const WIDEN_RATIO: f32 = 1.5;
 const WIDEN_SLACK_MM: f32 = 0.25;
+/// On a shaft the walk is following, a blob wider than `width * MERGED_RATIO + MERGED_SLACK_MM`
+/// is a joint ball, or the shaft merged with a brace or crossing bar: a shaft point only when
+/// centred on the shaft.
+const MERGED_RATIO: f32 = 1.25;
+const MERGED_SLACK_MM: f32 = 0.05;
+/// A blob no wider than `width * SHAFT_WIDTH_RATIO + MERGED_SLACK_MM` is the shaft on its own.
+const SHAFT_WIDTH_RATIO: f32 = 1.1;
 /// How quickly the walked shaft width follows the blobs it passes.
 const WIDTH_SMOOTHING: f32 = 0.25;
 /// The walked shaft width grows by at most this much per mm walked: enough to follow a
@@ -389,7 +398,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 7;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 8;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -430,7 +439,7 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
             seen[node as usize] = true;
         }
         let lower = match walk.end {
-            WalkEnd::Stranded => lower_end(&graph, &surface, &walk),
+            WalkEnd::Stranded => lower_end(&graph, &surface, &shells, &walk),
             _ => None,
         };
         let support = if matches!(walk.end, WalkEnd::Stranded) && lower.is_none() {
@@ -475,8 +484,6 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
     layout
 }
 
-/// Builds a support from its walk. `entry` is the first walked blob outside the model; the
-/// blobs above it are the part of the tip buried in the model.
 /// The far end of a walk that stopped short of the plate, when it stops in the model.
 struct LowerEnd {
     contact: SurfacePoint,
@@ -484,16 +491,19 @@ struct LowerEnd {
     nodes: Vec<u32>,
     /// The first of `nodes` outside the model.
     entry: usize,
+    /// The shell the lower tip's buried end belongs to, when that is a cone.
+    cone: Option<Cone>,
 }
 
 /// Where a walk that stopped short of the plate goes into the model, for a strut between two
 /// parts of it. None when it stopped in mid-air.
-fn lower_end(graph: &Graph, surface: &SurfaceIndex, walk: &Walk) -> Option<LowerEnd> {
+fn lower_end(graph: &Graph, surface: &SurfaceIndex, shells: &Shells, walk: &Walk) -> Option<LowerEnd> {
     let nodes: Vec<u32> = walk.visited.iter().rev().copied().collect();
     surface.contact(graph.centre(nodes[0]))?;
     let points: Vec<Vec3> = nodes.iter().map(|&i| graph.centre(i)).collect();
     let (contact, entry) = surface.entry(&points)?;
-    Some(LowerEnd { contact, nodes, entry })
+    let cone = shells.cone(graph.blobs[nodes[0] as usize].shell);
+    Some(LowerEnd { contact, nodes, entry, cone })
 }
 
 /// A tip cone fitted to blobs running away from its contact.
@@ -581,6 +591,25 @@ fn cone_fit(graph: &Graph, nodes: &[u32], contact: Vec3, cone: &Cone) -> TipFit 
     }
 }
 
+/// `fit` measured from the tip's own cone shell instead, when it has one whose narrow end is at
+/// the contact and whose wide end stands out of the model (the rounded end of a rod buried in
+/// the model tapers too). `nodes` run from the first blob outside the model outward. The shaft
+/// line still starts below the slices fitted as the tip: those around the joint the cone ends
+/// in are off the shaft's line.
+fn with_cone(graph: &Graph, nodes: &[u32], contact: Vec3, cone: Option<Cone>, fit: TipFit) -> TipFit {
+    let tip = |c: &Cone| {
+        (c.narrow - contact).length() <= CONE_CONTACT_MM
+            && (c.wide - contact).dot((c.wide - c.narrow).normalized()) >= MIN_TIP_LENGTH_MM
+    };
+    match cone.filter(tip) {
+        Some(cone) => {
+            let cone_fit = cone_fit(graph, nodes, contact, &cone);
+            TipFit { socket_index: fit.socket_index.max(cone_fit.socket_index), ..cone_fit }
+        }
+        None => fit,
+    }
+}
+
 /// The contact tip for a fit, with the surface normal turned to face the support.
 fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> ContactTip {
     let toward_socket = fit.socket - contact.point;
@@ -607,6 +636,9 @@ fn shaft_diameter(mut widths: Vec<f32>, fallback: f32) -> f32 {
         .clamp(MIN_SHAFT_DIAMETER_MM, MAX_SHAFT_DIAMETER_MM)
 }
 
+/// Builds a support from its walk. `entry` is the first walked blob outside the model; the
+/// blobs above it are the part of the tip buried in the model. `cone` is the shell the tip's
+/// buried end belongs to, when that is a cone.
 fn build_support(
     graph: &Graph,
     walk: &Walk,
@@ -616,7 +648,7 @@ fn build_support(
     cone: Option<Cone>,
 ) -> Option<SupportPath> {
     if let Some(lower) = lower {
-        return Some(build_strut(graph, walk, contact, entry, &lower));
+        return Some(build_strut(graph, walk, contact, entry, &lower, cone));
     }
     let entry = walk.tip_index(entry);
     let knot = match walk.end {
@@ -624,15 +656,10 @@ fn build_support(
         _ => None,
     };
     let (nodes, walked) = walk.tip();
-    let mut fit = fit_tip(graph, &nodes, &walked, entry, contact.point, knot, TIP_SHARE);
+    let fit = fit_tip(graph, &nodes, &walked, entry, contact.point, knot, TIP_SHARE);
     // A cone reaching down into the root is the whole support rather than its tip.
     let leaves_shaft = |c: &Cone| !matches!(walk.end, WalkEnd::Plate) || c.wide.z >= ROOT_TOP_MM + MIN_SHAFT_LENGTH_MM;
-    if let Some(cone) = cone.filter(|c| (c.narrow - contact.point).length() <= CONE_CONTACT_MM && leaves_shaft(c)) {
-        // The shaft line still starts below the slices fitted as the tip: those around the
-        // joint the cone ends in are off the shaft's line.
-        let cone_fit = cone_fit(graph, &nodes[entry..], contact.point, &cone);
-        fit = TipFit { socket_index: fit.socket_index.max(cone_fit.socket_index), ..cone_fit };
-    }
+    let fit = with_cone(graph, &nodes[entry..], contact.point, cone.filter(leaves_shaft), fit);
     let below = walk.nodes_below(entry + fit.socket_index);
     let widths: Vec<f32> = below.iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
     let shaft_diameter = shaft_diameter(widths, fit.socket_width);
@@ -674,13 +701,24 @@ fn build_support(
     Some(SupportPath { tip, base, joints: bends(&line), shaft_diameter_mm: shaft_diameter })
 }
 
-/// A strut between two parts of the model, from its upper contact down to its lower one.
-fn build_strut(graph: &Graph, walk: &Walk, contact: &SurfacePoint, entry: usize, lower: &LowerEnd) -> SupportPath {
+/// A strut between two parts of the model, from its upper contact down to its lower one. Either
+/// tip that is a cone shell of its own (`cone` for the upper one) is measured from the cone.
+fn build_strut(
+    graph: &Graph,
+    walk: &Walk,
+    contact: &SurfacePoint,
+    entry: usize,
+    lower: &LowerEnd,
+    cone: Option<Cone>,
+) -> SupportPath {
     let (nodes, walked) = walk.tip();
-    let mut upper_fit = fit_tip(graph, &nodes, &walked, walk.tip_index(entry), contact.point, None, STRUT_TIP_SHARE);
+    let entry = walk.tip_index(entry);
+    let upper_fit = fit_tip(graph, &nodes, &walked, entry, contact.point, None, STRUT_TIP_SHARE);
+    let mut upper_fit = with_cone(graph, &nodes[entry..], contact.point, cone, upper_fit);
     let lower_walked = vec![true; lower.nodes.len()];
-    let mut lower_fit =
-        fit_tip(graph, &lower.nodes, &lower_walked, lower.entry, lower.contact.point, None, STRUT_TIP_SHARE);
+    let lower_contact = lower.contact.point;
+    let lower_fit = fit_tip(graph, &lower.nodes, &lower_walked, lower.entry, lower_contact, None, STRUT_TIP_SHARE);
+    let mut lower_fit = with_cone(graph, &lower.nodes[lower.entry..], lower_contact, lower.cone, lower_fit);
     if upper_fit.socket.z <= lower_fit.socket.z {
         // The two tips overlap on a short strut: put each socket a third of the way along.
         let span = lower.contact.point - contact.point;
@@ -1052,25 +1090,42 @@ impl Graph {
         let mut nodes = vec![start];
         let mut visited = vec![start];
         let mut width = self.blobs[start as usize].half_max;
-        // Top of the current run of skipped blobs.
+        // Top of the current run of skipped blobs, and where the walk last picked the shaft up
+        // again after giving up on one.
         let mut skipped_from: Option<f32> = None;
+        let mut picked_up: Option<f32> = None;
         // A leaning tip's skipped slices, where they go among the nodes, the tip's width, and
         // whether the run of them may go on.
         let (mut leaning, mut leaning_at, mut leaning_width, mut leaning_open) = (Vec::new(), 0, width, true);
         let mut current = start;
         loop {
             let below = &self.down[current as usize];
+            let Some(&first) = below.first() else { break };
+            // On a shaft the walk is following, rather than skipping past: it has been on it,
+            // without picking it up again after a run of skipped blobs, long enough to know its
+            // direction.
+            let z = self.blobs[first as usize].z;
+            let last = self.blobs[*nodes.last().expect("walk has a start") as usize];
+            let tracking = last.z - z <= DRIFT_LAG_MM
+                && picked_up.is_none_or(|top| top - last.z >= DIRECTION_SPAN_MM)
+                && self.heading(&nodes, z).is_some();
             let next = match below.as_slice() {
-                [] => break,
                 [only] => *only,
                 many => {
-                    let z = self.blobs[many[0] as usize].z;
                     let (px, py) = self.predict(&nodes, z);
                     let miss = |i: u32| {
                         let b = &self.blobs[i as usize];
                         (b.x - px).powi(2) + (b.y - py).powi(2)
                     };
-                    let slopes: Vec<f32> = many.iter().map(|&i| self.descent_slope(i)).collect();
+                    let slopes: Vec<f32> = many
+                        .iter()
+                        .map(|&i| {
+                            tracking
+                                .then(|| self.merged_descent_slope(i, &nodes, width))
+                                .flatten()
+                                .unwrap_or_else(|| self.descent_slope(i))
+                        })
+                        .collect();
                     let steepest = slopes.iter().copied().fold(f32::MAX, f32::min);
                     many.iter()
                         .zip(&slopes)
@@ -1087,7 +1142,10 @@ impl Graph {
             let (px, py) = self.predict(&nodes[..=settled.unwrap_or(nodes.len() - 1)], blob.z);
             let drift = ((blob.x - px).powi(2) + (blob.y - py).powi(2)).sqrt();
             let narrow = blob.half_max <= width * WIDEN_RATIO + WIDEN_SLACK_MM;
-            let aligned = drift <= DRIFT_MM + width * DRIFT_RATIO;
+            // On a shaft the walk is following, a blob wider than it is a joint ball centred on
+            // it, or the shaft merged with a brace or crossing bar, centred off the shaft.
+            let merged = tracking && blob.half_max > width * MERGED_RATIO + MERGED_SLACK_MM;
+            let aligned = drift <= DRIFT_MM + if merged { 0.0 } else { width * DRIFT_RATIO };
             let reset =
                 blob.half_max <= MAX_RESET_WIDTH_MM && skipped_from.is_some_and(|top| top - blob.z >= SKIP_RESET_MM);
             if reset {
@@ -1101,6 +1159,9 @@ impl Graph {
                 }
                 let step = (self.centre(next) - self.centre(*nodes.last().expect("walk has a start"))).length();
                 width += ((blob.half_max - width) * WIDTH_SMOOTHING).min(MAX_WIDTH_GROWTH * step);
+                if !(narrow && aligned) {
+                    picked_up = Some(blob.z);
+                }
                 skipped_from = None;
                 leaning_open &= leaning.is_empty();
                 nodes.push(next);
@@ -1175,6 +1236,62 @@ impl Graph {
             below.truncate(FORK_WAYS);
             layer = below;
         }
+    }
+
+    /// When fork blob `start` is the shaft the walk follows through `nodes` (top down), of
+    /// half-width `width`, merged with a brace or crossing bar beside it (wider than the shaft,
+    /// holding where the walk is heading), the [`Graph::descent_slope`] of the shaft running on
+    /// from it: the blob's middle lies off the shaft's line, so the way is followed from where
+    /// the walk is heading, down the shaft's line, to the last blob as wide as the shaft.
+    fn merged_descent_slope(&self, start: u32, nodes: &[u32], width: f32) -> Option<f32> {
+        let top = self.blobs[start as usize];
+        let (px, py) = self.predict(nodes, top.z);
+        let merged = top.half_max > width * MERGED_RATIO + MERGED_SLACK_MM
+            && top.half_max <= width * WIDEN_RATIO + WIDEN_SLACK_MM
+            && top.z >= ROOT_TOP_MM
+            && top.rect.holds([px, py], 0.0);
+        if !merged {
+            return None;
+        }
+        let origin = Vec3::new(px, py, top.z);
+        let mut on_shaft: Option<Vec3> = None;
+        let mut current = start;
+        loop {
+            let here = self.blobs[current as usize];
+            let below = &self.down[current as usize];
+            let Some(&first) = below.first() else { break };
+            if top.z - here.z >= FORK_LOOKAHEAD_MM {
+                break;
+            }
+            let z = self.blobs[first as usize].z;
+            let (qx, qy) = match on_shaft {
+                Some(a) => {
+                    let t = (origin.z - z) / (origin.z - a.z);
+                    (origin.x + (a.x - origin.x) * t, origin.y + (a.y - origin.y) * t)
+                }
+                None => self.predict(nodes, z),
+            };
+            current = below
+                .iter()
+                .copied()
+                .min_by(|&a, &b| {
+                    let d = |i: u32| {
+                        let b = &self.blobs[i as usize];
+                        (b.x - qx).powi(2) + (b.y - qy).powi(2)
+                    };
+                    d(a).total_cmp(&d(b))
+                })
+                .expect("non-empty");
+            if self.blobs[current as usize].half_max <= width * SHAFT_WIDTH_RATIO + MERGED_SLACK_MM {
+                on_shaft = Some(self.centre(current));
+            }
+        }
+        let end = on_shaft.unwrap_or(self.centre(current));
+        let drop = origin.z - end.z;
+        if current == start || drop <= 0.0 {
+            return Some(f32::MAX);
+        }
+        Some((end.x - origin.x).hypot(end.y - origin.y) / drop)
     }
 
     /// Support geometry no walk passed, grouped into connected pieces, each with the places
@@ -1850,8 +1967,9 @@ impl Shells {
 
 /// The tip cone a shell is: a rod that tapers from its narrow end and may then run on at its
 /// full width (a tip and a stretch of shaft modelled as one piece). Every vertex lies on that
-/// wall or on an end cap (flat, or rounded at the wide end); the cone ends where the taper
-/// reaches the full width.
+/// wall, on an end cap (flat, or rounded at the wide end), or on a ball as wide as the rod around
+/// where the taper ends (a tip and its joint modelled as one piece); the cone ends where the
+/// taper reaches the full width.
 fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
     let verts: Vec<Vec3> = members
         .iter()
@@ -1907,7 +2025,8 @@ fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
         let s = (t - narrow_t) * toward;
         // The wide end may close in a rounded cap, no longer than the rod's radius.
         let at_cap = s <= band || s >= length - band || (s >= taper && s >= length - wide_radius - tolerance);
-        r <= wall(s) + tolerance && (r >= wall(s) - tolerance || at_cap)
+        let on_ball = ((s - taper).hypot(r) - wide_radius).abs() <= tolerance;
+        on_ball || (r <= wall(s) + tolerance && (r >= wall(s) - tolerance || at_cap))
     });
     on_rod.then(|| Cone {
         narrow: mean + axis * narrow_t,
@@ -2258,6 +2377,29 @@ mod tests {
         assert!((cone.wide_radius - radius).abs() < 0.01, "{cone:?}");
     }
 
+    #[test]
+    fn cone_tip_running_into_its_joint_ball_ends_at_the_ball_centre() {
+        // A tip and its joint ball as one shell, rising from a rounded narrow end (as in Death x
+        // Tiles' strut feet): the wall swells onto the ball before reaching its full width, so
+        // the cone is read up to the ball's centre.
+        let at = |s: f32| Vec3::new(1.0, 2.0, 4.0 + s);
+        let profile = [
+            (0.011, 0.082),
+            (0.045, 0.157),
+            (0.097, 0.221),
+            (0.165, 0.268),
+            (0.963, 0.67),
+            (1.332, 0.749),
+            (1.693, 0.639),
+            (1.955, 0.366),
+            (2.04, 0.1),
+        ];
+        let piece = tube(&profile.map(|(s, r)| (at(s), r)));
+        let cone = fit_cone(&piece, &(0..piece.len() as u32).collect::<Vec<_>>()).expect("a cone");
+        assert!(close(cone.narrow, at(0.011), 0.02) && close(cone.wide, at(1.332), 0.05), "{cone:?}");
+        assert!((cone.narrow_radius - 0.221).abs() < 0.01 && (cone.wide_radius - 0.749).abs() < 0.01, "{cone:?}");
+    }
+
     /// A graph of round blobs `(x, layer, radius)` on 0.1 mm layers, linked layer to layer
     /// where their boxes overlap, as slicing links them.
     fn hand_graph(blobs: &[(f32, u32, f32)]) -> Graph {
@@ -2306,6 +2448,32 @@ mod tests {
         assert!(post < 0.05, "{post}");
         let brace = graph.descent_slope(at(0.9, 18));
         assert!(brace > 0.9, "{brace}");
+    }
+
+    #[test]
+    fn walk_keeps_to_a_post_through_a_junction_off_its_line() {
+        // An upright 1.42 mm post (x = 0) that a junction off its line swallows for four
+        // layers, where it merges into one outline with a rung, as in a unioned strut and rung.
+        let walk_post = |junction: (f32, f32), neighbour: Option<f32>| {
+            let (jx, jr) = junction;
+            let mut blobs: Vec<(f32, u32, f32)> =
+                (0..=60).filter(|l| !(30..=33).contains(l)).map(|layer| (0.0, layer, 0.71)).collect();
+            blobs.extend((30..=33).map(|layer| (jx, layer, jr)));
+            blobs.extend(neighbour.into_iter().flat_map(|x| (0..=60).map(move |layer| (x, layer, 0.71))));
+            let graph = hand_graph(&blobs);
+            let top = graph.blobs.iter().position(|b| b.layer == 60 && b.x.abs() < 0.01).expect("the post's top");
+            let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()]);
+            assert!(matches!(walk.end, WalkEnd::Plate));
+            walk.nodes.iter().map(|&i| graph.blobs[i as usize].x).collect::<Vec<_>>()
+        };
+        // The junction's middle 0.3 mm off the post, about as close as the post's own slices
+        // drift: it is not a point on the post's line.
+        let xs = walk_post((0.3, 1.0), None);
+        assert!(xs.iter().all(|x| x.abs() < 0.01), "{xs:?}");
+        // A neighbouring post the junction reaches: the way on is the post the walk is on, which
+        // comes out of the junction upright, not the neighbour.
+        let xs = walk_post((0.45, 1.15), Some(2.0));
+        assert!(xs.iter().all(|x| x.abs() < 0.01), "{xs:?}");
     }
 
     #[test]
@@ -2604,6 +2772,85 @@ mod tests {
         assert!(close(lower.surface_normal, Vec3::new(0.0, 0.0, 1.0), 0.01), "{}", lower.surface_normal);
         assert!(s.tip.socket.z > lower.socket.z);
         assert!((0.4..=0.65).contains(&s.shaft_diameter_mm), "{}", s.shaft_diameter_mm);
+    }
+
+    /// The underside of a ceiling over z = 20 and the top of a floor under z = 4, as in a
+    /// hollowed model's cavity.
+    fn hollow() -> Vec<Triangle> {
+        let mut model = box_model(Vec3::new(-6.0, -4.0, 20.0), Vec3::new(8.0, 4.0, 24.0));
+        model.extend(box_model(Vec3::new(-6.0, -4.0, 0.0), Vec3::new(8.0, 4.0, 4.0)));
+        model
+    }
+
+    /// A 1.5 mm strut from the ceiling to the floor at `x`: a tip cone down from the ceiling, a
+    /// shaft, and a tip cone up from the floor, each a shell of its own.
+    fn hollow_strut(x: f32) -> Vec<Triangle> {
+        let mut out = frustum(Vec3::new(x, 0.0, 20.2), Vec3::new(x, 0.0, 16.0), 0.27, 0.75);
+        out.extend(frustum(Vec3::new(x, 0.0, 16.05), Vec3::new(x, 0.0, 5.0), 0.75, 0.75));
+        out.extend(frustum(Vec3::new(x, 0.0, 3.8), Vec3::new(x, 0.0, 5.05), 0.22, 0.75));
+        out
+    }
+
+    #[test]
+    fn struts_tied_by_zigzag_rungs_come_out_whole_with_their_rungs() {
+        // Two struts 2.4 mm apart inside a hollow, tied by rungs as thick as they are, each
+        // running down at 45 degrees from one strut to the other.
+        let mut supports = hollow_strut(0.0);
+        supports.extend(hollow_strut(2.4));
+        let rungs = [(0.0, 15.0), (2.4, 12.6), (0.0, 10.2), (2.4, 7.8)];
+        for w in rungs.windows(2) {
+            let ((x0, z0), (x1, z1)) = (w[0], w[1]);
+            supports.extend(frustum(Vec3::new(x0, 0.0, z0), Vec3::new(x1, 0.0, z1), 0.75, 0.75));
+        }
+        let layout = reconstruct(&hollow(), &supports);
+
+        assert_eq!(layout.supports.len(), 2);
+        for s in &layout.supports {
+            let SupportBase::Model(lower) = &s.base else { panic!("{:?}", s.base) };
+            assert!(
+                close(lower.contact, Vec3::new(s.tip.contact.x, 0.0, 4.0), 0.2),
+                "{} under {}",
+                lower.contact,
+                s.tip.contact
+            );
+            assert!(s.joints.is_empty(), "{:?}", s.joints);
+        }
+        assert_eq!(layout.braces.len(), 3, "{:?}", layout.braces);
+        for brace in &layout.braces {
+            assert_ne!(brace.lower.support, brace.upper.support);
+            assert!(brace.upper.point.z - brace.lower.point.z > 1.0, "{brace:?}");
+        }
+    }
+
+    #[test]
+    fn strut_tips_that_are_cones_take_their_sockets_and_widths_from_the_cones() {
+        // A strut whose lower tip is a cone of its own, 0.3 mm at its buried narrow end and
+        // 0.8 mm at its wide end, leaning 40 degrees up from the floor into a joint ball at the
+        // foot of an upright shaft; its upper tip is a cone of its own too.
+        let lean = Vec3::new(40f32.to_radians().sin(), 0.0, 40f32.to_radians().cos());
+        let contact = Vec3::new(0.0, 0.0, 4.0);
+        let socket = contact + lean * 2.0;
+        let upper_socket = Vec3::new(socket.x, 0.0, 16.0);
+        let mut supports = frustum(contact - lean * 0.25, socket, 0.15, 0.4);
+        supports.extend(frustum(socket - Vec3::new(0.0, 0.0, 0.5), socket + Vec3::new(0.0, 0.0, 0.5), 0.5, 0.5));
+        supports.extend(frustum(
+            socket + Vec3::new(0.0, 0.0, 0.05),
+            upper_socket + Vec3::new(0.0, 0.0, 0.05),
+            0.4,
+            0.4,
+        ));
+        supports.extend(frustum(Vec3::new(socket.x, 0.0, 20.2), upper_socket, 0.15, 0.4));
+        let layout = reconstruct(&hollow(), &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        let SupportBase::Model(lower) = &s.base else { panic!("{:?}", s.base) };
+        assert!(close(lower.contact, contact, 0.1), "{}", lower.contact);
+        assert!(close(lower.socket, socket, 0.05), "{}", lower.socket);
+        assert!((lower.contact_diameter_mm - 0.3).abs() < 0.02, "{}", lower.contact_diameter_mm);
+        assert!((lower.body_diameter_mm - 0.8).abs() < 0.03, "{}", lower.body_diameter_mm);
+        assert!(close(s.tip.socket, upper_socket, 0.05), "{}", s.tip.socket);
+        assert!((s.tip.contact_diameter_mm - 0.3).abs() < 0.02, "{}", s.tip.contact_diameter_mm);
     }
 
     #[test]
