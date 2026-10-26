@@ -22,6 +22,12 @@
 //! width. Joint balls and junctions, wider than the slices around them, are left out of the
 //! shaft's line and width.
 //!
+//! A walk ending in the model, rather than on the plate or a shaft, is a strut between two parts
+//! of the model. Tips meeting the model at one place are one tip with two tops when their walks
+//! run together, and two supports when they keep apart (struts meeting in pairs at one contact
+//! inside a hollowed model). A strut whose walk runs into a strut packed beside it, where their
+//! feet or a rung merge them, keeps to its own foot when it can reach the model without the other.
+//!
 //! Many support exports model each tip as a cone of its own, a closed shell apart from the
 //! joint ball and shaft it overlaps. Such a tip is measured from the cone itself (its narrow
 //! end is the contact size, its wide end the socket), which slices of a leaning tip only
@@ -153,8 +159,13 @@ const SIMPLIFY_MM: f32 = 0.3;
 const LOCAL_WIDTH_MM: f32 = 0.5;
 const WIDE_NODE_RATIO: f32 = 1.1;
 const WIDE_NODE_SLACK_MM: f32 = 0.03;
-/// A contact this close to an earlier support's contact is a second top of that tip.
+/// A contact this close to an earlier support's contact is a second top of that tip, unless the
+/// walk from it keeps apart from that support all the way and reaches at least
+/// `OWN_SUPPORT_MIN_MM` from the contact: then it is a support of its own meeting the model at the
+/// same place (struts meeting in pairs at one contact inside a hollowed model, fans of tip cones).
+/// Pins and pegs between model parts reach less.
 const DUPLICATE_CONTACT_MM: f32 = 0.5;
+const OWN_SUPPORT_MIN_MM: f32 = 1.0;
 /// A walk ending within this height of the lowest support layer stands on the plate, when that
 /// layer is itself this close to the plate (Z = 0).
 const PLATE_REACH_MM: f32 = 0.5;
@@ -482,7 +493,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 11;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 12;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -505,8 +516,10 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
     let mut layout = SupportLayout::default();
     let (mut stranded, mut duplicate, mut too_low) = (0usize, 0usize, 0usize);
     for (top, top_contact) in tops {
-        let traced = |pass_beside: bool| {
-            let walk = graph.walk(top, &claimed, pass_beside);
+        // The walk keeps off the blobs of support `avoid`, when given.
+        let traced = |pass_beside: bool, avoid: Option<usize>| {
+            let open = |i: u32| avoid.is_none_or(|a| claimed[i as usize] != a as u32 && owner[i as usize] != a as u32);
+            let walk = graph.walk(top, &claimed, pass_beside, open);
             let points: Vec<Vec3> = walk.nodes.iter().map(|&i| graph.centre(i)).collect();
             let (contact, entry) = surface.entry(&points).unwrap_or((top_contact, 0));
             let lower = match walk.end {
@@ -515,7 +528,7 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
             };
             let outcome = if matches!(walk.end, WalkEnd::Stranded) && lower.is_none() {
                 Traced::Stranded
-            } else if layout.supports.iter().any(|s| (s.tip.contact - contact.point).length() < DUPLICATE_CONTACT_MM) {
+            } else if second_top(&graph, &layout.supports, &walk, contact.point, &claimed, &owner) {
                 Traced::Duplicate
             } else {
                 let cone = shells.cone(graph.blobs[top as usize].shell);
@@ -525,9 +538,24 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
         };
         // Passing up the ways beside the shaft can lead the walk into a dead end that loses the
         // support (a sliver of its tip); then it may take them.
-        let (mut walk, mut contact, mut outcome) = traced(true);
+        let (mut walk, mut contact, mut outcome) = traced(true, None);
         if matches!(outcome, Traced::Stranded | Traced::TooLow) {
-            (walk, contact, outcome) = traced(false);
+            (walk, contact, outcome) = traced(false, None);
+        }
+        // A strut packed beside another one can run into it where their tips, feet or a rung
+        // merge them: when the walk keeps off that strut, it reaches the model on a foot of its
+        // own. Kept off a support, a walk can also wander through rungs and braces onto another
+        // strut's way down, which bends more than the branch it would replace.
+        if let (WalkEnd::Joined(parent, _), Traced::Support(branch)) = (&walk.end, &outcome)
+            && let SupportBase::Model(parent_foot) = &layout.supports[*parent].base
+        {
+            let own_foot = traced(true, Some(*parent));
+            if let Traced::Support(strut @ SupportPath { base: SupportBase::Model(foot), .. }) = &own_foot.2
+                && (foot.contact - parent_foot.contact).length() >= DUPLICATE_CONTACT_MM
+                && strut.joints.len() <= branch.joints.len()
+            {
+                (walk, contact, outcome) = own_foot;
+            }
         }
         log::trace!(
             "Tip candidate top {} contact {} ({} shaft blobs, ends {})",
@@ -606,6 +634,26 @@ pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
         too_low,
     );
     layout
+}
+
+/// Whether a walk's contact is a second top of an earlier support's tip (see
+/// [`DUPLICATE_CONTACT_MM`]): `claimed` and `owner` hold the support that took each blob into its
+/// shaft and the one whose walk passed it first.
+fn second_top(
+    graph: &Graph,
+    supports: &[SupportPath],
+    walk: &Walk,
+    contact: Vec3,
+    claimed: &[u32],
+    owner: &[u32],
+) -> bool {
+    let near: Vec<u32> = (0..supports.len() as u32)
+        .filter(|&i| (supports[i as usize].tip.contact - contact).length() < DUPLICATE_CONTACT_MM)
+        .collect();
+    let bottom = graph.centre(*walk.visited.last().expect("a walk has a start"));
+    !near.is_empty()
+        && ((bottom - contact).length() < OWN_SUPPORT_MIN_MM
+            || walk.visited.iter().any(|&i| near.contains(&claimed[i as usize]) || near.contains(&owner[i as usize])))
 }
 
 /// What a walk from a contact tip came to.
@@ -1291,8 +1339,9 @@ impl Graph {
     /// slices it skips settle into a straight run of one width (the shaft below the tip, or past
     /// a bend), the walk takes the run as the shaft from where it began, and steers by the run's
     /// lean rather than by the nodes above it. With `pass_beside`, a way at a fork beside the
-    /// blob the walk is on is passed up.
-    fn walk(&self, start: u32, claimed: &[u32], pass_beside: bool) -> Walk {
+    /// blob the walk is on is passed up. The walk takes only the blobs `open` lets it.
+    fn walk(&self, start: u32, claimed: &[u32], pass_beside: bool, open: impl Fn(u32) -> bool) -> Walk {
+        let mut below: Vec<u32> = Vec::new();
         let mut nodes = vec![start];
         let mut visited = vec![start];
         let mut width = self.blobs[start as usize].half_max;
@@ -1310,7 +1359,8 @@ impl Graph {
         let mut run: Vec<u32> = Vec::new();
         let mut current = start;
         loop {
-            let below = &self.down[current as usize];
+            below.clear();
+            below.extend(self.down[current as usize].iter().copied().filter(|&i| open(i)));
             let Some(&first) = below.first() else { break };
             // On a shaft the walk is following, rather than skipping past: it has been on it,
             // without picking it up again after a run of skipped blobs, long enough to know its
@@ -2954,7 +3004,7 @@ mod tests {
             blobs.extend(neighbour.into_iter().flat_map(|x| (0..=60).map(move |layer| (x, layer, 0.71))));
             let graph = hand_graph(&blobs);
             let top = graph.blobs.iter().position(|b| b.layer == 60 && b.x.abs() < 0.01).expect("the post's top");
-            let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
+            let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
             assert!(matches!(walk.end, WalkEnd::Plate));
             walk.nodes.iter().map(|&i| graph.blobs[i as usize].x).collect::<Vec<_>>()
         };
@@ -2981,7 +3031,7 @@ mod tests {
         blobs.extend((0..=45).map(|layer| (0.45, layer, 0.33)));
         let graph = hand_graph(&blobs);
         let top = graph.blobs.iter().position(|b| b.layer == 40 && b.x.abs() < 0.01).expect("the shaft's top");
-        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
 
         assert!(matches!(walk.end, WalkEnd::Plate));
         let xs: Vec<f32> = walk.visited.iter().map(|&i| graph.blobs[i as usize].x).collect();
@@ -2997,7 +3047,7 @@ mod tests {
         blobs.extend((0..45).map(|layer| (1.2, layer, 0.35)));
         let graph = hand_graph(&blobs);
         let top = graph.blobs.iter().position(|b| b.layer == 60).expect("the tip's top");
-        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true);
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
 
         assert!(matches!(walk.end, WalkEnd::Plate));
         // Every slice of the shaft from just below the tip down is a shaft point (the first few,
@@ -3512,6 +3562,70 @@ mod tests {
             assert_ne!(brace.lower.support, brace.upper.support);
             assert!(brace.upper.point.z - brace.lower.point.z > 1.0, "{brace:?}");
         }
+    }
+
+    /// The struts' contacts, upper and lower, panicking on any other support.
+    fn strut_contacts(layout: &SupportLayout) -> Vec<(Vec3, Vec3)> {
+        let contacts = layout.supports.iter().map(|s| match &s.base {
+            SupportBase::Model(lower) => (s.tip.contact, lower.contact),
+            other => panic!("{other:?}"),
+        });
+        contacts.collect()
+    }
+
+    #[test]
+    fn struts_meeting_at_one_ceiling_contact_are_two_struts() {
+        // Two struts whose tip cones start 0.3 mm apart on the ceiling and lean apart to shafts
+        // 2.3 mm apart, each down to a foot of its own.
+        let mut supports = Vec::new();
+        for (top, x) in [(0.0, -1.0), (0.3, 1.3)] {
+            supports.extend(frustum(Vec3::new(top, 0.0, 20.2), Vec3::new(x, 0.0, 16.0), 0.27, 0.75));
+            supports.extend(frustum(Vec3::new(x, 0.0, 16.05), Vec3::new(x, 0.0, 5.0), 0.75, 0.75));
+            supports.extend(frustum(Vec3::new(x, 0.0, 3.8), Vec3::new(x, 0.0, 5.05), 0.22, 0.75));
+        }
+        let layout = reconstruct(&hollow(), &supports);
+
+        let struts = strut_contacts(&layout);
+        assert_eq!(struts.len(), 2, "{struts:?}");
+        for (top, x) in [(0.0, -1.0), (0.3, 1.3)] {
+            assert!(
+                struts.iter().any(|(upper, lower)| {
+                    close(*upper, Vec3::new(top, 0.0, 20.0), 0.3) && close(*lower, Vec3::new(x, 0.0, 4.0), 0.2)
+                }),
+                "{struts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn second_top_of_one_tip_is_not_a_support_of_its_own() {
+        // A plate support whose tip has a second, thinner top 0.3 mm beside its own, merging into
+        // the tip 0.5 mm below the model.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend(frustum(Vec3::new(0.3, 0.0, 10.1), Vec3::new(0.1, 0.0, 9.5), 0.1, 0.15));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1, "{:?}", layout.supports);
+    }
+
+    #[test]
+    fn strut_beside_another_keeps_its_own_foot_where_their_feet_merge() {
+        // Two struts 0.85 mm apart on a diagonal, their 1.5 mm shafts overlapping: one runs
+        // straight down to the floor, the other ends 3 mm above the floor in a joint ball, from
+        // which its own foot cone leans 26 degrees away to the floor.
+        let mut supports = hollow_strut(0.0);
+        let (top, ball) = (Vec3::new(-0.9, -0.9, 20.1), Vec3::new(-0.6, -0.6, 7.0));
+        supports.extend(frustum(top, Vec3::new(-0.6, -0.6, 16.0), 0.27, 0.75));
+        supports.extend(frustum(Vec3::new(-0.6, -0.6, 16.05), ball, 0.75, 0.75));
+        supports.extend(frustum(ball + Vec3::new(0.0, 0.0, 0.75), ball - Vec3::new(0.0, 0.0, 0.75), 0.75, 0.75));
+        supports.extend(frustum(Vec3::new(-2.2, -0.6, 3.75), ball, 0.22, 0.7));
+        let layout = reconstruct(&hollow(), &supports);
+
+        let struts = strut_contacts(&layout);
+        assert_eq!(struts.len(), 2, "{struts:?}");
+        assert!(struts.iter().any(|(_, lower)| close(*lower, Vec3::new(0.0, 0.0, 4.0), 0.2)), "{struts:?}");
+        assert!(struts.iter().any(|(_, lower)| close(*lower, Vec3::new(-2.08, -0.6, 4.0), 0.3)), "{struts:?}");
     }
 
     #[test]
