@@ -112,9 +112,9 @@ const PLATEAU_SPAN_MM: f32 = 0.3;
 /// A tip may take up this share of its support's length; a strut's two tips share one shaft.
 const TIP_SHARE: f32 = 0.6;
 const STRUT_TIP_SHARE: f32 = 0.4;
-/// The contact diameter is the tip's narrow end, which is usually buried a little way in the
-/// model: the top slice that is at least this fraction of the slice below it (narrower top
-/// slices cut through an end cap).
+/// A tip's narrow end, which is usually buried a little way in the model, is the top slice that
+/// is at least this fraction of the slice below it (narrower top slices cut through an end cap).
+/// The contact is as wide as the tip where it leaves the model, and no narrower than that end.
 const CAP_WIDTH_FRACTION: f32 = 0.8;
 const MIN_CONTACT_DIAMETER_MM: f32 = 0.2;
 const MAX_CONTACT_DIAMETER_MM: f32 = 1.5;
@@ -226,6 +226,8 @@ pub struct ContactTip {
     pub surface_normal: Vec3,
     /// Where the tip meets the shaft.
     pub socket: Vec3,
+    /// Width where the tip leaves the model, which is where DragonFruit starts it: the part of
+    /// a tip buried in the model prints as part of the model.
     pub contact_diameter_mm: f32,
     pub body_diameter_mm: f32,
 }
@@ -398,7 +400,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 8;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 9;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -567,27 +569,28 @@ fn fit_tip(
 
     let tip_widths: Vec<f32> =
         nodes[..=entry + socket_index].iter().map(|&i| graph.blobs[i as usize].half_min * 2.0).collect();
-    let contact_diameter = tip_widths
-        .windows(2)
-        .find(|w| w[0] >= w[1] * CAP_WIDTH_FRACTION)
-        .map_or(tip_widths[0], |w| w[0])
-        .clamp(MIN_CONTACT_DIAMETER_MM, MAX_CONTACT_DIAMETER_MM);
+    let narrow_end = tip_widths.windows(2).find(|w| w[0] >= w[1] * CAP_WIDTH_FRACTION).map_or(tip_widths[0], |w| w[0]);
+    // A tip buried in the model is as wide as its first slice outside it where it leaves it.
+    let at_surface = if entry > 0 { tip_widths[entry].min(widths[socket_index]) } else { narrow_end };
+    let contact_diameter = narrow_end.max(at_surface).clamp(MIN_CONTACT_DIAMETER_MM, MAX_CONTACT_DIAMETER_MM);
     TipFit { socket_index, socket: points[socket_index], socket_width: widths[socket_index], contact_diameter }
 }
 
 /// The tip fit of a tip that is a cone shell of its own: the socket is the cone's wide end, the
-/// contact is as wide as its narrow end (the tip's designed contact size; the part buried in the
-/// model is that end's cap) and the socket as its wide end. `nodes` run from the first blob
-/// outside the model outward; the socket's index is the last of them no farther from the
-/// contact than the socket.
+/// contact is as wide as the cone where it leaves the model (its narrow end, when that is not
+/// buried) and the socket as its wide end. `nodes` run from the first blob outside the model
+/// outward; the socket's index is the last of them no farther from the contact than the socket.
 fn cone_fit(graph: &Graph, nodes: &[u32], contact: Vec3, cone: &Cone) -> TipFit {
     let length = (cone.wide - contact).length();
     let socket_index = nodes.iter().rposition(|&i| (graph.centre(i) - contact).length() <= length).unwrap_or(0);
+    let axis = cone.wide - cone.narrow;
+    let along = ((contact - cone.narrow).dot(axis) / axis.dot(axis).max(f32::EPSILON)).clamp(0.0, 1.0);
+    let at_contact = cone.narrow_radius + (cone.wide_radius - cone.narrow_radius) * along;
     TipFit {
         socket_index,
         socket: cone.wide,
         socket_width: cone.wide_radius * 2.0,
-        contact_diameter: (cone.narrow_radius * 2.0).clamp(MIN_CONTACT_DIAMETER_MM, MAX_CONTACT_DIAMETER_MM),
+        contact_diameter: (at_contact * 2.0).clamp(MIN_CONTACT_DIAMETER_MM, MAX_CONTACT_DIAMETER_MM),
     }
 }
 
@@ -2341,6 +2344,24 @@ mod tests {
     }
 
     #[test]
+    fn buried_tip_contact_is_as_wide_as_the_tip_where_it_leaves_the_model() {
+        // A tip buried 0.4 mm in the model: 0.2 mm across at its buried end and about 0.37 mm
+        // where it leaves the model. Its taper changes on the way to the shaft, so it is no
+        // cone shell of its own and is measured from its slices.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let kink = Vec3::new(0.0, 0.0, 9.7);
+        let mut supports = frustum(Vec3::new(0.0, 0.0, 10.4), kink, 0.1, 0.25);
+        supports.extend(frustum(kink, Vec3::new(0.0, 0.0, 8.0), 0.25, 0.4));
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0), 0.4, 0.4));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let tip = &layout.supports[0].tip;
+        assert!(close(tip.contact, Vec3::new(0.0, 0.0, 10.0), 0.1), "{}", tip.contact);
+        assert!((0.33..=0.45).contains(&tip.contact_diameter_mm), "{}", tip.contact_diameter_mm);
+    }
+
+    #[test]
     fn cone_tip_takes_its_socket_and_widths_from_the_cone() {
         let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
         // A tip cone of its own, 0.3 mm at its buried narrow end and 0.8 mm at its wide end,
@@ -2356,7 +2377,9 @@ mod tests {
         assert_eq!(layout.supports.len(), 1);
         let tip = &layout.supports[0].tip;
         assert!(close(tip.socket, socket, 0.05), "{}", tip.socket);
-        assert!((tip.contact_diameter_mm - 0.3).abs() < 0.02, "{}", tip.contact_diameter_mm);
+        // As wide as the cone where it leaves the model, a ninth of the way from its narrow end.
+        let at_surface = 0.3 + 0.5 * 0.25 / 2.25;
+        assert!((tip.contact_diameter_mm - at_surface).abs() < 0.02, "{}", tip.contact_diameter_mm);
         assert!((tip.body_diameter_mm - 0.8).abs() < 0.03, "{}", tip.body_diameter_mm);
         assert!(layout.supports[0].joints.is_empty(), "{:?}", layout.supports[0].joints);
     }
@@ -2847,10 +2870,13 @@ mod tests {
         let SupportBase::Model(lower) = &s.base else { panic!("{:?}", s.base) };
         assert!(close(lower.contact, contact, 0.1), "{}", lower.contact);
         assert!(close(lower.socket, socket, 0.05), "{}", lower.socket);
-        assert!((lower.contact_diameter_mm - 0.3).abs() < 0.02, "{}", lower.contact_diameter_mm);
+        // Each contact is as wide as its cone where it leaves the model.
+        let lower_at_surface = 0.3 + 0.5 * 0.25 / 2.25;
+        assert!((lower.contact_diameter_mm - lower_at_surface).abs() < 0.02, "{}", lower.contact_diameter_mm);
         assert!((lower.body_diameter_mm - 0.8).abs() < 0.03, "{}", lower.body_diameter_mm);
         assert!(close(s.tip.socket, upper_socket, 0.05), "{}", s.tip.socket);
-        assert!((s.tip.contact_diameter_mm - 0.3).abs() < 0.02, "{}", s.tip.contact_diameter_mm);
+        let upper_at_surface = 0.3 + 0.5 * 0.2 / 4.2;
+        assert!((s.tip.contact_diameter_mm - upper_at_surface).abs() < 0.02, "{}", s.tip.contact_diameter_mm);
     }
 
     #[test]

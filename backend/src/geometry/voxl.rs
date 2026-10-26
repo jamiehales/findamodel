@@ -43,6 +43,9 @@ const STICK_MIN_SPAN_MM: f32 = 5.0;
 /// their radius plus this clearance.
 const TWIG_JOINT_RATIO: f32 = 1.1;
 const TWIG_JOINT_CLEARANCE_MM: f32 = 0.05;
+/// DragonFruit marks down a brace knot within this share of its segment's length of either end
+/// (`t <= 0.02` or `t >= 0.98`), so brace knots are kept just inside it.
+const BRACE_KNOT_END_SHARE: f64 = 0.025;
 /// Support coordinates are rounded to this many decimal places.
 const COORDINATE_DECIMALS: i32 = 4;
 
@@ -282,8 +285,21 @@ impl SupportDocument {
                 })
                 .collect();
 
+            // A branch hangs from a knot on its parent's shaft, which is where DragonFruit starts
+            // its first segment (not the attach point itself, which can lie off that shaft).
+            let knot = match &support.base {
+                SupportBase::Shaft { parent, point: at } => {
+                    let host = layout.supports[*parent].shaft_diameter_mm;
+                    Some(knot_on(&shafts[*parent], place(*at), host + JOINT_DIAMETER_OFFSET_MM, KnotUse::Host))
+                }
+                _ => None,
+            };
+
             // Segment 0 starts at the root top or the knot; each later one at the joint below.
-            let mut start = place(support.shaft_start());
+            let mut start = match &knot {
+                Some(knot) => position_of(&knot["pos"]),
+                None => place(support.shaft_start()),
+            };
             let mut spans = Vec::with_capacity(joints.len());
             let mut segments = Vec::with_capacity(joints.len());
             for (i, joint) in joints.iter().enumerate() {
@@ -313,9 +329,8 @@ impl SupportDocument {
                         "contactCone": contact_cone,
                     }));
                 }
-                SupportBase::Shaft { parent, point: at } => {
-                    let host = layout.supports[*parent].shaft_diameter_mm;
-                    let knot = knot_on(&shafts[*parent], place(*at), host);
+                SupportBase::Shaft { .. } => {
+                    let knot = knot.expect("a branch has a knot");
                     let knot_id = knot["id"].clone();
                     self.knots.push(knot);
                     self.branches.push(json!({
@@ -333,11 +348,13 @@ impl SupportDocument {
         }
 
         // Each brace hangs from a knot on each of the two supports it joins, lower end first.
+        // DragonFruit prints a brace as wide as its knots (less the joint offset), so they
+        // carry the brace's own diameter.
         for brace in &layout.braces {
             let mut knot_ids = Vec::with_capacity(2);
             for end in [&brace.lower, &brace.upper] {
-                let host = layout.supports[end.support].shaft_diameter_mm;
-                let knot = knot_on(&shafts[end.support], place(end.point), host);
+                let diameter = brace.diameter_mm + JOINT_DIAMETER_OFFSET_MM;
+                let knot = knot_on(&shafts[end.support], place(end.point), diameter, KnotUse::Brace);
                 knot_ids.push(knot["id"].clone());
                 self.knots.push(knot);
             }
@@ -354,8 +371,8 @@ impl SupportDocument {
         // Each kickstand stands on its own root and hangs from a knot on the support it holds
         // up: a column segment up to each joint, then the leaning segment up to the knot.
         for kickstand in &layout.kickstands {
-            let host = layout.supports[kickstand.support].shaft_diameter_mm;
-            let knot = knot_on(&shafts[kickstand.support], place(kickstand.knot), host);
+            let host = layout.supports[kickstand.support].shaft_diameter_mm + JOINT_DIAMETER_OFFSET_MM;
+            let knot = knot_on(&shafts[kickstand.support], place(kickstand.knot), host, KnotUse::Host);
             let foot = kickstand.foot;
             let root = root(model_id, place(Vec3::new(foot.x, foot.y, 0.0)), kickstand.root_diameter_mm);
             let joint_diameter = round(kickstand.diameter_mm + JOINT_DIAMETER_OFFSET_MM);
@@ -523,8 +540,21 @@ fn root(model_id: &str, pos: [f64; 3], diameter_mm: f32) -> Value {
     })
 }
 
-/// A knot at the point of `spans` closest to `at`.
-fn knot_on(spans: &[Span], at: [f64; 3], host_diameter_mm: f32) -> Value {
+/// What a knot holds: a branch or kickstand hanging from it, or one end of a brace.
+#[derive(Clone, Copy, PartialEq)]
+enum KnotUse {
+    Host,
+    Brace,
+}
+
+/// A knot `diameter_mm` wide at the point of `spans` closest to `at`.
+///
+/// On opening a scene DragonFruit projects every knot back onto its segment, and moves a
+/// brace's knot to another segment of the support when that scores better: a knot within
+/// [`BRACE_KNOT_END_SHARE`] of either end of its segment is marked down, so it would go to a
+/// neighbouring segment, wherever that projects. A brace's knot is kept that far inside its
+/// segment, and is flagged as an imported brace end so DragonFruit keeps its diameter.
+fn knot_on(spans: &[Span], at: [f64; 3], diameter_mm: f32, used_by: KnotUse) -> Value {
     let project = |span: &Span| {
         let d: Vec<f64> = (0..3).map(|k| span.end[k] - span.start[k]).collect();
         let length_sq: f64 = d.iter().map(|v| v * v).sum();
@@ -535,26 +565,36 @@ fn knot_on(spans: &[Span], at: [f64; 3], host_diameter_mm: f32) -> Value {
         };
         let pos = [0, 1, 2].map(|k| span.start[k] + d[k] * t);
         let miss: f64 = (0..3).map(|k| (pos[k] - at[k]).powi(2)).sum();
-        (miss, t, pos)
+        (miss, t)
     };
-    let (span, (_, t, pos)) = spans
+    let (span, (_, t)) = spans
         .iter()
         .map(|span| (span, project(span)))
         .min_by(|a, b| a.1.0.total_cmp(&b.1.0))
         .expect("a support has at least one segment");
+    let t = match used_by {
+        KnotUse::Host => t,
+        KnotUse::Brace => t.clamp(BRACE_KNOT_END_SHARE, 1.0 - BRACE_KNOT_END_SHARE),
+    };
+    let pos = [0, 1, 2].map(|k| span.start[k] + (span.end[k] - span.start[k]) * t);
     json!({
         "id": Uuid::new_v4().to_string(),
         "parentShaftId": span.id,
         "t": t,
         "pos": point(pos),
-        "diameter": round(host_diameter_mm + JOINT_DIAMETER_OFFSET_MM),
-        "normalizationHint": "project",
+        "diameter": round(diameter_mm),
+        "normalizationHint": if used_by == KnotUse::Brace { "braceImported" } else { "project" },
     })
 }
 
 fn round(v: impl Into<f64>) -> f64 {
     let scale = 10f64.powi(COORDINATE_DECIMALS);
     (v.into() * scale).round() / scale
+}
+
+/// A point written by [`point`], as DragonFruit reads it back.
+fn position_of(v: &Value) -> [f64; 3] {
+    ["x", "y", "z"].map(|k| v[k].as_f64().unwrap_or(0.0))
 }
 
 fn point([x, y, z]: [f64; 3]) -> Value {
@@ -907,7 +947,111 @@ mod tests {
         assert!(segment_ids(0).contains(&end["parentShaftId"]));
         assert!(near(xyz(&start["pos"]), [3.0, 0.0, 4.0]));
         assert!(near(xyz(&end["pos"]), [0.0, 0.0, 6.0]));
-        assert_eq!(start["diameter"], 0.9);
+        // DragonFruit prints a brace as wide as its knots less the joint offset, and keeps an
+        // imported brace knot's diameter when it normalises the knots on opening the scene.
+        for knot in [&start, &end] {
+            assert_eq!(knot["diameter"], 0.7);
+            assert_eq!(knot["normalizationHint"], "braceImported");
+        }
+    }
+
+    #[test]
+    fn brace_knots_stay_clear_of_their_segment_ends() {
+        use crate::geometry::support_layout::{BraceEnd, BraceLayout, ContactTip, SupportBase, SupportPath};
+
+        // Trunks bending at z = 5; the brace's lower end is at that joint, its upper end below
+        // the root top.
+        let trunk = |x: f32| SupportPath {
+            tip: ContactTip {
+                contact: Vec3::new(x, 0.0, 10.0),
+                surface_normal: Vec3::new(0.0, 0.0, -1.0),
+                socket: Vec3::new(x, 0.0, 8.0),
+                contact_diameter_mm: 0.3,
+                body_diameter_mm: 0.8,
+            },
+            base: SupportBase::Plate { x, y: 0.0, diameter_mm: 3.0 },
+            joints: vec![Vec3::new(x, 0.0, 5.0)],
+            shaft_diameter_mm: 0.8,
+        };
+        let layout = SupportLayout {
+            supports: vec![trunk(0.0), trunk(3.0)],
+            braces: vec![BraceLayout {
+                lower: BraceEnd { support: 0, point: Vec3::new(0.0, 0.0, 5.0) },
+                upper: BraceEnd { support: 1, point: Vec3::new(3.0, 0.0, 1.0) },
+                diameter_mm: 0.6,
+            }],
+            kickstands: vec![],
+        };
+        let a = [tri([0.0, 0.0, 10.0], [4.0, 0.0, 10.0], [0.0, 4.0, 12.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+
+        // DragonFruit moves a brace knot at either end of its segment to another segment, so
+        // each is kept just inside its segment, as close to the brace's end as that allows.
+        let knots = supp["knots"].as_array().unwrap();
+        for knot in knots {
+            let t = knot["t"].as_f64().unwrap();
+            assert!((BRACE_KNOT_END_SHARE..=1.0 - BRACE_KNOT_END_SHARE).contains(&t), "{t}");
+        }
+        let (lower, upper) = (xyz(&knots[0]["pos"]), xyz(&knots[1]["pos"]));
+        assert!((lower[2] - 5.0).abs() <= 3.0 * BRACE_KNOT_END_SHARE + 1e-6, "{lower:?}");
+        assert!((upper[2] - 2.0 - 3.0 * BRACE_KNOT_END_SHARE).abs() < 1e-3, "{upper:?}");
+    }
+
+    #[test]
+    fn a_branch_starts_at_its_knot_so_knots_on_it_follow_the_shaft_dragonfruit_builds() {
+        use crate::geometry::support_layout::{BraceEnd, BraceLayout, ContactTip, SupportBase, SupportPath};
+
+        let tip = |x: f32, z: f32| ContactTip {
+            contact: Vec3::new(x, 0.0, z),
+            surface_normal: Vec3::new(0.0, 0.0, -1.0),
+            socket: Vec3::new(x, 0.0, z - 2.0),
+            contact_diameter_mm: 0.3,
+            body_diameter_mm: 0.8,
+        };
+        // A trunk at x = 0, and a branch attached a millimetre off its side: DragonFruit starts
+        // the branch at its knot on the trunk, so a brace on the branch hangs from that line.
+        let layout = SupportLayout {
+            supports: vec![
+                SupportPath {
+                    tip: tip(0.0, 12.0),
+                    base: SupportBase::Plate { x: 0.0, y: 0.0, diameter_mm: 3.0 },
+                    joints: vec![],
+                    shaft_diameter_mm: 1.0,
+                },
+                SupportPath {
+                    tip: tip(4.0, 12.0),
+                    base: SupportBase::Shaft { parent: 0, point: Vec3::new(1.0, 0.0, 4.0) },
+                    joints: vec![],
+                    shaft_diameter_mm: 0.8,
+                },
+            ],
+            braces: vec![BraceLayout {
+                lower: BraceEnd { support: 0, point: Vec3::new(0.0, 0.0, 7.0) },
+                upper: BraceEnd { support: 1, point: Vec3::new(2.0, 0.0, 6.0) },
+                diameter_mm: 0.5,
+            }],
+            kickstands: vec![],
+        };
+        let a = [tri([0.0, 0.0, 12.0], [4.0, 0.0, 12.0], [0.0, 4.0, 14.0])];
+        let meshes = [VoxlMesh { name: "a.stl", triangles: &a, supports: Some(&layout) }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+        let supp = json_chunk(&chunks, b"SUPP");
+
+        let knots = supp["knots"].as_array().unwrap();
+        let branch_knot = xyz(&knots[0]["pos"]);
+        assert!(near(branch_knot, [0.0, 0.0, 4.0]), "{branch_knot:?}");
+        assert!(near(xyz(&supp["branches"][0]["segments"][0]["topJoint"]["pos"]), [4.0, 0.0, 10.0]));
+        // The brace's knot on the branch lies on the line from the branch's knot to its socket.
+        let on_branch = xyz(&knots[2]["pos"]);
+        let (along, off) = ([4.0, 0.0, 6.0], [on_branch[0], on_branch[1], on_branch[2] - 4.0]);
+        let cross = [
+            along[1] * off[2] - along[2] * off[1],
+            along[2] * off[0] - along[0] * off[2],
+            along[0] * off[1] - along[1] * off[0],
+        ];
+        assert!(cross.iter().map(|c| c * c).sum::<f64>().sqrt() < 1e-3, "{on_branch:?}");
     }
 
     #[test]
