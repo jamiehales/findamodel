@@ -141,9 +141,11 @@ fn project_triangle(tri: &Triangle, view: &View, albedo: Vec3) -> Option<Project
         return None;
     }
 
+    // Sub-pixel triangles are kept: a finely tessellated surface is made of nothing else,
+    // and each covers the sample points that fall inside it.
     let area = edge(s[0].0, s[0].1, s[1].0, s[1].1, s[2].0, s[2].1);
-    if area.abs() < 0.5 {
-        return None;
+    if area.abs() < 1e-6 {
+        return None; // edge-on
     }
 
     let centroid = (tri.v0 + tri.v1 + tri.v2) * (1.0 / 3.0);

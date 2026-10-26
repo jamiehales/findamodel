@@ -22,7 +22,7 @@ const LOG_TARGET: &str = "findamodel.Preview";
 
 /// Increment when the preview rendering implementation changes so existing cached
 /// previews are invalidated on the next scan.
-pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 16;
+pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 17;
 
 const RENDER_WIDTH: u32 = 512;
 const RENDER_HEIGHT: u32 = 512;
@@ -365,6 +365,20 @@ mod tests {
         assert_eq!(rgba[3], 0, "corner pixel should be transparent");
         let coverage = opaque_fraction(&rgba);
         assert!(coverage > 0.2 && coverage < 0.95, "coverage {coverage}");
+    }
+
+    #[test]
+    fn cpu_render_fills_surfaces_made_of_sub_pixel_triangles() {
+        use crate::geometry::support_separation::tests::cuboid;
+        let (min, max) = (Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0));
+        let render =
+            |triangles: &[Triangle]| decode(&cpu::render(triangles, 64, 64, BODY_COLOR, None, SUPPORT_COLOR)).2;
+        let coarse = render(&cuboid(min, max, 1));
+        // Each face a 150 x 150 grid: every triangle covers a small fraction of a pixel.
+        let fine = render(&cuboid(min, max, 150));
+        let (coarse_cov, fine_cov) = (opaque_fraction(&coarse), opaque_fraction(&fine));
+        assert!(coarse_cov > 0.2, "coarse {coarse_cov}");
+        assert!((coarse_cov - fine_cov).abs() < 0.01, "coarse {coarse_cov} vs fine {fine_cov}");
     }
 
     #[test]
