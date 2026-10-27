@@ -168,6 +168,8 @@ const MIN_ROD_DIAMETER_MM: f32 = 0.3;
 /// one width, or tapers towards its foot, and the joint balls and merged braces left in only ever
 /// widen a section.
 const SHAFT_WIDTH_QUANTILE: usize = 3;
+/// Safety limit: no shaft is rebuilt thicker than this. Real shafts are well under it; it only
+/// binds when a walk reads a wide piece (a slab or a model part taken for a support) as a shaft.
 const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
 /// Bends smaller than this are dropped from the shaft path.
 const SIMPLIFY_MM: f32 = 0.3;
@@ -184,7 +186,10 @@ const WIDE_NODE_SLACK_MM: f32 = 0.03;
 const DUPLICATE_CONTACT_MM: f32 = 0.5;
 const OWN_SUPPORT_MIN_MM: f32 = 1.0;
 /// A walk ending within this height of the lowest support layer stands on the plate, when that
-/// layer is itself this close to the plate (Z = 0).
+/// layer is itself this close to the plate (Z = 0). Safety limit: supports exported on the plate
+/// start within a slice of it, so this only binds for supports standing clear of the plate (a
+/// model exported raised, or cut off below): their walks end stranded, so they are left out,
+/// with no posts or kickstands.
 const PLATE_REACH_MM: f32 = 0.5;
 /// Brace detection: untraced pieces of at least `MIN_BRACE_BLOBS` cross-sections; the places
 /// a piece touches one support group into one end when they are within `BRACE_END_GAP_MM` of
@@ -204,7 +209,9 @@ const KNOT_REACH_MM: f32 = 0.5;
 /// Where a piece touches each of two supports in one junction whose lower and upper parts lie
 /// at least `X_JUNCTION_MM` apart, it may be an X of two braces meeting each support one above
 /// the other; it is when the piece's cross-sections have their middles within `X_CENTRE_MM` of
-/// both braces' lines.
+/// both braces' lines. The parts must also lie as far apart as the piece is thick, which is
+/// what usually decides; this is a safety limit for braces thinner than it, whose junctions
+/// are too short to hold two brace ends.
 const X_JUNCTION_MM: f32 = 0.5;
 const X_CENTRE_MM: f32 = 0.25;
 /// Braces whose ends are this close to an earlier brace's are the same.
@@ -243,7 +250,9 @@ const COLUMN_DRIFT_MM: f32 = 0.1;
 /// A post holds up the traced shaft it runs into at most this far above its top.
 const COLUMN_END_MM: f32 = 1.5;
 /// A column carries on above a junction a traced support's walk passed through when its own
-/// slices go on within this height above where the junction cuts it.
+/// slices go on within this height above where the junction cuts it. Safety limit: junctions are
+/// about as tall as the brace in them, well under this; it stops the search where a column
+/// ends in a junction and nothing of its own carries on.
 const COLUMN_JUNCTION_MM: f32 = 2.0;
 pub const ROOT_DISK_HEIGHT_MM: f32 = 0.5;
 pub const ROOT_CONE_HEIGHT_MM: f32 = 1.5;
@@ -260,7 +269,8 @@ const NONE: u32 = u32::MAX;
 
 /// Support vertices this close are one vertex when joining triangles into shells.
 const SHELL_WELD_MM: f32 = 0.001;
-/// Shells with more triangles than this are never a single cone.
+/// Shells with more triangles than this are never a single cone. A safety limit on cost: such
+/// shells (a whole unioned support tree) fail the cone fit anyway, and fitting them is skipped.
 const MAX_CONE_TRIANGLES: usize = 2_000;
 /// A cone's ends are read from the vertices within this share of its length of each end.
 const CONE_END_BAND: f32 = 0.05;
@@ -4186,6 +4196,16 @@ mod tests {
         assert!(close(s.tip.socket, upper_socket, 0.05), "{}", s.tip.socket);
         let upper_at_surface = 0.3 + 0.5 * 0.2 / 4.2;
         assert!((s.tip.contact_diameter_mm - upper_at_surface).abs() < 0.02, "{}", s.tip.contact_diameter_mm);
+    }
+
+    #[test]
+    fn supports_standing_clear_of_the_plate_are_left_out() {
+        // The same post as on the plate, raised 3 mm: it has no plate to stand on.
+        let model = box_model(Vec3::new(-5.0, -5.0, 13.0), Vec3::new(5.0, 5.0, 18.0));
+        let on_plate = support(Vec3::new(1.0, 2.0, 13.0), &[Vec3::new(1.0, 2.0, 11.0), Vec3::new(1.0, 2.0, 0.0)]);
+        assert_eq!(reconstruct(&model, &on_plate).supports.len(), 1);
+        let raised = support(Vec3::new(1.0, 2.0, 13.0), &[Vec3::new(1.0, 2.0, 11.0), Vec3::new(1.0, 2.0, 3.0)]);
+        assert!(reconstruct(&model, &raised).supports.is_empty());
     }
 
     #[test]
