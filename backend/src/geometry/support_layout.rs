@@ -154,8 +154,11 @@ const MIN_TIP_LENGTH_MM: f32 = 0.6;
 /// The socket is the first point reaching this fraction of the tip window's widest blob (a
 /// joint ball), or where the tip stops widening: by less than `PLATEAU_GROWTH_RATIO` of that
 /// widest blob over the next `PLATEAU_SPAN_RATIO` of it (a thicker tip's cone widens more over
-/// a longer run), and by no less than the `_MIN_MM` floors.
-const TIP_BODY_FRACTION: f32 = 0.85;
+/// a longer run), and by no less than the `_MIN_MM` floors. The body fraction is high, so a tip
+/// runs on to nearly its widest slice: across the 158 round-trip and benchmark models, 0.95 fits
+/// as well as 0.85 in every support style, with 4% fewer joints per support (9% on Lychee
+/// zigzag webs).
+const TIP_BODY_FRACTION: f32 = 0.95;
 const PLATEAU_GROWTH_RATIO: f32 = 0.025;
 const PLATEAU_GROWTH_MIN_MM: f32 = 0.015;
 const PLATEAU_SPAN_RATIO: f32 = 0.25;
@@ -202,12 +205,19 @@ const OWN_SUPPORT_MIN_MM: f32 = 1.0;
 const PLATE_REACH_MM: f32 = 0.5;
 /// Brace detection: untraced pieces of at least `MIN_BRACE_BLOBS` cross-sections; the places
 /// a piece touches one support group into one end when they are within `BRACE_END_GAP_MM` of
-/// height; a brace is at least `MIN_BRACE_MM` long, and the piece covers at least
+/// height; a brace is at least `MIN_BRACE_RATIO` times its diameter long, and at least
+/// `MIN_BRACE_MIN_MM` (see [`min_brace_mm`]), and the piece covers at least
 /// `BRACE_COVERAGE` of the line between its ends (the outer `BRACE_END_SKIP` of the line at
 /// each end, where it merges into the supports, is not tested), within `BRACE_MARGIN_MM`.
+/// The shortest brace scales with its diameter: the thin braces of Chitubox X lattices (0.6 to
+/// 0.8 mm) pack 1.5 to 2 mm apart and are lost below a fixed 2 mm, while braces at the corpus
+/// median of 1.2 mm keep a minimum near it (1.8 mm). A ratio of 2.0 lost thick braces (recall
+/// at 0.3 mm down 0.005 on the round-trip subset); a floor of 1.0 matched 1.5 on thin braces
+/// but cost precision on Lychee lattices.
 const MIN_BRACE_BLOBS: usize = 3;
 const BRACE_END_GAP_MM: f32 = 0.75;
-const MIN_BRACE_MM: f32 = 2.0;
+const MIN_BRACE_RATIO: f32 = 1.5;
+const MIN_BRACE_MIN_MM: f32 = 1.5;
 const BRACE_COVERAGE: f32 = 0.8;
 const BRACE_END_SKIP: f32 = 0.15;
 const BRACE_MARGIN_MM: f32 = 0.15;
@@ -242,7 +252,10 @@ const THROUGH_SKIP: f32 = 1.0 / 3.0;
 const BRACE_PARALLEL_COS: f32 = 0.9;
 /// The ends are refitted to a line through the piece's own cross-sections when those spread
 /// along at least this share of the brace (a level bar's slices do not, being one long slice).
-const BRACE_REFIT_SPREAD: f32 = 0.5;
+/// A quarter is enough for the fitted line to follow the brace: it fits as well or better than
+/// half in every support style across the 158 round-trip and benchmark models, most on Lychee
+/// zigzag webs and hollow-model struts, whose junctions hide much of each brace.
+const BRACE_REFIT_SPREAD: f32 = 0.25;
 const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
 /// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on
 /// the plate or a raft) and runs up to where the piece touches a support, straight or leaning
@@ -280,8 +293,11 @@ const SHELL_WELD_MM: f32 = 0.001;
 /// Shells with more triangles than this are never a single cone. A safety limit on cost: such
 /// shells (a whole unioned support tree) fail the cone fit anyway, and fitting them is skipped.
 const MAX_CONE_TRIANGLES: usize = 2_000;
-/// A cone's ends are read from the vertices within this share of its length of each end.
-const CONE_END_BAND: f32 = 0.05;
+/// A cone's ends are read from the vertices within this share of its length of each end. A
+/// tenth fits as well as a twentieth in every support style across the 158 round-trip and
+/// benchmark models, with 4% fewer joints per support (16% on
+/// Lychee zigzag webs, whose tips are separate cones).
+const CONE_END_BAND: f32 = 0.1;
 /// A cone tapers: its narrow end is at most this share of its wide end.
 const CONE_TAPER: f32 = 0.85;
 /// Vertices lie this close to a cone's wall, plus a share of its wide radius.
@@ -289,6 +305,12 @@ const CONE_TOLERANCE_MM: f32 = 0.02;
 const CONE_TOLERANCE_RATIO: f32 = 0.05;
 /// A longer taper is not a tip cone (a whole support modelled as one long cone).
 const MAX_CONE_TIP_MM: f32 = 20.0;
+
+/// The shortest brace or strut of `diameter`, and how far its ends are looked for along the
+/// shafts it meets: thin braces packed close in a lattice are shorter than thick ones.
+fn min_brace_mm(diameter: f32) -> f32 {
+    scaled(diameter, MIN_BRACE_RATIO, MIN_BRACE_MIN_MM)
+}
 
 /// `feature * ratio`, and at least `floor`: a tolerance that grows with a measured size of the
 /// support (its shaft, tip or brace) past the size it was tuned on.
@@ -580,7 +602,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 17;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 18;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -1882,12 +1904,15 @@ impl Graph {
                 for (j, b) in ends.iter().enumerate().skip(i + 1) {
                     if a.same_host(b)
                         || (on_kickstands && a.kickstand.is_none() && b.kickstand.is_none())
-                        || (b.point - a.point).length() < MIN_BRACE_MM
+                        || (b.point - a.point).length() < MIN_BRACE_MIN_MM
                         || a.point.z.min(b.point.z) < ROOT_TOP_MM
                     {
                         continue;
                     }
                     let Some(diameter_mm) = self.brace_along(piece, a.point, b.point) else { continue };
+                    if (b.point - a.point).length() < min_brace_mm(diameter_mm) {
+                        continue;
+                    }
                     match self.crossing(piece, i, j, diameter_mm) {
                         Some([(p, q, d), (r, s, e)]) => {
                             found.push((i, j, Some((p, q)), d));
@@ -1918,7 +1943,7 @@ impl Graph {
                 // A line fitted along one brace of an X would take in the other where they cross.
                 let (lower, upper) = match crossed {
                     Some(_) => (lower, upper),
-                    None => self.refit_brace(&piece.blobs, lower, upper, shafts, shaft_hosts),
+                    None => self.refit_brace(&piece.blobs, lower, upper, diameter_mm, shafts, shaft_hosts),
                 };
                 if lower.point.z < ROOT_TOP_MM {
                     continue;
@@ -1979,10 +2004,12 @@ impl Graph {
         piece: &[u32],
         lower: BraceEnd,
         upper: BraceEnd,
+        diameter_mm: f32,
         shafts: &[Shaft],
         shaft_hosts: &[(Host, bool)],
     ) -> (BraceEnd, BraceEnd) {
-        let Some((mean, direction)) = self.fit_line(piece, lower.point, upper.point, MIN_BRACE_MM / 2.0) else {
+        let reach = min_brace_mm(diameter_mm);
+        let Some((mean, direction)) = self.fit_line(piece, lower.point, upper.point, reach / 2.0) else {
             return (lower, upper);
         };
         let on_line = |p: Vec3| mean + direction * (p - mean).dot(direction);
@@ -1993,7 +2020,7 @@ impl Graph {
                 .zip(shaft_hosts)
                 .filter(|&(_, &(h, knotted))| knotted && h == host)
                 .map(|(&(a, b, _), _)| on_line(closest_to_line(a, b, mean, direction)))
-                .filter(|p| (*p - end.point).length() <= MIN_BRACE_MM)
+                .filter(|p| (*p - end.point).length() <= reach)
                 .min_by(|p, q| (*p - end.point).length_sq().total_cmp(&(*q - end.point).length_sq()));
             BraceEnd { point: crossing.unwrap_or_else(|| on_line(end.point)), ..end }
         };
@@ -2184,7 +2211,7 @@ impl Graph {
                         starts.flat_map(|start| tops.iter().map(move |&top| (start, top))).find_map(|(start, top)| {
                             let diameter_mm = self.leg_along(piece, start, top)?;
                             let end = BraceEnd { point: top, ..mean };
-                            if self.runs_through(piece, hosts, start, end) {
+                            if self.runs_through(piece, hosts, start, end, diameter_mm) {
                                 return None;
                             }
                             let column = column.as_ref().filter(|_| start != *foot).map(|c| c.top);
@@ -2193,7 +2220,7 @@ impl Graph {
                             // under can hide that it runs on through another support.
                             let bottom = leg.joints.last().copied().unwrap_or(leg.foot);
                             let end = BraceEnd { point: leg.knot, ..end };
-                            (!self.runs_through(piece, hosts, bottom, end)).then_some(leg)
+                            (!self.runs_through(piece, hosts, bottom, end, diameter_mm)).then_some(leg)
                         });
                     found.extend(leg.map(|k| {
                         let top = k.joints.last().map(|j| j.z);
@@ -2410,7 +2437,8 @@ impl Graph {
     /// Whether the strut from `start` up to `end` runs through the shaft of another support the
     /// piece touches, with the piece covering the way to it: then it is a shorter strut from
     /// that support, and a brace runs on in line with it.
-    fn runs_through(&self, piece: &Piece, hosts: &[HostLine], start: Vec3, end: BraceEnd) -> bool {
+    fn runs_through(&self, piece: &Piece, hosts: &[HostLine], start: Vec3, end: BraceEnd, diameter_mm: f32) -> bool {
+        let shortest = min_brace_mm(diameter_mm);
         let direction = (end.point - start).normalized();
         let mut others: Vec<usize> = piece.ends.iter().map(|e| e.support).filter(|&s| s != end.support).collect();
         others.sort_unstable();
@@ -2420,8 +2448,8 @@ impl Graph {
                 let at = closest_to_line(w[0], w[1], start, direction);
                 at.z >= ROOT_TOP_MM + THROUGH_ROOT_MM
                     && distance_to_segment(at, start, end.point) < BRACE_THROUGH_MM
-                    && (at - start).length() >= MIN_BRACE_MM
-                    && (at - end.point).length() >= MIN_BRACE_MM
+                    && (at - start).length() >= shortest
+                    && (at - end.point).length() >= shortest
                     && self.brace_along(piece, start, at).is_some()
             })
         })
@@ -2457,7 +2485,7 @@ impl Graph {
         let (knot, near) = line
             .windows(2)
             .map(|w| (closest_to_line(w[0], w[1], origin, direction), w))
-            .filter(|(at, _)| (*at - top.point).length() <= MIN_BRACE_MM)
+            .filter(|(at, _)| (*at - top.point).length() <= min_brace_mm(diameter_mm))
             .min_by(|(a, _), (b, _)| {
                 let miss = |p: Vec3| (p - along(p.z)).length();
                 miss(*a).total_cmp(&miss(*b))
@@ -3318,7 +3346,9 @@ mod tests {
         let piece = tube(&profile.map(|(s, r)| (at(s), r)));
         let cone = fit_cone(&piece, &(0..piece.len() as u32).collect::<Vec<_>>()).expect("a cone");
         assert!(close(cone.narrow, at(0.011), 0.02) && close(cone.wide, at(1.332), 0.05), "{cone:?}");
-        assert!((cone.narrow_radius - 0.221).abs() < 0.01 && (cone.wide_radius - 0.749).abs() < 0.01, "{cone:?}");
+        // The narrow end is read from the rings within the end band of the rounded foot.
+        assert!((0.21..=0.28).contains(&cone.narrow_radius), "{cone:?}");
+        assert!((cone.wide_radius - 0.749).abs() < 0.01, "{cone:?}");
     }
 
     /// A graph of round blobs `(x, layer, radius)` on 0.1 mm layers, linked layer to layer
@@ -3674,6 +3704,31 @@ mod tests {
         let brace = &layout.braces[0];
         assert!(close(brace.lower.point, Vec3::new(0.0, 0.0, 4.8), 0.4), "{brace:?}");
         assert!(close(brace.upper.point, Vec3::new(3.0, 0.0, 6.2), 0.4), "{brace:?}");
+    }
+
+    #[test]
+    fn shortest_brace_scales_with_its_diameter() {
+        // Thin lattice braces are short; thick ones keep a minimum near the old fixed 2 mm.
+        assert_eq!(min_brace_mm(0.6), MIN_BRACE_MIN_MM);
+        assert!((min_brace_mm(1.2) - 1.8).abs() < 1e-5);
+        assert!((min_brace_mm(2.0) - 3.0).abs() < 1e-5);
+
+        // Two thin posts 1.7 mm apart with a thin level bar between them: a brace, though
+        // shorter than a thick brace could be.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = Vec::new();
+        for x in [0.0, 1.7] {
+            supports.extend(frustum(Vec3::new(x, 0.0, 10.2), Vec3::new(x, 0.0, 8.0), 0.1, 0.3));
+            supports.extend(frustum(Vec3::new(x, 0.0, 8.0), Vec3::new(x, 0.0, 0.0), 0.3, 0.3));
+        }
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 5.0), Vec3::new(1.7, 0.0, 5.0), 0.25, 0.25));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 2);
+        assert_eq!(layout.braces.len(), 1, "{:?}", layout.braces);
+        let brace = &layout.braces[0];
+        assert_ne!(brace.lower.support, brace.upper.support);
+        assert!(brace.diameter_mm < 1.0, "{}", brace.diameter_mm);
     }
 
     #[test]
