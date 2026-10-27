@@ -80,9 +80,77 @@ jobs:
           releaseName: Release ${{ github.ref_name }}
           releaseDraft: true
 
+      # The exe embeds the frontend and has no resources or sidecars, so it runs on its own.
+      - name: Package Windows portable zip
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop-tauri/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $release = "target/${{ matrix.rust-target }}/release"
+          $staging = "$env:RUNNER_TEMP/portable"
+          New-Item -ItemType Directory -Force -Path $staging, "$release/bundle/portable" | Out-Null
+          # Cargo names the exe after the package; the Tauri CLI may rename it after the product.
+          $exe = @("$release/findamodel.exe", "$release/findamodel-desktop.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "No findamodel exe in $release" }
+          Copy-Item $exe "$staging/findamodel.exe"
+          Compress-Archive -Path "$staging/*" -DestinationPath "$release/bundle/portable/findamodel_${version}_x64-portable.zip" -Force
+
+      - name: Attach portable zip to the tagged release
+        if: matrix.platform == 'windows-latest' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" (Get-ChildItem "target/${{ matrix.rust-target }}/release/bundle/portable/*.zip").FullName --clobber
+
       - name: Upload desktop installers
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.artifact }}
           path: target/${{ matrix.rust-target }}/release/bundle/
           if-no-files-found: error
+
+  # Replaces the rolling "latest" pre-release with this commit's installers, once every
+  # platform has built, so the release never holds a mix of builds.
+  publish-latest:
+    if: github.ref == 'refs/heads/main'
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: desktop-latest-release
+      cancel-in-progress: false
+
+    steps:
+      - name: Download desktop installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: bundles
+
+      - name: Replace the latest pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A newer push may already have published; never replace its build with an older one.
+          head=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "main has moved on to $head; leaving the latest pre-release alone."
+            exit 0
+          fi
+
+          mapfile -t files < <(find bundles -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
+            -o -name '*-setup.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*-portable.zip' \) | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No installers found." >&2
+            exit 1
+          fi
+          printf 'Publishing %s\n' "${files[@]}"
+
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest "${files[@]}" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Latest (main)" \
+            --notes "Desktop builds of the latest commit on main ($GITHUB_SHA). Replaced on every push to main."
