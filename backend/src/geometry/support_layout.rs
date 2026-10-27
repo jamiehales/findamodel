@@ -49,6 +49,16 @@
 //! supports; so does a post standing free beside traced supports it is only braced to. A post's
 //! column carries on past junctions a traced support's walk passed through.
 //!
+//! Each tuned value below says what shape it handles, which support styles rely on it (the
+//! groups of `docs/support-styles.md`; "all" when they do not differ) and the data behind it.
+//! The data comes from the heuristics audit, which nudged every value 25% either way over the
+//! DragonFruit round trip (recall and precision of the rebuilt supports against the originals at
+//! 0.1 and 0.3 mm) and the guard sets. Load-bearing: a nudge moves the fit by 0.0005 or more.
+//! Fragile: a nudge flips a model in or out of the guard, or costs the fit 0.002 or more. No
+//! effect: layouts change but the fit moves less than that, or nothing changes. A safety limit
+//! only binds on shapes outside the corpus. Values retuned in the audit give the old value and
+//! why it moved.
+//!
 //! Coordinates are Z-up millimetres with the plate at Z = 0.
 
 use std::cell::Cell;
@@ -58,252 +68,352 @@ use rustc_hash::FxHashMap;
 
 use super::{MIN_FACE_TILT, Triangle, Vec3};
 
-/// Slice spacing; coarser when the supports are too tall for [`MAX_LAYERS`].
+/// Slice spacing; coarser when the supports are too tall for [`MAX_LAYERS`]. Styles: all. Sweep:
+/// fragile. It is both the resolution and a guard input: 0.075 keeps an Engin3d fake (625a295a) and
+/// takes 31% longer; 0.133 costs precision 0.0015 at 0.3 mm and BS Sculpt's 630a133f 0.13 recall.
 const LAYER_MM: f32 = 0.1;
+/// Safety limit on cost: taller supports are sliced coarser.
 const MAX_LAYERS: usize = 4_000;
-/// Layers sliced together on one thread.
+/// Layers sliced together on one thread. Threading only: no effect on any result.
 const LAYERS_PER_BAND: usize = 32;
-/// Cut points closer than this are one point: neighbouring triangles cut a shared edge at the
-/// same place, which is what joins their segments into one outline.
+/// Cut points closer than this are one point: neighbouring triangles cut a shared edge at the same
+/// place, which is what joins their segments into one outline. A numeric tolerance.
 const OUTLINE_SNAP_MM: f32 = 0.0005;
 /// Directions a cross-section's width is measured across, every 5 degrees: a slanted shaft's
-/// elliptical slice then reads within about 1.5% of its diameter up to a 75 degree lean.
+/// elliptical slice then reads within about 1.5% of its diameter up to a 75 degree lean. Styles:
+/// all. Sweep: no effect (27 or 48 directions move the round trip under 0.0005).
 const WIDTH_DIRECTIONS: usize = 36;
-/// Grid cell for blob containment and layer-to-layer overlap lookups.
+/// Grid cell for blob containment and layer-to-layer overlap lookups. A lookup grid: no effect on
+/// any result.
 const BLOB_CELL_MM: f32 = 1.0;
-/// Blobs in neighbouring layers whose boxes come this close are linked.
+/// Blobs in neighbouring layers whose boxes come this close are linked, so a steeply leaning
+/// shaft's slices stay one shaft. Styles: all. Sweep: no effect (25% either way moves the round
+/// trip under 0.001).
 const LINK_MARGIN_MM: f32 = 0.05;
-/// Grid cell for nearest-surface lookups on the model.
+/// Grid cell for nearest-surface lookups on the model. A lookup grid: no effect on any result.
 const SURFACE_CELL_MM: f32 = 1.0;
-/// A blob top within this distance of the model surface is a contact tip, and a cone shell is
-/// its tip when the cone's narrow end is this close to the contact.
+/// A blob top within this distance of the model surface is a contact tip, and a cone shell is its
+/// tip when the cone's narrow end is this close to the contact. Styles: all. Sweep: no effect (both
+/// uses, measured apart before they were merged).
 const CONTACT_MAX_MM: f32 = 1.0;
 /// A blob top inside the model within this distance of its surface is a contact tip too: some
-/// exports end a tip in a ball buried in the model.
+/// exports end a tip in a ball buried in the model. Styles: all. Sweep: no effect.
 const BURIED_CONTACT_MAX_MM: f32 = 2.5;
-/// How far from the shaft the model surface is searched for where the tip enters it: as deep as
-/// a buried tip reaches.
+/// How far from the shaft the model surface is searched for where the tip enters it: as deep as a
+/// buried tip reaches.
 const ENTRY_SEARCH_MM: f32 = BURIED_CONTACT_MAX_MM;
-/// A blob wider than `width * WIDEN_RATIO + WIDEN_SLACK_MM` of the shaft being walked is a
-/// raft, brace or crossing: walked through, but neither a shaft point nor a branch point.
+/// A blob wider than `width * WIDEN_RATIO + WIDEN_SLACK_MM` of the shaft being walked is a raft,
+/// brace or crossing: walked through, but neither a shaft point nor a branch point. Styles: all,
+/// most on rafts and the lattices. Sweep: no effect (ratio and slack each).
 const WIDEN_RATIO: f32 = 1.5;
+/// See [`WIDEN_RATIO`]: the slack keeps the test from binding on the thinnest tips.
 const WIDEN_SLACK_MM: f32 = 0.25;
-/// A fork blob wider than `width * MERGED_RATIO + MERGED_SLACK_MM` of the shaft the walk
-/// follows is that shaft merged with a brace or crossing bar beside it, and so is a slice that
-/// much wider than a post's own.
+/// A fork blob wider than `width * MERGED_RATIO + MERGED_SLACK_MM` of the shaft the walk follows is
+/// that shaft merged with a brace or crossing bar beside it, and so is a slice that much wider than
+/// a post's own. Styles: the lattices and zigzag webs, hollow-struts (rungs). Sweep: no effect
+/// (ratio and slack each).
 const MERGED_RATIO: f32 = 1.25;
+/// See [`MERGED_RATIO`].
 const MERGED_SLACK_MM: f32 = 0.05;
 /// A slice no wider than `width * SHAFT_ALONE_RATIO + SHAFT_ALONE_SLACK_MM` is the shaft of that
 /// width on its own. On a shaft the walk is following, a wider one is a joint ball, or the shaft
-/// merged with a brace or crossing bar: a shaft point only when centred on the shaft. A shaft
-/// blob wider than that around the median of those within `LOCAL_WIDTH_MM` of its height is
-/// left out of the shaft's line, and a run of skipped slices keeps one width within the same
-/// tolerance either way.
+/// merged with a brace or crossing bar: a shaft point only when centred on the shaft. A shaft blob
+/// wider than that around the median of those within `LOCAL_WIDTH_MM` of its height is left out of
+/// the shaft's line, and a run of skipped slices keeps one width within the same tolerance either
+/// way. Styles: all. One tolerance since the audit merged three (1.1 with slack 0.05 or 0.03, and
+/// 0.1 with 0.03 for runs): over the 139-model corpus recall and precision moved under 0.0005.
 const SHAFT_ALONE_RATIO: f32 = 1.075;
+/// See [`SHAFT_ALONE_RATIO`].
 const SHAFT_ALONE_SLACK_MM: f32 = 0.04;
-/// How quickly the walked shaft width follows the blobs it passes.
+/// How quickly the walked shaft width follows the blobs it passes. Styles: all. Sweep: no effect.
 const WIDTH_SMOOTHING: f32 = 0.25;
-/// The walked shaft width grows by at most this much per mm walked: enough to follow a
-/// widening tip, too little to follow a brace peeling off the shaft (which widens the blob
-/// a little each layer).
+/// The walked shaft width grows by at most this much per mm walked: enough to follow a widening
+/// tip, too little to follow a brace peeling off the shaft (which widens the blob a little each
+/// layer). Styles: all. Sweep: no effect on the fit (0.2 matches 30 more tips but costs 0.0003).
 const MAX_WIDTH_GROWTH: f32 = 0.15;
-/// A blob whose centre is further than `DRIFT_MM + width * DRIFT_RATIO` from where the shaft
-/// is heading is a brace merging into the shaft, so it is not a shaft point either. A slice of a
+/// A blob whose centre is further than `DRIFT_MM + width * DRIFT_RATIO` from where the shaft is
+/// heading is a brace merging into the shaft, so it is not a shaft point either. A slice of a
 /// column rising from a kickstand's foot (a post) is the post on its own when its middle lies
-/// within `DRIFT_MM` of the post's centre line.
+/// within `DRIFT_MM` of the post's centre line. Styles: all, most the lattices and zigzag webs.
+/// Retuned in the audit from 0.1 and 0.3: a merging brace is caught sooner, recall and precision at
+/// 0.1 mm up 0.004 over the corpus, 0.3 mm flat (Adament Arsenal's 70b02245 lost 0.05 recall at a
+/// ratio of 0.225).
 const DRIFT_MM: f32 = 0.075;
+/// See [`DRIFT_MM`].
 const DRIFT_RATIO: f32 = 0.15;
-/// Drift is measured from the shaft as it was this far back, so a blob creeping sideways a
-/// little each layer cannot drag the measure along with it.
+/// Drift is measured from the shaft as it was this far back, so a blob creeping sideways a little
+/// each layer cannot drag the measure along with it. Styles: all. Sweep: no effect.
 const DRIFT_LAG_MM: f32 = 0.5;
-/// After this much height of skipped blobs narrower than [`MAX_RESET_WIDTH_MM`], the shaft
-/// really is thicker than its tip or really does bend, so the walk takes the blob as is.
+/// After this much height of skipped blobs narrower than [`MAX_RESET_WIDTH_MM`], the shaft really
+/// is thicker than its tip or really does bend, so the walk takes the blob as is. Styles: the
+/// lychee groups (long leaning tips). Sweep: load-bearing (2.0 costs recall 0.002 at 0.3 mm).
+/// Lychee zigzag webs do best at 2.0 (14% fewer joints there), but it cuts new pieces into the
+/// model on Eastman's ef71a8ec and Mezgike's ec811c80; as a multiple of the shaft width, Lychee
+/// trees and Eastman pulled opposite ways.
 const SKIP_RESET_MM: f32 = 1.5;
+/// See [`SKIP_RESET_MM`]: wider blobs are rafts or junctions, never the shaft (a half-width).
+/// Sweep: no effect.
 const MAX_RESET_WIDTH_MM: f32 = 2.0;
-/// A run of skipped blobs this tall that keep one width and one step from slice to slice is a
-/// shaft (below a leaning tip, or past a bend): the walk picks it up from where the run began
-/// and steers by its lean until it has come far enough along it to measure its own direction.
-/// The run's slices keep within [`SLOPE_TOLERANCE`] of the line its first slices set, and their
-/// widths within [`SHAFT_ALONE_RATIO`] and [`SHAFT_ALONE_SLACK_MM`] of its first slice's.
+/// A run of skipped blobs this tall that keep one width and one step from slice to slice is a shaft
+/// (below a leaning tip, or past a bend): the walk picks it up from where the run began and steers
+/// by its lean until it has come far enough along it to measure its own direction. The run's slices
+/// keep within [`SLOPE_TOLERANCE`] of the line its first slices set, and their widths within
+/// [`SHAFT_ALONE_RATIO`] and [`SHAFT_ALONE_SLACK_MM`] of its first slice's. Styles: the lychee
+/// groups. Sweep: no effect; as a multiple of the shaft width it traded recall for precision.
 const PICKUP_RUN_MM: f32 = 0.6;
-/// A run leans no more than this (horizontal run per unit of height, about 56 degrees).
+/// A run leans no more than this (horizontal run per unit of height, about 56 degrees). Styles: the
+/// lychee groups. Sweep: no effect.
 const MAX_RUN_LEAN: f32 = 1.5;
 /// A run of at least this many skipped slices, carried on by the slice where the walk gives up
-/// skipping (see [`SKIP_RESET_MM`]), is the shaft.
+/// skipping (see [`SKIP_RESET_MM`]), is the shaft. Styles: the lychee groups. Sweep: no effect.
 const RESET_RUN_SLICES: usize = 3;
-/// A shaft whose course leans at least this much (horizontal run per unit of height) keeps to
-/// its own slices past an upright post it touches.
+/// A shaft whose course leans at least this much (horizontal run per unit of height) keeps to its
+/// own slices past an upright post it touches. Styles: lychee-lattice (leaning shafts past cage
+/// posts). Sweep: no effect.
 const MIN_COURSE_LEAN: f32 = 0.15;
-/// Height over which the shaft direction is measured.
+/// Height over which the shaft direction is measured: long enough that one slice's wandering middle
+/// barely turns it, short enough to know a tip's direction soon. Styles: all. Sweep: load-bearing
+/// (0.75 costs 0.0006, 1.33 matches 17 fewer tips); the same in every style.
 const DIRECTION_SPAN_MM: f32 = 1.0;
-/// Where the structure forks going down, each way is followed this far and the most
-/// vertical one taken: a brace leaves the post it hangs from at an angle, and a bent shaft
-/// can point straight at it.
+/// Where the structure forks going down, each way is followed this far and the most vertical one
+/// taken: a brace leaves the post it hangs from at an angle, and a bent shaft can point straight at
+/// it. Styles: all, most the lattices. Sweep: no effect. As a multiple of the way's width it cost
+/// Eastman's 8e6618e3 0.023 recall, and with a 1.5 mm floor kept two Engin3d fakes.
 const FORK_LOOKAHEAD_MM: f32 = 2.0;
-/// The ways followed down from a fork, at each slice those nearest the line straight down.
+/// The ways followed down from a fork, at each slice those nearest the line straight down. A limit
+/// on cost: no effect between 6 and 11.
 const FORK_WAYS: usize = 8;
 /// Two leans (horizontal run per unit of height) within this of each other are alike: ways down
 /// from a fork whose slopes differ by less are told apart by the shaft's direction, and a run of
-/// skipped slices keeps within this of the line its first slices set.
+/// skipped slices keeps within this of the line its first slices set. Styles: all. Sweep:
+/// load-bearing for forks (0.1125 matches 22 fewer tips; 0.2 gains 0.0003, and adds 2.7% joints as
+/// the run tolerance it replaced). Chitubox X lattices would take 0.075 and Lychee lattices 0.3, at
+/// 17% more joints.
 const SLOPE_TOLERANCE: f32 = 0.15;
-/// How far down the shaft the model surface is looked for, from the buried tip top.
+/// How far down the shaft the model surface is looked for, from the buried tip top. A search limit:
+/// no effect.
 const ENTRY_WINDOW_MM: f32 = 5.0;
-/// The tip's socket is looked for within this distance of the contact.
+/// The tip's socket is looked for within this distance of the contact. Styles: all. Sweep: no
+/// effect.
 const TIP_WINDOW_MM: f32 = 4.0;
+/// The shortest tip, from contact to socket. Styles: all. Sweep: no effect. As a multiple of the
+/// tip's width it cost Lychee lattices 0.003 recall.
 const MIN_TIP_LENGTH_MM: f32 = 0.6;
-/// The socket is the first point reaching this fraction of the tip window's widest blob (a
-/// joint ball), or where the tip stops widening: by less than `PLATEAU_GROWTH_RATIO` of that
-/// widest blob over the next `PLATEAU_SPAN_RATIO` of it (a thicker tip's cone widens more over
-/// a longer run), and by no less than the `_MIN_MM` floors. The body fraction is high, so a tip
-/// runs on to nearly its widest slice: across the 158 round-trip and benchmark models, 0.95 fits
-/// as well as 0.85 in every support style, with 4% fewer joints per support (9% on Lychee
-/// zigzag webs).
+/// The socket is the first point reaching this fraction of the tip window's widest blob (a joint
+/// ball), or where the tip stops widening (see [`PLATEAU_GROWTH_RATIO`]). Styles: all, most Lychee
+/// zigzag webs. Sweep: load-bearing (0.8 matches 11 fewer tips). Retuned in the audit from 0.85:
+/// over the 158 round-trip and benchmark models 0.95 fits as well in every style, with 4% fewer
+/// joints per support (9% on Lychee zigzag webs).
 const TIP_BODY_FRACTION: f32 = 0.95;
+/// The tip stops widening where it widens by less than this share of the tip window's widest slice
+/// over the next [`PLATEAU_SPAN_RATIO`] of it: a thicker tip's cone widens more over a longer run.
+/// Styles: all. Was a fixed 0.03 mm over 0.3 mm, which the ratios keep at the corpus median (1.16
+/// mm); no measurable effect on the corpus.
 const PLATEAU_GROWTH_RATIO: f32 = 0.025;
+/// Floor of [`PLATEAU_GROWTH_RATIO`], half the old fixed value.
 const PLATEAU_GROWTH_MIN_MM: f32 = 0.015;
+/// See [`PLATEAU_GROWTH_RATIO`].
 const PLATEAU_SPAN_RATIO: f32 = 0.25;
+/// Floor of [`PLATEAU_SPAN_RATIO`], half the old fixed value.
 const PLATEAU_SPAN_MIN_MM: f32 = 0.15;
-/// A tip may take up this share of its support's length; a strut's two tips share one shaft.
+/// A tip may take up this share of its support's length. Styles: all. Sweep: load-bearing (0.45
+/// costs 0.0006). Lychee lattices would take 0.9, partly because their tips are long.
 const TIP_SHARE: f32 = 0.6;
+/// A strut's two tips share one shaft, so each takes less. Styles: hollow-struts. Sweep: no effect.
 const STRUT_TIP_SHARE: f32 = 0.4;
-/// A tip's narrow end, which is usually buried a little way in the model, is the top slice that
-/// is at least this fraction of the slice below it (narrower top slices cut through an end cap).
-/// The contact is as wide as the tip where it leaves the model, and no narrower than that end.
+/// A tip's narrow end, which is usually buried a little way in the model, is the top slice that is
+/// at least this fraction of the slice below it (narrower top slices cut through an end cap). The
+/// contact is as wide as the tip where it leaves the model, and no narrower than that end. Styles:
+/// all. Sweep: no effect.
 const CAP_WIDTH_FRACTION: f32 = 0.8;
+/// Safety limit: the narrowest contact rebuilt.
 const MIN_CONTACT_DIAMETER_MM: f32 = 0.2;
+/// Safety limit: the widest contact rebuilt.
 const MAX_CONTACT_DIAMETER_MM: f32 = 1.5;
+/// Safety limit: the widest tip body rebuilt.
 const MAX_BODY_DIAMETER_MM: f32 = 3.0;
-/// The thinnest rod rebuilt: a support's shaft, a brace or a post.
+/// Safety limit: the thinnest rod rebuilt (a support's shaft, a brace or a post).
 const MIN_ROD_DIAMETER_MM: f32 = 0.3;
 /// The shaft diameter is this quantile (1/N) of its cross-sections above the root: a shaft keeps
 /// one width, or tapers towards its foot, and the joint balls and merged braces left in only ever
-/// widen a section.
+/// widen a section. Styles: all. Sweep: load-bearing (the median, 2, costs precision 0.008 at 0.1
+/// mm; 4 costs recall 0.004 at 0.3 mm); the same in every style.
 const SHAFT_WIDTH_QUANTILE: usize = 3;
 /// Safety limit: no shaft is rebuilt thicker than this. Real shafts are well under it; it only
 /// binds when a walk reads a wide piece (a slab or a model part taken for a support) as a shaft.
 const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
 /// Bends smaller than this share of the shaft's diameter are dropped from the shaft path, and
-/// always those smaller than `SIMPLIFY_MIN_MM`: a thick shaft's slices wander further off its
-/// line without it bending.
+/// always those smaller than `SIMPLIFY_MIN_MM`: a thick shaft's slices wander further off its line
+/// without it bending. Styles: all. Was a fixed 0.3 mm, kept at the corpus median shaft (1.2 mm);
+/// Eastman's 1.3 to 1.5 mm posts get 12% fewer joints for 0.001 recall at 0.3 mm. A smaller
+/// tolerance fits closer (0.15 mm: recall and precision at 0.1 mm up 0.01) but more than doubles
+/// the joints.
 const SIMPLIFY_RATIO: f32 = 0.25;
+/// Floor of [`SIMPLIFY_RATIO`], the old fixed value: thinner shafts keep no more joints than
+/// before.
 const SIMPLIFY_MIN_MM: f32 = 0.3;
-/// A shaft blob much wider ([`SHAFT_ALONE_RATIO`]) than those within this distance of its
-/// height (their median) is left out of the shaft's line.
+/// A shaft blob much wider ([`SHAFT_ALONE_RATIO`]) than those within this distance of its height
+/// (their median) is left out of the shaft's line. Styles: all. Sweep: no effect, also as a
+/// multiple of the shaft width.
 const LOCAL_WIDTH_MM: f32 = 0.5;
 /// A contact this close to an earlier support's contact is a second top of that tip, unless the
-/// walk from it keeps apart from that support until at least `OWN_SUPPORT_MIN_MM` from the
-/// contact: then it is a support of its own meeting the model at the same place (struts meeting
-/// in pairs at one contact inside a hollowed model, a fan of tip cones running into one joint).
-/// Pins and pegs between model parts reach less.
+/// walk from it keeps apart from that support until at least `OWN_SUPPORT_MIN_MM` from the contact:
+/// then it is a support of its own meeting the model at the same place (struts meeting in pairs at
+/// one contact inside a hollowed model, a fan of tip cones running into one joint). Pins and pegs
+/// between model parts reach less. Styles: hollow-struts, fans. Sweep: no effect (each).
 const DUPLICATE_CONTACT_MM: f32 = 0.5;
+/// See [`DUPLICATE_CONTACT_MM`].
 const OWN_SUPPORT_MIN_MM: f32 = 1.0;
 /// A walk ending within this height of the lowest support layer stands on the plate, when that
 /// layer is itself this close to the plate (Z = 0). Safety limit: supports exported on the plate
-/// start within a slice of it, so this only binds for supports standing clear of the plate (a
-/// model exported raised, or cut off below): their walks end stranded, so they are left out,
-/// with no posts or kickstands.
+/// start within a slice of it, so this only binds for supports standing clear of the plate (a model
+/// exported raised, or cut off below): their walks end stranded, so they are left out, with no
+/// posts or kickstands.
 const PLATE_REACH_MM: f32 = 0.5;
-/// Brace detection: untraced pieces of at least `MIN_BRACE_BLOBS` cross-sections; the places
-/// a piece touches one support group into one end when they are within `BRACE_END_GAP_MM` of
-/// height; a brace is at least `MIN_BRACE_RATIO` times its diameter long, and at least
-/// `MIN_BRACE_MIN_MM` (see [`min_brace_mm`]), and the piece covers at least
-/// `BRACE_COVERAGE` of the line between its ends (the outer `BRACE_END_SKIP` of the line at
-/// each end, where it merges into the supports, is not tested), within `BRACE_MARGIN_MM`.
-/// The shortest brace scales with its diameter: the thin braces of Chitubox X lattices (0.6 to
-/// 0.8 mm) pack 1.5 to 2 mm apart and are lost below a fixed 2 mm, while braces at the corpus
-/// median of 1.2 mm keep a minimum near it (1.8 mm). A ratio of 2.0 lost thick braces (recall
-/// at 0.3 mm down 0.005 on the round-trip subset); a floor of 1.0 matched 1.5 on thin braces
-/// but cost precision on Lychee lattices.
+/// Brace detection: untraced pieces of at least this many cross-sections. Styles: the lattices and
+/// zigzag webs. Sweep: no effect.
 const MIN_BRACE_BLOBS: usize = 3;
+/// The places a piece touches one support group into one brace end when they are within this much
+/// height. Styles: the lattices and zigzag webs. Retuned in the audit from 1.0: two brace ends
+/// close together on one post stay apart (recall at 0.3 mm up 0.002, precision down 0.0006; DM
+/// Stash, Dakka Dakka, Bite the Bullet and Dakka Terrain models up 0.02).
 const BRACE_END_GAP_MM: f32 = 0.75;
+/// A brace is at least this many times its diameter long, and at least `MIN_BRACE_MIN_MM` (see
+/// [`min_brace_mm`]). Styles: the lattices and zigzag webs. Sweep: fragile as a fixed 2 mm (2.67
+/// lost common 2 to 2.7 mm braces, recall at 0.1 mm down 0.013). The thin braces of Chitubox X
+/// lattices (0.6 to 0.8 mm) pack 1.5 to 2 mm apart and were lost below a fixed 2 mm, while braces
+/// at the corpus median of 1.2 mm keep a minimum near it (1.8 mm). A ratio of 2.0 lost thick braces
+/// (recall at 0.3 mm down 0.005 on the round-trip subset).
 const MIN_BRACE_RATIO: f32 = 1.5;
+/// Floor of [`MIN_BRACE_RATIO`]: a floor of 1.0 matched 1.5 on thin braces but cost precision on
+/// Lychee lattices.
 const MIN_BRACE_MIN_MM: f32 = 1.5;
+/// A brace's piece covers at least this share of the line between its ends (leaving out the outer
+/// `BRACE_END_SKIP` at each end, where it merges into the supports), within `BRACE_MARGIN_MM`:
+/// which tells an X or a V from the lines its ends do not run along. Styles: the lattices and
+/// zigzag webs. Sweep: load-bearing, trading recall against precision (0.7: recall at 0.3 mm up
+/// 0.003, precision down 0.007). 0.9 and a margin of 0.075 each did better alone, but together lost
+/// 16% of braces.
 const BRACE_COVERAGE: f32 = 0.8;
+/// See [`BRACE_COVERAGE`]. Sweep: load-bearing (0.2 costs precision 0.005 at 0.1 mm). Lychee zigzag
+/// webs want 0.1125 (0.0016 better), which no size explains.
 const BRACE_END_SKIP: f32 = 0.15;
+/// See [`BRACE_COVERAGE`]: how far a slice's outline may lie from the line. Sweep: load-bearing,
+/// trading recall against precision (0.1125: recall down 0.002, precision up 0.002).
 const BRACE_MARGIN_MM: f32 = 0.15;
+/// The line between a brace's ends is tested every this far. Sweep: no effect.
 const BRACE_SAMPLE_MM: f32 = 0.2;
 /// A brace's end is within this share of the brace's diameter of its shaft, beyond the shaft's
-/// radius, for a knot to hang it there (the end is the middle of where the brace merges into
-/// the shaft, which lies further out on a thicker brace), and always within `KNOT_REACH_MIN_MM`.
+/// radius, for a knot to hang it there (the end is the middle of where the brace merges into the
+/// shaft, which lies further out on a thicker brace), and always within `KNOT_REACH_MIN_MM`.
+/// Styles: the lattices, zigzag webs and hollow-struts' rungs. Was a fixed 0.5 mm (no effect in the
+/// sweep), kept at the corpus median brace (1.2 mm); thick braces keep their knots (116 more
+/// braces, hollow-struts recall up 0.0005).
 const KNOT_REACH_RATIO: f32 = 0.42;
+/// Floor of [`KNOT_REACH_RATIO`], the old fixed value: a floor of 0.25 cost Chitubox X lattices
+/// 0.004 recall.
 const KNOT_REACH_MIN_MM: f32 = 0.5;
-/// Where a piece touches each of two supports in one junction whose lower and upper parts lie
-/// at least `X_JUNCTION_MM` apart, it may be an X of two braces meeting each support one above
-/// the other; it is when the piece's cross-sections have their middles within `X_CENTRE_MM` of
-/// both braces' lines. The parts must also lie as far apart as the piece is thick, which is
-/// what usually decides; this is a safety limit for braces thinner than it, whose junctions
-/// are too short to hold two brace ends.
+/// Where a piece touches each of two supports in one junction whose lower and upper parts lie at
+/// least `X_JUNCTION_MM` apart, it may be an X of two braces meeting each support one above the
+/// other; it is when the piece's cross-sections have their middles within `X_CENTRE_MM` of both
+/// braces' lines. The parts must also lie as far apart as the piece is thick, which is what usually
+/// decides; this is a safety limit for braces thinner than it, whose junctions are too short to
+/// hold two brace ends.
 const X_JUNCTION_MM: f32 = 0.5;
+/// See [`X_JUNCTION_MM`]. Styles: chitubox-xlattice, lychee-lattice. Sweep: no effect.
 const X_CENTRE_MM: f32 = 0.25;
-/// Braces whose ends are this close to an earlier brace's are the same.
+/// Braces whose ends are this close to an earlier brace's are the same. Styles: the lattices and
+/// zigzag webs. Sweep: no effect; sharing one value with [`DUPLICATE_CONTACT_MM`] was worse.
 const DUPLICATE_BRACE_MM: f32 = 1.0;
-/// A brace passing this close to a third support's end, when the piece also braces each of
-/// its ends to that support, runs on through it: the two shorter braces replace it. A
-/// kickstand passing this close to another support's shaft is likewise a shorter kickstand
-/// from that support, with a brace running on in line with it, unless it passes within
-/// `THROUGH_ROOT_MM` of the root top, where it only meets the support's root.
+/// A brace passing this close to a third support's end, when the piece also braces each of its ends
+/// to that support, runs on through it: the two shorter braces replace it. A kickstand passing this
+/// close to another support's shaft is likewise a shorter kickstand from that support, with a brace
+/// running on in line with it, unless it passes within `THROUGH_ROOT_MM` of the root top, where it
+/// only meets the support's root. Styles: the lattices and zigzag webs. Sweep: no effect (each).
 const BRACE_THROUGH_MM: f32 = 0.8;
+/// See [`BRACE_THROUGH_MM`].
 const THROUGH_ROOT_MM: f32 = 1.0;
 /// A brace whose middle third passes through the centre line of a third support's shaft runs
-/// through that support: it is two braces meeting there, or none.
+/// through that support: it is two braces meeting there, or none. Styles: the lattices. Sweep: no
+/// effect.
 const THROUGH_SKIP: f32 = 1.0 / 3.0;
-/// A brace whose middle lies along a traced shaft, within this cosine of its direction, is a
-/// sliver of that shaft rather than a brace.
+/// A brace whose middle lies along a traced shaft, within this cosine of its direction, is a sliver
+/// of that shaft rather than a brace. Styles: the lattices and zigzag webs. Sweep: no effect.
 const BRACE_PARALLEL_COS: f32 = 0.9;
-/// The ends are refitted to a line through the piece's own cross-sections when those spread
-/// along at least this share of the brace (a level bar's slices do not, being one long slice).
-/// A quarter is enough for the fitted line to follow the brace: it fits as well or better than
-/// half in every support style across the 158 round-trip and benchmark models, most on Lychee
-/// zigzag webs and hollow-model struts, whose junctions hide much of each brace.
+/// The ends are refitted to a line through the piece's own cross-sections when those spread along
+/// at least this share of the brace (a level bar's slices do not, being one long slice). Styles:
+/// the lattices, zigzag webs and hollow-struts. Sweep: fragile at 0.5 (0.67 cost precision 0.004 at
+/// 0.3 mm). Retuned in the audit from 0.5: a quarter fits as well or better in every style over the
+/// 158 round-trip and benchmark models, most on Lychee zigzag webs and hollow-model struts, whose
+/// junctions hide much of each brace.
 const BRACE_REFIT_SPREAD: f32 = 0.25;
+/// Safety limit: the thickest brace rebuilt.
 const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
-/// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on
-/// the plate or a raft) and runs up to where the piece touches a support, straight or leaning
-/// off the top of a column rising from that bottom. Its leaning strut is at least
-/// `MIN_KICKSTAND_MM` long and leans between `MIN_KICKSTAND_LEAN` and `MAX_KICKSTAND_LEAN`
-/// (horizontal run per unit of height, about 20 to 63 degrees), and the piece covers it as a
-/// brace's line is covered.
+/// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on the
+/// plate or a raft) and runs up to where the piece touches a support, straight or leaning off the
+/// top of a column rising from that bottom. Its leaning strut is at least `MIN_KICKSTAND_MM` long
+/// and leans between `MIN_KICKSTAND_LEAN` and `MAX_KICKSTAND_LEAN` (horizontal run per unit of
+/// height, about 20 to 63 degrees), and the piece covers it as a brace's line is covered. Styles:
+/// lychee-trees, lychee-lattice, and Eiren's Wednesday in pad12-pillars. Sweep: no effect (each).
 const MIN_KICKSTAND_MM: f32 = 2.0;
+/// See [`MIN_KICKSTAND_MM`].
 const MIN_KICKSTAND_LEAN: f32 = 0.36;
+/// See [`MIN_KICKSTAND_MM`].
 const MAX_KICKSTAND_LEAN: f32 = 2.0;
-/// Where a strut meets its support is looked for every `KNOT_STEP_MM` along the junction.
+/// Where a strut meets its support is looked for every `KNOT_STEP_MM` along the junction. Sweep: no
+/// effect.
 const KNOT_STEP_MM: f32 = 0.5;
-/// A post holds up the traced shaft it runs into at most this far above its top.
+/// A post holds up the traced shaft it runs into at most this far above its top. Styles:
+/// lychee-lattice, lychee-zigzag (posts under fanned tips). Sweep: no effect, also as a multiple of
+/// the post's radius.
 const COLUMN_END_MM: f32 = 1.5;
-/// A column carries on above a junction a traced support's walk passed through when its own
-/// slices go on within this height above where the junction cuts it. Safety limit: junctions are
-/// about as tall as the brace in them, well under this; it stops the search where a column
-/// ends in a junction and nothing of its own carries on.
+/// A column carries on above a junction a traced support's walk passed through when its own slices
+/// go on within this height above where the junction cuts it. Safety limit: junctions are about as
+/// tall as the brace in them, well under this; it stops the search where a column ends in a
+/// junction and nothing of its own carries on.
 const COLUMN_JUNCTION_MM: f32 = 2.0;
+/// DragonFruit's own root size, not a heuristic.
 pub const ROOT_DISK_HEIGHT_MM: f32 = 0.5;
+/// DragonFruit's own root size, not a heuristic.
 pub const ROOT_CONE_HEIGHT_MM: f32 = 1.5;
-/// Where a plate support's shaft leaves its root.
+/// Where a plate support's shaft leaves its root (DragonFruit's root height).
 pub const ROOT_TOP_MM: f32 = ROOT_DISK_HEIGHT_MM + ROOT_CONE_HEIGHT_MM;
-/// Root diameter as a multiple of the shaft diameter, within the min/max.
+/// Root diameter as a multiple of the shaft diameter, within the min/max. Styles: every style
+/// standing on the plate. Sweep: no effect on the fit; the root size only moves how many tips
+/// DragonFruit's build matches (2.25: about 100 more over the corpus, 4.0: 65 fewer).
 const ROOT_DIAMETER_RATIO: f32 = 3.0;
+/// See [`ROOT_DIAMETER_RATIO`].
 const MIN_ROOT_DIAMETER_MM: f32 = 2.0;
+/// See [`ROOT_DIAMETER_RATIO`].
 const MAX_ROOT_DIAMETER_MM: f32 = 6.0;
-/// The socket must sit at least this far above the root top for a shaft to fit.
+/// The socket must sit at least this far above the root top for a shaft to fit. Sweep: no effect.
 const MIN_SHAFT_LENGTH_MM: f32 = 0.2;
 
+/// No blob or support: a marker, not a heuristic.
 const NONE: u32 = u32::MAX;
 
-/// Support vertices this close are one vertex when joining triangles into shells.
+/// Support vertices this close are one vertex when joining triangles into shells. A numeric
+/// tolerance.
 const SHELL_WELD_MM: f32 = 0.001;
 /// Shells with more triangles than this are never a single cone. A safety limit on cost: such
 /// shells (a whole unioned support tree) fail the cone fit anyway, and fitting them is skipped.
 const MAX_CONE_TRIANGLES: usize = 2_000;
-/// A cone's ends are read from the vertices within this share of its length of each end. A
-/// tenth fits as well as a twentieth in every support style across the 158 round-trip and
-/// benchmark models, with 4% fewer joints per support (16% on
-/// Lychee zigzag webs, whose tips are separate cones).
+/// A cone's ends are read from the vertices within this share of its length of each end. Styles:
+/// chitubox-trees, lychee-zigzag and hollow-struts (tips that are cones of their own). Sweep:
+/// fragile at 0.05 (0.0375 read too few vertices, recall and precision at 0.1 mm down 0.01).
+/// Retuned in the audit from 0.05: a tenth fits as well in every style over the 158 round-trip and
+/// benchmark models, with 4% fewer joints per support (16% on Lychee zigzag webs).
 const CONE_END_BAND: f32 = 0.1;
-/// A cone tapers: its narrow end is at most this share of its wide end.
+/// A cone tapers: its narrow end is at most this share of its wide end. Sweep: no effect.
 const CONE_TAPER: f32 = 0.85;
-/// Vertices lie this close to a cone's wall, plus a share of its wide radius.
+/// Vertices lie this close to a cone's wall, plus a share of its wide radius. Sweep: no effect
+/// (each).
 const CONE_TOLERANCE_MM: f32 = 0.02;
+/// See [`CONE_TOLERANCE_MM`].
 const CONE_TOLERANCE_RATIO: f32 = 0.05;
-/// A longer taper is not a tip cone (a whole support modelled as one long cone).
+/// A longer taper is not a tip cone (a whole support modelled as one long cone). Retuned in the
+/// audit from 10: seven corpus models have tip cones longer than 10 mm (recall and precision 0.002
+/// better).
 const MAX_CONE_TIP_MM: f32 = 20.0;
 
 /// The shortest brace or strut of `diameter`, and how far its ends are looked for along the
@@ -318,28 +428,34 @@ fn scaled(feature: f32, ratio: f32, floor: f32) -> f32 {
     (feature * ratio).max(floor)
 }
 
-/// The rebuilt supports account for a support's surface within this distance of their own.
+/// Coverage guard: the rebuilt supports account for a support's surface within this distance of
+/// their own. Styles: the guard, which rejects the unsupported group. Sweep: no effect.
 const COVERAGE_MARGIN_MM: f32 = 0.3;
-/// Support surface is counted from this far above the raft (or the root tops, if higher);
-/// rafts and roots are not rebuilt as pieces.
+/// Support surface is counted from this far above the raft (or the root tops, if higher); rafts and
+/// roots are not rebuilt as pieces. Sweep: no effect.
 const COVERAGE_FLOOR_MM: f32 = 0.5;
-/// Support triangles are sampled about this far apart.
+/// Support triangles are sampled about this far apart, at most [`MAX_COVERAGE_SAMPLES`] each.
+/// Sweep: no effect (each).
 const COVERAGE_SAMPLE_MM: f32 = 0.25;
+/// See [`COVERAGE_SAMPLE_MM`].
 const MAX_COVERAGE_SAMPLES: usize = 16;
+/// A lookup grid: no effect on any result.
 const COVERAGE_CELL_MM: f32 = 2.0;
-/// Real supports rebuild into supports accounting for at least this share of their surface
-/// (82% or more on the sample pre-supported models); separate parts of a model without
-/// supports (rivets, straps, panels) mostly rebuild into little (18% at the median).
+/// Real supports rebuild into supports accounting for at least this share of their surface (82% or
+/// more on the sample pre-supported models); separate parts of a model without supports (rivets,
+/// straps, panels) mostly rebuild into little (18% at the median). Guard threshold with a wide
+/// margin: nothing flips from 0.6 to 0.88.
 const MIN_SUPPORT_COVERAGE: f32 = 0.7;
-/// Supports shorter than this (from the tip's contact to where the shaft starts) are not
-/// counted towards holding the model up: rivets and pegs rebuild into stubs.
+/// Supports shorter than this (from the tip's contact to where the shaft starts) are not counted
+/// towards holding the model up: rivets and pegs rebuild into stubs. Guard threshold with a wide
+/// margin: nothing flips from 0.75 to 2.5.
 const HOLDING_MIN_LENGTH_MM: f32 = 1.0;
-/// Real supports hold the model up: at least this share of the supports (counting those at
-/// least [`HOLDING_MIN_LENGTH_MM`] long) have tips that do (56% or more on the sample
-/// pre-supported models, where the rest mostly lean on side faces). Separate parts of a model
-/// without supports that rebuild like supports stick out of side faces (pegs, spikes), sit
-/// inside the model (pins, panels) or rest against a side face beside the part they meet (a
-/// casing under its bullet), so at most 6% of theirs do.
+/// Real supports hold the model up: at least this share of the supports (counting those at least
+/// [`HOLDING_MIN_LENGTH_MM`] long) have tips that do (56% or more on the sample pre-supported
+/// models, where the rest mostly lean on side faces). Separate parts of a model without supports
+/// that rebuild like supports stick out of side faces (pegs, spikes), sit inside the model (pins,
+/// panels) or rest against a side face beside the part they meet (a casing under its bullet), so at
+/// most 6% of theirs do. Guard threshold with a wide margin: nothing flips from 0.05 to 0.55.
 const MIN_HOLDING_SHARE: f32 = 0.25;
 
 /// The tip where a support touches the model.
@@ -3346,8 +3462,9 @@ mod tests {
         let piece = tube(&profile.map(|(s, r)| (at(s), r)));
         let cone = fit_cone(&piece, &(0..piece.len() as u32).collect::<Vec<_>>()).expect("a cone");
         assert!(close(cone.narrow, at(0.011), 0.02) && close(cone.wide, at(1.332), 0.05), "{cone:?}");
-        // The narrow end is read from the rings within the end band of the rounded foot.
-        assert!((0.21..=0.28).contains(&cone.narrow_radius), "{cone:?}");
+        // The narrow end is the widest ring within a tenth of the cone's length of its end: the
+        // ring 0.165 mm up the rounded foot, not the foot's tip.
+        assert!((cone.narrow_radius - 0.268).abs() < 0.01, "{cone:?}");
         assert!((cone.wide_radius - 0.749).abs() < 0.01, "{cone:?}");
     }
 
@@ -3481,6 +3598,39 @@ mod tests {
         let mut blobs: Vec<(f32, f32, u32, f32)> =
             (0..=60).map(|layer| (1.2 - 0.03 * (60 - layer) as f32, 0.3, layer, 0.33)).collect();
         blobs.extend((0..=45).map(|layer| (0.0, 0.0, layer, 0.33)));
+        let graph = hand_graph_xy(&blobs);
+        let top = graph.blobs.iter().position(|b| b.layer == 60).expect("the shaft's top");
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
+
+        assert!(matches!(walk.end, WalkEnd::Plate));
+        let ys: Vec<f32> = walk.visited.iter().map(|&i| graph.blobs[i as usize].y).collect();
+        assert!(ys.iter().all(|&y| y > 0.2), "{ys:?}");
+    }
+
+    #[test]
+    fn shaft_direction_is_measured_over_a_millimetre() {
+        // 1.5 mm of a shaft leaning 0.3 mm per mm, its last slice 0.03 mm off its line (a
+        // slice's middle wanders that much). Measured over the last millimetre, the heading 1 mm
+        // further down is within 0.075 mm of the line; over half a millimetre that slice would
+        // turn it too far, and over two the shaft is not yet long enough to give a heading.
+        let blobs: Vec<(f32, f32, u32, f32)> = (45..=60)
+            .map(|layer| (0.03 * (60 - layer) as f32, if layer == 45 { 0.03 } else { 0.0 }, layer, 0.3))
+            .collect();
+        let graph = hand_graph_xy(&blobs);
+        let nodes: Vec<u32> = (0..graph.blobs.len() as u32).rev().collect();
+        let (x, y) = graph.heading(&nodes, 3.5).expect("1.5 mm of shaft gives its heading");
+        assert!((x - 0.75).hypot(y) < 0.075, "{x} {y}");
+    }
+
+    #[test]
+    fn walk_keeps_to_its_own_gently_leaning_shaft_past_an_upright_post() {
+        // A shaft leaning 0.1 mm per mm (x falling as it goes down, at y = 0.3) over an upright
+        // post (x = y = 0) whose slices it overlaps all the way down. The post is the more upright
+        // way at each fork, but the shaft's own way is nearly as upright and lies where the shaft
+        // is heading, so the walk stays on it.
+        let mut blobs: Vec<(f32, f32, u32, f32)> =
+            (0..=60).map(|layer| (0.4 - 0.01 * (60 - layer) as f32, 0.3, layer, 0.33)).collect();
+        blobs.extend((0..=50).map(|layer| (0.0, 0.0, layer, 0.33)));
         let graph = hand_graph_xy(&blobs);
         let top = graph.blobs.iter().position(|b| b.layer == 60).expect("the shaft's top");
         let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
@@ -3729,6 +3879,38 @@ mod tests {
         let brace = &layout.braces[0];
         assert_ne!(brace.lower.support, brace.upper.support);
         assert!(brace.diameter_mm < 1.0, "{}", brace.diameter_mm);
+    }
+
+    #[test]
+    fn brace_bowed_off_its_line_by_less_than_its_width_is_a_brace() {
+        // A diagonal brace between the posts whose middle bows 0.5 mm sideways, so its slices
+        // stand up to that far off the straight line between its ends: still one brace.
+        let (a, m, b) = (Vec3::new(0.0, 0.0, 6.0), Vec3::new(1.5, 0.5, 4.5), Vec3::new(3.0, 0.0, 3.0));
+        let mut bowed = frustum(a, m, 0.3, 0.3);
+        bowed.extend(frustum(m, b, 0.3, 0.3));
+        let layout = two_posts(&bowed);
+
+        assert_eq!(layout.braces.len(), 1, "{:?}", layout.braces);
+        let brace = &layout.braces[0];
+        assert_ne!(brace.lower.support, brace.upper.support);
+    }
+
+    #[test]
+    fn brace_line_is_refitted_from_its_slices_when_a_quarter_of_it_shows() {
+        // A 45 degree brace from (0, 6) down to (3, 3) of which only the middle 30% shows between
+        // the junctions hiding its ends (as on unioned zigzag webs and hollow-model struts): the
+        // slices still give its line. A single slice (a level bar's one long slice) does not.
+        let slices: Vec<(f32, f32, u32, f32)> =
+            (41..=49).map(|layer| (6.0 - layer as f32 * 0.1, 0.0, layer, 0.3)).collect();
+        let graph = hand_graph_xy(&slices);
+        let piece: Vec<u32> = (0..graph.blobs.len() as u32).collect();
+        let (p, q) = (Vec3::new(0.0, 0.0, 6.0), Vec3::new(3.0, 0.0, 3.0));
+        let (mean, direction) = graph.fit_line(&piece, p, q, 0.5).expect("a line through the slices");
+        assert!(distance_to_segment(mean, p, q) < 0.01, "{mean}");
+        assert!(direction.dot((q - p).normalized()).abs() > 0.999, "{direction}");
+
+        let one = hand_graph_xy(&[(1.5, 0.0, 45, 1.5)]);
+        assert!(one.fit_line(&[0], p, q, 0.5).is_none());
     }
 
     #[test]
@@ -4407,6 +4589,16 @@ mod tests {
         assert_eq!(struts(&[(side, true)]).holding_share(), Some(0.0));
         assert_eq!(struts(&[(up, false)]).holding_share(), Some(0.0));
         assert_eq!(struts(&[(up, true), (side, true)]).holding_share(), Some(0.5));
+    }
+
+    #[test]
+    fn shaft_diameter_reads_the_shaft_past_its_joint_balls_and_foot() {
+        // Nine sections of a 1 mm shaft: two at its tapering foot, and five widened by joint
+        // balls and merged braces. The lower third of the sections is the shaft itself; the
+        // median would be a joint ball, the lowest the foot.
+        let widths = vec![1.5, 0.7, 1.0, 1.5, 1.5, 0.7, 1.0, 1.5, 1.5];
+        assert_eq!(shaft_diameter(widths, 0.5), 1.0);
+        assert_eq!(shaft_diameter(Vec::new(), 0.5), 0.5);
     }
 
     #[test]

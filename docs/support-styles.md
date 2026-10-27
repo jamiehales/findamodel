@@ -235,7 +235,7 @@ lychee-web, web-zigzag, formware), 84 models change structure group: 48 Lychee m
 are free-standing trees, 16 on a solid raft are lattices, and 20 on a solid raft or web are
 zigzag-braced posts. Chitubox's pads (9) and Formware (7) merge into chitubox-trees.
 
-## Round trip by group on main (7ddd21a)
+## Round trip by group on main (ca94db7)
 
 DragonFruit round trip over the 154-model check corpus plus the 20 benchmark models outside it
 (174 models). Kept is the share of models with supports detected that the rebuild accepts; recall
@@ -244,21 +244,21 @@ DragonFruit's tips match; joints is joints per rebuilt support.
 
 | Group | Models | Kept | Recall 0.1 | Recall 0.3 | Precision 0.1 | Precision 0.3 | Tips | Joints | Lowest recall 0.3 |
 |---|---|---|---|---|---|---|---|---|---|
-| chitubox-trees | 30 | 30/30 | 0.850 | 0.965 | 0.889 | 0.991 | 93.3% | 0.36 | 64795f66 0.732, 7e047c0c 0.905 |
-| chitubox-xlattice | 13 | 13/13 | 0.859 | **0.955** | 0.895 | 0.986 | 91.0% | 0.09 | 1aec4e59 0.921, b67918fd 0.939 |
-| lychee-trees | 32 | 31/32 | 0.915 | 0.974 | 0.916 | 0.984 | 88.4% | 0.26 | 03ceba5d 0.908, dde67a86 0.916 |
-| lychee-lattice | 24 | 24/24 | 0.898 | 0.973 | 0.903 | 0.982 | 89.9% | 0.44 | ec811c80 0.873, c3367585 0.907 |
-| lychee-zigzag | 29 | 29/29 | 0.876 | 0.964 | 0.897 | 0.984 | **54.0%** | 0.17 | 6b37ef0f 0.842, 0293692c 0.909 |
-| hollow-struts | 24 | 24/24 | 0.911 | 0.984 | 0.919 | 0.986 | 99.8% | 0.01 | 8447ddb6 0.894, 0e4bfe5b 0.911 |
-| pad12-pillars | 7 | 7/7 | 0.988 | 1.000 | 0.994 | 1.000 | 96.3% | 0.07 | b0f32f5b 0.998 |
+| chitubox-trees | 30 | 30/30 | 0.851 | 0.966 | 0.892 | 0.992 | 92.2% | 0.35 | 64795f66 0.732, 7e047c0c 0.905 |
+| chitubox-xlattice | 13 | 13/13 | 0.871 | **0.957** | 0.903 | 0.986 | 92.3% | 0.08 | 1aec4e59 0.920, b67918fd 0.939 |
+| lychee-trees | 32 | 31/32 | 0.919 | 0.975 | 0.916 | 0.984 | 89.6% | 0.26 | 03ceba5d 0.908, dde67a86 0.921 |
+| lychee-lattice | 24 | 24/24 | 0.896 | 0.973 | 0.901 | 0.982 | 90.0% | 0.40 | ec811c80 0.874, c3367585 0.902 |
+| lychee-zigzag | 29 | 29/29 | 0.882 | 0.964 | 0.905 | 0.985 | **56.1%** | 0.12 | 6b37ef0f 0.846, 5064469a 0.917 |
+| hollow-struts | 24 | 24/24 | 0.911 | 0.984 | 0.920 | 0.987 | 99.7% | 0.01 | 8447ddb6 0.894, 0e4bfe5b 0.911 |
+| pad12-pillars | 7 | 7/7 | 0.988 | 0.999 | 0.995 | 1.000 | 96.1% | 0.07 | b0f32f5b 0.997 |
 | unsupported | 15 | 0/6 | | | | | | | |
-| fans flag (any group) | 12 | 12/12 | 0.878 | 0.973 | 0.875 | 0.977 | 82.5% | 0.27 | |
+| fans flag (any group) | 12 | 12/12 | 0.883 | 0.974 | 0.877 | 0.978 | 84.8% | 0.26 | |
 
-- Weakest surface: chitubox-xlattice (recall 0.955 at 0.3 mm, 0.859 at 0.1 mm), across all its
+- Weakest surface: chitubox-xlattice (recall 0.957 at 0.3 mm, 0.871 at 0.1 mm), across all its
   creators: surface goes missing in the X lattice between thin shafts.
 - lychee-zigzag rebuilds its surface about as well as the tree groups, but DragonFruit's tips
   match only about half of the original contacts (tips fanned from post tops, zigzag ends).
-- lychee-lattice has the most joints per support (0.44): leaning shafts bent around cage posts.
+- lychee-lattice has the most joints per support (0.40): leaning shafts bent around cage posts.
 - The one real model rejected is Factory Fortress afd0d1d3 (lychee-trees, on a web). It is a
   plate of three gun parts: the separation takes the most finely meshed part (329,000 triangles)
   as the model, and the other two, meshed far more coarsely (24,000 and 12,000 triangles over a
@@ -284,17 +284,17 @@ several, files under 30 MB and none slower than 15 s.
 The runner builds a worktree, runs the round trip over the benchmark and prints each group's
 kept count, recall and precision at 0.1 and 0.3 mm, tips matched and joints per support against
 main, and lists models worse by more than 0.02 recall at 0.3 mm. It takes about 100 s with 4
-jobs. On main:
+jobs. On main (ca94db7):
 
 | Group | Models | Kept | Recall 0.1 | Recall 0.3 | Precision 0.3 | Tips | Joints |
 |---|---|---|---|---|---|---|---|
-| chitubox-trees | 9 | 9/9 | 0.869 | 0.972 | 0.987 | 89.2% | 0.39 |
-| chitubox-xlattice | 9 | 9/9 | 0.861 | 0.951 | 0.985 | 88.6% | 0.07 |
-| lychee-trees | 9 | 8/9 | 0.929 | 0.986 | 0.985 | 90.4% | 0.23 |
-| lychee-lattice | 9 | 9/9 | 0.901 | 0.970 | 0.988 | 84.7% | 0.49 |
-| lychee-zigzag | 9 | 9/9 | 0.876 | 0.956 | 0.983 | 72.4% | 0.21 |
-| hollow-struts | 9 | 9/9 | 0.906 | 0.979 | 0.992 | 99.7% | 0.01 |
-| pad12-pillars | 7 | 7/7 | 0.988 | 1.000 | 1.000 | 96.3% | 0.07 |
+| chitubox-trees | 9 | 9/9 | 0.873 | 0.973 | 0.988 | 87.2% | 0.39 |
+| chitubox-xlattice | 9 | 9/9 | 0.871 | 0.954 | 0.984 | 89.4% | 0.05 |
+| lychee-trees | 9 | 8/9 | 0.936 | 0.989 | 0.984 | 91.8% | 0.22 |
+| lychee-lattice | 9 | 9/9 | 0.902 | 0.970 | 0.988 | 86.1% | 0.42 |
+| lychee-zigzag | 9 | 9/9 | 0.888 | 0.958 | 0.983 | 72.9% | 0.15 |
+| hollow-struts | 9 | 9/9 | 0.907 | 0.980 | 0.993 | 99.4% | 0.01 |
+| pad12-pillars | 7 | 7/7 | 0.988 | 0.999 | 1.000 | 96.1% | 0.07 |
 | unsupported | 6 | 0/3 | | | | | |
 
 A fresh random sample can be drawn from the instance (read-only), downloaded, measured with the

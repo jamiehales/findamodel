@@ -44,6 +44,9 @@
 //! out of side faces, pins sit inside the model). The rebuild is the costly part of
 //! detection, so it is skipped for supports that are clearly generated: many components made
 //! almost entirely of repeated triangles.
+//!
+//! The constants' notes on styles and data read as in [`super::support_layout`]; here the guard
+//! sets (108 real models, 219 Engin3d models without supports) weigh most.
 
 use rustc_hash::FxHashMap;
 
@@ -53,74 +56,95 @@ use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 /// Increment when the classification changes so stored detections are recomputed.
 pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 5;
 
-/// Components with at least 1/N of the seed's triangles are model parts.
+/// Components with at least 1/N of the seed's triangles are model parts. Styles: all, and the
+/// unsupported group (multi-part kits). Sweep: fragile: 6 or 11 each change one corpus model's
+/// split (Mezgike's ec811c80 recall at 0.3 mm down 0.06 at 6, Adament Arsenal's 64795f66 up 0.04 at
+/// 11) and which Engin3d fakes are classified (none kept).
 const MODEL_SEED_DIVISOR: u32 = 8;
 
-/// Floor for the model-part triangle count, so a low-poly seed does not promote supports.
+/// Floor for the model-part triangle count, so a low-poly seed does not promote supports. Styles:
+/// the unsupported group. Sweep: fragile: 150 keeps two Engin3d fakes (3a94eb64, b2747b25); 267
+/// only leaves fakes unclassified.
 const MODEL_MIN_TRIANGLES: u32 = 200;
 
-/// Components with at least 1/N of the seed's surface triangle density are model details.
+/// Components with at least 1/N of the seed's surface triangle density are model details. Styles:
+/// all, and the unsupported group. Sweep: fragile: 3 changes Mezgike's ec811c80 split (recall at
+/// 0.3 mm down 0.04, precision 0.05) and 3 or 5.33 leave a rejected model unclassified.
 const MODEL_DENSITY_DIVISOR: f64 = 4.0;
 
-/// Components with at least this fraction of repeated triangles are generated primitives.
+/// Components with at least this fraction of repeated triangles are generated primitives (joint
+/// balls and ball-and-strut shells, which are dense like a sculpt). Styles: all. Sweep: no effect
+/// on the round trip; 0.67 changes which fakes are classified (none kept).
 const PRIMITIVE_MIN_REPEATED_FRACTION: f64 = 0.5;
 
-/// Fewest congruent copies for a triangle to count as repeated.
+/// Fewest congruent copies for a triangle to count as repeated. Styles: all. Sweep: no effect on
+/// the round trip; 5 changes which fakes are classified (none kept).
 const REPEATED_MIN_COPIES: u32 = 4;
 
-/// Edge lengths within this many mm are treated as equal.
+/// Edge lengths within this many mm are treated as equal. A numeric tolerance.
 const EDGE_GRID_SIZE_MM: f64 = 0.0001;
 
-/// Small components reaching this close to the model's top are model details.
+/// Small components reaching this close to the model's top are model details. Styles: all. Sweep:
+/// no effect on the round trip; 25% either way changes which fakes are classified (none kept).
 const TOP_MODEL_BAND_MM: f32 = 1.0;
 
 /// Support components must average this many times fewer triangles than model components.
+/// Confidence threshold: no case in the corpus or the fakes comes near it; it keeps multi-part
+/// models without supports from being split.
 const SUPPORT_DENSITY_RATIO: u64 = 3;
 
-/// Fewest support triangles for a confident split.
+/// Fewest support triangles for a confident split. Confidence threshold: no case in the corpus or
+/// the fakes comes near it.
 const MIN_SUPPORT_TRIANGLES: u64 = 2_000;
 
-/// Closed components with a signed volume below this (mm³) are wound inside out. A flat
-/// shell's volume can come out a hair either side of zero.
+/// Closed components with a signed volume below this (mm³) are wound inside out. A flat shell's
+/// volume can come out a hair either side of zero. A numeric tolerance.
 const INSIDE_OUT_MAX_VOLUME_MM3: f64 = -1e-6;
 
-/// Inside-out components with a signed volume below this (mm³) are inner shells; the rest
-/// are voids (scraps left inside the model by hollowing or repair tools).
+/// Inside-out components with a signed volume below this (mm³) are inner shells; the rest are voids
+/// (scraps left inside the model by hollowing or repair tools). Styles: hollowed models
+/// (hollow-struts). Safety limit: no void in the sets comes near it.
 const INNER_SHELL_MAX_VOLUME_MM3: f64 = -0.01;
 
-/// Components with less surface than this (mm²) are slivers of degenerate triangles.
+/// Safety limit: components with less surface than this (mm²) are slivers of degenerate triangles.
 const SLIVER_MAX_AREA_MM2: f64 = 0.01;
 
-/// Closed support components thicker than this (mean thickness 2V/A: a rod's radius, a
-/// slab's thickness) are thicker than a support's shafts and joints.
+/// Closed support components thicker than this (mean thickness 2V/A: a rod's radius, a slab's
+/// thickness) are thicker than a support's shafts and joints. Styles: all, and the unsupported
+/// group (hard-surface kits). Sweep: fragile: 0.75 leaves real models unclassified (fa77c7c4 and
+/// 03ceba5d stop exporting supports); 1.33 only changes which fakes are classified.
 const MAX_SUPPORT_THICKNESS_MM: f64 = 1.0;
 
 /// Supports have at most this share of their surface above the raft in thick components.
-/// Pre-supported models have next to none; on hard-surface kits without supports, the
-/// parts classed as supports are often mostly thick.
+/// Pre-supported models have next to none; on hard-surface kits without supports, the parts classed
+/// as supports are often mostly thick. Styles: the unsupported group. Sweep: no effect on real
+/// models; 25% either way changes which fakes are classified (none kept).
 const MAX_THICK_SUPPORT_SHARE: f64 = 0.25;
 
-/// Support parts with at least this many components, at least this fraction of whose
-/// triangles are repeated (see [`REPEATED_MIN_COPIES`]), are generated supports. Most
-/// pre-supported models qualify; hard-surface kits with that many parts have at most 81%
-/// of their triangles repeated.
+/// Support parts with at least this many components, at least this fraction of whose triangles are
+/// repeated (see [`REPEATED_MIN_COPIES`]), are generated supports. Most pre-supported models
+/// qualify; hard-surface kits with that many parts have at most 81% of their triangles repeated.
+/// Styles: all. Sweep: no effect (each).
 const GENERATED_MIN_COMPONENTS: u64 = 100;
+/// See [`GENERATED_MIN_COMPONENTS`].
 const GENERATED_MIN_REPEATED_FRACTION: f64 = 0.9;
 
-/// Support components whose boxes are this far apart or more touch no other support part.
+/// Support components whose boxes are this far apart or more touch no other support part. Styles:
+/// hollow-struts (a pebble on Death x Tiles' 0e4bfe5b). Sweep: no effect: the margins of the
+/// loose-piece rule are wide (each of its three values).
 const LOOSE_MARGIN_MM: f32 = 0.05;
 
-/// Lone support components with less than this fraction of repeated triangles are sculpted.
-/// Even a distorted support primitive keeps a third or more (tip cones of 28 triangles at
-/// 43%), while pieces of a sculpt have none.
+/// Lone support components with less than this fraction of repeated triangles are sculpted. Even a
+/// distorted support primitive keeps a third or more (tip cones of 28 triangles at 43%), while
+/// pieces of a sculpt have none. See [`LOOSE_MARGIN_MM`].
 const LOOSE_MAX_REPEATED_FRACTION: f64 = 0.1;
 
-/// How far from a lone support component's top and bottom the model surface it meets is
-/// looked for.
+/// How far from a lone support component's top and bottom the model surface it meets is looked for.
+/// See [`LOOSE_MARGIN_MM`].
 const LOOSE_CONTACT_MM: f32 = 1.0;
 
-/// Vertex quantisation grid size in mm. Vertices within this distance are treated as
-/// coincident, which handles floating-point rounding at shared edges.
+/// Vertex quantisation grid size in mm. Vertices within this distance are treated as coincident,
+/// which handles floating-point rounding at shared edges. A numeric tolerance.
 const VERTEX_GRID_SIZE: f32 = 0.01;
 
 type QuantizedVertex = (i32, i32, i32);
@@ -833,6 +857,39 @@ pub(crate) mod tests {
         assert!(c.is_support[sparse_start - dense.len()..sparse_start].iter().all(|s| !*s));
         assert!(c.is_support[sparse_start..].iter().all(|s| *s));
         assert_eq!(support_count(&c), 50 * 48 + sparse.len());
+    }
+
+    #[test]
+    fn parts_with_an_eighth_of_the_seeds_triangles_are_model_parts() {
+        // The body has 10,800 triangles, so a part with 1,452 (over an eighth) is a model part
+        // whatever its density, and a 12 mm bar with 768 (under it) is support geometry.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let part = cuboid(Vec3::new(20.0, 0.0, 0.0), Vec3::new(30.0, 8.0, 10.0), 11);
+        mesh.extend(&part);
+        let bar = cuboid(Vec3::new(35.0, 0.0, 0.0), Vec3::new(36.5, 12.0, 1.5), 8);
+        mesh.extend(&bar);
+        let c = classify(&mesh, RAFT).expect("classification");
+        let bar_start = mesh.len() - bar.len();
+        assert!(c.is_support[bar_start - part.len()..bar_start].iter().all(|s| !*s));
+        assert!(c.is_support[bar_start..].iter().all(|s| *s));
+    }
+
+    #[test]
+    fn sculpted_parts_are_model_details_by_their_triangle_density() {
+        // The body has 18 triangles per mm². A sculpted 2.9 mm block with 6 per mm² (over a
+        // quarter of that) is a model detail; a sculpted plate with 3 per mm² is support
+        // geometry.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let block = sculpted(cuboid(Vec3::new(20.0, 0.0, 0.0), Vec3::new(22.9, 2.9, 2.9), 5), 0.01);
+        mesh.extend(&block);
+        let plate = sculpted(cuboid(Vec3::new(30.0, 0.0, 0.0), Vec3::new(36.0, 6.3, 0.8), 5), 0.01);
+        mesh.extend(&plate);
+        let c = classify(&mesh, RAFT).expect("classification");
+        let plate_start = mesh.len() - plate.len();
+        assert!(c.is_support[plate_start - block.len()..plate_start].iter().all(|s| !*s));
+        assert!(c.is_support[plate_start..].iter().all(|s| *s));
     }
 
     #[test]
