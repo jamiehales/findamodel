@@ -104,8 +104,8 @@ const WIDTH_SMOOTHING: f32 = 0.25;
 const MAX_WIDTH_GROWTH: f32 = 0.15;
 /// A blob whose centre is further than `DRIFT_MM + width * DRIFT_RATIO` from where the shaft
 /// is heading is a brace merging into the shaft, so it is not a shaft point either.
-const DRIFT_MM: f32 = 0.1;
-const DRIFT_RATIO: f32 = 0.3;
+const DRIFT_MM: f32 = 0.075;
+const DRIFT_RATIO: f32 = 0.15;
 /// Drift is measured from the shaft as it was this far back, so a blob creeping sideways a
 /// little each layer cannot drag the measure along with it.
 const DRIFT_LAG_MM: f32 = 0.5;
@@ -190,7 +190,7 @@ const PLATE_REACH_MM: f32 = 0.5;
 /// `BRACE_COVERAGE` of the line between its ends (the outer `BRACE_END_SKIP` of the line at
 /// each end, where it merges into the supports, is not tested), within `BRACE_MARGIN_MM`.
 const MIN_BRACE_BLOBS: usize = 3;
-const BRACE_END_GAP_MM: f32 = 1.0;
+const BRACE_END_GAP_MM: f32 = 0.75;
 const MIN_BRACE_MM: f32 = 2.0;
 const BRACE_COVERAGE: f32 = 0.8;
 const BRACE_END_SKIP: f32 = 0.15;
@@ -271,7 +271,7 @@ const CONE_TOLERANCE_RATIO: f32 = 0.05;
 /// A cone shell is a tip when its narrow end is this close to the contact.
 const CONE_CONTACT_MM: f32 = 1.0;
 /// A longer taper is not a tip cone (a whole support modelled as one long cone).
-const MAX_CONE_TIP_MM: f32 = 10.0;
+const MAX_CONE_TIP_MM: f32 = 20.0;
 
 /// The rebuilt supports account for a support's surface within this distance of their own.
 const COVERAGE_MARGIN_MM: f32 = 0.3;
@@ -561,7 +561,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 14;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 15;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
