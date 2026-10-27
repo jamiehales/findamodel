@@ -56,7 +56,7 @@ use std::cell::Cell;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
-use super::{Triangle, Vec3};
+use super::{MIN_FACE_TILT, Triangle, Vec3};
 
 /// Slice spacing; coarser when the supports are too tall for [`MAX_LAYERS`].
 const LAYER_MM: f32 = 0.1;
@@ -75,7 +75,8 @@ const BLOB_CELL_MM: f32 = 1.0;
 const LINK_MARGIN_MM: f32 = 0.05;
 /// Grid cell for nearest-surface lookups on the model.
 const SURFACE_CELL_MM: f32 = 1.0;
-/// A blob top within this distance of the model surface is a contact tip.
+/// A blob top within this distance of the model surface is a contact tip, and a cone shell is
+/// its tip when the cone's narrow end is this close to the contact.
 const CONTACT_MAX_MM: f32 = 1.0;
 /// A blob top inside the model within this distance of its surface is a contact tip too: some
 /// exports end a tip in a ball buried in the model.
@@ -161,7 +162,8 @@ const CAP_WIDTH_FRACTION: f32 = 0.8;
 const MIN_CONTACT_DIAMETER_MM: f32 = 0.2;
 const MAX_CONTACT_DIAMETER_MM: f32 = 1.5;
 const MAX_BODY_DIAMETER_MM: f32 = 3.0;
-const MIN_SHAFT_DIAMETER_MM: f32 = 0.3;
+/// The thinnest rod rebuilt: a support's shaft, a brace or a post.
+const MIN_ROD_DIAMETER_MM: f32 = 0.3;
 /// The shaft diameter is this quantile (1/N) of its cross-sections above the root: a shaft keeps
 /// one width, or tapers towards its foot, and the joint balls and merged braces left in only ever
 /// widen a section.
@@ -223,7 +225,6 @@ const BRACE_PARALLEL_COS: f32 = 0.9;
 /// The ends are refitted to a line through the piece's own cross-sections when those spread
 /// along at least this share of the brace (a level bar's slices do not, being one long slice).
 const BRACE_REFIT_SPREAD: f32 = 0.5;
-const MIN_BRACE_DIAMETER_MM: f32 = 0.3;
 const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
 /// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on
 /// the plate or a raft) and runs up to where the piece touches a support, straight or leaning
@@ -268,8 +269,6 @@ const CONE_TAPER: f32 = 0.85;
 /// Vertices lie this close to a cone's wall, plus a share of its wide radius.
 const CONE_TOLERANCE_MM: f32 = 0.02;
 const CONE_TOLERANCE_RATIO: f32 = 0.05;
-/// A cone shell is a tip when its narrow end is this close to the contact.
-const CONE_CONTACT_MM: f32 = 1.0;
 /// A longer taper is not a tip cone (a whole support modelled as one long cone).
 const MAX_CONE_TIP_MM: f32 = 20.0;
 
@@ -286,10 +285,6 @@ const COVERAGE_CELL_MM: f32 = 2.0;
 /// (82% or more on the sample pre-supported models); separate parts of a model without
 /// supports (rivets, straps, panels) mostly rebuild into little (18% at the median).
 const MIN_SUPPORT_COVERAGE: f32 = 0.7;
-/// A tip holds the model up when the model surface it meets faces down by at least this much
-/// (the z of its outward normal is below minus this) and the support meets it from outside. A
-/// strut stands on the model when its lower contact faces up by as much.
-const HOLDING_MIN_DOWN: f32 = 0.05;
 /// Supports shorter than this (from the tip's contact to where the shaft starts) are not
 /// counted towards holding the model up: rivets and pegs rebuild into stubs.
 const HOLDING_MIN_LENGTH_MM: f32 = 1.0;
@@ -390,10 +385,10 @@ impl SupportLayout {
             }
             counted += 1;
             let stands = match &s.base {
-                SupportBase::Model(lower) => lower.from_outside && lower.surface_normal.z > HOLDING_MIN_DOWN,
+                SupportBase::Model(lower) => lower.from_outside && lower.surface_normal.z > MIN_FACE_TILT,
                 SupportBase::Plate { .. } | SupportBase::Shaft { .. } => true,
             };
-            holding += usize::from(stands && s.tip.from_outside && s.tip.surface_normal.z < -HOLDING_MIN_DOWN);
+            holding += usize::from(stands && s.tip.from_outside && s.tip.surface_normal.z < -MIN_FACE_TILT);
         }
         (counted > 0).then(|| holding as f32 / counted as f32)
     }
@@ -871,7 +866,7 @@ fn cone_fit(graph: &Graph, nodes: &[u32], contact: Vec3, cone: &Cone) -> TipFit 
 /// in are off the shaft's line.
 fn with_cone(graph: &Graph, nodes: &[u32], contact: Vec3, cone: Option<Cone>, fit: TipFit) -> TipFit {
     let tip = |c: &Cone| {
-        (c.narrow - contact).length() <= CONE_CONTACT_MM
+        (c.narrow - contact).length() <= CONTACT_MAX_MM
             && (c.wide - contact).dot((c.wide - c.narrow).normalized()) >= MIN_TIP_LENGTH_MM
     };
     match cone.filter(tip) {
@@ -907,7 +902,7 @@ fn shaft_diameter(mut widths: Vec<f32>, fallback: f32) -> f32 {
         .get(widths.len() / SHAFT_WIDTH_QUANTILE)
         .copied()
         .unwrap_or(fallback)
-        .clamp(MIN_SHAFT_DIAMETER_MM, MAX_SHAFT_DIAMETER_MM)
+        .clamp(MIN_ROD_DIAMETER_MM, MAX_SHAFT_DIAMETER_MM)
 }
 
 /// Builds a support from its walk. `entry` is the first walked blob outside the model; the
@@ -2370,7 +2365,7 @@ impl Graph {
     fn post_under(&self, column: &Column, hosts: &[HostLine], shafts: &[Shaft]) -> Option<KickstandLayout> {
         let (support, knot, joints) = self.column_end(column, hosts)?;
         let foot = Vec3::new(column.top.x, column.top.y, ROOT_TOP_MM);
-        let diameter_mm = (column.radius * 2.0).clamp(MIN_BRACE_DIAMETER_MM, MAX_BRACE_DIAMETER_MM);
+        let diameter_mm = (column.radius * 2.0).clamp(MIN_ROD_DIAMETER_MM, MAX_BRACE_DIAMETER_MM);
         if along_shaft(shafts, foot, column.top, diameter_mm) {
             return None;
         }
@@ -2561,7 +2556,7 @@ impl Graph {
             }
         }
         widths.sort_by(f32::total_cmp);
-        Some(widths[widths.len() / 2].clamp(MIN_BRACE_DIAMETER_MM, MAX_BRACE_DIAMETER_MM))
+        Some(widths[widths.len() / 2].clamp(MIN_ROD_DIAMETER_MM, MAX_BRACE_DIAMETER_MM))
     }
 
     /// Where the shaft through `nodes` (top down) continues at height `z`.

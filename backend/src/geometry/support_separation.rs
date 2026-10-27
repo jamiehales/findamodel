@@ -48,7 +48,7 @@
 use rustc_hash::FxHashMap;
 
 use super::support_layout::closest_on_triangle;
-use super::{Triangle, Vec3, support_layout, to_z_up};
+use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
 pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 5;
@@ -118,9 +118,6 @@ const LOOSE_MAX_REPEATED_FRACTION: f64 = 0.1;
 /// How far from a lone support component's top and bottom the model surface it meets is
 /// looked for.
 const LOOSE_CONTACT_MM: f32 = 1.0;
-
-/// A model face is turned down (or up) when the vertical part of its normal is beyond this.
-const LOOSE_MIN_TILT: f32 = 0.05;
 
 /// Vertex quantisation grid size in mm. Vertices within this distance are treated as
 /// coincident, which handles floating-point rounding at shared edges.
@@ -396,8 +393,8 @@ fn loose_pieces(
     let ends: Vec<Vec3> = candidates.iter().flat_map(|&c| [stats[c].peak, stats[c].bottom]).collect();
     let faces = nearest_faces(triangles, |i| !is_support[component_of[i] as usize], &ends);
     for (k, &c) in candidates.iter().enumerate() {
-        let holds = faces[2 * k].is_some_and(|n| n.y < -LOOSE_MIN_TILT);
-        let rests = faces[2 * k + 1].is_some_and(|n| n.y > LOOSE_MIN_TILT);
+        let holds = faces[2 * k].is_some_and(|n| n.y < -MIN_FACE_TILT);
+        let rests = faces[2 * k + 1].is_some_and(|n| n.y > MIN_FACE_TILT);
         loose[c] = rests && !holds;
     }
     loose

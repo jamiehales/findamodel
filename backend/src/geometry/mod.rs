@@ -11,6 +11,11 @@ pub mod voxl;
 
 use std::ops::{Add, Mul, Neg, Sub};
 
+/// A model face is turned down (or up) when the vertical part of its outward normal is beyond
+/// this. A support's tip holds the model up where it meets a face turned down from outside, and
+/// a strut (or a loose piece of the sculpt) stands on a face turned up.
+const MIN_FACE_TILT: f32 = 0.05;
+
 #[derive(Debug, Clone, Copy, PartialEq, Default, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vec3 {
