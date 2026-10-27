@@ -15,15 +15,14 @@ interface Props {
   href: string;
 }
 
-type MetaSource = 'set' | 'inherited' | 'unset';
+type MetaSource = 'set' | 'inherited';
 
 const SOURCE_LABEL: Record<MetaSource, string> = {
   set: 'Set',
   inherited: 'Inherited',
-  unset: 'Unset',
 };
 
-const SOURCE_TAG = { set: 'default', inherited: 'neutral', unset: 'outline' } as const;
+const SOURCE_TAG = { set: 'default', inherited: 'neutral' } as const;
 
 const MAX_TAGS = 8;
 
@@ -66,9 +65,16 @@ function FolderCard({ folder, href }: Props) {
   const tags = folder.resolvedValues.tags ?? [];
 
   function sourceOf(key: string, ruleKey: string): MetaSource {
-    if (local?.[key] != null || localRuleFields.has(ruleKey.toLowerCase())) return 'set';
-    return resolved[key] != null || folder.ruleConfigs?.[ruleKey] ? 'inherited' : 'unset';
+    return local?.[key] != null || localRuleFields.has(ruleKey.toLowerCase()) ? 'set' : 'inherited';
   }
+
+  // A field shows when it has a value (plain or from a rule), or when this folder sets a
+  // rule for it even if the rule computes nothing here.
+  const visibleFields = SHARED_FIELDS.filter(
+    (field) =>
+      displayValue(field.key, resolved[field.key]) != null ||
+      localRuleFields.has((field.yamlName ?? field.key).toLowerCase()),
+  );
 
   function onTagClick(e: React.MouseEvent, tag: string) {
     e.preventDefault();
@@ -99,47 +105,47 @@ function FolderCard({ folder, href }: Props) {
         </div>
       )}
 
-      <dl className={styles.folderMeta}>
-        {SHARED_FIELDS.map((field) => {
-          const ruleKey = field.yamlName ?? field.key;
-          const rule = folder.ruleConfigs?.[ruleKey] ?? null;
-          const value = displayValue(field.key, resolved[field.key]);
-          const source = sourceOf(field.key, ruleKey);
-          return (
-            <div key={field.key} className={styles.metaRow} data-source={source}>
-              <dt>{field.label}</dt>
-              <dd className={styles.metaValue}>
-                {value ??
-                  (rule ? (
-                    <Tooltip
-                      side="right"
-                      content={<pre className={styles.rulePreview}>{rule}</pre>}
-                    >
-                      <button
-                        type="button"
-                        className={styles.ruleButton}
-                        aria-label={`${field.label} comes from a rule: ${rule}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
+      {visibleFields.length > 0 && (
+        <dl className={styles.folderMeta}>
+          {visibleFields.map((field) => {
+            const ruleKey = field.yamlName ?? field.key;
+            const rule = folder.ruleConfigs?.[ruleKey] ?? null;
+            const value = displayValue(field.key, resolved[field.key]);
+            const source = sourceOf(field.key, ruleKey);
+            return (
+              <div key={field.key} className={styles.metaRow} data-source={source}>
+                <dt>{field.label}</dt>
+                <dd className={styles.metaValue}>
+                  {value ??
+                    (rule && (
+                      <Tooltip
+                        side="right"
+                        content={<pre className={styles.rulePreview}>{rule}</pre>}
                       >
-                        Rule
-                      </button>
-                    </Tooltip>
-                  ) : (
-                    <span className={styles.unset}>Not set</span>
-                  ))}
-              </dd>
-              <dd>
-                <Tag variant={SOURCE_TAG[source]} className={styles.sourceTag}>
-                  {SOURCE_LABEL[source]}
-                </Tag>
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
+                        <button
+                          type="button"
+                          className={styles.ruleButton}
+                          aria-label={`${field.label} comes from a rule: ${rule}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          Rule
+                        </button>
+                      </Tooltip>
+                    ))}
+                </dd>
+                <dd>
+                  <Tag variant={SOURCE_TAG[source]} className={styles.sourceTag}>
+                    {SOURCE_LABEL[source]}
+                  </Tag>
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
 
       <div className={styles.folderActions}>
         <Tooltip content="Edit metadata">

@@ -101,6 +101,14 @@ function ModelPage() {
       : null;
 
   const metaRows: { label: string; value: React.ReactNode; mono?: boolean }[] = [
+    {
+      label: 'Model',
+      value: (
+        <TextLink asChild>
+          <Link to={filterHref('modelName', model.name)}>{model.name}</Link>
+        </TextLink>
+      ),
+    },
     model.partName && { label: 'Part', value: model.partName },
     model.creator && {
       label: 'Creator',

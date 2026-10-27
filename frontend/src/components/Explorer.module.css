@@ -93,14 +93,6 @@
   font: 400 13px/18px var(--font-sans);
 }
 
-.metaRow[data-source='unset'] .metaValue {
-  color: var(--muted-foreground);
-}
-
-.unset {
-  color: var(--muted-foreground);
-}
-
 .sourceTag {
   height: 20px;
   padding: 0 6px;
