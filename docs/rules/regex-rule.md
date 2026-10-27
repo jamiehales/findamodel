@@ -37,7 +37,8 @@ When you want to match against the full path, omit `source` entirely - `full_pat
 |--------|------|----------|-------------|
 | `source` | string | No | Which part of the path to match against. One of `full_path`, `folder`, `filename`. Defaults to `full_path`. |
 | `expression` | string | Yes* | A regex pattern or sed-style substitution expression (`s\|pattern\|replacement\|flags`). |
-| `values` | map | Yes* | For enum and tags fields: a map of value key → regex pattern. Mutually exclusive with `expression`. |
+| `values` | map | Yes* | For enum, `supported` and tags fields: a map of value key → regex pattern. Mutually exclusive with `expression`. |
+| `case` | string | No | Re-cases the result of `expression`: `title` (Ancient Egypt), `sentence` (Ancient egypt), `upper` or `lower`. Not applied to `values` keys or `supported`. |
 
 \* Either `expression` or `values` must be present (not both).
 
@@ -110,7 +111,23 @@ supported:
 | `elf_warrior.stl` | unset |
 | `SUPPORTED_dragon.stl` | `true` (case-insensitive) |
 
-To mark files as unsupported, set `supported: false` on the folder or the file.
+To mark files as unsupported from their path, use a `values` map instead. Keys name the state (`Supported` / `Unsupported`, or `true` / `false`, `yes` / `no`); the first matching key wins, and a file matching neither stays unset:
+
+```yaml
+supported:
+  values:
+    Unsupported: 'un-?supported|nosupp'
+    Supported: 'supported'
+```
+
+| File | Result |
+|------|--------|
+| `elf_supported.stl` | `true` |
+| `noSupport/elf.stl` | `false` |
+| `elf_UNSUPPORTED.stl` | `false` |
+| `elf.stl` | unset |
+
+List `Unsupported` first: "unsupported" also contains "supported". You can also set `supported: false` on the folder or the file.
 
 ---
 
@@ -137,7 +154,7 @@ category:
 The keys in the `values` map must exactly match valid values for the target field (case-sensitive). See [Metadata fields](../metadata/) for the valid enum values.
 
 {: .note }
-`values` and `expression` are mutually exclusive. If both are provided, `values` takes precedence for enum fields.
+`values` and `expression` are mutually exclusive. If both are provided, `values` takes precedence for enum and `supported` fields.
 {: .note }
 For `tags`, when using `values`, all matching keys are added as computed tags and merged with inherited folder tags. With `expression`, the single regex result is added as one tag.
 

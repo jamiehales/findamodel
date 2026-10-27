@@ -88,6 +88,36 @@ export function applyTrim(
   return ruleText.replace(LEVEL_CAPTURE, trim.capture);
 }
 
+/** Letter cases a text rule's result can be re-cased to (the rule's `case` option). */
+export const RULE_CASES = [
+  { id: 'none', label: 'As written' },
+  { id: 'title', label: 'Title case' },
+  { id: 'sentence', label: 'Sentence case' },
+  { id: 'upper', label: 'Upper case' },
+  { id: 'lower', label: 'Lower case' },
+] as const;
+
+export type RuleCase = (typeof RULE_CASES)[number]['id'];
+
+const CASE_LINE = /^case:.*(?:\n|$)/im;
+
+/** Whether a field's rule results are text that can be re-cased. */
+export function supportsCase(field: string): boolean {
+  return TEXT_FIELDS.has(field) || field === 'tags';
+}
+
+/** The `case` a rule sets, or 'none'. */
+export function ruleCase(ruleText: string): RuleCase {
+  const value = ruleText.match(/^case:\s*'?"?([a-z]+)/im)?.[1]?.toLowerCase();
+  return RULE_CASES.find((c) => c.id === value)?.id ?? 'none';
+}
+
+/** The rule text with its `case` option set (or removed for 'none'). */
+export function withRuleCase(ruleText: string, caseId: RuleCase): string {
+  const without = ruleText.replace(CASE_LINE, '').trimEnd();
+  return caseId === 'none' ? without : `${without}\ncase: ${caseId}`;
+}
+
 export function rulePresetGroups(
   field: string,
   folderPath: string,
@@ -132,8 +162,13 @@ export function rulePresetGroups(
         {
           id: 'supported-keywords',
           label: 'Supported keywords',
-          detail: 'not "unsupported"',
-          yaml: expressionYaml('(?<!un)supported|_ps(?![a-z0-9])'),
+          detail: 'and unsupported',
+          // Unsupported first: the first matching key wins, and "unsupported" contains
+          // "supported". Paths matching neither stay unknown.
+          yaml: valuesYaml([
+            ['Unsupported', 'un-?supported|(?<![a-z])no.?supp'],
+            ['Supported', 'supported|_ps(?![a-z0-9])'],
+          ]),
         },
         {
           id: 'supported-folder',

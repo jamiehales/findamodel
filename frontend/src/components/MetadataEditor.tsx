@@ -8,6 +8,8 @@ import {
   MenuContent,
   MenuItem,
   MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuTrigger,
   SegmentedControl,
@@ -32,7 +34,16 @@ import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
 import TagEditor from './metadata/TagEditor';
 import RulePreview from './metadata/RulePreview';
-import { applyTrim, RULE_TRIMS, rulePresetGroups } from './metadata/rulePresets';
+import {
+  applyTrim,
+  RULE_CASES,
+  RULE_TRIMS,
+  ruleCase,
+  rulePresetGroups,
+  supportsCase,
+  withRuleCase,
+  type RuleCase,
+} from './metadata/rulePresets';
 import styles from './metadata/MetadataForm.module.css';
 
 type FieldMode = 'value' | 'rule';
@@ -129,8 +140,13 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
           {inline('{')}, e.g. {inline("expression: '[^n]supported'")}
         </p>
         <p>
+          {inline('case: title | sentence | upper | lower')}: re-cases the result of{' '}
+          {inline('expression')}
+        </p>
+        <p>
           {inline('values: { ValueKey: "pattern" }')}: for select fields, the first matching key;
-          for {inline('tags')}, every matching key is added as a tag
+          for {inline('supported')}, the first matching {inline('Supported')} or{' '}
+          {inline('Unsupported')} key; for {inline('tags')}, every matching key is added as a tag
         </p>
         <p>Plain regex, returning the first capture group or the whole match:</p>
         {code("rule: regex\nexpression: '.*/([^/]+)/[^/]+$'")}
@@ -141,6 +157,8 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
         {code("rule: regex\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
         <p>Select field, mapping patterns to values:</p>
         {code("source: full_path\nvalues:\n  Bust: 'bust'\n  Miniature: 'mini'")}
+        <p>Supported, unsupported, or unknown when neither matches:</p>
+        {code("values:\n  Unsupported: 'un-?supported|nosupp'\n  Supported: 'supported'")}
         <p>Tags, adding every key whose pattern matches:</p>
         {code("source: full_path\nvalues:\n  Supported: 'supported'\n  Miniature: 'mini'")}
         <hr />
@@ -533,6 +551,25 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
                   </MenuItem>
                 );
               })}
+            </>
+          )}
+          {supportsCase(yamlName) && (
+            <>
+              <MenuSeparator />
+              <MenuLabel>Letter case</MenuLabel>
+              <MenuRadioGroup
+                value={ruleCase(ruleText)}
+                onValueChange={(value) =>
+                  ruleText.trim() !== '' &&
+                  handleRuleChange(yamlName, withRuleCase(ruleText, value as RuleCase))
+                }
+              >
+                {RULE_CASES.map((c) => (
+                  <MenuRadioItem key={c.id} value={c.id} disabled={ruleText.trim() === ''}>
+                    {c.label}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
             </>
           )}
         </MenuContent>

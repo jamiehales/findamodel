@@ -431,6 +431,14 @@ mod tests {
 
         let no_expr = dir(|d| d.resolved_rules_yaml = Some("supported:\n  rule: regex\n  source: filename\n".into()));
         assert_eq!(compute("/models/yes_model.stl", Some(&no_expr)).supported, None);
+
+        let values = dir(|d| {
+            d.resolved_rules_yaml =
+                Some("supported:\n  values:\n    Unsupported: nosupp\n    Supported: supported\n".into())
+        });
+        assert_eq!(compute("/A/supported/a.stl", Some(&values)).supported, Some(true));
+        assert_eq!(compute("/A/noSupport/a.stl", Some(&values)).supported, Some(false));
+        assert_eq!(compute("/A/a.stl", Some(&values)).supported, None);
     }
 
     #[test]

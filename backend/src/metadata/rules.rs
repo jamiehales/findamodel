@@ -10,7 +10,10 @@
 //!     non-matching file keeps its folder value (or support detection).
 //!   values: { EnumValue1: "regex1", EnumValue2: "regex2", ... }
 //!     Enum fields return the key of the first matching regex; takes precedence over
-//!     `expression`.
+//!     `expression`. Bool fields do the same with keys naming a state (Supported /
+//!     Unsupported, true / false, yes / no), returning "true" or "false".
+//!   case: title | sentence | upper | lower
+//!     Re-cases the result of `expression` (not `values` keys or bool results).
 //! Matching is always case-insensitive.
 
 use std::collections::HashMap;
@@ -135,6 +138,15 @@ pub fn pattern_error(rule_config: &Value) -> Option<String> {
     None
 }
 
+/// The state a bool rule's `values` key names; `None` for anything else.
+fn bool_value_key(key: &str) -> Option<bool> {
+    match key.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "supported" => Some(true),
+        "false" | "no" | "unsupported" => Some(false),
+        _ => None,
+    }
+}
+
 /// Keys of every `values` entry whose regex matches, in declaration order.
 pub fn parse_matching_value_keys(file_path: &str, options: &RuleSet) -> Vec<String> {
     let Some(input) = input_for(file_path, options) else {
@@ -159,10 +171,65 @@ pub fn parse_matching_value_keys(file_path: &str, options: &RuleSet) -> Vec<Stri
 pub fn parse_value(file_path: &str, field_type: RuleFieldType, options: &RuleSet) -> Option<String> {
     let input = input_for(file_path, options)?;
 
-    if field_type == RuleFieldType::Enum && matches!(get_ci(options, "values"), Some(Value::Object(_))) {
-        return parse_matching_value_keys(file_path, options).into_iter().next();
+    if matches!(get_ci(options, "values"), Some(Value::Object(_))) {
+        match field_type {
+            RuleFieldType::Enum => return parse_matching_value_keys(file_path, options).into_iter().next(),
+            RuleFieldType::Bool => {
+                return parse_matching_value_keys(file_path, options)
+                    .iter()
+                    .find_map(|key| bool_value_key(key))
+                    .map(|b| b.to_string());
+            }
+            RuleFieldType::String => {}
+        }
     }
 
+    let value = expression_value(&input, field_type, options)?;
+    if field_type == RuleFieldType::Bool {
+        return Some(value);
+    }
+    match get_ci(options, "case").and_then(as_str) {
+        Some(case) => Some(apply_case(&value, case)),
+        None => Some(value),
+    }
+}
+
+/// Letter cases the `case` option accepts.
+pub const KNOWN_CASES: [&str; 4] = ["title", "sentence", "upper", "lower"];
+
+/// Re-cases a rule result. Title case capitalises the first letter of each word (words split
+/// on anything but letters, digits and apostrophes) and lowercases the rest; sentence case
+/// capitalises only the first letter. Unknown cases leave the value as it is.
+fn apply_case(value: &str, case: &str) -> String {
+    match case.trim().to_ascii_lowercase().as_str() {
+        "upper" => value.to_uppercase(),
+        "lower" => value.to_lowercase(),
+        "title" => {
+            let mut out = String::with_capacity(value.len());
+            let mut in_word = false;
+            for c in value.chars() {
+                if in_word {
+                    out.extend(c.to_lowercase());
+                } else {
+                    out.extend(c.to_uppercase());
+                }
+                in_word = c.is_alphanumeric() || c == '\'' || c == '\u{2019}';
+            }
+            out
+        }
+        "sentence" => {
+            let lower = value.to_lowercase();
+            match lower.char_indices().find(|(_, c)| c.is_alphabetic()) {
+                Some((i, c)) => format!("{}{}{}", &lower[..i], c.to_uppercase(), &lower[i + c.len_utf8()..]),
+                None => lower,
+            }
+        }
+        _ => value.to_string(),
+    }
+}
+
+/// The value a rule's `expression` produces for `input`, before any re-casing.
+fn expression_value(input: &str, field_type: RuleFieldType, options: &RuleSet) -> Option<String> {
     let expression = get_ci(options, "expression").and_then(as_str).filter(|e| !e.is_empty())?;
 
     if let Ok(Some(sed)) = SED_PATTERN.captures(expression) {
@@ -176,15 +243,15 @@ pub fn parse_value(file_path: &str, field_type: RuleFieldType, options: &RuleSet
             .filter(|c| matches!(c, 'm' | 's' | 'x'))
             .collect();
         let re = compile(pattern, &flags)?;
-        return Some(re.replace_all(&input, replacement.as_str()).into_owned());
+        return Some(re.replace_all(input, replacement.as_str()).into_owned());
     }
 
     let re = compile(expression, "")?;
     if field_type == RuleFieldType::Bool {
-        return re.is_match(&input).unwrap_or(false).then(|| "true".to_string());
+        return re.is_match(input).unwrap_or(false).then(|| "true".to_string());
     }
 
-    let captures = re.captures(&input).ok()??;
+    let captures = re.captures(input).ok()??;
     if captures.len() > 1 {
         Some(captures.get(1).map_or("", |m| m.as_str()).to_string())
     } else {
@@ -309,6 +376,12 @@ pub fn validate_rules<'a>(field_rules: impl IntoIterator<Item = (&'a String, &'a
         }
         let rule_name =
             yaml::string_key(&mapping, "rule").and_then(yaml::scalar_to_string).unwrap_or_else(|| "regex".to_string());
+        if let Some(case) = yaml::string_key(&mapping, "case").and_then(yaml::scalar_to_string)
+            && !KNOWN_CASES.iter().any(|k| k.eq_ignore_ascii_case(case.trim()))
+        {
+            errors.push((field.clone(), format!("Unknown case \"{case}\". Valid cases: {}", KNOWN_CASES.join(", "))));
+            continue;
+        }
         if !KNOWN_RULE_TYPES.iter().any(|k| k.eq_ignore_ascii_case(&rule_name)) {
             errors.push((
                 field.clone(),
@@ -369,16 +442,33 @@ mod tests {
     }
 
     #[test]
-    fn supported_keywords_preset_skips_unsupported() {
-        let rule = json!({ "expression": "(?<!un)supported|_ps(?![a-z0-9])" });
-        let supported = |path: &str| parse_value(path, RuleFieldType::Bool, &opts(rule.clone())).is_some();
-        assert!(supported("/A/Supported/elf.stl"));
-        assert!(supported("/A/elf_presupported.stl"));
-        assert!(supported("/A/elf-pre-supported.stl"));
-        assert!(supported("/A/elf_ps.stl"));
-        assert!(supported("/A/elf_ps_v2.stl"));
-        assert!(!supported("/A/Unsupported/elf_UNSUPPORTED.stl"));
-        assert!(!supported("/A/elf_psx.stl"));
+    fn supported_keywords_preset_gives_supported_unsupported_or_unknown() {
+        let rule = opts(json!({ "values": {
+            "Unsupported": "un-?supported|(?<![a-z])no.?supp",
+            "Supported": "supported|_ps(?![a-z0-9])",
+        } }));
+        let supported = |path: &str| parse_value(path, RuleFieldType::Bool, &rule);
+        for path in [
+            "/A/Supported/elf.stl",
+            "/A/elf_presupported.stl",
+            "/A/elf-pre-supported.stl",
+            "/A/elf_ps.stl",
+            "/A/elf_ps_v2.stl",
+        ] {
+            assert_eq!(supported(path).as_deref(), Some("true"), "{path}");
+        }
+        for path in [
+            "/A/Unsupported/elf_UNSUPPORTED.stl",
+            "/A/un-supported/elf.stl",
+            "/A/noSupport/elf.stl",
+            "/A/no supports/elf.stl",
+            "/A/no_supp/elf.stl",
+        ] {
+            assert_eq!(supported(path).as_deref(), Some("false"), "{path}");
+        }
+        for path in ["/A/elf_psx.stl", "/A/Piano/elf.stl", "/A/elf.stl"] {
+            assert_eq!(supported(path), None, "{path}");
+        }
     }
 
     #[test]
@@ -392,6 +482,58 @@ mod tests {
             opts(json!({ "values": { "Elf": "(?<![a-z0-9])Elf(?![a-z0-9])", "Orc": "(?<![a-z0-9])Orc(?![a-z0-9])" } }));
         assert_eq!(parse_matching_value_keys("/A/dark_elf_bust.stl", &tags), vec!["Elf"]);
         assert!(parse_matching_value_keys("/A/self_orcish.stl", &tags).is_empty());
+    }
+
+    #[test]
+    fn bool_values_map_state_keys_to_true_and_false() {
+        let rule = opts(json!({ "values": { "Unsupported": "nosupp|no supports", "Supported": "supported" } }));
+        let eval = |path: &str| parse_value(path, RuleFieldType::Bool, &rule);
+        assert_eq!(eval("/Adamant/Toppers/Basalt/supported/a.stl").as_deref(), Some("true"));
+        assert_eq!(eval("/Adamant/Basing Bits/Crystals/noSupport/a.stl").as_deref(), Some("false"));
+        assert_eq!(eval("/Adamant/Toppers/Basalt/no supports/a.stl").as_deref(), Some("false"));
+        assert_eq!(eval("/Adamant/Toppers/Basalt/a.stl"), None);
+
+        let other_keys = opts(json!({ "values": { "Maybe": "a", "no": "b", "TRUE": "c" } }));
+        assert_eq!(parse_value("/x/a.stl", RuleFieldType::Bool, &other_keys), None);
+        assert_eq!(parse_value("/x/b.stl", RuleFieldType::Bool, &other_keys).as_deref(), Some("false"));
+        assert_eq!(parse_value("/x/c.stl", RuleFieldType::Bool, &other_keys).as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn case_option_recases_expression_results() {
+        let path = "/Epic Basing/ANCIENT EGYPT - Mega Black Friday (merged)/rock.stl";
+        let expr = r"^/[^/]+/([^/]+?)(?: - [^/]*)?/";
+        let cased = |case: &str| eval(path, json!({ "expression": expr, "case": case }));
+        assert_eq!(cased("title").as_deref(), Some("Ancient Egypt"));
+        assert_eq!(cased("Sentence").as_deref(), Some("Ancient egypt"));
+        assert_eq!(cased("lower").as_deref(), Some("ancient egypt"));
+        assert_eq!(cased("upper").as_deref(), Some("ANCIENT EGYPT"));
+        assert_eq!(cased("bogus").as_deref(), Some("ANCIENT EGYPT"));
+
+        assert_eq!(apply_case("o'NEIL's name-image_2 x", "title"), "O'neil's Name-Image_2 X");
+        assert_eq!(apply_case("  3 big ROCKS", "sentence"), "  3 Big rocks");
+        // Sed results are re-cased too; bool results and `values` keys are not.
+        assert_eq!(
+            eval("/A/dark_elves/x.stl", json!({ "expression": "s|.*/([^/]+)/[^/]+$|\\1|", "case": "title" }))
+                .as_deref(),
+            Some("Dark_Elves")
+        );
+        let bool_rule = opts(json!({ "expression": "elves", "case": "upper" }));
+        assert_eq!(parse_value("/A/dark_elves/x.stl", RuleFieldType::Bool, &bool_rule).as_deref(), Some("true"));
+        let enum_rule = opts(json!({ "values": { "Bust": "bust" }, "case": "upper" }));
+        assert_eq!(parse_value("/A/bust.stl", RuleFieldType::Enum, &enum_rule).as_deref(), Some("Bust"));
+    }
+
+    #[test]
+    fn validate_rejects_unknown_cases() {
+        let validate = |entries: &[(&str, &str)]| {
+            let owned: Vec<(String, String)> = entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            validate_rules(owned.iter().map(|(k, v)| (k, v)))
+        };
+        assert!(validate(&[("collection", "expression: x\ncase: Title")]).is_empty());
+        let errors = validate(&[("collection", "expression: x\ncase: camel")]);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].1.starts_with("Unknown case \"camel\""));
     }
 
     #[test]
