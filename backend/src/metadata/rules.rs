@@ -3,7 +3,7 @@
 //!
 //! Options:
 //!   source: full_path | folder | filename  (default: full_path)
-//!   expression: a regex, or a sed-style substitution (s|pattern|replacement|flags).
+//!   expression: a regex, or a sed-style substitution (s~pattern~replacement~flags).
 //!     Sed-style returns the substituted string (all matches are replaced).
 //!     Plain regex returns the first capture group, or the full match without groups.
 //!     Bool fields return "true" when the regex matches and nothing otherwise, so a

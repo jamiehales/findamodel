@@ -36,7 +36,7 @@ When you want to match against the full path, omit `source` entirely - `full_pat
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
 | `source` | string | No | Which part of the path to match against. One of `full_path`, `folder`, `filename`. Defaults to `full_path`. |
-| `expression` | string | Yes* | A regex pattern or sed-style substitution expression (`s\|pattern\|replacement\|flags`). |
+| `expression` | string | Yes* | A regex pattern or sed-style substitution expression (`s~pattern~replacement~flags`). |
 | `values` | map | Yes* | For enum, `supported` and tags fields: a map of value key → regex pattern. Mutually exclusive with `expression`. |
 | `case` | string | No | Re-cases the result of `expression`: `title` (Ancient Egypt), `sentence` (Ancient egypt), `upper` or `lower`. Not applied to `values` keys or `supported`. |
 
@@ -168,14 +168,14 @@ The `expression` option also accepts a **sed-style substitution** of the form:
 s<delim><pattern><delim><replacement><delim>[flags]
 ```
 
-The delimiter can be any character (commonly `|` or `/`). Backreferences use `\1`, `\2`, etc.
+The delimiter can be any character (commonly `~`). Backreferences use `\1`, `\2`, etc.
 
 This is useful for transforming a path segment into a cleaned-up string.
 
 ```yaml
 collection:
   rule: regex
-  expression: "s|.*/([^/]+)/[^/]+$|\1|"
+  expression: "s~.*/([^/]+)/[^/]+$~\1~"
 ```
 
 For `/Alice/Fantasy/Elves/elf.stl`, this returns `Elves` (the folder holding the file).
@@ -260,7 +260,7 @@ Use a sed expression to clean up a folder name:
 ```yaml
 collection:
   rule: regex
-  expression: "s|.*/([^/]+)/[^/]+$|\1|"
+  expression: "s~.*/([^/]+)/[^/]+$~\1~"
 ```
 
 Extracts the immediate parent folder from the full path. To clean up underscores after that, combine the capture with a replacement:
@@ -268,7 +268,7 @@ Extracts the immediate parent folder from the full path. To clean up underscores
 ```yaml
 collection:
   rule: regex
-  expression: "s|.*/([^_]+)_([^/]+)/[^/]+$|\1 \2|"
+  expression: "s~.*/([^_]+)_([^/]+)/[^/]+$~\1 \2~"
 ```
 
 For `/Alice/Dark_Elves/elf.stl`, this returns `"Dark Elves"`.

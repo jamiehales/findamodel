@@ -19,6 +19,9 @@ use crate::services::metadata_config::{config_fields_from_raw, config_fields_fro
 use crate::services::models::is_model_extension;
 use crate::services::store;
 
+/// Fields whose rules describe a model file, never a folder; folder cards don't evaluate them.
+const MODEL_ONLY_RULE_FIELDS: [&str; 3] = ["model_name", "part_name", "supported"];
+
 pub const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 pub const TEXT_EXTENSIONS: [&str; 2] = ["txt", "md"];
 
@@ -215,10 +218,10 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
             Some(d) => d.resolved_rules_yaml.clone(),
             None => current.as_ref().and_then(|c| c.resolved_rules_yaml.clone()),
         };
-        // Whether a model is supported is per-model data, so a supported rule run against the
-        // folder's own path means nothing; the card shows only a plain supported value.
+        // Model name, part name and supported are per-model data, so their rules run against
+        // the folder's own path mean nothing; the card shows only their plain values.
         let mut folder_rules = rules::deserialize_rules(effective_rules_yaml.as_deref());
-        folder_rules.retain(|field, _| !field.eq_ignore_ascii_case("supported"));
+        folder_rules.retain(|field, _| !MODEL_ONLY_RULE_FIELDS.iter().any(|f| field.eq_ignore_ascii_case(f)));
         if !folder_rules.is_empty() {
             let (applied, _) = model_metadata::resolve_for_path(
                 to_plain(&resolved),
@@ -429,7 +432,7 @@ mod tests {
         write_file(
             root.path(),
             "findamodel.yaml",
-            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\nsupported:\n  expression: elves\nmodel_metadata:\n  dragon.stl:\n    part_name: Wing\n    creator: Bob\n",
+            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\nsupported:\n  expression: elves\npart_name:\n  expression: '([a-z]+)$'\nmodel_metadata:\n  dragon.stl:\n    part_name: Wing\n    creator: Bob\n",
         );
         write_file(root.path(), "Elves/archer.stl", "x");
         write_file(root.path(), "Elves/sub/x.obj", "x");
@@ -451,8 +454,13 @@ mod tests {
         assert_eq!((elves.name.as_str(), elves.subdirectory_count, elves.model_count), ("Elves", 1, 1));
         assert_eq!(elves.resolved_values.creator.as_deref(), Some("Alice"));
         assert!(elves.rule_configs.as_ref().unwrap().contains_key("model_name"));
-        // The supported rule matches the folder's path ("/Elves") but isn't evaluated for folders.
+        // The supported and model name rules match the folder's path ("/Elves") but aren't
+        // evaluated for folders.
         assert_eq!(elves.resolved_values.supported, None);
+        assert_eq!(elves.resolved_values.model_name, None);
+        // "([a-z]+)$" would give "Elves" for the folder's path.
+        assert_eq!(elves.resolved_values.part_name, None);
+        assert!(elves.rule_configs.as_ref().unwrap().contains_key("model_name"));
         assert!(elves.rule_configs.as_ref().unwrap().contains_key("supported"));
 
         assert_eq!(response.models.len(), 1);

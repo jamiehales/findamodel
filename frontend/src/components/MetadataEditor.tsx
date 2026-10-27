@@ -136,7 +136,7 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
         </p>
         <p>
           {inline('expression: <pattern>')}: a regex or a sed-style substitution (
-          {inline('s|pattern|replacement|flags')}). Quote patterns that start with {inline('[')} or{' '}
+          {inline('s~pattern~replacement~flags')}). Quote patterns that start with {inline('[')} or{' '}
           {inline('{')}, e.g. {inline("expression: '[^n]supported'")}
         </p>
         <p>
@@ -154,7 +154,7 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
           For {inline('Artists/Sculptor Name/dragon.stl')} this gives {inline('Sculptor Name')}.
         </p>
         <p>The same with a sed-style substitution:</p>
-        {code("rule: regex\nexpression: 's|.*/([^/]+)/[^/]+$|\\1|'")}
+        {code("rule: regex\nexpression: 's~.*/([^/]+)/[^/]+$~\\1~'")}
         <p>Select field, mapping patterns to values:</p>
         {code("source: full_path\nvalues:\n  Bust: 'bust'\n  Miniature: 'mini'")}
         <p>Supported, unsupported, or unknown when neither matches:</p>
