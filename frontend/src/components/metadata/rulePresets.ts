@@ -57,23 +57,28 @@ function escapeRegex(text: string): string {
 }
 
 /** Regex capturing the folder `level` levels below the library root (1 = top level). */
+// Ends at a slash or the end of the path, so the rule also matches the folder at that level
+// itself (folder cards evaluate rules against the folder's own path).
 export function folderLevelExpression(level: number): string {
-  return `^/${'[^/]+/'.repeat(level - 1)}([^/]+)/`;
+  return `^/${'[^/]+/'.repeat(level - 1)}([^/]+)${LEVEL_END}`;
 }
 
-const LEVEL_CAPTURE = '([^/]+)/';
+const LEVEL_END = '(?:/|$)';
+const LEVEL_CAPTURE = `([^/]+)${LEVEL_END}`;
+/** Whole-folder captures as written before LEVEL_END, still offered for trimming. */
+const LEGACY_LEVEL_CAPTURE = '([^/]+)/';
 
 /** Ways to tidy a captured folder name, applied to a rule that captures a whole folder. */
 export const RULE_TRIMS = [
   {
     id: 'brackets',
     label: 'Drop text in brackets',
-    capture: '([^/]+?)(?: \\([^/]*\\))?/',
+    capture: `([^/]+?)(?: \\([^/]*\\))?${LEVEL_END}`,
   },
   {
     id: 'dash',
     label: 'Drop text after " - "',
-    capture: '([^/]+?)(?: - [^/]*)?/',
+    capture: `([^/]+?)(?: - [^/]*)?${LEVEL_END}`,
   },
 ] as const;
 
@@ -84,8 +89,11 @@ export function applyTrim(
   trimId: (typeof RULE_TRIMS)[number]['id'],
 ): string | null {
   const trim = RULE_TRIMS.find((t) => t.id === trimId);
-  if (!trim || !ruleText.includes(LEVEL_CAPTURE)) return null;
-  return ruleText.replace(LEVEL_CAPTURE, trim.capture);
+  if (!trim) return null;
+  for (const capture of [LEVEL_CAPTURE, LEGACY_LEVEL_CAPTURE]) {
+    if (ruleText.includes(capture)) return ruleText.replace(capture, trim.capture);
+  }
+  return null;
 }
 
 /** Letter cases a text rule's result can be re-cased to (the rule's `case` option). */

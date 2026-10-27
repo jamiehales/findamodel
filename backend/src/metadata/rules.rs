@@ -422,23 +422,37 @@ mod tests {
     fn preset_patterns_extract_expected_values() {
         let path = "/Loot Studios/Fantasy/Elf Rangers (2024)/Supported/elf_ps.stl";
         let cases = [
-            ("^/([^/]+)/", Some("Loot Studios")),
-            ("^/[^/]+/([^/]+)/", Some("Fantasy")),
-            ("^/[^/]+/[^/]+/([^/]+)/", Some("Elf Rangers (2024)")),
-            (r"^/[^/]+/[^/]+/([^/]+?)(?: \([^/]*\))?/", Some("Elf Rangers")),
-            (r"^/[^/]+/[^/]+/([^/]+?)(?: - [^/]*)?/", Some("Elf Rangers (2024)")),
+            ("^/([^/]+)(?:/|$)", Some("Loot Studios")),
+            ("^/[^/]+/([^/]+)(?:/|$)", Some("Fantasy")),
+            ("^/[^/]+/[^/]+/([^/]+)(?:/|$)", Some("Elf Rangers (2024)")),
+            (r"^/[^/]+/[^/]+/([^/]+?)(?: \([^/]*\))?(?:/|$)", Some("Elf Rangers")),
+            (r"^/[^/]+/[^/]+/([^/]+?)(?: - [^/]*)?(?:/|$)", Some("Elf Rangers (2024)")),
             ("/([^/]+)/[^/]+$", Some("Supported")),
             (r"/([^/]+)\.[^./]+$", Some("elf_ps")),
-            ("^/[^/]+/[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/", None),
+            ("^/[^/]+/[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)(?:/|$)", None),
         ];
         for (expression, expected) in cases {
             assert_eq!(eval(path, json!({ "expression": expression })).as_deref(), expected, "{expression}");
         }
         assert_eq!(
-            eval("/Epic Basing/Ruins - Set 2/x.stl", json!({ "expression": r"^/[^/]+/([^/]+?)(?: - [^/]*)?/" }))
+            eval("/Epic Basing/Ruins - Set 2/x.stl", json!({ "expression": r"^/[^/]+/([^/]+?)(?: - [^/]*)?(?:/|$)" }))
                 .as_deref(),
             Some("Ruins")
         );
+
+        // Folder cards evaluate rules against the folder's own path, which has no trailing
+        // slash: the level presets still match the folder at that level and its ancestors' levels.
+        let folder = "/Loot Studios/Fantasy/Elf Rangers (2024)";
+        assert_eq!(
+            eval(folder, json!({ "expression": "^/[^/]+/[^/]+/([^/]+)(?:/|$)" })).as_deref(),
+            Some("Elf Rangers (2024)")
+        );
+        assert_eq!(
+            eval(folder, json!({ "expression": r"^/[^/]+/[^/]+/([^/]+?)(?: \([^/]*\))?(?:/|$)" })).as_deref(),
+            Some("Elf Rangers")
+        );
+        assert_eq!(eval(folder, json!({ "expression": "^/[^/]+/([^/]+)(?:/|$)" })).as_deref(), Some("Fantasy"));
+        assert_eq!(eval("/Loot Studios/Fantasy", json!({ "expression": "^/[^/]+/[^/]+/([^/]+)(?:/|$)" })), None);
     }
 
     #[test]
