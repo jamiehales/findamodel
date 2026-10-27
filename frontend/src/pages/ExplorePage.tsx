@@ -9,7 +9,7 @@ import ErrorView from '../components/ErrorView';
 import FolderCard from '../components/FolderCard';
 import ExplorerFileRow from '../components/ExplorerFileCard';
 import ExplorerModelCard from '../components/ExplorerModelCard';
-import ModelCard from '../components/ModelCard';
+import ExplorerIndexedModelCard from '../components/ExplorerIndexedModelCard';
 import LoadingView from '../components/LoadingView';
 import MetadataEditor from '../components/MetadataEditor';
 import PathBreadcrumb from '../components/PathBreadcrumb';
@@ -43,7 +43,7 @@ function toProcessedModel(model: ExplorerModel): Model | null {
     category: model.resolvedMetadata?.category ?? null,
     type: model.resolvedMetadata?.type ?? null,
     material: model.resolvedMetadata?.material ?? null,
-    supported: model.resolvedMetadata?.supported ?? null,
+    supported: model.resolvedMetadata?.supported ?? model.detectedSupported ?? null,
     supportSplit: null,
     convexHull: null,
     concaveHull: null,
@@ -105,15 +105,11 @@ function ExplorePageInner({ path }: { path: string }) {
 
       {data.models.length > 0 && (
         <Section title="Models" count={data.models.length}>
-          <CardGrid minCardWidth={180}>
+          <CardGrid minCardWidth={260}>
             {data.models.map((model) => {
               const processed = toProcessedModel(model);
               return processed ? (
-                <ModelCard
-                  key={processed.id}
-                  model={processed}
-                  href={`/model/${encodeURIComponent(processed.id)}`}
-                />
+                <ExplorerIndexedModelCard key={processed.id} entry={model} model={processed} />
               ) : (
                 <ExplorerModelCard key={model.relativePath} model={model} />
               );

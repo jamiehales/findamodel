@@ -154,6 +154,8 @@ export function useUpdateModelMetadata(id: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.modelOtherParts(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.models() });
       queryClient.invalidateQueries({ queryKey: ['query', 'models'] });
+      // Explorer listings show each model's metadata too.
+      queryClient.invalidateQueries({ queryKey: ['explorer', 'dir'] });
     },
   });
 }

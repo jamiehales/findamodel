@@ -27,7 +27,12 @@ export interface ExplorerModel {
   hasPreview: boolean;
   previewUrl: string | null;
   resolvedMetadata: MetadataFields | null;
+  /** `field -> rule YAML` for each field a rule computed. */
   ruleConfigs: Record<string, string> | null;
+  /** Keys of the fields the model's own metadata entry sets. */
+  localFields: string[] | null;
+  /** Supported as detected from the geometry, used when no metadata says. */
+  detectedSupported: boolean | null;
 }
 
 export interface ExplorerFile {

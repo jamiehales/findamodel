@@ -318,10 +318,36 @@ pub fn compute(full_file_path: &str, dir_config: Option<&DirectoryConfig>) -> Co
         return computed;
     };
     let file_name = full_file_path.rsplit(['/', '\\']).next().unwrap_or(full_file_path);
-    let Some(entry) = get_model_metadata_entry(dc, file_name) else {
-        return computed;
-    };
+    if let Some(entry) = get_model_metadata_entry(dc, file_name) {
+        apply_model_entry(&mut computed, entry);
+    }
+    computed
+}
 
+impl ModelMetadataEntry {
+    /// The camelCase keys (as the API's metadata fields name them) this entry sets.
+    pub fn set_field_keys(&self) -> Vec<&'static str> {
+        [
+            ("modelName", self.name.is_some()),
+            ("partName", self.part_name.is_some()),
+            ("creator", self.creator.is_some()),
+            ("collection", self.collection.is_some()),
+            ("subcollection", self.subcollection.is_some()),
+            ("tags", self.tags.is_some()),
+            ("category", self.category.is_some()),
+            ("type", self.item_type.is_some()),
+            ("material", self.material.is_some()),
+            ("supported", self.supported.is_some()),
+            ("raftHeightMm", self.raft_height_mm.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(key, set)| set.then_some(key))
+        .collect()
+    }
+}
+
+/// Lays a model's own `model_metadata` entry over its inherited metadata; tags are merged.
+pub fn apply_model_entry(computed: &mut ComputedMetadata, entry: ModelMetadataEntry) {
     if entry.name.is_some() {
         computed.model_name = entry.name;
     }
@@ -355,7 +381,6 @@ pub fn compute(full_file_path: &str, dir_config: Option<&DirectoryConfig>) -> Co
     if entry.raft_height_mm.is_some() {
         computed.raft_height_mm = entry.raft_height_mm;
     }
-    computed
 }
 
 #[cfg(test)]

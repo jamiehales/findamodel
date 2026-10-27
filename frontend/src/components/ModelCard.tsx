@@ -19,13 +19,17 @@ function getFileName(relativePath: string): string {
 interface ModelCardProps {
   model: Model;
   href: string;
+  /** Shown under the name in place of the standard filter tags (user tags stay). */
+  details?: React.ReactNode;
+  /** Buttons shown before the printing list control. */
+  extraActions?: React.ReactNode;
 }
 
 /**
  * A model tile. The name is the link and stretches over the whole card, so the
  * filter tags and the printing list buttons can sit on top of it.
  */
-function ModelCard({ model, href }: ModelCardProps) {
+function ModelCard({ model, href, details, extraActions }: ModelCardProps) {
   const { showSupports } = useRenderControls();
   const location = useLocation();
   const navigate = useNavigate();
@@ -50,15 +54,18 @@ function ModelCard({ model, href }: ModelCardProps) {
     upsert({ listId: activeList.id, modelId: model.id, quantity: Math.max(0, next) });
   }
 
-  const standard: { key: 'fileType' | 'material' | 'category' | 'type'; value: string | null }[] = [
-    { key: 'fileType', value: model.fileType },
-    { key: 'material', value: model.material },
-    { key: 'category', value: model.category },
-    { key: 'type', value: model.type },
-  ];
+  const standard: { key: 'fileType' | 'material' | 'category' | 'type'; value: string | null }[] =
+    details
+      ? []
+      : [
+          { key: 'fileType', value: model.fileType },
+          { key: 'material', value: model.material },
+          { key: 'category', value: model.category },
+          { key: 'type', value: model.type },
+        ];
 
   return (
-    <div className={`mm-card-link ${styles.card}`}>
+    <div className={`mm-card-link ${styles.card}`} data-detailed={details ? '' : undefined}>
       <div className={`mm-card-image ${styles.image}`}>
         {previewUrl ? (
           <img src={previewUrl} alt="" loading="lazy" />
@@ -73,34 +80,38 @@ function ModelCard({ model, href }: ModelCardProps) {
           {model.name}
         </Link>
         <span className={styles.file}>{getFileName(model.relativePath)}</span>
-        <div className={styles.tags}>
-          {standard.map(({ key, value }) =>
-            value ? (
+        {!(details && (model.tags ?? []).length === 0) && (
+          <div className={styles.tags}>
+            {standard.map(({ key, value }) =>
+              value ? (
+                <FilterPill
+                  key={key}
+                  label={key === 'fileType' ? value.toUpperCase() : value}
+                  onClick={(e) => filterBy(e, (s) => appendFilterValue(s, key, value))}
+                />
+              ) : null,
+            )}
+            {!details && model.supported !== null && (
               <FilterPill
-                key={key}
-                label={key === 'fileType' ? value.toUpperCase() : value}
-                onClick={(e) => filterBy(e, (s) => appendFilterValue(s, key, value))}
+                label={model.supported ? 'Supported' : 'Unsupported'}
+                tone={model.supported ? 'supported' : 'unsupported'}
+                onClick={(e) => filterBy(e, (s) => appendSupportedFilter(s, model.supported!))}
               />
-            ) : null,
-          )}
-          {model.supported !== null && (
-            <FilterPill
-              label={model.supported ? 'Supported' : 'Unsupported'}
-              tone={model.supported ? 'supported' : 'unsupported'}
-              onClick={(e) => filterBy(e, (s) => appendSupportedFilter(s, model.supported!))}
-            />
-          )}
-          {(model.tags ?? []).map((tag) => (
-            <FilterPill
-              key={`user-${tag}`}
-              label={tag}
-              tone="user"
-              onClick={(e) => filterBy(e, (s) => appendFilterValue(s, 'tags', tag))}
-            />
-          ))}
-        </div>
+            )}
+            {(model.tags ?? []).map((tag) => (
+              <FilterPill
+                key={`user-${tag}`}
+                label={tag}
+                tone="user"
+                onClick={(e) => filterBy(e, (s) => appendFilterValue(s, 'tags', tag))}
+              />
+            ))}
+          </div>
+        )}
+        {details}
       </div>
       <div className={styles.actions} data-pinned={quantity > 0 ? '' : undefined}>
+        {extraActions}
         {quantity > 0 ? (
           <QuantityStepper value={quantity} onChange={setQuantity} label={model.name} size="sm" />
         ) : (

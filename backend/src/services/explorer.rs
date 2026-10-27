@@ -116,20 +116,38 @@ fn local_rule_fields(raw_rules_yaml: Option<&str>) -> Option<Vec<String>> {
     (!rules.is_empty()).then(|| rules.keys().map(|k| k.to_ascii_lowercase()).collect())
 }
 
-/// Effective metadata for a model file in a directory, or `None` when nothing applies.
+#[derive(Default)]
+struct ExplorerModelMetadata {
+    resolved: Option<ConfigFieldsDto>,
+    rule_configs: Option<crate::dto::StringMap>,
+    local_fields: Option<Vec<String>>,
+}
+
+/// Effective metadata for a model file in a directory (folder values, then rules, then the
+/// model's own entry), with the rule behind each rule-derived field and the fields the model
+/// sets itself. Everything is `None` when nothing applies.
 fn model_metadata_for(
     dc: Option<&DirectoryConfig>,
     rules: &RuleSet,
     path: &str,
-) -> (Option<ConfigFieldsDto>, Option<crate::dto::StringMap>) {
+    file_name: &str,
+) -> ExplorerModelMetadata {
     if dc.is_none() && rules.is_empty() {
-        return (None, None);
+        return ExplorerModelMetadata::default();
     }
-    let (resolved, configs) = model_metadata::resolve_for_path(ComputedMetadata::from_directory(dc), rules, path, true);
-    if resolved == ComputedMetadata::default() {
-        return (None, None);
+    let (mut resolved, configs) =
+        model_metadata::resolve_for_path(ComputedMetadata::from_directory(dc), rules, path, true);
+    let entry = dc.and_then(|d| model_metadata::get_model_metadata_entry(d, file_name));
+    let local_fields: Option<Vec<String>> =
+        entry.as_ref().map(|e| e.set_field_keys().into_iter().map(str::to_string).collect());
+    if let Some(entry) = entry {
+        model_metadata::apply_model_entry(&mut resolved, entry);
     }
-    (Some(to_fields(resolved)), configs.map(string_map))
+    ExplorerModelMetadata {
+        resolved: (resolved != ComputedMetadata::default()).then(|| to_fields(resolved)),
+        rule_configs: configs.map(string_map),
+        local_fields: local_fields.filter(|f| !f.is_empty()),
+    }
 }
 
 /// Lists folders (sorted), model files (sorted) and previewable files at `relative_path`.
@@ -228,8 +246,8 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
         .map(|(name, size)| {
             let relative = if relative_path.is_empty() { name.clone() } else { format!("{relative_path}/{name}") };
             let cm = cached.get(name);
-            let (resolved_metadata, rule_configs) =
-                model_metadata_for(current.as_ref(), &current_rules, &rules::rule_path(relative_path, name));
+            let metadata =
+                model_metadata_for(current.as_ref(), &current_rules, &rules::rule_path(relative_path, name), name);
             ExplorerModelItemDto {
                 id: cm.map(|m| m.id.to_string()),
                 file_name: name.clone(),
@@ -240,8 +258,10 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
                 preview_url: cm.and_then(|m| {
                     m.preview_image_path.as_deref().map(|p| store::preview_url(m.id, m.preview_generation_version, p))
                 }),
-                resolved_metadata,
-                rule_configs,
+                resolved_metadata: metadata.resolved,
+                rule_configs: metadata.rule_configs,
+                local_fields: metadata.local_fields,
+                detected_supported: cm.and_then(|m| m.detected_supported),
             }
         })
         .collect();
@@ -409,7 +429,7 @@ mod tests {
         write_file(
             root.path(),
             "findamodel.yaml",
-            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\nsupported:\n  expression: elves\n",
+            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\nsupported:\n  expression: elves\nmodel_metadata:\n  dragon.stl:\n    part_name: Wing\n    creator: Bob\n",
         );
         write_file(root.path(), "Elves/archer.stl", "x");
         write_file(root.path(), "Elves/sub/x.obj", "x");
@@ -421,6 +441,7 @@ mod tests {
         svc.sync_directory_configs().await.unwrap();
         let mut cached = model("dragon.stl", "");
         cached.preview_image_path = Some("p.png".into());
+        cached.detected_supported = Some(true);
         t.insert_model(&cached).await;
 
         let response = get_directory_contents(&t.db, root.path(), "").await.unwrap();
@@ -440,7 +461,12 @@ mod tests {
         assert!(dragon.has_preview);
         let meta = dragon.resolved_metadata.as_ref().unwrap();
         assert_eq!(meta.model_name.as_deref(), Some("dragon"));
-        assert_eq!(meta.creator.as_deref(), Some("Alice"));
+        // The model's own entry overrides the folder and is reported as set on the model.
+        assert_eq!(meta.creator.as_deref(), Some("Bob"));
+        assert_eq!(meta.part_name.as_deref(), Some("Wing"));
+        assert_eq!(dragon.local_fields.as_deref(), Some(&["partName".to_string(), "creator".to_string()][..]));
+        assert!(dragon.rule_configs.as_ref().unwrap().contains_key("model_name"));
+        assert_eq!(dragon.detected_supported, Some(true));
 
         assert_eq!(response.files.iter().map(|f| f.file_name.as_str()).collect::<Vec<_>>(), vec!["readme.md"]);
 

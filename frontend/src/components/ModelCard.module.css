@@ -16,6 +16,10 @@
   place-items: center;
 }
 
+.card[data-detailed] .image {
+  aspect-ratio: 4 / 3;
+}
+
 .placeholder {
   font: 500 12px/1 var(--font-mono);
   color: var(--muted-foreground);

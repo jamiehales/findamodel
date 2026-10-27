@@ -190,7 +190,12 @@ pub struct ExplorerModelItemDto {
     pub has_preview: bool,
     pub preview_url: Option<String>,
     pub resolved_metadata: Option<ConfigFieldsDto>,
+    /// `field -> rule YAML` for each field a rule computed.
     pub rule_configs: Option<StringMap>,
+    /// camelCase keys of the fields the model's own metadata entry sets.
+    pub local_fields: Option<Vec<String>>,
+    /// Supported as detected from the model's geometry, used when no metadata says.
+    pub detected_supported: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
