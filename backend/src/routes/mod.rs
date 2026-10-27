@@ -54,6 +54,18 @@ pub fn router(state: AppState) -> Router {
     }
 
     let mut app = app.layer(CompressionLayer::new().compress_when(compressible));
+    // The desktop window loads the frontend from the webview's own origin and calls this
+    // backend on 127.0.0.1, so every request (and its token header) is cross-origin. Outermost,
+    // so preflights are answered before the token guard sees them.
+    if state.settings.mode == RuntimeMode::Desktop {
+        app = app.layer(
+            CorsLayer::new()
+                .allow_origin(DESKTOP_WEBVIEW_ORIGINS.map(HeaderValue::from_static))
+                .allow_headers(Any)
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::PATCH, Method::OPTIONS])
+                .expose_headers(Any),
+        );
+    }
     if state.settings.is_development() && state.settings.mode == RuntimeMode::Server && !state.settings.disable_cors {
         app = app.layer(
             CorsLayer::new()
@@ -65,6 +77,10 @@ pub fn router(state: AppState) -> Router {
     }
     app.with_state(state)
 }
+
+/// Origins the Tauri webview serves the desktop frontend from: `tauri://localhost` on macOS
+/// and Linux, `http(s)://tauri.localhost` on Windows.
+const DESKTOP_WEBVIEW_ORIGINS: [&str; 3] = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"];
 
 /// Compress JSON and mesh payloads only; exports and previews are already compressed and
 /// downloads keep their Content-Length for progress reporting.

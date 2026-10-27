@@ -378,6 +378,44 @@ async fn desktop_mode_requires_session_token() {
 }
 
 #[tokio::test]
+async fn desktop_mode_allows_the_webview_origin() {
+    let app = TestApp::with(|s| {
+        s.mode = RuntimeMode::Desktop;
+        s.desktop_token = Some("secret".into());
+    })
+    .await;
+
+    // The webview's preflight for a token-carrying request is answered without the token.
+    for origin in ["http://tauri.localhost", "tauri://localhost"] {
+        let preflight = Request::builder()
+            .method("OPTIONS")
+            .uri("/health")
+            .header("Origin", origin)
+            .header("Access-Control-Request-Method", "GET")
+            .header("Access-Control-Request-Headers", "x-findamodel-desktop-token")
+            .body(Body::empty())
+            .unwrap();
+        let (status, headers, _) = app.send(preflight).await;
+        assert!(status.is_success(), "{origin}: {status}");
+        assert_eq!(headers.get("access-control-allow-origin").unwrap(), origin);
+    }
+
+    let request = Request::get("/api/users/me")
+        .header("Origin", "http://tauri.localhost")
+        .header("X-Findamodel-Desktop-Token", "secret")
+        .body(Body::empty())
+        .unwrap();
+    let (status, headers, _) = app.send(request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers.get("access-control-allow-origin").unwrap(), "http://tauri.localhost");
+
+    // Other sites on the machine still can't read the desktop backend's responses.
+    let request = Request::get("/health").header("Origin", "http://evil.example").body(Body::empty()).unwrap();
+    let (_, headers, _) = app.send(request).await;
+    assert!(headers.get("access-control-allow-origin").is_none());
+}
+
+#[tokio::test]
 async fn logs_and_stats() {
     let app = TestApp::new().await;
     let (status, logs) = app.get("/api/settings/logs?severity=Warning&limit=10").await;
