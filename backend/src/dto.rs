@@ -212,6 +212,48 @@ pub struct ExplorerResponseDto {
     pub files: Vec<ExplorerFileItemDto>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RulePreviewRequest {
+    /// Library-relative folder the rule is set on.
+    #[serde(default)]
+    pub path: String,
+    /// YAML field name, e.g. "model_name".
+    pub field: String,
+    /// Inner rule YAML, as edited in the folder metadata editor.
+    pub rule: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RulePreviewDto {
+    /// Models the rule was run against.
+    pub model_count: i64,
+    /// True when the folder holds more models than the preview runs against.
+    pub truncated: bool,
+    /// Models the rule produced a value for.
+    pub matched_count: i64,
+    /// The most common values, most frequent first.
+    pub values: Vec<RulePreviewValueDto>,
+    /// A few models from different folders, matched ones first.
+    pub samples: Vec<RulePreviewSampleDto>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RulePreviewValueDto {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RulePreviewSampleDto {
+    pub relative_path: String,
+    pub values: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigValidationErrorResponse {

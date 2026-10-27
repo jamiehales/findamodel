@@ -194,6 +194,36 @@ export async function updateDirectoryConfig(
   return r.json();
 }
 
+export interface RulePreview {
+  /** Models the rule was run against. */
+  modelCount: number;
+  /** True when the folder holds more models than the preview runs against. */
+  truncated: boolean;
+  matchedCount: number;
+  /** Most common values, most frequent first. */
+  values: { value: string; count: number }[];
+  /** A few models from different folders, matched ones first. */
+  samples: { relativePath: string; values: string[] }[];
+  error: string | null;
+}
+
+/** Runs a field's rule (inner rule YAML) over the indexed models under a folder. */
+export async function previewRule(
+  path: string,
+  field: string,
+  rule: string,
+  signal?: AbortSignal,
+): Promise<RulePreview> {
+  const r = await apiFetch('/api/explorer/rule-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, field, rule }),
+    signal,
+  });
+  if (!r.ok) throw new Error('Failed to preview rule');
+  return r.json();
+}
+
 export async function fetchMetadataDictionaryOverview(): Promise<MetadataDictionaryOverview> {
   const r = await apiFetch('/api/settings/metadata-dictionary');
   if (!r.ok) throw new Error('Failed to fetch metadata dictionary settings');

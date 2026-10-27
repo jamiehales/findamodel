@@ -13,7 +13,7 @@ use crate::entities::ModelRow;
 use crate::error::{AppError, AppResult};
 use crate::metadata::config_reader::{self, CONFIG_FILE_NAME};
 use crate::metadata::inheritance;
-use crate::metadata::{fields, model_metadata, tags, yaml};
+use crate::metadata::{fields, model_metadata, rules, tags, yaml};
 use crate::preview::{self, PreviewService};
 use crate::services::app_config::{AppConfigService, ModelsRoot};
 use crate::services::metadata_config::MetadataConfigService;
@@ -216,9 +216,10 @@ impl ModelService {
             .and_then(|dc| model_metadata::get_model_metadata_entry(dc, &model.file_name))
             .unwrap_or_default();
 
-        let inherited_values = match (&dir_config, self.full_path(&model)) {
-            (Some(dc), Some(full)) => {
-                let inherited = model_metadata::compute_inherited(&full.to_string_lossy(), Some(dc));
+        let inherited_values = match &dir_config {
+            Some(dc) => {
+                let path = rules::rule_path(&model.directory, &model.file_name);
+                let inherited = model_metadata::compute_inherited(&path, Some(dc));
                 Some(ModelMetadataEntry {
                     name: inherited.model_name,
                     part_name: inherited.part_name,
@@ -233,7 +234,7 @@ impl ModelService {
                     raft_height_mm: inherited.raft_height_mm,
                 })
             }
-            _ => None,
+            None => None,
         };
 
         Ok(Some(ModelMetadataDetail { local_values, inherited_values }))

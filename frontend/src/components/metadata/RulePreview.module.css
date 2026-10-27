@@ -1,0 +1,93 @@
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--mm-r-sm);
+  background: var(--card);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: var(--mm-r-sm);
+  background: var(--muted);
+  font: 400 12px/18px var(--font-sans);
+}
+
+.valueText {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.count {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
+.samples {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sample {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: var(--space-4);
+  font: 400 12px/18px var(--font-mono);
+}
+
+/* Ellipsis at the start, so the end of the path (the part rules usually read) stays visible. */
+.samplePath {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  color: var(--muted-foreground);
+}
+
+.sampleValue,
+.noMatch {
+  max-width: 24ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-sans);
+}
+
+.noMatch {
+  color: var(--muted-foreground);
+}
+
+.error {
+  margin: 0;
+  color: var(--destructive-text);
+  font: 400 13px/18px var(--font-sans);
+}

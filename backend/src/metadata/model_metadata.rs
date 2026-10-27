@@ -193,6 +193,24 @@ impl ComputedMetadata {
         }
     }
 
+    /// A rule field's values as strings: every tag for "tags", "true"/"false" for
+    /// "supported", otherwise the field's value. Empty when the field has no value.
+    pub fn rule_field_values(&self, key: &str) -> Vec<String> {
+        match key {
+            "tags" => self.tags.clone(),
+            "supported" => self.supported.map(|s| s.to_string()).into_iter().collect(),
+            "creator" => self.creator.clone().into_iter().collect(),
+            "collection" => self.collection.clone().into_iter().collect(),
+            "subcollection" => self.subcollection.clone().into_iter().collect(),
+            "category" => self.category.clone().into_iter().collect(),
+            "type" => self.item_type.clone().into_iter().collect(),
+            "material" => self.material.clone().into_iter().collect(),
+            "model_name" => self.model_name.clone().into_iter().collect(),
+            "part_name" => self.part_name.clone().into_iter().collect(),
+            _ => Vec::new(),
+        }
+    }
+
     fn string_field_mut(&mut self, key: &str) -> Option<&mut Option<String>> {
         match key {
             "creator" => Some(&mut self.creator),

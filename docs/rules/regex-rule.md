@@ -23,7 +23,7 @@ The `regex` rule evaluates a regular expression against part of the file's path 
 
 ```yaml
 creator:
-  expression: "^/models/([^/]+)"
+  expression: "^/([^/]+)"
 ```
 
 `rule: regex` is optional. If `rule` is omitted, regex is assumed.
@@ -49,18 +49,18 @@ The `source` option controls what string the regex is applied to.
 
 | Value | Input string |
 |-------|-------------|
-| `full_path` | The file's full path, normalised to forward slashes |
+| `full_path` | The file's path relative to the models root, with a leading `/` and forward slashes |
 | `folder` | The directory portion of the path (everything except the filename) |
 | `filename` | Just the filename (including extension) |
 
 ### Examples
 
-For a file at `/models/Alice/Fantasy/elf_warrior.stl`:
+Paths are always relative to the models root, so rules keep working if the library moves. For a file at `<models root>/Alice/Fantasy/elf_warrior.stl`:
 
 | Source | Input to regex |
 |--------|---------------|
-| `full_path` | `/models/Alice/Fantasy/elf_warrior.stl` |
-| `folder` | `/models/Alice/Fantasy` |
+| `full_path` | `/Alice/Fantasy/elf_warrior.stl` |
+| `folder` | `/Alice/Fantasy` |
 | `filename` | `elf_warrior.stl` |
 
 ---
@@ -75,10 +75,10 @@ If the expression contains a **capturing group**, the content of the first group
 # Extract the creator folder from the full path
 creator:
   rule: regex
-  expression: "^/models/([^/]+)"
+  expression: "^/([^/]+)"
 ```
 
-For `/models/Alice/Fantasy/elf_warrior.stl` this returns `"Alice"`.
+For `/Alice/Fantasy/elf_warrior.stl` this returns `"Alice"`.
 
 ```yaml
 # Extract the word "supported" or "unsupported" from the filename
@@ -161,7 +161,7 @@ collection:
   expression: "s|.*/([^/]+)/[^/]+$|\1|"
 ```
 
-For `/models/Alice/Fantasy/Elves/elf.stl`, captures `Fantasy` (the parent of `Elves`).
+For `/Alice/Fantasy/Elves/elf.stl`, this returns `Elves` (the folder holding the file).
 
 #### Supported flags
 
@@ -181,10 +181,10 @@ For `/models/Alice/Fantasy/Elves/elf.stl`, captures `Fantasy` (the parent of `El
 ```yaml
 creator:
   rule: regex
-  expression: "^/models/([^/]+)"
+  expression: "^/([^/]+)"
 ```
 
-`/models/Alice/Fantasy/elf.stl` → `"Alice"`
+`/Alice/Fantasy/elf.stl` → `"Alice"`
 
 ---
 
@@ -196,7 +196,7 @@ collection:
   expression: "/([^/]+)/[^/]+$"
 ```
 
-`/models/Alice/Fantasy/Elves/elf.stl` → `"Elves"`
+`/Alice/Fantasy/Elves/elf.stl` → `"Elves"`
 
 To capture the grandparent instead:
 
@@ -254,7 +254,7 @@ collection:
   expression: "s|.*/([^_]+)_([^/]+)/[^/]+$|\1 \2|"
 ```
 
-For `/models/Alice/Dark_Elves/elf.stl`, this returns `"Dark Elves"`.
+For `/Alice/Dark_Elves/elf.stl`, this returns `"Dark Elves"`.
 
 ---
 

@@ -61,6 +61,15 @@ fn as_str(value: &Value) -> Option<&str> {
     value.as_str()
 }
 
+/// The path rules match against: the file's path relative to the library root with a
+/// leading slash (e.g. "/Creator/Collection/model.stl"), so rules never depend on where the
+/// library lives. `directory` is library-relative ("" for the root).
+pub fn rule_path(directory: &str, file_name: &str) -> String {
+    let directory = directory.replace('\\', "/");
+    let directory = directory.trim_matches('/');
+    if directory.is_empty() { format!("/{file_name}") } else { format!("/{directory}/{file_name}") }
+}
+
 fn file_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
@@ -95,6 +104,35 @@ fn input_for(file_path: &str, options: &RuleSet) -> Option<String> {
         "filename" => file_name(&normalized).to_string(),
         _ => normalized,
     })
+}
+
+/// Why the first regex in a rule config (its `expression` or a `values` pattern) doesn't
+/// compile; `None` when every pattern is valid.
+pub fn pattern_error(rule_config: &Value) -> Option<String> {
+    let Value::Object(config) = rule_config else {
+        return None;
+    };
+    // fancy_regex reports "Parsing error at position N: <reason>", where N counts the
+    // "(?i)" prefix; only the reason means anything to whoever wrote the rule.
+    let check = |pattern: &str, flags: &str| -> Option<String> {
+        Regex::new(&format!("(?i{flags}){pattern}")).err().map(|err| {
+            let message = err.to_string();
+            message.split_once(": ").map_or(message.clone(), |(_, reason)| reason.to_string())
+        })
+    };
+    if let Some(expression) = get_ci(config, "expression").and_then(as_str).filter(|e| !e.is_empty()) {
+        let error = match SED_PATTERN.captures(expression) {
+            Ok(Some(sed)) => check(sed.get(2).map_or("", |m| m.as_str()), ""),
+            _ => check(expression, ""),
+        };
+        if error.is_some() {
+            return error;
+        }
+    }
+    if let Some(Value::Object(values)) = get_ci(config, "values") {
+        return values.values().filter_map(Value::as_str).filter(|p| !p.is_empty()).find_map(|p| check(p, ""));
+    }
+    None
 }
 
 /// Keys of every `values` entry whose regex matches, in declaration order.
@@ -295,6 +333,77 @@ mod tests {
 
     fn eval(path: &str, options: Value) -> Option<String> {
         parse_value(path, RuleFieldType::String, &opts(options))
+    }
+
+    // ── Rule paths ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn rule_path_is_library_relative_with_leading_slash() {
+        assert_eq!(rule_path("", "dragon.stl"), "/dragon.stl");
+        assert_eq!(rule_path("Creator/Set", "elf.stl"), "/Creator/Set/elf.stl");
+        assert_eq!(rule_path("/Creator\\Set/", "elf.stl"), "/Creator/Set/elf.stl");
+    }
+
+    /// The patterns the folder editor's presets generate, run against library-relative paths.
+    #[test]
+    fn preset_patterns_extract_expected_values() {
+        let path = "/Loot Studios/Fantasy/Elf Rangers (2024)/Supported/elf_ps.stl";
+        let cases = [
+            ("^/([^/]+)/", Some("Loot Studios")),
+            ("^/[^/]+/([^/]+)/", Some("Fantasy")),
+            ("^/[^/]+/[^/]+/([^/]+)/", Some("Elf Rangers (2024)")),
+            (r"^/[^/]+/[^/]+/([^/]+?)(?: \([^/]*\))?/", Some("Elf Rangers")),
+            (r"^/[^/]+/[^/]+/([^/]+?)(?: - [^/]*)?/", Some("Elf Rangers (2024)")),
+            ("/([^/]+)/[^/]+$", Some("Supported")),
+            (r"/([^/]+)\.[^./]+$", Some("elf_ps")),
+            ("^/[^/]+/[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/", None),
+        ];
+        for (expression, expected) in cases {
+            assert_eq!(eval(path, json!({ "expression": expression })).as_deref(), expected, "{expression}");
+        }
+        assert_eq!(
+            eval("/Epic Basing/Ruins - Set 2/x.stl", json!({ "expression": r"^/[^/]+/([^/]+?)(?: - [^/]*)?/" }))
+                .as_deref(),
+            Some("Ruins")
+        );
+    }
+
+    #[test]
+    fn supported_keywords_preset_skips_unsupported() {
+        let rule = json!({ "expression": "(?<!un)supported|_ps(?![a-z0-9])" });
+        let supported = |path: &str| parse_value(path, RuleFieldType::Bool, &opts(rule.clone())).is_some();
+        assert!(supported("/A/Supported/elf.stl"));
+        assert!(supported("/A/elf_presupported.stl"));
+        assert!(supported("/A/elf-pre-supported.stl"));
+        assert!(supported("/A/elf_ps.stl"));
+        assert!(supported("/A/elf_ps_v2.stl"));
+        assert!(!supported("/A/Unsupported/elf_UNSUPPORTED.stl"));
+        assert!(!supported("/A/elf_psx.stl"));
+    }
+
+    #[test]
+    fn keyword_presets_treat_underscores_as_separators() {
+        let scale = json!({ "expression": "(?<![a-z0-9])(\\d+mm)(?![a-z0-9])" });
+        assert_eq!(eval("/A/elf_32mm_ps.stl", scale.clone()).as_deref(), Some("32mm"));
+        assert_eq!(eval("/A/75mm Hero/x.stl", scale.clone()).as_deref(), Some("75mm"));
+        assert_eq!(eval("/A/v132mmx.stl", scale), None);
+
+        let tags =
+            opts(json!({ "values": { "Elf": "(?<![a-z0-9])Elf(?![a-z0-9])", "Orc": "(?<![a-z0-9])Orc(?![a-z0-9])" } }));
+        assert_eq!(parse_matching_value_keys("/A/dark_elf_bust.stl", &tags), vec!["Elf"]);
+        assert!(parse_matching_value_keys("/A/self_orcish.stl", &tags).is_empty());
+    }
+
+    #[test]
+    fn pattern_error_reports_invalid_regexes_only() {
+        assert_eq!(pattern_error(&json!({ "expression": "^/([^/]+)/" })), None);
+        assert_eq!(
+            pattern_error(&json!({ "expression": "([^/]+" })).as_deref(),
+            Some("Opening parenthesis without closing parenthesis")
+        );
+        assert!(pattern_error(&json!({ "expression": "s|([a-z|x|" })).is_some());
+        assert!(pattern_error(&json!({ "values": { "Bust": "bust", "Bad": "(" } })).is_some());
+        assert_eq!(pattern_error(&json!("not a rule")), None);
     }
 
     // ── Regex parser ─────────────────────────────────────────────────────────

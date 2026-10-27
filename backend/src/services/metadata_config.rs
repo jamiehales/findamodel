@@ -168,7 +168,7 @@ impl MetadataConfigService {
 
         if !changed.is_empty() {
             let affected = inheritance::expand_to_descendants(&changed, tracked.all.keys());
-            recompute_model_caches(&mut conn, root, &affected, &tracked.all).await?;
+            recompute_model_caches(&mut conn, &affected, &tracked.all).await?;
         }
         Ok(directories.len())
     }
@@ -205,7 +205,7 @@ impl MetadataConfigService {
             }
             descendants.flush(&mut conn).await?;
             let affected = inheritance::expand_to_descendants(&changed, descendants.all.keys());
-            recompute_model_caches(&mut conn, root, &affected, &descendants.all).await?;
+            recompute_model_caches(&mut conn, &affected, &descendants.all).await?;
         }
         Ok(tracked.all)
     }
@@ -333,7 +333,7 @@ impl MetadataConfigService {
             .filter(|k| dir_path.is_empty() || *k == dir_path || k.starts_with(&format!("{dir_path}/")))
             .cloned()
             .collect();
-        recompute_model_caches(&mut conn, &root, &affected, &tracked.all).await?;
+        recompute_model_caches(&mut conn, &affected, &tracked.all).await?;
 
         let parent = inheritance::parent_record(dir_path, &tracked.all);
         Ok(build_detail_dto(dir_path, tracked.all.get(dir_path), parent))
@@ -343,7 +343,6 @@ impl MetadataConfigService {
 /// Recomputes calculated metadata for every model in the given directories.
 pub async fn recompute_model_caches(
     conn: &mut SqliteConnection,
-    root: &Path,
     affected: &[String],
     all: &DirectoryMap,
 ) -> sqlx::Result<()> {
@@ -352,8 +351,8 @@ pub async fn recompute_model_caches(
     }
     let models = store::models_in_directories(conn, affected).await?;
     for mut model in models {
-        let full_path = inheritance::build_full_file_path(root, &model.directory, &model.file_name);
-        let metadata = model_metadata::compute(&full_path.to_string_lossy(), all.get(&model.directory));
+        let path = rules::rule_path(&model.directory, &model.file_name);
+        let metadata = model_metadata::compute(&path, all.get(&model.directory));
         let before = model.clone();
         store::apply_calculated_metadata(&mut model, &metadata);
         if model != before {

@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
-import { CircleHelp, RotateCcw } from 'lucide-react';
+import { ChevronDown, CircleHelp, RotateCcw } from 'lucide-react';
 import {
   Button,
   IconButton,
   Label,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuTrigger,
   SegmentedControl,
   SegmentedControlItem,
   Input,
@@ -25,6 +31,8 @@ import MetadataBoolField from './metadata/MetadataBoolField';
 import MetadataSelectField from './metadata/MetadataSelectField';
 import MetadataTextField from './metadata/MetadataTextField';
 import TagEditor from './metadata/TagEditor';
+import RulePreview from './metadata/RulePreview';
+import { applyTrim, RULE_TRIMS, rulePresetGroups } from './metadata/rulePresets';
 import styles from './metadata/MetadataForm.module.css';
 
 type FieldMode = 'value' | 'rule';
@@ -99,6 +107,10 @@ function RulesHelpDialog({ open, onClose }: { open: boolean; onClose: () => void
         <p>
           Rules derive a field's value from each model's file path instead of setting a fixed value.
           Rules on a folder apply to all of its subfolders and models.
+        </p>
+        <p>
+          Rules match against the model's path from the library root, starting with a slash, e.g.{' '}
+          {inline('/Creator/Collection/model.stl')}.
         </p>
         <p>
           Rules are regex-based. The {inline('rule: regex')} key is optional; regex is assumed when
@@ -418,6 +430,7 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
     supportsRules,
     isRuleMode,
     yamlName,
+    optionsField,
     canReset,
     onReset,
   }: {
@@ -425,11 +438,13 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
     supportsRules: boolean;
     isRuleMode: boolean;
     yamlName: string;
+    optionsField?: FieldDef['optionsField'];
     canReset: boolean;
     onReset: () => void;
   }) {
     return (
       <div className={styles.fieldTools}>
+        {isRuleMode && presetsMenu(label, yamlName, optionsField)}
         {isRuleMode && (
           <Tooltip content="Rules help">
             <IconButton
@@ -471,6 +486,60 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
     );
   }
 
+  function presetsMenu(label: string, yamlName: string, optionsField?: FieldDef['optionsField']) {
+    const groups = rulePresetGroups(yamlName, path, {
+      selectValues: optionsField
+        ? metadataDictionary?.[optionsField].configured.map((v) => v.value)
+        : undefined,
+      tagValues: metadataDictionary?.tags.configured.map((v) => v.value),
+    });
+    if (groups.length === 0) return null;
+    const ruleText = fieldRuleTexts[yamlName] ?? '';
+
+    return (
+      <Menu>
+        <MenuTrigger asChild>
+          <Button variant="ghost" size="sm" aria-label={`${label} rule presets`}>
+            Presets
+            <ChevronDown size={14} strokeWidth={1.5} aria-hidden="true" />
+          </Button>
+        </MenuTrigger>
+        <MenuContent align="end" className={styles.presetMenu}>
+          {groups.map((group, i) => (
+            <div key={group.label} role="group" aria-label={group.label}>
+              {i > 0 && <MenuSeparator />}
+              <MenuLabel>{group.label}</MenuLabel>
+              {group.presets.map((preset) => (
+                <MenuItem key={preset.id} onSelect={() => handleRuleChange(yamlName, preset.yaml)}>
+                  {preset.label}
+                  {preset.detail && <span className={styles.presetDetail}>{preset.detail}</span>}
+                </MenuItem>
+              ))}
+            </div>
+          ))}
+          {groups.some((g) => g.presets.some((p) => p.id.startsWith('level-'))) && (
+            <>
+              <MenuSeparator />
+              <MenuLabel>Tidy folder name</MenuLabel>
+              {RULE_TRIMS.map((trim) => {
+                const trimmed = applyTrim(ruleText, trim.id);
+                return (
+                  <MenuItem
+                    key={trim.id}
+                    disabled={trimmed == null}
+                    onSelect={() => trimmed != null && handleRuleChange(yamlName, trimmed)}
+                  >
+                    {trim.label}
+                  </MenuItem>
+                );
+              })}
+            </>
+          )}
+        </MenuContent>
+      </Menu>
+    );
+  }
+
   function ruleField(
     id: string,
     yamlName: string,
@@ -492,10 +561,17 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
           autoCapitalize="off"
           className={styles.ruleInput}
         />
-        {error && (
+        {error ? (
           <p role="alert" className={styles.error}>
             {error}
           </p>
+        ) : (
+          <RulePreview
+            path={path}
+            field={yamlName}
+            rule={text.trim() || (inherited ?? '')}
+            enabled={open}
+          />
         )}
       </>
     );
@@ -580,6 +656,7 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
                     supportsRules,
                     isRuleMode,
                     yamlName: field.yamlName,
+                    optionsField: field.optionsField,
                     canReset: hasLocalValue && hasInheritedValue,
                     onReset: handleReset,
                   })}

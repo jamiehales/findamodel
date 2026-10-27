@@ -46,6 +46,20 @@
   }
 }
 
+.presetMenu {
+  min-width: 240px;
+}
+
+.presetDetail {
+  margin-left: auto;
+  padding-left: var(--space-4);
+  color: var(--muted-foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 18ch;
+}
+
 .ruleInput {
   font-family: var(--font-mono);
   font-size: 13px;

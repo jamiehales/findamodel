@@ -22,6 +22,7 @@ use crate::geometry::{LoadedGeometry, hull, loader, support_separation};
 use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::{self, ComputedMetadata};
+use crate::metadata::rules;
 use crate::preview::{self, CURRENT_PREVIEW_GENERATION_VERSION};
 use crate::services::{scan_config, store};
 
@@ -105,13 +106,13 @@ pub fn resolve_raft_height_mm(directory: &str, configs: &DirectoryMap, default_r
 
 /// Raft cutoff for a model: its own override, then its directory's, then the default.
 pub fn resolve_raft_height_mm_for_model(
-    full_path: &str,
+    rule_path: &str,
     directory: &str,
     configs: &DirectoryMap,
     default_raft_height_mm: f32,
 ) -> f32 {
     raft_height_mm_for(
-        &model_metadata::compute(full_path, configs.get(directory)),
+        &model_metadata::compute(rule_path, configs.get(directory)),
         directory,
         configs,
         default_raft_height_mm,
@@ -281,7 +282,8 @@ struct ScanContext {
 impl ScanContext {
     /// A model file's metadata and raft cutoff.
     fn resolve(&self, full_path: &str, directory: &str) -> (ComputedMetadata, f32) {
-        let metadata = model_metadata::compute(full_path, self.configs.get(directory));
+        let file_name = Path::new(full_path).file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let metadata = model_metadata::compute(&rules::rule_path(directory, &file_name), self.configs.get(directory));
         let raft_height_mm = raft_height_mm_for(&metadata, directory, &self.configs, self.default_raft_height_mm);
         (metadata, raft_height_mm)
     }

@@ -1,4 +1,10 @@
-import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+  useSuspenseQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   fetchModels,
   fetchModelsByIds,
@@ -12,6 +18,7 @@ import {
   fetchDirectoryConfig,
   fetchExplorerFileText,
   updateDirectoryConfig,
+  previewRule,
   fetchIndexerStatus,
   fetchIndexerRuns,
   fetchIndexerRun,
@@ -74,6 +81,8 @@ export const queryKeys = {
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
+  rulePreview: (path: string, field: string, rule: string) =>
+    ['explorer', 'rule-preview', path, field, rule] as const,
   indexerStatus: ['indexer', 'status'] as const,
   indexerRuns: (days: number) => ['indexer', 'runs', days] as const,
   indexerRun: (
@@ -359,6 +368,17 @@ export function useDirectoryConfig(path: string, enabled: boolean) {
   });
 }
 
+/** Preview of a folder rule; keeps the last result on screen while the next one loads. */
+export function useRulePreview(path: string, field: string, rule: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.rulePreview(path, field, rule),
+    queryFn: ({ signal }) => previewRule(path, field, rule, signal),
+    enabled: enabled && rule.trim() !== '',
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+}
+
 export function useExplorerFileText(relativePath: string, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.explorerFileText(relativePath),
@@ -375,11 +395,16 @@ export function useUpdateDirectoryConfig(path: string) {
     onSuccess: (updated) => {
       // Update the config cache with the fresh response
       queryClient.setQueryData(queryKeys.explorerConfig(path), updated);
-      // Invalidate the explorer dir (resolved values on folder cards may have changed)
-      const parentPath = updated.parentPath ?? '';
-      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(parentPath) });
-      // Also invalidate the dir we're in, so folder cards of its children update
-      queryClient.invalidateQueries({ queryKey: queryKeys.explorerDir(path) });
+      // Everything below the folder may resolve differently now: folder cards, descendant
+      // configs, and the metadata of every model under it.
+      queryClient.invalidateQueries({
+        queryKey: ['explorer'],
+        predicate: (query) =>
+          JSON.stringify(query.queryKey) !== JSON.stringify(queryKeys.explorerConfig(path)),
+      });
+      queryClient.invalidateQueries({ queryKey: ['model'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.models() });
+      queryClient.invalidateQueries({ queryKey: ['query'] });
     },
   });
 }
