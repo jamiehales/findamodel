@@ -197,7 +197,10 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
             Some(d) => d.resolved_rules_yaml.clone(),
             None => current.as_ref().and_then(|c| c.resolved_rules_yaml.clone()),
         };
-        let folder_rules = rules::deserialize_rules(effective_rules_yaml.as_deref());
+        // Whether a model is supported is per-model data, so a supported rule run against the
+        // folder's own path means nothing; the card shows only a plain supported value.
+        let mut folder_rules = rules::deserialize_rules(effective_rules_yaml.as_deref());
+        folder_rules.retain(|field, _| !field.eq_ignore_ascii_case("supported"));
         if !folder_rules.is_empty() {
             let (applied, _) = model_metadata::resolve_for_path(
                 to_plain(&resolved),
@@ -406,7 +409,7 @@ mod tests {
         write_file(
             root.path(),
             "findamodel.yaml",
-            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\n",
+            "creator: Alice\nmodel_name:\n  source: filename\n  expression: '^(.*)\\.[^./]+$'\nsupported:\n  expression: elves\n",
         );
         write_file(root.path(), "Elves/archer.stl", "x");
         write_file(root.path(), "Elves/sub/x.obj", "x");
@@ -427,6 +430,9 @@ mod tests {
         assert_eq!((elves.name.as_str(), elves.subdirectory_count, elves.model_count), ("Elves", 1, 1));
         assert_eq!(elves.resolved_values.creator.as_deref(), Some("Alice"));
         assert!(elves.rule_configs.as_ref().unwrap().contains_key("model_name"));
+        // The supported rule matches the folder's path ("/Elves") but isn't evaluated for folders.
+        assert_eq!(elves.resolved_values.supported, None);
+        assert!(elves.rule_configs.as_ref().unwrap().contains_key("supported"));
 
         assert_eq!(response.models.len(), 1);
         let dragon = &response.models[0];
