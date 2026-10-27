@@ -181,7 +181,8 @@ const DIRECTION_SPAN_MM: f32 = 1.0;
 /// Eastman's 8e6618e3 0.023 recall, and with a 1.5 mm floor kept two Engin3d fakes.
 const FORK_LOOKAHEAD_MM: f32 = 2.0;
 /// The ways followed down from a fork, at each slice those nearest the line straight down. A limit
-/// on cost: no effect between 6 and 11.
+/// on cost: no effect between 6 and 11, and without it the walks through DM Stash's dense lattice
+/// (354e5d8b) take 2.6 times as long.
 const FORK_WAYS: usize = 8;
 /// Two leans (horizontal run per unit of height) within this of each other are alike: ways down
 /// from a fork whose slopes differ by less are told apart by the shaft's direction, and a run of
@@ -335,7 +336,9 @@ const BRACE_PARALLEL_COS: f32 = 0.9;
 /// 158 round-trip and benchmark models, most on Lychee zigzag webs and hollow-model struts, whose
 /// junctions hide much of each brace.
 const BRACE_REFIT_SPREAD: f32 = 0.25;
-/// Safety limit: the thickest brace rebuilt.
+/// Safety limit: the thickest brace rebuilt. Without it, thick bars of two Engin3d kits without
+/// supports (ede32301, f5ddf994) rebuild into braces accounting for their surface, and the guard
+/// keeps them.
 const MAX_BRACE_DIAMETER_MM: f32 = 3.0;
 /// Kickstand detection: a leg stands on a bottom of an untraced piece below the root top (on the
 /// plate or a raft) and runs up to where the piece touches a support, straight or leaning off the
@@ -380,7 +383,8 @@ const NONE: u32 = u32::MAX;
 /// tolerance.
 const SHELL_WELD_MM: f32 = 0.001;
 /// Shells with more triangles than this are never a single cone. A safety limit on cost: such
-/// shells (a whole unioned support tree) fail the cone fit anyway, and fitting them is skipped.
+/// shells (a whole unioned support tree) fail the cone fit anyway (none in the corpus or the guard
+/// sets fits), and fitting them is skipped.
 const MAX_CONE_TRIANGLES: usize = 2_000;
 /// A cone's ends are read from the vertices within this share of its length of each end. Styles:
 /// chitubox-trees, lychee-zigzag and hollow-struts (tips that are cones of their own). Sweep:
@@ -400,6 +404,12 @@ const CONE_TOLERANCE_RATIO: f32 = 0.05;
 /// shafts it meets: thin braces packed close in a lattice are shorter than thick ones.
 fn min_brace_mm(diameter: f32) -> f32 {
     scaled(diameter, MIN_BRACE_RATIO, MIN_BRACE_MIN_MM)
+}
+
+/// How far beyond its shaft's radius a brace end of `diameter` may lie for a knot to hang it
+/// there (see [`KNOT_REACH_RATIO`]).
+fn knot_reach_mm(diameter: f32) -> f32 {
+    scaled(diameter, KNOT_REACH_RATIO, KNOT_REACH_MIN_MM)
 }
 
 /// `feature * ratio`, and at least `floor`: a tolerance that grows with a measured size of the
@@ -2046,7 +2056,7 @@ impl Graph {
                     continue;
                 }
                 let hosts = [(lower.support, lower.kickstand), (upper.support, upper.kickstand)];
-                let knot_reach = scaled(diameter_mm, KNOT_REACH_RATIO, KNOT_REACH_MIN_MM);
+                let knot_reach = knot_reach_mm(diameter_mm);
                 // A knot hangs on a shaft: an end on a tip only, or off its support, has none.
                 // A branch hanging down from where it joins its parent to its socket (a fan of tip
                 // cones meeting in one joint ball below that) has no shaft of its own either: the
@@ -3735,6 +3745,27 @@ mod tests {
     }
 
     #[test]
+    fn rod_barely_tapering_is_not_a_tip_cone() {
+        // A rod narrowing from 0.9 to 0.8 mm along its 3 mm: a shaft, not a tip.
+        let rod = frustum(Vec3::new(1.0, 2.0, 10.0), Vec3::new(1.0, 2.0, 7.0), 0.4, 0.45);
+        assert!(fit_cone(&rod, &(0..rod.len() as u32).collect::<Vec<_>>()).is_none());
+    }
+
+    #[test]
+    fn cone_fit_allows_a_wall_a_little_off_true() {
+        let all = |t: &[Triangle]| fit_cone(t, &(0..t.len() as u32).collect::<Vec<_>>());
+        let at = |z: f32| Vec3::new(1.0, 2.0, z);
+        // A thin tip cone (0.2 to 0.6 mm over 2 mm) whose wall bulges 0.018 mm halfway along.
+        let thin = tube(&[(at(10.0), 0.1), (at(9.0), 0.218), (at(8.0), 0.3), (at(7.0), 0.3)]);
+        let cone = all(&thin).expect("a cone");
+        assert!(close(cone.wide, at(8.0), 0.05), "{cone:?}");
+        // A thick one (0.6 to 2 mm over 4 mm) whose wall bulges 0.04 mm: a share of its width.
+        let thick = tube(&[(at(10.0), 0.3), (at(8.0), 0.69), (at(6.0), 1.0), (at(4.0), 1.0)]);
+        let cone = all(&thick).expect("a cone");
+        assert!(close(cone.wide, at(6.0), 0.1), "{cone:?}");
+    }
+
+    #[test]
     fn raft_under_the_supports_does_not_end_the_trunk() {
         let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
         let mut supports = support(Vec3::new(1.0, 1.0, 10.0), &[Vec3::new(1.0, 1.0, 8.0), Vec3::new(1.0, 1.0, 0.5)]);
@@ -3790,6 +3821,13 @@ mod tests {
         assert!(close(brace.lower.point, Vec3::new(3.0, 0.0, 3.0), 0.6), "{}", brace.lower.point);
         assert!(close(brace.upper.point, Vec3::new(0.0, 0.0, 6.0), 0.6), "{}", brace.upper.point);
         assert!((0.5..=0.75).contains(&brace.diameter_mm), "{}", brace.diameter_mm);
+    }
+
+    #[test]
+    fn web_one_slice_thick_between_posts_is_not_a_brace() {
+        // A level web 0.12 mm thick between the posts: it shows in a slice or two at most.
+        let layout = two_posts(&cuboid(Vec3::new(0.0, -0.1, 5.02), Vec3::new(3.0, 0.1, 5.14), 2));
+        assert!(layout.braces.is_empty(), "{:?}", layout.braces);
     }
 
     #[test]
@@ -4092,6 +4130,26 @@ mod tests {
         assert!((column.top.z - 8.0).abs() < 0.05, "{}", column.top);
         assert!(column.into.is_none(), "{:?}", column.into.map(|i| i.1));
         assert!(column.junctions.iter().any(|j| (j.z - 4.2).abs() < 0.3), "{:?}", column.junctions);
+    }
+
+    #[test]
+    fn column_ends_in_a_traced_support_it_merges_with_for_longer_than_a_junction() {
+        // A post like that one, merged with the traced support beside it from 5 to 8 mm: taller
+        // than any brace junction, so the post ends there, running into that support.
+        let blobs: Vec<(f32, u32, f32)> = (0..=100)
+            .map(|layer| if (50..=80).contains(&layer) { (0.4, layer, 0.9) } else { (0.0, layer, 0.3) })
+            .collect();
+        let graph = hand_graph(&blobs);
+        let mut seen = vec![false; graph.blobs.len()];
+        let mut owner = vec![NONE; graph.blobs.len()];
+        for i in 50..=80 {
+            seen[i] = true;
+            owner[i] = 0;
+        }
+
+        let column = graph.column(&seen, &owner, 0).expect("a column");
+        assert!(column.top.z < 5.0, "{}", column.top);
+        assert!(column.into.is_some_and(|(support, _)| support == 0));
     }
 
     #[test]
@@ -4595,6 +4653,399 @@ mod tests {
         assert!(bends(&wander, 0.3).is_empty());
         assert_eq!(scaled(0.3, SIMPLIFY_RATIO, SIMPLIFY_MIN_MM), SIMPLIFY_MIN_MM);
         assert!((scaled(2.0, SIMPLIFY_RATIO, SIMPLIFY_MIN_MM) - 0.5).abs() < 1e-6);
+    }
+
+    /// The layers of the shaft points a walk from the top blob of `blobs` (a hand graph) takes.
+    fn walked_layers(blobs: &[(f32, u32, f32)]) -> Vec<u32> {
+        let graph = hand_graph(blobs);
+        let top = (0..graph.blobs.len()).max_by_key(|&i| graph.blobs[i].layer).expect("a blob");
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
+        assert!(matches!(walk.end, WalkEnd::Plate));
+        walk.nodes.iter().map(|&i| graph.blobs[i as usize].layer).collect()
+    }
+
+    #[test]
+    fn blunt_tip_flaring_into_its_shaft_is_walked_slice_by_slice() {
+        // A tip 0.2 mm across at its top that flares to a 1 mm shaft within half a millimetre:
+        // the walked width cannot follow that fast, but each slice is within the slack of it.
+        let blobs: Vec<(f32, u32, f32)> =
+            (0..=60).map(|layer| (0.0, layer, 0.1 + 0.08 * (60 - layer).min(5) as f32)).collect();
+        let layers = walked_layers(&blobs);
+        assert_eq!(layers, (0..=60).rev().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn one_pinched_slice_barely_narrows_the_walked_shaft() {
+        // A 0.8 mm post with one slice pinched to half its width (a seam in the mesh), set 0.1 mm
+        // aside below it: the walked width eases only a little towards the pinch, so the post
+        // below still reads as the shaft on its own rather than merged with something beside it.
+        let blobs: Vec<(f32, u32, f32)> = (0..=60)
+            .map(|layer| match layer {
+                30 => (0.0, layer, 0.2),
+                l if l < 30 => (0.1, layer, 0.4),
+                _ => (0.0, layer, 0.4),
+            })
+            .collect();
+        let layers = walked_layers(&blobs);
+        assert!((20..=29).all(|l| layers.contains(&l)), "{layers:?}");
+    }
+
+    #[test]
+    fn thick_post_whose_slices_wander_is_walked_slice_by_slice() {
+        // A 2 mm post whose slices' middles wander 0.2 mm from slice to slice: a thick shaft's
+        // slices wander further off its line than a thin one's without it bending.
+        let blobs: Vec<(f32, u32, f32)> = (0..=60).map(|layer| (0.2 * (layer % 2) as f32, layer, 1.0)).collect();
+        let layers = walked_layers(&blobs);
+        assert_eq!(layers, (0..=60).rev().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn brace_leaning_flatter_than_a_shaft_is_not_picked_up_as_one() {
+        // A post ending in a brace that leans 2 mm per mm down to the plate: the walk skips its
+        // slices, which never settle into a run it would take for a shaft.
+        let mut blobs: Vec<(f32, u32, f32)> = (40..=60).map(|layer| (0.0, layer, 0.4)).collect();
+        blobs.extend((0..40).map(|layer| (0.2 * (40 - layer) as f32, layer, 0.4)));
+        let layers = walked_layers(&blobs);
+        assert!(!layers.iter().any(|l| (30..40).contains(l)), "{layers:?}");
+    }
+
+    #[test]
+    fn brace_peeling_off_a_post_does_not_pull_its_line_aside() {
+        // A 0.8 mm post with a brace peeling off it: for 1.5 mm their slices merge, widening by
+        // 0.04 mm a layer towards the brace. The walked width keeps near the post's, so of those
+        // slices, centred off the post, only the first few are taken as points on its line.
+        let mut blobs: Vec<(f32, u32, f32)> = (0..=60)
+            .map(|layer| match layer {
+                30..=45 => {
+                    let grow = 0.04 * (46 - layer) as f32;
+                    (grow / 2.0, layer, 0.4 + grow / 2.0)
+                }
+                _ => (0.0, layer, 0.4),
+            })
+            .collect();
+        blobs.extend((0..30).map(|layer| (1.0 + 0.1 * (30 - layer) as f32, layer, 0.3)));
+        let graph = hand_graph(&blobs);
+        let top = (0..graph.blobs.len()).max_by_key(|&i| graph.blobs[i].layer).expect("a blob");
+        let walk = graph.walk(top as u32, &vec![NONE; graph.blobs.len()], true, |_| true);
+        let xs: Vec<f32> = walk.nodes.iter().map(|&i| graph.blobs[i as usize].x).collect();
+        assert!(xs.iter().all(|x| x.abs() < 0.2), "{xs:?}");
+    }
+
+    #[test]
+    fn thin_shaft_slices_reading_a_little_wide_stay_on_its_line() {
+        // A 0.3 mm shaft whose slices read 0.04 mm wider every other layer (a polygon's corners
+        // turning past the slice): well within the slack, so every slice is the shaft's own.
+        let blobs: Vec<(f32, u32, f32)> =
+            (0..=40).map(|layer| (0.0, layer, 0.15 + 0.02 * (layer % 2) as f32)).collect();
+        let graph = hand_graph(&blobs);
+        let nodes: Vec<u32> = (0..=40).rev().collect();
+        assert_eq!(shaft_slices(&graph, &nodes).len(), nodes.len());
+    }
+
+    #[test]
+    fn branch_ending_a_hair_short_of_its_parent_still_joins_it() {
+        // A branch leaning into the side of a trunk, its end a few hundredths of a millimetre
+        // short of the trunk's surface (separate shells, as exported): still a branch of it.
+        let joins = |end_x: f32| {
+            let mut model = box_model(Vec3::new(-2.0, -2.0, 10.0), Vec3::new(2.0, 2.0, 15.0));
+            model.extend(box_model(Vec3::new(2.0, -2.0, 9.0), Vec3::new(6.0, 2.0, 15.0)));
+            let mut supports =
+                support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0)]);
+            supports.extend(frustum(Vec3::new(4.0, 0.0, 9.2), Vec3::new(4.0, 0.0, 7.0), 0.12, 0.3));
+            supports.extend(frustum(Vec3::new(4.0, 0.0, 7.0), Vec3::new(end_x, 0.0, 4.0), 0.3, 0.3));
+            let layout = reconstruct(&model, &supports);
+            layout.supports.len() == 2 && matches!(layout.supports[1].base, SupportBase::Shaft { parent: 0, .. })
+        };
+        // Touching the trunk, and with its lowest slice's box a few hundredths of a millimetre
+        // from the box of the trunk's slice below it.
+        assert!(joins(0.45));
+        assert!(joins(0.56));
+    }
+
+    #[test]
+    fn tip_with_a_straight_neck_at_its_contact_is_not_cut_short() {
+        // A tip that keeps its 0.24 mm width for its first 0.4 mm before widening into its cone:
+        // the neck stops widening, but is too short to be the whole tip.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut tip = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 9.6), 0.12, 0.12);
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 9.6), Vec3::new(0.0, 0.0, 8.0), 0.12, 0.4));
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0), 0.4, 0.4));
+        let layout = reconstruct(&model, &tip);
+
+        assert_eq!(layout.supports.len(), 1);
+        let socket = layout.supports[0].tip.socket;
+        assert!(socket.z < 9.0, "{socket}");
+    }
+
+    #[test]
+    fn thin_tip_widening_slowly_is_not_cut_short() {
+        // A thin tip (0.12 to 0.4 mm over 2.3 mm, below a short neck): it widens by a hair over
+        // a fifth of its width, but steadily, so it runs on to where its shaft starts.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut tip = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 9.9), 0.06, 0.06);
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 9.9), Vec3::new(0.0, 0.0, 7.6), 0.06, 0.2));
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 7.6), Vec3::new(0.0, 0.0, 0.0), 0.2, 0.2));
+        let layout = reconstruct(&model, &tip);
+
+        assert_eq!(layout.supports.len(), 1);
+        let socket = layout.supports[0].tip.socket;
+        assert!(socket.z < 8.2, "{socket}");
+    }
+
+    #[test]
+    fn thick_tip_widening_steadily_is_measured_over_a_longer_run() {
+        // A long tip widening from 0.6 to 1.1 mm over 5 mm below a short neck: over a run as long
+        // as a thin tip's it barely widens, but over a quarter of its own width it does.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut tip = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 9.9), 0.3, 0.3);
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 9.9), Vec3::new(0.0, 0.0, 4.9), 0.3, 0.55));
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 4.9), Vec3::new(0.0, 0.0, 0.0), 0.55, 0.55));
+        let layout = reconstruct(&model, &tip);
+
+        assert_eq!(layout.supports.len(), 1);
+        let socket = layout.supports[0].tip.socket;
+        assert!(socket.z < 8.0, "{socket}");
+    }
+
+    #[test]
+    fn thin_tip_flaring_gently_into_its_shaft_ends_where_its_cone_does() {
+        // A thin tip whose cone (0.1 to 0.24 mm over 0.6 mm) flares on by 0.06 mm over the next
+        // 0.8 mm into its shaft: the tip has stopped widening where its cone ends.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut tip = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 9.9), 0.05, 0.05);
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 9.9), Vec3::new(0.0, 0.0, 9.3), 0.05, 0.12));
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 9.3), Vec3::new(0.0, 0.0, 8.5), 0.12, 0.15));
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 8.5), Vec3::new(0.0, 0.0, 0.0), 0.15, 0.15));
+        let layout = reconstruct(&model, &tip);
+
+        assert_eq!(layout.supports.len(), 1);
+        let socket = layout.supports[0].tip.socket;
+        assert!(socket.z > 9.0, "{socket}");
+    }
+
+    #[test]
+    fn hair_thin_shaft_rebuilds_at_the_thinnest_rod() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut post = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 8.5), 0.05, 0.1);
+        post.extend(frustum(Vec3::new(0.0, 0.0, 8.5), Vec3::new(0.0, 0.0, 0.0), 0.1, 0.1));
+        let layout = reconstruct(&model, &post);
+
+        assert_eq!(layout.supports.len(), 1);
+        assert_eq!(layout.supports[0].shaft_diameter_mm, MIN_ROD_DIAMETER_MM);
+    }
+
+    #[test]
+    fn tip_contact_is_read_below_its_rounded_end() {
+        // A tip touching the model with a rounded end: its top slices cut through the rounding,
+        // so the contact is as wide as the tip just below it.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut tip = tube(&[
+            (Vec3::new(0.0, 0.0, 10.0), 0.05),
+            (Vec3::new(0.0, 0.0, 9.9), 0.17),
+            (Vec3::new(0.0, 0.0, 9.8), 0.23),
+            (Vec3::new(0.0, 0.0, 9.7), 0.25),
+            (Vec3::new(0.0, 0.0, 9.0), 0.3),
+            (Vec3::new(0.0, 0.0, 8.0), 0.4),
+        ]);
+        tip.extend(frustum(Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0), 0.4, 0.4));
+        let layout = reconstruct(&model, &tip);
+
+        assert_eq!(layout.supports.len(), 1);
+        let d = layout.supports[0].tip.contact_diameter_mm;
+        assert!(d >= 0.35, "{d}");
+    }
+
+    #[test]
+    fn blunt_post_against_the_model_keeps_a_contact_of_at_most_one_and_a_half_millimetres() {
+        // A 2.4 mm post standing against the model with no tip cone.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let post = frustum(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 0.0), 1.2, 1.2);
+        let layout = reconstruct(&model, &post);
+
+        assert_eq!(layout.supports.len(), 1);
+        let d = layout.supports[0].tip.contact_diameter_mm;
+        assert!((d - MAX_CONTACT_DIAMETER_MM).abs() < 1e-4, "{d}");
+    }
+
+    #[test]
+    fn short_strut_tapering_from_both_ends_splits_between_its_two_tips() {
+        // A strut 4 mm long between two parts of a model, one shell tapering from 1 mm in its
+        // middle to 0.24 mm at each end: each tip takes up to 0.4 of it.
+        let mut model = box_model(Vec3::new(-4.0, -4.0, 0.0), Vec3::new(4.0, 4.0, 4.0));
+        model.extend(box_model(Vec3::new(-4.0, -4.0, 8.0), Vec3::new(4.0, 4.0, 12.0)));
+        let strut = tube(&[
+            (Vec3::new(0.0, 0.0, 8.2), 0.12),
+            (Vec3::new(0.0, 0.0, 6.0), 0.5),
+            (Vec3::new(0.0, 0.0, 3.8), 0.12),
+        ]);
+        let layout = reconstruct(&model, &strut);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        let SupportBase::Model(lower) = &s.base else { panic!("{:?}", s.base) };
+        // The upper tip ends within 0.4 of the strut's length of its contact (1.6 mm from 8.0).
+        assert!((6.3..=6.6).contains(&s.tip.socket.z), "{}", s.tip.socket);
+        assert!(lower.socket.z < s.tip.socket.z, "{}", lower.socket);
+    }
+
+    #[test]
+    fn tip_whose_socket_sits_at_the_root_top_has_no_shaft_and_is_left_out() {
+        let model = box_model(Vec3::new(-5.0, -5.0, 3.0), Vec3::new(5.0, 5.0, 8.0));
+        let low = |socket_z: f32| {
+            let mut supports = frustum(Vec3::new(0.0, 0.0, 3.2), Vec3::new(0.0, 0.0, socket_z), 0.12, 0.4);
+            supports.extend(frustum(Vec3::new(0.0, 0.0, socket_z), Vec3::new(0.0, 0.0, 0.0), 0.4, 0.4));
+            reconstruct(&model, &supports).supports.len()
+        };
+        // A socket 0.1 mm above the root top leaves too short a shaft; 0.4 mm is enough.
+        assert_eq!(low(2.1), 0);
+        assert_eq!(low(2.4), 1);
+    }
+
+    #[test]
+    fn shaft_thickening_below_a_step_keeps_its_lower_slices_on_its_line() {
+        // A shaft 0.6 mm across for 2.5 mm that steps out to 1 mm for the 2 mm below: each slice
+        // is measured against those near its own height, not the shaft's median width.
+        let blobs: Vec<(f32, u32, f32)> =
+            (0..45).map(|layer| (0.0, layer, if layer < 20 { 0.5 } else { 0.3 })).collect();
+        let graph = hand_graph(&blobs);
+        let nodes: Vec<u32> = (0..45).rev().collect();
+        let kept = shaft_slices(&graph, &nodes);
+        assert!((0..14).all(|i| kept.contains(&i)), "{kept:?}");
+    }
+
+    #[test]
+    fn second_top_merging_into_its_tip_within_a_millimetre_is_not_a_support() {
+        // A plate support whose tip has a second, thinner top 0.3 mm beside its own, merging into
+        // the tip 0.9 mm below the model.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = support(Vec3::new(0.0, 0.0, 10.0), &[Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend(frustum(Vec3::new(0.3, 0.0, 10.1), Vec3::new(0.1, 0.0, 9.1), 0.1, 0.15));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1, "{:?}", layout.supports);
+    }
+
+    #[test]
+    fn knot_reach_grows_with_the_brace_but_keeps_its_floor() {
+        // Where a brace merges into a shaft lies further out on a thicker brace.
+        assert_eq!(knot_reach_mm(0.6), KNOT_REACH_MIN_MM);
+        assert!((knot_reach_mm(2.0) - 0.84).abs() < 1e-5);
+    }
+
+    #[test]
+    fn brace_ending_on_a_third_support_beside_its_host_does_not_run_through_it() {
+        // A bar between two supports whose upper end lies on a third support's centre line,
+        // where three shafts meet: only its middle third is tested, which passes clear.
+        let shafts = [(Vec3::new(3.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 10.0), 0.4)];
+        let shaft_hosts = [((2, None), true)];
+        let crosses = |p: Vec3, q: Vec3| through_shaft(&shafts, &shaft_hosts, [(0, None), (1, None)], p, q);
+        assert!(!crosses(Vec3::new(0.0, 0.0, 3.0), Vec3::new(3.0, 0.0, 6.0)));
+        assert!(crosses(Vec3::new(1.0, 0.0, 3.0), Vec3::new(5.0, 0.0, 7.0)));
+    }
+
+    #[test]
+    fn slice_of_a_thin_shaft_a_little_wider_than_it_is_not_merged_with_a_brace() {
+        // A 0.3 mm shaft with one slice 0.4 mm across centred on it: a quarter wider plus the
+        // slack, so the shaft itself rather than the shaft merged with a bar beside it.
+        let blobs: Vec<(f32, u32, f32)> =
+            (0..=40).map(|layer| (0.0, layer, if layer == 20 { 0.2 } else { 0.15 })).collect();
+        let graph = hand_graph(&blobs);
+        let at = |layer: u32| graph.blobs.iter().position(|b| b.layer == layer).expect("a blob") as u32;
+        let nodes: Vec<u32> = (21..=40).rev().map(at).collect();
+        assert!(graph.merged_descent_slope(at(20), &nodes, None, 0.15).is_none());
+        assert!(graph.merged_descent_slope(at(20), &nodes, None, 0.12).is_some());
+    }
+
+    #[test]
+    fn brace_running_on_through_a_middle_post_is_two_braces() {
+        // One straight bar from high on the first of three posts in a row down to the third,
+        // through the middle one: a brace from each outer post to the middle one.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(10.0, 5.0, 15.0));
+        let mut supports = Vec::new();
+        for x in [0.0, 3.0, 6.0] {
+            supports.extend(support(Vec3::new(x, 0.0, 10.0), &[Vec3::new(x, 0.0, 8.0), Vec3::new(x, 0.0, 0.0)]));
+        }
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 7.0), Vec3::new(6.0, 0.0, 2.0), 0.3, 0.3));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.braces.len(), 2, "{:?}", layout.braces);
+        for brace in &layout.braces {
+            assert!((brace.upper.point.x - brace.lower.point.x).abs() < 4.0, "{brace:?}");
+        }
+    }
+
+    #[test]
+    fn leg_passing_a_post_just_above_its_root_is_one_kickstand() {
+        // A leg leaning 1.9 mm per mm from the trunk 6 mm up out to the plate, passing through
+        // another post 0.85 mm above the post's root top: it only meets the root there, so it
+        // stays one kickstand under the trunk, with a brace from the post to the trunk.
+        let model = box_model(Vec3::new(-6.0, -6.0, 12.0), Vec3::new(14.0, 6.0, 16.0));
+        let mut supports = support(Vec3::new(0.0, 0.0, 12.0), &[Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 0.0)]);
+        supports.extend(frustum(Vec3::new(0.0, 0.0, 6.0), Vec3::new(11.4, 0.0, 0.0), 0.3, 0.3));
+        let px = 1.9 * (6.0 - 2.85);
+        supports.extend(support(Vec3::new(px, 0.0, 12.0), &[Vec3::new(px, 0.0, 10.0), Vec3::new(px, 0.0, 0.0)]));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.kickstands.len(), 1, "{:?}", layout.kickstands);
+        let leg = &layout.kickstands[0];
+        assert_eq!(leg.support, 0);
+        assert!(close(leg.knot, Vec3::new(0.0, 0.0, 6.0), 0.3), "{}", leg.knot);
+        assert!(close(leg.foot, Vec3::new(7.6, 0.0, ROOT_TOP_MM), 0.3), "{}", leg.foot);
+    }
+
+    #[test]
+    fn brace_leaving_a_hub_where_two_supports_meet_is_one_brace() {
+        // Two posts 0.7 mm apart, their shafts merged into one, with a leg leaning from between
+        // them 6 mm up out to the plate and a brace from there down to a third post: the brace
+        // touches both posts at that hub, but is one brace.
+        let model = box_model(Vec3::new(-6.0, -6.0, 12.0), Vec3::new(6.0, 6.0, 16.0));
+        let mut supports = Vec::new();
+        for x in [0.0, 0.7, -4.0] {
+            supports.extend(support(Vec3::new(x, 0.0, 12.0), &[Vec3::new(x, 0.0, 10.0), Vec3::new(x, 0.0, 0.0)]));
+        }
+        supports.extend(frustum(Vec3::new(0.35, 0.0, 6.0), Vec3::new(3.85, 0.0, 0.0), 0.3, 0.3));
+        supports.extend(frustum(Vec3::new(0.35, 0.0, 6.0), Vec3::new(-4.0, 0.0, 3.0), 0.3, 0.3));
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.braces.len(), 1, "{:?}", layout.braces);
+        assert_eq!(layout.kickstands.len(), 1, "{:?}", layout.kickstands);
+    }
+
+    #[test]
+    fn raft_rising_a_little_above_its_height_is_not_counted_against_coverage() {
+        // Two posts on a raft whose top stands 0.3 mm above the raft height the split used: its
+        // top face is raft, not support to rebuild.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let mut supports = support(Vec3::new(-2.0, 0.0, 10.0), &[Vec3::new(-2.0, 0.0, 8.0), Vec3::new(-2.0, 0.0, 0.0)]);
+        supports.extend(support(Vec3::new(2.0, 1.0, 10.0), &[Vec3::new(2.0, 1.0, 8.0), Vec3::new(2.0, 1.0, 0.0)]));
+        supports.extend(cuboid(Vec3::new(-6.0, -6.0, 0.0), Vec3::new(6.0, 6.0, 2.3), 4));
+        let layout = reconstruct(&model, &supports);
+        assert_eq!(layout.supports.len(), 2);
+        let coverage = layout.coverage(&supports, 2.0).expect("support surface above the raft");
+        assert!(coverage > 0.95, "{coverage}");
+    }
+
+    #[test]
+    fn root_is_three_shafts_wide_within_its_limits() {
+        // Upright posts of 0.5, 1.2 and 2.4 mm: roots three times as wide, but never under 2 mm
+        // (a thin post's root would not hold it to the plate) or over 6 mm.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let root = |radius: f32| {
+            let contact = Vec3::new(0.0, 0.0, 10.0);
+            let socket = Vec3::new(0.0, 0.0, 8.0);
+            let mut supports = frustum(contact + Vec3::new(0.0, 0.0, 0.2), socket, 0.12, radius);
+            supports.extend(frustum(socket, Vec3::new(0.0, 0.0, 0.0), radius, radius));
+            let layout = reconstruct(&model, &supports);
+            assert_eq!(layout.supports.len(), 1);
+            let SupportBase::Plate { diameter_mm, .. } = layout.supports[0].base else { panic!() };
+            (layout.supports[0].shaft_diameter_mm, diameter_mm)
+        };
+        let (shaft, diameter) = root(0.25);
+        assert!(shaft * 3.0 < 1.8 && (diameter - 2.0).abs() < 1e-4, "{shaft} {diameter}");
+        let (shaft, diameter) = root(0.6);
+        assert!((diameter - shaft * 3.0).abs() < 1e-4 && (3.3..=3.9).contains(&diameter), "{shaft} {diameter}");
+        let (shaft, diameter) = root(1.2);
+        assert!(shaft * 3.0 > 6.5 && (diameter - 6.0).abs() < 1e-4, "{shaft} {diameter}");
     }
 
     #[test]

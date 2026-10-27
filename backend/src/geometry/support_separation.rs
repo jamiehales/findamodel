@@ -103,7 +103,9 @@ const INSIDE_OUT_MAX_VOLUME_MM3: f64 = -1e-6;
 
 /// Inside-out components with a signed volume below this (mm³) are inner shells; the rest are voids
 /// (scraps left inside the model by hollowing or repair tools). Styles: hollowed models
-/// (hollow-struts). Safety limit: no void in the sets comes near it.
+/// (hollow-struts). Safety limit: taking every inside-out shell for an inner shell changes nothing
+/// in the sets (16 corpus models have voids), but would count a repaired mesh's many small voids as
+/// model parts, shrinking the average model part the confidence check weighs supports against.
 const INNER_SHELL_MAX_VOLUME_MM3: f64 = -0.01;
 
 /// Safety limit: components with less surface than this (mm²) are slivers of degenerate triangles.
@@ -857,6 +859,31 @@ pub(crate) mod tests {
         assert!(c.is_support[sparse_start - dense.len()..sparse_start].iter().all(|s| !*s));
         assert!(c.is_support[sparse_start..].iter().all(|s| *s));
         assert_eq!(support_count(&c), 50 * 48 + sparse.len());
+    }
+
+    #[test]
+    fn mirror_symmetric_sculpted_detail_is_model() {
+        // A dense 1 mm button sculpted symmetrically: each of its triangles has a mirror image,
+        // but a pair is not how a generated primitive repeats its triangles around every ring.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        // One half sculpted (its vertices on the mirror plane only along it), then mirrored.
+        let mirror = 20.5;
+        let jitter = |v: Vec3| {
+            let h = |k: f32| (v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + k * 1.618).sin() * 0.03;
+            Vec3::new(if v.x == mirror { v.x } else { v.x + h(0.0) }, v.y + h(1.0), v.z + h(2.0))
+        };
+        let half: Vec<Triangle> = cuboid(Vec3::new(20.0, 8.0, 0.0), Vec3::new(21.0, 9.0, 1.0), 6)
+            .into_iter()
+            .filter(|t| [t.v0, t.v1, t.v2].iter().all(|v| v.x <= mirror))
+            .map(|t| Triangle::new(jitter(t.v0), jitter(t.v1), jitter(t.v2), t.normal))
+            .collect();
+        let flip = |v: Vec3| Vec3::new(2.0 * mirror - v.x, v.y, v.z);
+        let button: Vec<Triangle> =
+            half.iter().flat_map(|t| [*t, Triangle::new(flip(t.v0), flip(t.v2), flip(t.v1), t.normal)]).collect();
+        mesh.extend(&button);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - button.len()..].iter().all(|s| !*s));
     }
 
     #[test]
