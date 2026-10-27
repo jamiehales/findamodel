@@ -152,11 +152,14 @@ const ENTRY_WINDOW_MM: f32 = 5.0;
 const TIP_WINDOW_MM: f32 = 4.0;
 const MIN_TIP_LENGTH_MM: f32 = 0.6;
 /// The socket is the first point reaching this fraction of the tip window's widest blob (a
-/// joint ball), or where the tip stops widening: by less than `PLATEAU_GROWTH_MM` over the
-/// next `PLATEAU_SPAN_MM`.
+/// joint ball), or where the tip stops widening: by less than `PLATEAU_GROWTH_RATIO` of that
+/// widest blob over the next `PLATEAU_SPAN_RATIO` of it (a thicker tip's cone widens more over
+/// a longer run), and by no less than the `_MIN_MM` floors.
 const TIP_BODY_FRACTION: f32 = 0.85;
-const PLATEAU_GROWTH_MM: f32 = 0.03;
-const PLATEAU_SPAN_MM: f32 = 0.3;
+const PLATEAU_GROWTH_RATIO: f32 = 0.025;
+const PLATEAU_GROWTH_MIN_MM: f32 = 0.015;
+const PLATEAU_SPAN_RATIO: f32 = 0.25;
+const PLATEAU_SPAN_MIN_MM: f32 = 0.15;
 /// A tip may take up this share of its support's length; a strut's two tips share one shaft.
 const TIP_SHARE: f32 = 0.6;
 const STRUT_TIP_SHARE: f32 = 0.4;
@@ -176,8 +179,11 @@ const SHAFT_WIDTH_QUANTILE: usize = 3;
 /// Safety limit: no shaft is rebuilt thicker than this. Real shafts are well under it; it only
 /// binds when a walk reads a wide piece (a slab or a model part taken for a support) as a shaft.
 const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
-/// Bends smaller than this are dropped from the shaft path.
-const SIMPLIFY_MM: f32 = 0.3;
+/// Bends smaller than this share of the shaft's diameter are dropped from the shaft path, and
+/// always those smaller than `SIMPLIFY_MIN_MM`: a thick shaft's slices wander further off its
+/// line without it bending.
+const SIMPLIFY_RATIO: f32 = 0.25;
+const SIMPLIFY_MIN_MM: f32 = 0.3;
 /// A shaft blob much wider ([`SHAFT_ALONE_RATIO`]) than those within this distance of its
 /// height (their median) is left out of the shaft's line.
 const LOCAL_WIDTH_MM: f32 = 0.5;
@@ -206,9 +212,11 @@ const BRACE_COVERAGE: f32 = 0.8;
 const BRACE_END_SKIP: f32 = 0.15;
 const BRACE_MARGIN_MM: f32 = 0.15;
 const BRACE_SAMPLE_MM: f32 = 0.2;
-/// A brace's end is this close to its shaft, beyond the shaft's radius, for a knot to hang it
-/// there.
-const KNOT_REACH_MM: f32 = 0.5;
+/// A brace's end is within this share of the brace's diameter of its shaft, beyond the shaft's
+/// radius, for a knot to hang it there (the end is the middle of where the brace merges into
+/// the shaft, which lies further out on a thicker brace), and always within `KNOT_REACH_MIN_MM`.
+const KNOT_REACH_RATIO: f32 = 0.42;
+const KNOT_REACH_MIN_MM: f32 = 0.5;
 /// Where a piece touches each of two supports in one junction whose lower and upper parts lie
 /// at least `X_JUNCTION_MM` apart, it may be an X of two braces meeting each support one above
 /// the other; it is when the piece's cross-sections have their middles within `X_CENTRE_MM` of
@@ -281,6 +289,12 @@ const CONE_TOLERANCE_MM: f32 = 0.02;
 const CONE_TOLERANCE_RATIO: f32 = 0.05;
 /// A longer taper is not a tip cone (a whole support modelled as one long cone).
 const MAX_CONE_TIP_MM: f32 = 20.0;
+
+/// `feature * ratio`, and at least `floor`: a tolerance that grows with a measured size of the
+/// support (its shaft, tip or brace) past the size it was tuned on.
+fn scaled(feature: f32, ratio: f32, floor: f32) -> f32 {
+    (feature * ratio).max(floor)
+}
 
 /// The rebuilt supports account for a support's surface within this distance of their own.
 const COVERAGE_MARGIN_MM: f32 = 0.3;
@@ -566,7 +580,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 16;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 17;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -820,17 +834,19 @@ fn fit_tip(
 
     let window = TIP_WINDOW_MM.min(total * share);
     let widest = (0..points.len()).take_while(|&i| reach[i] <= window).map(|i| widths[i]).fold(0.0, f32::max);
+    let plateau_span = scaled(widest, PLATEAU_SPAN_RATIO, PLATEAU_SPAN_MIN_MM);
+    let plateau_growth = scaled(widest, PLATEAU_GROWTH_RATIO, PLATEAU_GROWTH_MIN_MM);
     // A slice of a leaning tip must also keep its width to count as a plateau: past a joint
     // ball the tip runs into, the slices narrow again, and the shaft the walk picks up below the
     // tip is never narrower than it.
     let plateau = |i: usize| {
-        (i..points.len()).find(|&j| reach[j] >= reach[i] + PLATEAU_SPAN_MM).is_some_and(|j| {
+        (i..points.len()).find(|&j| reach[j] >= reach[i] + plateau_span).is_some_and(|j| {
             let least = match (walked[i], walked[j]) {
                 (true, _) => f32::NEG_INFINITY,
-                (false, false) => -PLATEAU_GROWTH_MM,
+                (false, false) => -plateau_growth,
                 (false, true) => 0.0,
             };
-            (least..PLATEAU_GROWTH_MM).contains(&(widths[j] - widths[i]))
+            (least..plateau_growth).contains(&(widths[j] - widths[i]))
         })
     };
     // A leaning tip's own slices widen to nearly the widest before it ends, so among them only
@@ -983,7 +999,7 @@ fn build_support(
         WalkEnd::Stranded => return None,
     };
 
-    Some(SupportPath { tip, base, joints: bends(&line), shaft_diameter_mm: shaft_diameter })
+    Some(SupportPath { tip, base, joints: bends(&line, shaft_diameter), shaft_diameter_mm: shaft_diameter })
 }
 
 /// A strut between two parts of the model, from its upper contact down to its lower one. Either
@@ -1025,7 +1041,7 @@ fn build_strut(
     SupportPath {
         tip: contact_tip(contact, &upper_fit, shaft_diameter),
         base: SupportBase::Model(contact_tip(&lower.contact, &lower_fit, shaft_diameter)),
-        joints: bends(&line),
+        joints: bends(&line, shaft_diameter),
         shaft_diameter_mm: shaft_diameter,
     }
 }
@@ -1055,9 +1071,9 @@ fn shaft_slices(graph: &Graph, nodes: &[u32]) -> Vec<u32> {
         .collect()
 }
 
-/// The bends of a shaft line running from the top down, bottom to top.
-fn bends(line: &[Vec3]) -> Vec<Vec3> {
-    let kept = simplify(line, SIMPLIFY_MM);
+/// The bends of a shaft line of `diameter` running from the top down, bottom to top.
+fn bends(line: &[Vec3], diameter: f32) -> Vec<Vec3> {
+    let kept = simplify(line, scaled(diameter, SIMPLIFY_RATIO, SIMPLIFY_MIN_MM));
     kept[1..kept.len() - 1].iter().rev().map(|&i| line[i]).collect()
 }
 
@@ -1913,6 +1929,7 @@ impl Graph {
                     continue;
                 }
                 let hosts = [(lower.support, lower.kickstand), (upper.support, upper.kickstand)];
+                let knot_reach = scaled(diameter_mm, KNOT_REACH_RATIO, KNOT_REACH_MIN_MM);
                 // A knot hangs on a shaft: an end on a tip only, or off its support, has none.
                 // A branch hanging down from where it joins its parent to its socket (a fan of tip
                 // cones meeting in one joint ball below that) has no shaft of its own either: the
@@ -1928,7 +1945,7 @@ impl Graph {
                     !hangs
                         && shaft
                             .iter()
-                            .any(|&&(a, b, radius)| distance_to_segment(end.point, a, b) <= radius + KNOT_REACH_MM)
+                            .any(|&&(a, b, radius)| distance_to_segment(end.point, a, b) <= radius + knot_reach)
                 };
                 if !knotted(&lower, hosts[0]) || !knotted(&upper, hosts[1]) {
                     continue;
@@ -4346,7 +4363,41 @@ mod tests {
             Vec3::new(2.0, 0.0, 6.0),
             Vec3::new(2.0, 0.0, 0.0),
         ];
-        assert_eq!(simplify(&line, SIMPLIFY_MM), vec![0, 2, 3, 4]);
-        assert_eq!(simplify(&line[..2], SIMPLIFY_MM), vec![0, 1]);
+        assert_eq!(simplify(&line, SIMPLIFY_MIN_MM), vec![0, 2, 3, 4]);
+        assert_eq!(simplify(&line[..2], SIMPLIFY_MIN_MM), vec![0, 1]);
+    }
+
+    #[test]
+    fn bend_tolerance_grows_with_the_shaft_but_keeps_its_floor() {
+        // A 0.35 mm kink: a bend on a thin shaft, slice wander on a thick one.
+        let line = [Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.35, 0.0, 5.0), Vec3::new(0.0, 0.0, 0.0)];
+        assert_eq!(bends(&line, 0.6).len(), 1);
+        assert_eq!(bends(&line, 1.2).len(), 1);
+        assert!(bends(&line, 1.6).is_empty());
+        // Below the floor the tolerance does not shrink: a thinner shaft drops the same wander.
+        let wander = [Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.25, 0.0, 5.0), Vec3::new(0.0, 0.0, 0.0)];
+        assert!(bends(&wander, 0.3).is_empty());
+        assert_eq!(scaled(0.3, SIMPLIFY_RATIO, SIMPLIFY_MIN_MM), SIMPLIFY_MIN_MM);
+        assert!((scaled(2.0, SIMPLIFY_RATIO, SIMPLIFY_MIN_MM) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn thick_supports_rebuild_without_extra_joints() {
+        // A thick 2 mm post with joint balls, wandering about 0.4 mm off a straight line (less
+        // than a fifth of its width): one straight trunk, where a thin shaft would bend.
+        let model = box_model(Vec3::new(-5.0, -5.0, 10.0), Vec3::new(5.0, 5.0, 15.0));
+        let contact = Vec3::new(1.0, 2.0, 10.0);
+        let path = [Vec3::new(1.0, 2.0, 8.0), Vec3::new(1.55, 2.0, 4.5), Vec3::new(1.0, 2.0, 0.0)];
+        let mut supports = frustum(contact + Vec3::new(0.0, 0.0, 0.2), path[0], 0.3, 1.0);
+        for w in path.windows(2) {
+            supports.extend(frustum(w[0], w[1], 1.0, 1.0));
+            supports.extend(frustum(w[0] + Vec3::new(0.0, 0.0, 0.9), w[0] - Vec3::new(0.0, 0.0, 0.9), 1.2, 1.2));
+        }
+        let layout = reconstruct(&model, &supports);
+
+        assert_eq!(layout.supports.len(), 1);
+        let s = &layout.supports[0];
+        assert!((1.8..=2.2).contains(&s.shaft_diameter_mm), "{}", s.shaft_diameter_mm);
+        assert!(s.joints.is_empty(), "{:?}", s.joints);
     }
 }
