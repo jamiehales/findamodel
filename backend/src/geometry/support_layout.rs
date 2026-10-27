@@ -93,10 +93,14 @@ const WIDEN_SLACK_MM: f32 = 0.25;
 /// much wider than a post's own.
 const MERGED_RATIO: f32 = 1.25;
 const MERGED_SLACK_MM: f32 = 0.05;
-/// A blob no wider than `width * SHAFT_WIDTH_RATIO + MERGED_SLACK_MM` is the shaft on its own. On
-/// a shaft the walk is following, a wider one is a joint ball, or the shaft merged with a brace or
-/// crossing bar: a shaft point only when centred on the shaft.
-const SHAFT_WIDTH_RATIO: f32 = 1.1;
+/// A slice no wider than `width * SHAFT_ALONE_RATIO + SHAFT_ALONE_SLACK_MM` is the shaft of that
+/// width on its own. On a shaft the walk is following, a wider one is a joint ball, or the shaft
+/// merged with a brace or crossing bar: a shaft point only when centred on the shaft. A shaft
+/// blob wider than that around the median of those within `LOCAL_WIDTH_MM` of its height is
+/// left out of the shaft's line, and a run of skipped slices keeps one width within the same
+/// tolerance either way.
+const SHAFT_ALONE_RATIO: f32 = 1.075;
+const SHAFT_ALONE_SLACK_MM: f32 = 0.04;
 /// How quickly the walked shaft width follows the blobs it passes.
 const WIDTH_SMOOTHING: f32 = 0.25;
 /// The walked shaft width grows by at most this much per mm walked: enough to follow a
@@ -104,7 +108,9 @@ const WIDTH_SMOOTHING: f32 = 0.25;
 /// a little each layer).
 const MAX_WIDTH_GROWTH: f32 = 0.15;
 /// A blob whose centre is further than `DRIFT_MM + width * DRIFT_RATIO` from where the shaft
-/// is heading is a brace merging into the shaft, so it is not a shaft point either.
+/// is heading is a brace merging into the shaft, so it is not a shaft point either. A slice of a
+/// column rising from a kickstand's foot (a post) is the post on its own when its middle lies
+/// within `DRIFT_MM` of the post's centre line.
 const DRIFT_MM: f32 = 0.075;
 const DRIFT_RATIO: f32 = 0.15;
 /// Drift is measured from the shaft as it was this far back, so a blob creeping sideways a
@@ -117,12 +123,9 @@ const MAX_RESET_WIDTH_MM: f32 = 2.0;
 /// A run of skipped blobs this tall that keep one width and one step from slice to slice is a
 /// shaft (below a leaning tip, or past a bend): the walk picks it up from where the run began
 /// and steers by its lean until it has come far enough along it to measure its own direction.
+/// The run's slices keep within [`SLOPE_TOLERANCE`] of the line its first slices set, and their
+/// widths within [`SHAFT_ALONE_RATIO`] and [`SHAFT_ALONE_SLACK_MM`] of its first slice's.
 const PICKUP_RUN_MM: f32 = 0.6;
-/// The run's slices keep within this slope of the line its first slices set, and their widths
-/// within `RUN_WIDTH_MM + width * RUN_WIDTH_RATIO` of its first slice's.
-const RUN_SLOPE_TOLERANCE: f32 = 0.2;
-const RUN_WIDTH_MM: f32 = 0.03;
-const RUN_WIDTH_RATIO: f32 = 0.1;
 /// A run leans no more than this (horizontal run per unit of height, about 56 degrees).
 const MAX_RUN_LEAN: f32 = 1.5;
 /// A run of at least this many skipped slices, carried on by the slice where the walk gives up
@@ -139,8 +142,10 @@ const DIRECTION_SPAN_MM: f32 = 1.0;
 const FORK_LOOKAHEAD_MM: f32 = 2.0;
 /// The ways followed down from a fork, at each slice those nearest the line straight down.
 const FORK_WAYS: usize = 8;
-/// Ways whose slopes differ by less than this are told apart by the shaft's direction.
-const FORK_SLOPE_TOLERANCE: f32 = 0.15;
+/// Two leans (horizontal run per unit of height) within this of each other are alike: ways down
+/// from a fork whose slopes differ by less are told apart by the shaft's direction, and a run of
+/// skipped slices keeps within this of the line its first slices set.
+const SLOPE_TOLERANCE: f32 = 0.15;
 /// How far down the shaft the model surface is looked for, from the buried tip top.
 const ENTRY_WINDOW_MM: f32 = 5.0;
 /// The tip's socket is looked for within this distance of the contact.
@@ -173,11 +178,9 @@ const SHAFT_WIDTH_QUANTILE: usize = 3;
 const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
 /// Bends smaller than this are dropped from the shaft path.
 const SIMPLIFY_MM: f32 = 0.3;
-/// A shaft blob wider than `WIDE_NODE_RATIO` times those within `LOCAL_WIDTH_MM` of its height
-/// (their median), plus `WIDE_NODE_SLACK_MM`, is left out of the shaft's line.
+/// A shaft blob much wider ([`SHAFT_ALONE_RATIO`]) than those within this distance of its
+/// height (their median) is left out of the shaft's line.
 const LOCAL_WIDTH_MM: f32 = 0.5;
-const WIDE_NODE_RATIO: f32 = 1.1;
-const WIDE_NODE_SLACK_MM: f32 = 0.03;
 /// A contact this close to an earlier support's contact is a second top of that tip, unless the
 /// walk from it keeps apart from that support until at least `OWN_SUPPORT_MIN_MM` from the
 /// contact: then it is a support of its own meeting the model at the same place (struts meeting
@@ -244,9 +247,6 @@ const MIN_KICKSTAND_LEAN: f32 = 0.36;
 const MAX_KICKSTAND_LEAN: f32 = 2.0;
 /// Where a strut meets its support is looked for every `KNOT_STEP_MM` along the junction.
 const KNOT_STEP_MM: f32 = 0.5;
-/// A slice of a column rising from a kickstand's foot (a post) is the post on its own when its
-/// middle lies within this distance of the post's centre line.
-const COLUMN_DRIFT_MM: f32 = 0.1;
 /// A post holds up the traced shaft it runs into at most this far above its top.
 const COLUMN_END_MM: f32 = 1.5;
 /// A column carries on above a junction a traced support's walk passed through when its own
@@ -566,7 +566,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 15;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 16;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -1049,7 +1049,7 @@ fn shaft_slices(graph: &Graph, nodes: &[u32]) -> Vec<u32> {
             around.clear();
             around.extend((lo..hi).map(|j| blob(j).half_max));
             around.sort_by(f32::total_cmp);
-            blob(k).half_max <= around[around.len() / 2] * WIDE_NODE_RATIO + WIDE_NODE_SLACK_MM
+            blob(k).half_max <= around[around.len() / 2] * SHAFT_ALONE_RATIO + SHAFT_ALONE_SLACK_MM
         })
         .map(|k| nodes[k])
         .collect()
@@ -1527,7 +1527,7 @@ impl Graph {
                     let upright = ways
                         .iter()
                         .zip(&slopes)
-                        .filter(|(_, slope)| **slope <= steepest + FORK_SLOPE_TOLERANCE)
+                        .filter(|(_, slope)| **slope <= steepest + SLOPE_TOLERANCE)
                         .map(|(&i, _)| i)
                         .min_by(|&a, &b| miss(a).total_cmp(&miss(b)))
                         .expect("non-empty");
@@ -1564,7 +1564,7 @@ impl Graph {
             let narrow = blob.half_max <= width * WIDEN_RATIO + WIDEN_SLACK_MM;
             // On a shaft the walk is following, a blob wider than it is a joint ball centred on
             // it, or the shaft merged with a brace or crossing bar, centred off the shaft.
-            let merged = tracking && blob.half_max > width * SHAFT_WIDTH_RATIO + MERGED_SLACK_MM;
+            let merged = tracking && blob.half_max > width * SHAFT_ALONE_RATIO + SHAFT_ALONE_SLACK_MM;
             let aligned = drift <= DRIFT_MM + if merged { 0.0 } else { width * DRIFT_RATIO };
             let reset =
                 blob.half_max <= MAX_RESET_WIDTH_MM && skipped_from.is_some_and(|top| top - blob.z >= SKIP_RESET_MM);
@@ -1771,7 +1771,7 @@ impl Graph {
                     d(a).total_cmp(&d(b))
                 })
                 .expect("non-empty");
-            if self.blobs[current as usize].half_max <= width * SHAFT_WIDTH_RATIO + MERGED_SLACK_MM {
+            if self.blobs[current as usize].half_max <= width * SHAFT_ALONE_RATIO + SHAFT_ALONE_SLACK_MM {
                 on_shaft = Some(self.centre(current));
             }
         }
@@ -2252,7 +2252,7 @@ impl Graph {
                         let b = &self.blobs[*i as usize];
                         !seen[*i as usize]
                             && on_line(*i)
-                            && drift(*i, centre) <= COLUMN_DRIFT_MM
+                            && drift(*i, centre) <= DRIFT_MM
                             && radius.is_some_and(|r| b.half_max <= r * MERGED_RATIO + MERGED_SLACK_MM)
                     };
                     if let Some(next) = ups.iter().copied().filter(own).min_by(nearest) {
@@ -2274,7 +2274,7 @@ impl Graph {
             };
             let b = self.blobs[next as usize];
             if b.z > ROOT_TOP_MM {
-                let own = drift(next, centre) <= COLUMN_DRIFT_MM
+                let own = drift(next, centre) <= DRIFT_MM
                     && radius.is_none_or(|r| b.half_max <= r * MERGED_RATIO + MERGED_SLACK_MM);
                 if own {
                     let r = *radius.get_or_insert(b.half_max);
@@ -2594,13 +2594,13 @@ impl Graph {
         let b = &self.blobs[next as usize];
         let Some(&first) = run.first() else { return true };
         let f = &self.blobs[first as usize];
-        if (b.half_min - f.half_min).abs() > RUN_WIDTH_MM + f.half_min * RUN_WIDTH_RATIO {
+        if (b.half_min - f.half_min).abs() > f.half_min * (SHAFT_ALONE_RATIO - 1.0) + SHAFT_ALONE_SLACK_MM {
             return false;
         }
         let last = &self.blobs[*run.last().expect("non-empty") as usize];
         let steps = (run.len() - 1) as f32;
         let (ex, ey, tolerance) = if run.len() >= 2 {
-            (last.x + (last.x - f.x) / steps, last.y + (last.y - f.y) / steps, RUN_SLOPE_TOLERANCE * self.step)
+            (last.x + (last.x - f.x) / steps, last.y + (last.y - f.y) / steps, SLOPE_TOLERANCE * self.step)
         } else {
             (last.x, last.y, MAX_RUN_LEAN * self.step)
         };
@@ -3922,7 +3922,7 @@ mod tests {
             graph.blobs.iter().position(|b| b.layer == layer && (b.x - x).abs() < 0.01).expect("a blob") as u32
         };
         let (left, right) = (graph.descent_slope(at(-0.5, 29)), graph.descent_slope(at(0.5, 29)));
-        assert!((left - right).abs() < FORK_SLOPE_TOLERANCE, "{left} {right}");
+        assert!((left - right).abs() < SLOPE_TOLERANCE, "{left} {right}");
 
         // Below the root top a way is only worse when it stops short of the plate.
         let mut blobs: Vec<(f32, u32, f32)> = (0..=14).map(|layer| (0.0, layer, 0.3)).collect();
