@@ -190,9 +190,6 @@ const FORK_WAYS: usize = 8;
 /// the run tolerance it replaced). Chitubox X lattices would take 0.075 and Lychee lattices 0.3, at
 /// 17% more joints.
 const SLOPE_TOLERANCE: f32 = 0.15;
-/// How far down the shaft the model surface is looked for, from the buried tip top. A search limit:
-/// no effect.
-const ENTRY_WINDOW_MM: f32 = 5.0;
 /// The tip's socket is looked for within this distance of the contact. Styles: all. Sweep: no
 /// effect.
 const TIP_WINDOW_MM: f32 = 4.0;
@@ -230,8 +227,6 @@ const CAP_WIDTH_FRACTION: f32 = 0.8;
 const MIN_CONTACT_DIAMETER_MM: f32 = 0.2;
 /// Safety limit: the widest contact rebuilt.
 const MAX_CONTACT_DIAMETER_MM: f32 = 1.5;
-/// Safety limit: the widest tip body rebuilt.
-const MAX_BODY_DIAMETER_MM: f32 = 3.0;
 /// Safety limit: the thinnest rod rebuilt (a support's shaft, a brace or a post).
 const MIN_ROD_DIAMETER_MM: f32 = 0.3;
 /// The shaft diameter is this quantile (1/N) of its cross-sections above the root: a shaft keeps
@@ -239,9 +234,6 @@ const MIN_ROD_DIAMETER_MM: f32 = 0.3;
 /// widen a section. Styles: all. Sweep: load-bearing (the median, 2, costs precision 0.008 at 0.1
 /// mm; 4 costs recall 0.004 at 0.3 mm); the same in every style.
 const SHAFT_WIDTH_QUANTILE: usize = 3;
-/// Safety limit: no shaft is rebuilt thicker than this. Real shafts are well under it; it only
-/// binds when a walk reads a wide piece (a slab or a model part taken for a support) as a shaft.
-const MAX_SHAFT_DIAMETER_MM: f32 = 5.0;
 /// Bends smaller than this share of the shaft's diameter are dropped from the shaft path, and
 /// always those smaller than `SIMPLIFY_MIN_MM`: a thick shaft's slices wander further off its line
 /// without it bending. Styles: all. Was a fixed 0.3 mm, kept at the corpus median shaft (1.2 mm);
@@ -314,13 +306,9 @@ const KNOT_REACH_RATIO: f32 = 0.42;
 /// 0.004 recall.
 const KNOT_REACH_MIN_MM: f32 = 0.5;
 /// Where a piece touches each of two supports in one junction whose lower and upper parts lie at
-/// least `X_JUNCTION_MM` apart, it may be an X of two braces meeting each support one above the
-/// other; it is when the piece's cross-sections have their middles within `X_CENTRE_MM` of both
-/// braces' lines. The parts must also lie as far apart as the piece is thick, which is what usually
-/// decides; this is a safety limit for braces thinner than it, whose junctions are too short to
-/// hold two brace ends.
-const X_JUNCTION_MM: f32 = 0.5;
-/// See [`X_JUNCTION_MM`]. Styles: chitubox-xlattice, lychee-lattice. Sweep: no effect.
+/// least as far apart as the piece is thick, it may be an X of two braces meeting each support one
+/// above the other; it is when the piece's cross-sections have their middles within this distance
+/// of both braces' lines. Styles: chitubox-xlattice, lychee-lattice. Sweep: no effect.
 const X_CENTRE_MM: f32 = 0.25;
 /// Braces whose ends are this close to an earlier brace's are the same. Styles: the lattices and
 /// zigzag webs. Sweep: no effect; sharing one value with [`DUPLICATE_CONTACT_MM`] was worse.
@@ -363,10 +351,6 @@ const MAX_KICKSTAND_LEAN: f32 = 2.0;
 /// Where a strut meets its support is looked for every `KNOT_STEP_MM` along the junction. Sweep: no
 /// effect.
 const KNOT_STEP_MM: f32 = 0.5;
-/// A post holds up the traced shaft it runs into at most this far above its top. Styles:
-/// lychee-lattice, lychee-zigzag (posts under fanned tips). Sweep: no effect, also as a multiple of
-/// the post's radius.
-const COLUMN_END_MM: f32 = 1.5;
 /// A column carries on above a junction a traced support's walk passed through when its own slices
 /// go on within this height above where the junction cuts it. Safety limit: junctions are about as
 /// tall as the brace in them, well under this; it stops the search where a column ends in a
@@ -411,10 +395,6 @@ const CONE_TAPER: f32 = 0.85;
 const CONE_TOLERANCE_MM: f32 = 0.02;
 /// See [`CONE_TOLERANCE_MM`].
 const CONE_TOLERANCE_RATIO: f32 = 0.05;
-/// A longer taper is not a tip cone (a whole support modelled as one long cone). Retuned in the
-/// audit from 10: seven corpus models have tip cones longer than 10 mm (recall and precision 0.002
-/// better).
-const MAX_CONE_TIP_MM: f32 = 20.0;
 
 /// The shortest brace or strut of `diameter`, and how far its ends are looked for along the
 /// shafts it meets: thin braces packed close in a lattice are shorter than thick ones.
@@ -718,7 +698,7 @@ pub struct KickstandLayout {
 }
 
 /// Increment when the reconstruction changes, so anything derived from a layout is rebuilt.
-pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 18;
+pub const CURRENT_SUPPORT_LAYOUT_VERSION: i32 = 19;
 
 /// Rebuilds the support layout from Z-up support geometry and the model it holds up.
 pub fn reconstruct(model: &[Triangle], supports: &[Triangle]) -> SupportLayout {
@@ -1054,7 +1034,7 @@ fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> Con
         from_outside,
         socket: fit.socket,
         contact_diameter_mm: contact_diameter,
-        body_diameter_mm: fit.socket_width.min(shaft_diameter).clamp(contact_diameter, MAX_BODY_DIAMETER_MM),
+        body_diameter_mm: fit.socket_width.min(shaft_diameter).max(contact_diameter),
     }
 }
 
@@ -1062,11 +1042,7 @@ fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> Con
 /// flares and merged braces only ever widen a section.
 fn shaft_diameter(mut widths: Vec<f32>, fallback: f32) -> f32 {
     widths.sort_by(f32::total_cmp);
-    widths
-        .get(widths.len() / SHAFT_WIDTH_QUANTILE)
-        .copied()
-        .unwrap_or(fallback)
-        .clamp(MIN_ROD_DIAMETER_MM, MAX_SHAFT_DIAMETER_MM)
+    widths.get(widths.len() / SHAFT_WIDTH_QUANTILE).copied().unwrap_or(fallback).max(MIN_ROD_DIAMETER_MM)
 }
 
 /// Builds a support from its walk. `entry` is the first walked blob outside the model; the
@@ -2507,7 +2483,7 @@ impl Graph {
     fn column_end(&self, column: &Column, hosts: &[HostLine]) -> Option<(usize, Vec3, Vec<Vec3>)> {
         let (support, at) = column.into?;
         let host = &hosts[support];
-        if host.strut || at.z - column.top.z > COLUMN_END_MM {
+        if host.strut {
             return None;
         }
         let knot = host
@@ -2672,7 +2648,7 @@ impl Graph {
                 sum * (1.0 / n as f32)
             };
             let (lower, upper) = (mean(&|z| z <= lo + third), mean(&|z| z >= hi - third));
-            (upper.z - lower.z >= diameter_mm.max(X_JUNCTION_MM)).then_some((lower, upper))
+            (upper.z - lower.z >= diameter_mm).then_some((lower, upper))
         };
         let ((a_low, a_high), (b_low, b_high)) = (parts(i)?, parts(j)?);
         let (a, b) = (piece.ends[i].point, piece.ends[j].point);
@@ -3062,7 +3038,7 @@ fn fit_cone(triangles: &[Triangle], members: &[u32]) -> Option<Cone> {
         .filter(|p| p.1 >= wide_radius - tolerance)
         .map(|p| (p.0 - narrow_t) * toward)
         .fold(f32::MAX, f32::min);
-    if taper <= band || taper > MAX_CONE_TIP_MM {
+    if taper <= band {
         return None;
     }
     let wall = |s: f32| narrow_radius + (wide_radius - narrow_radius) * (s / taper).min(1.0);
@@ -3119,18 +3095,11 @@ impl<'a> SurfaceIndex<'a> {
 
     /// Where the shaft through `points` (top down) leaves the model, and the index of the first
     /// point outside it. A tip is usually buried a little way into the model, so its top is
-    /// not where it touches. None when no point within the tip window is outside (or the
-    /// model's winding is inverted).
+    /// not where it touches. None when no point is outside (or the model's winding is
+    /// inverted).
     fn entry(&self, points: &[Vec3]) -> Option<(SurfacePoint, usize)> {
         let mut previous: Option<(Vec3, f32)> = None;
-        let mut walked = 0.0;
         for (i, &p) in points.iter().enumerate() {
-            if i > 0 {
-                walked += (p - points[i - 1]).length();
-                if walked > ENTRY_WINDOW_MM {
-                    return None;
-                }
-            }
             let side = self.nearest(p, ENTRY_SEARCH_MM).map(|hit| (p - hit.point).dot(hit.normal));
             match (side, previous) {
                 (Some(side), _) if side < 0.0 => previous = Some((p, side)),
