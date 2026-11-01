@@ -109,7 +109,7 @@ function FieldSection({ field, data }: { field: FieldKey; data: MetadataDictiona
               <Button
                 size="sm"
                 variant="ghost"
-                className={styles.delete}
+                destructive
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate(item.id)}
               >
@@ -555,7 +555,7 @@ export default function SettingsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className={styles.delete}
+                        destructive
                         disabled={deletePrinterMutation.isPending || printer.isDefault}
                         onClick={() => deletePrinterMutation.mutate(printer.id)}
                       >

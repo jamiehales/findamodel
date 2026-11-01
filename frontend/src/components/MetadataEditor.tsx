@@ -482,7 +482,7 @@ export default function MetadataEditor({ path, open, onClose }: Props) {
             onValueChange={(next) => {
               if ((next === 'rule') !== isRuleMode) toggleMode(yamlName);
             }}
-            className={styles.modeToggle}
+            size="sm"
           >
             <SegmentedControlItem value="value">Value</SegmentedControlItem>
             <SegmentedControlItem value="rule">Rule</SegmentedControlItem>

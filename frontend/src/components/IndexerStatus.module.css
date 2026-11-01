@@ -17,10 +17,6 @@
   outline-offset: 2px;
 }
 
-.spinner {
-  flex: none;
-}
-
 .progress {
   width: 72px;
 }

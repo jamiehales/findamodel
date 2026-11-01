@@ -113,7 +113,7 @@ function InitialSetupPage({ onCompleted }: InitialSetupPageProps) {
       <Shell>
         <div className={styles.card}>
           <div className={styles.center} role="status">
-            <Spinner className={styles.bigSpinner} />
+            <Spinner size="lg" />
             Loading
           </div>
         </div>

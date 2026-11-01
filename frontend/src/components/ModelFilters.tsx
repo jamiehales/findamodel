@@ -84,7 +84,7 @@ export default function ModelFilters({ value, onChange, options, variant = 'side
           onValueChange={(next) =>
             onChange({ ...value, supported: next === 'any' ? null : next === 'yes' })
           }
-          className={styles.segment}
+          fullWidth
         >
           <SegmentedControlItem value="any">Any</SegmentedControlItem>
           <SegmentedControlItem value="yes">Yes</SegmentedControlItem>

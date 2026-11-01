@@ -60,7 +60,7 @@ function BootstrapApp() {
 
   return (
     <div className={styles.boot}>
-      {state === 'starting' && <Spinner className={styles.spinner} />}
+      {state === 'starting' && <Spinner size="lg" className={styles.spinner} />}
       <p className={styles.message}>{message}</p>
       {state === 'failed' && (
         <p className={styles.detail}>

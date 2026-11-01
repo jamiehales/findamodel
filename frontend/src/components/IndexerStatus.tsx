@@ -30,7 +30,7 @@ export default function IndexerStatus() {
 
   return (
     <Link to="/indexing" className={styles.link} aria-label={label}>
-      <Spinner className={styles.spinner} label="Indexing" />
+      <Spinner label="Indexing" />
       <span className={styles.text}>Indexing</span>
       {total != null && total > 0 && (
         <>

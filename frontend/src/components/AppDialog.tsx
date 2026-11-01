@@ -18,7 +18,7 @@ interface AppDialogProps {
   title: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
-  /** Panel width; `sm` is the kit's confirm size. */
+  /** Panel width: the kit's `DialogContent` sizes; `sm` is its confirm size. */
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -33,7 +33,7 @@ export default function AppDialog({
 }: AppDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className={styles[size]} aria-describedby={undefined}>
+      <DialogContent size={size} aria-describedby={undefined}>
         <DialogTitle>{title}</DialogTitle>
         <div className={styles.body}>{children}</div>
         {actions ? <DialogFooter>{actions}</DialogFooter> : null}

@@ -1,15 +1,3 @@
-.sm {
-  width: min(340px, calc(100vw - 32px));
-}
-
-.md {
-  width: min(640px, calc(100vw - 32px));
-}
-
-.lg {
-  width: min(1040px, calc(100vw - 32px));
-}
-
 .body {
   min-height: 0;
   overflow: auto;

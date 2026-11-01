@@ -149,7 +149,7 @@ function PrintingListsManagePage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className={styles.delete}
+                        destructive
                         disabled={deleteList.isPending}
                         onClick={() => handleDelete(list.id, list.name)}
                       >

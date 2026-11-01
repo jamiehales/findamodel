@@ -402,7 +402,7 @@ function PrintingListPage() {
         actions={
           listedModels.length > 0 ? (
             <>
-              <Button variant="ghost" className={styles.clear} onClick={handleClearList}>
+              <Button variant="ghost" destructive onClick={handleClearList}>
                 Clear
               </Button>
               <Button

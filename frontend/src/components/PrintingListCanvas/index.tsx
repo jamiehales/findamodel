@@ -898,7 +898,7 @@ export default function PrintingListCanvas({
     <section className={styles.plate} aria-label="Build plate">
       <div className={styles.bar}>
         <Select value={selectedPrinterId ?? undefined} onValueChange={(v) => onPrinterChange?.(v)}>
-          <SelectTrigger aria-label="Printer" className={styles.printer}>
+          <SelectTrigger aria-label="Printer" size="sm" className={styles.printer}>
             <SelectValue placeholder="Printer">
               {printers.find((p) => p.id === selectedPrinterId)?.name}
             </SelectValue>
@@ -918,7 +918,7 @@ export default function PrintingListCanvas({
             onSpawnOrderChange?.(v as SpawnType);
           }}
         >
-          <SelectTrigger aria-label="Spawn order" className={styles.small}>
+          <SelectTrigger aria-label="Spawn order" size="sm" className={styles.small}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -946,7 +946,7 @@ export default function PrintingListCanvas({
             onHullModeChange?.(v as HullMode);
           }}
         >
-          <SelectTrigger aria-label="Hull mode" className={styles.small}>
+          <SelectTrigger aria-label="Hull mode" size="sm" className={styles.small}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

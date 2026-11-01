@@ -252,6 +252,7 @@ function RunSummaryCard({
           <IconButton
             variant="ghost"
             size="sm"
+            destructive
             className={styles.cancel}
             onClick={onCancel}
             disabled={isCancelling}

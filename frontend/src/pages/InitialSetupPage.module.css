@@ -72,11 +72,6 @@
   color: var(--muted-foreground);
 }
 
-.bigSpinner {
-  width: 24px;
-  height: 24px;
-}
-
 .title {
   font: 600 28px/32px var(--font-display);
   letter-spacing: -0.01em;

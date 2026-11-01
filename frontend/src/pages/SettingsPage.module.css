@@ -131,10 +131,6 @@
   justify-content: flex-end;
 }
 
-.delete {
-  color: var(--destructive-text);
-}
-
 .printer {
   display: flex;
   flex-wrap: wrap;
