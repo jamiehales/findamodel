@@ -1,12 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { SlidersHorizontal, X } from 'lucide-react';
-import { Button, SearchField, Tag } from '@jamiehales/ui-kit/mostlymaking';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, SlidersHorizontal, X } from 'lucide-react';
+import {
+  Button,
+  SearchField,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tag,
+} from '@jamiehales/ui-kit/mostlymaking';
 import { AppSheet } from '../components/AppDialog';
 import ModelGrid from '../components/ModelGrid';
 import ModelFilters from '../components/ModelFilters';
 import { useFilterOptions, useMetadataDictionaryOverview } from '../lib/queries';
-import { emptyFilter, type ModelFilter } from '../lib/api';
+import {
+  defaultSort,
+  defaultSortOrder,
+  emptyFilter,
+  type ModelFilter,
+  type ModelSort,
+  type ModelSortField,
+} from '../lib/api';
 import styles from './ModelsPage.module.css';
 
 const LIST_FIELDS = [
@@ -19,6 +35,21 @@ const LIST_FIELDS = [
   'material',
   'fileType',
 ] as const;
+
+const SORT_FIELDS: { value: ModelSortField; label: string }[] = [
+  { value: 'fileDate', label: 'File date' },
+  { value: 'name', label: 'Name' },
+  { value: 'fileName', label: 'File name' },
+  { value: 'fileType', label: 'File type' },
+  { value: 'path', label: 'Folder' },
+];
+
+function toSort(fieldParam: string | null, orderParam: string | null): ModelSort {
+  const field = SORT_FIELDS.find((f) => f.value === fieldParam)?.value ?? defaultSort.field;
+  const order =
+    orderParam === 'asc' || orderParam === 'desc' ? orderParam : defaultSortOrder(field);
+  return { field, order };
+}
 
 function toFilter(searchParams: URLSearchParams): ModelFilter {
   const supportedParam = searchParams.get('supported');
@@ -38,8 +69,10 @@ function toFilter(searchParams: URLSearchParams): ModelFilter {
   };
 }
 
-function toSearchParams(filter: ModelFilter, modelName: string): URLSearchParams {
+function toSearchParams(filter: ModelFilter, modelName: string, sort: ModelSort): URLSearchParams {
   const params = new URLSearchParams();
+  if (sort.field !== defaultSort.field) params.set('sort', sort.field);
+  if (sort.order !== defaultSortOrder(sort.field)) params.set('order', sort.order);
   if (filter.search) params.set('search', filter.search);
   if (modelName) params.set('modelName', modelName);
   for (const field of LIST_FIELDS) {
@@ -55,6 +88,9 @@ function ModelsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = useMemo(() => toFilter(searchParams), [searchParams]);
   const modelName = searchParams.get('modelName') ?? '';
+  const sortField = searchParams.get('sort');
+  const sortOrder = searchParams.get('order');
+  const sort = useMemo(() => toSort(sortField, sortOrder), [sortField, sortOrder]);
   const [searchInput, setSearchInput] = useState(filter.search);
   const [total, setTotal] = useState<number | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -82,10 +118,13 @@ function ModelsPage() {
 
   const applyFilter = useCallback(
     (next: ModelFilter, nextModelName = modelName) => {
-      setSearchParams(toSearchParams(next, nextModelName));
+      setSearchParams(toSearchParams(next, nextModelName, sort));
     },
-    [modelName, setSearchParams],
+    [modelName, sort, setSearchParams],
   );
+
+  const applySort = (next: ModelSort) => setSearchParams(toSearchParams(filter, modelName, next));
+  const ascending = sort.order === 'asc';
 
   const handleSearchChange = (raw: string) => {
     setSearchInput(raw);
@@ -142,11 +181,45 @@ function ModelsPage() {
             {filterCount > 0 && <span className={styles.filterCount}>{filterCount}</span>}
           </Button>
           <div className={styles.spacer} />
-          {total !== null && (
-            <span className={styles.count}>
-              {numberFormat.format(total)} {total === 1 ? 'model' : 'models'}
-            </span>
-          )}
+          <div className={styles.meta}>
+            {total !== null && (
+              <span className={styles.count}>
+                {numberFormat.format(total)} {total === 1 ? 'model' : 'models'}
+              </span>
+            )}
+            <div className={styles.sort}>
+              <Select
+                value={sort.field}
+                onValueChange={(field: ModelSortField) =>
+                  applySort({ field, order: defaultSortOrder(field) })
+                }
+              >
+                <SelectTrigger aria-label="Sort by" className={styles.sortField}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_FIELDS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                icon
+                aria-label={ascending ? 'Ascending' : 'Descending'}
+                title={ascending ? 'Ascending' : 'Descending'}
+                onClick={() => applySort({ ...sort, order: ascending ? 'desc' : 'asc' })}
+              >
+                {ascending ? (
+                  <ArrowUpNarrowWide size={16} strokeWidth={1.5} aria-hidden="true" />
+                ) : (
+                  <ArrowDownWideNarrow size={16} strokeWidth={1.5} aria-hidden="true" />
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
 
         {active.length > 0 && (
@@ -170,7 +243,7 @@ function ModelsPage() {
           </div>
         )}
 
-        <ModelGrid filter={filter} modelName={modelName} onTotalChange={setTotal} />
+        <ModelGrid filter={filter} modelName={modelName} sort={sort} onTotalChange={setTotal} />
       </main>
 
       {mergedOptions && (

@@ -4,7 +4,7 @@
 use sqlx::{QueryBuilder, Sqlite};
 
 use crate::db::Db;
-use crate::dto::{FilterOptionsDto, ModelQueryRequest, ModelQueryResult};
+use crate::dto::{FilterOptionsDto, ModelQueryRequest, ModelQueryResult, ModelSort, SortOrder};
 use crate::entities::ModelRow;
 use crate::error::AppResult;
 use crate::metadata::tags;
@@ -105,6 +105,28 @@ fn merge_selected(options: Vec<String>, selected: &[String]) -> Vec<String> {
     merged
 }
 
+/// ORDER BY clause for the requested sort. Ties fall back to the folder path, then the id, in
+/// the same direction so `ix_models_file_date` can serve the default sort.
+fn order_by(req: &ModelQueryRequest) -> String {
+    let sort = req.sort.unwrap_or_default();
+    let dir = match req.order.unwrap_or_else(|| sort.default_order()) {
+        SortOrder::Asc => "ASC",
+        SortOrder::Desc => "DESC",
+    };
+    let keys: &[&str] = match sort {
+        ModelSort::Name => {
+            &["COALESCE(m.calculated_model_name, m.file_name) COLLATE NOCASE", "m.directory", "m.file_name"]
+        }
+        ModelSort::FileName => &["m.file_name COLLATE NOCASE", "m.directory"],
+        ModelSort::FileDate => &["m.file_modified_at", "m.directory", "m.file_name"],
+        ModelSort::FileType => &["m.file_type", "m.directory", "m.file_name"],
+        ModelSort::Path => &["m.directory", "m.file_name"],
+    };
+    let mut clause: Vec<String> = keys.iter().map(|k| format!("{k} {dir}")).collect();
+    clause.push(format!("m.id {dir}"));
+    format!(" ORDER BY {}", clause.join(", "))
+}
+
 pub async fn query_models(db: &Db, req: &ModelQueryRequest) -> AppResult<ModelQueryResult> {
     let limit = req.limit.unwrap_or(DEFAULT_LIMIT).max(0);
     let offset = req.offset.unwrap_or(0).max(0);
@@ -115,7 +137,7 @@ pub async fn query_models(db: &Db, req: &ModelQueryRequest) -> AppResult<ModelQu
 
     let mut qb = QueryBuilder::new("SELECT m.* FROM models m");
     push_filters(&mut qb, req, None);
-    qb.push(" ORDER BY m.directory, m.file_name LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    qb.push(order_by(req)).push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
     let rows: Vec<ModelRow> = qb.build_query_as().fetch_all(db).await?;
 
     Ok(ModelQueryResult {
@@ -201,8 +223,12 @@ mod tests {
         ] {
             t.insert_model(&m).await;
         }
-        let req =
-            ModelQueryRequest { tags: vec!["monster".into(), "VEHICLE".into()], limit: Some(50), ..Default::default() };
+        let req = ModelQueryRequest {
+            tags: vec!["monster".into(), "VEHICLE".into()],
+            sort: Some(ModelSort::Path),
+            limit: Some(50),
+            ..Default::default()
+        };
         let result = query_models(&t.db, &req).await.unwrap();
         assert_eq!(result.total_count, 2);
         assert!(!result.has_more);
@@ -255,11 +281,77 @@ mod tests {
         for i in 0..5 {
             t.insert_model(&model(&format!("m{i}.stl"), "")).await;
         }
-        let result = query_models(&t.db, &ModelQueryRequest { limit: Some(2), offset: Some(2), ..Default::default() })
-            .await
-            .unwrap();
+        let result = query_models(
+            &t.db,
+            &ModelQueryRequest { sort: Some(ModelSort::Path), limit: Some(2), offset: Some(2), ..Default::default() },
+        )
+        .await
+        .unwrap();
         assert_eq!((result.models.len(), result.total_count, result.has_more), (2, 5, true));
         assert_eq!(names(&result), vec!["m2", "m3"]);
+    }
+
+    async fn sorted(t: &TestDb, sort: ModelSort, order: Option<SortOrder>) -> Vec<String> {
+        let req = ModelQueryRequest { sort: Some(sort), order, ..Default::default() };
+        query_models(&t.db, &req).await.unwrap().models.into_iter().map(|m| m.relative_path).collect()
+    }
+
+    async fn sort_fixture() -> TestDb {
+        let t = TestDb::new().await;
+        let base = chrono::Utc::now();
+        for (i, (file, dir, name)) in
+            [("b-file.obj", "z", Some("alpha")), ("A-file.stl", "y", None), ("c-file.3mf", "x", Some("Zulu"))]
+                .into_iter()
+                .enumerate()
+        {
+            let mut m = model(file, dir);
+            m.calculated_model_name = name.map(Into::into);
+            m.file_modified_at = base - chrono::Duration::days(i as i64);
+            t.insert_model(&m).await;
+        }
+        t
+    }
+
+    #[tokio::test]
+    async fn default_sort_is_newest_file_first() {
+        let t = sort_fixture().await;
+        let result = query_models(&t.db, &ModelQueryRequest::default()).await.unwrap();
+        let paths: Vec<String> = result.models.into_iter().map(|m| m.relative_path).collect();
+        assert_eq!(paths, vec!["z/b-file.obj", "y/A-file.stl", "x/c-file.3mf"]);
+        assert_eq!(
+            sorted(&t, ModelSort::FileDate, Some(SortOrder::Asc)).await,
+            vec!["x/c-file.3mf", "y/A-file.stl", "z/b-file.obj"]
+        );
+    }
+
+    #[tokio::test]
+    async fn name_sorts_by_displayed_name_ignoring_case() {
+        let t = sort_fixture().await;
+        // Displayed names: alpha, A-file.stl (no model name), Zulu.
+        assert_eq!(sorted(&t, ModelSort::Name, None).await, vec!["y/A-file.stl", "z/b-file.obj", "x/c-file.3mf"]);
+        assert_eq!(
+            sorted(&t, ModelSort::Name, Some(SortOrder::Desc)).await,
+            vec!["x/c-file.3mf", "z/b-file.obj", "y/A-file.stl"]
+        );
+    }
+
+    #[tokio::test]
+    async fn file_name_file_type_and_path_sorts() {
+        let t = sort_fixture().await;
+        assert_eq!(sorted(&t, ModelSort::FileName, None).await, vec!["y/A-file.stl", "z/b-file.obj", "x/c-file.3mf"]);
+        assert_eq!(sorted(&t, ModelSort::FileType, None).await, vec!["x/c-file.3mf", "z/b-file.obj", "y/A-file.stl"]);
+        assert_eq!(sorted(&t, ModelSort::Path, None).await, vec!["x/c-file.3mf", "y/A-file.stl", "z/b-file.obj"]);
+    }
+
+    #[tokio::test]
+    async fn default_sort_reads_the_file_date_index() {
+        let t = TestDb::new().await;
+        let mut qb = QueryBuilder::<Sqlite>::new("SELECT m.* FROM models m");
+        push_filters(&mut qb, &ModelQueryRequest::default(), None);
+        qb.push(order_by(&ModelQueryRequest::default())).push(" LIMIT 25");
+        let details = plan(&t.db, qb.sql()).await;
+        assert!(details.iter().any(|d| d.contains("ix_models_file_date")), "{details:?}");
+        assert!(!details.iter().any(|d| d.contains("TEMP B-TREE")), "{details:?}");
     }
 
     fn creator_model(file: &str, dir: &str, creator: &str, category: &str) -> ModelRow {

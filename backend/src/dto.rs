@@ -80,8 +80,40 @@ pub struct ModelQueryRequest {
     pub material: Vec<String>,
     pub file_type: Vec<String>,
     pub supported: Option<bool>,
+    pub sort: Option<ModelSort>,
+    pub order: Option<SortOrder>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+/// Field the catalog search orders by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ModelSort {
+    /// Model name from rules, falling back to the file name.
+    Name,
+    FileName,
+    #[default]
+    FileDate,
+    FileType,
+    Path,
+}
+
+impl ModelSort {
+    /// Direction used when the request names a sort field but no order.
+    pub fn default_order(self) -> SortOrder {
+        match self {
+            ModelSort::FileDate => SortOrder::Desc,
+            _ => SortOrder::Asc,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortOrder {
+    Asc,
+    Desc,
 }
 
 #[derive(Debug, Clone, Serialize)]

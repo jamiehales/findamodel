@@ -84,6 +84,19 @@ export interface ModelFilter {
   supported: boolean | null;
 }
 
+export type ModelSortField = 'name' | 'fileName' | 'fileDate' | 'fileType' | 'path';
+export type SortOrder = 'asc' | 'desc';
+
+export interface ModelSort {
+  field: ModelSortField;
+  order: SortOrder;
+}
+
+export const defaultSortOrder = (field: ModelSortField): SortOrder =>
+  field === 'fileDate' ? 'desc' : 'asc';
+
+export const defaultSort: ModelSort = { field: 'fileDate', order: 'desc' };
+
 export const emptyFilter: ModelFilter = {
   search: '',
   creator: [],
@@ -137,11 +150,16 @@ export async function fetchQueryModels(
   limit: number,
   offset: number = 0,
   modelName?: string,
+  sort?: ModelSort,
 ): Promise<ModelQueryResult> {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
   params.set('offset', String(offset));
   appendFilterParams(params, filter, modelName);
+  if (sort) {
+    params.set('sort', sort.field);
+    params.set('order', sort.order);
+  }
   const r = await apiFetch(`/api/query?${params}`);
   if (!r.ok) throw new Error('Failed to query models');
   const result = (await r.json()) as ModelQueryResult;

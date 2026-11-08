@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useModels, useQueryModels } from '../lib/queries';
-import type { ModelFilter } from '../lib/api';
+import type { ModelFilter, ModelSort } from '../lib/api';
 import ModelCard from './ModelCard';
 import CardGrid from './CardGrid';
 import LoadingView from './LoadingView';
@@ -12,6 +12,7 @@ const PAGE_SIZE = 24;
 interface Props {
   filter?: ModelFilter;
   modelName?: string;
+  sort?: ModelSort;
   /** Reports the total match count, for the result count beside the search. */
   onTotalChange?: (total: number | null) => void;
 }
@@ -19,19 +20,21 @@ interface Props {
 function FilteredGrid({
   filter,
   modelName,
+  sort,
   onTotalChange,
 }: {
   filter: ModelFilter;
   modelName?: string;
+  sort?: ModelSort;
   onTotalChange?: (total: number | null) => void;
 }) {
   const [page, setPage] = useState(1);
   const offset = (page - 1) * PAGE_SIZE;
-  const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset, modelName);
+  const { data, isPending, isError } = useQueryModels(filter, PAGE_SIZE, offset, modelName, sort);
 
   useEffect(() => {
     setPage(1);
-  }, [filter, modelName]);
+  }, [filter, modelName, sort]);
 
   useEffect(() => {
     onTotalChange?.(data ? data.totalCount : null);
@@ -71,9 +74,16 @@ function UnfilteredGrid() {
   );
 }
 
-function ModelGrid({ filter, modelName, onTotalChange }: Props) {
+function ModelGrid({ filter, modelName, sort, onTotalChange }: Props) {
   if (filter)
-    return <FilteredGrid filter={filter} modelName={modelName} onTotalChange={onTotalChange} />;
+    return (
+      <FilteredGrid
+        filter={filter}
+        modelName={modelName}
+        sort={sort}
+        onTotalChange={onTotalChange}
+      />
+    );
   return <UnfilteredGrid />;
 }
 

@@ -45,6 +45,7 @@ import {
   type MetadataFields,
   type PrintingListDetail,
   type ModelFilter,
+  type ModelSort,
   type SpawnType,
   type HullMode,
   fetchQueryModels,
@@ -106,8 +107,13 @@ export const queryKeys = {
   printingLists: ['printing-lists'] as const,
   activePrintingList: ['printing-lists', 'active'] as const,
   printingList: (id: string) => ['printing-lists', id] as const,
-  queryModels: (filter: ModelFilter, limit: number, offset: number, modelName?: string) =>
-    ['query', 'models', filter, limit, offset, modelName ?? ''] as const,
+  queryModels: (
+    filter: ModelFilter,
+    limit: number,
+    offset: number,
+    modelName?: string,
+    sort?: ModelSort,
+  ) => ['query', 'models', filter, limit, offset, modelName ?? '', sort ?? null] as const,
   modelNameOptions: (filter: ModelFilter, limit: number, modelNameInput?: string) =>
     ['query', 'model-name-options', filter, limit, modelNameInput ?? ''] as const,
   filterOptions: (filter: ModelFilter, modelName?: string) =>
@@ -204,10 +210,11 @@ export function useQueryModels(
   limit: number,
   offset: number,
   modelName?: string,
+  sort?: ModelSort,
 ) {
   return useQuery({
-    queryKey: queryKeys.queryModels(filter, limit, offset, modelName),
-    queryFn: () => fetchQueryModels(filter, limit, offset, modelName),
+    queryKey: queryKeys.queryModels(filter, limit, offset, modelName, sort),
+    queryFn: () => fetchQueryModels(filter, limit, offset, modelName, sort),
     placeholderData: (previousData) => previousData,
   });
 }
