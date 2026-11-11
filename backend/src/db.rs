@@ -201,6 +201,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn existing_installs_require_support_export_version_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("findamodel.db");
+        let mut migrator = sqlx::migrate!("./migrations");
+        migrator.migrations =
+            migrator.migrations.iter().filter(|m| m.version <= 10).cloned().collect::<Vec<_>>().into();
+        let before = SqlitePoolOptions::new().connect_with(connect_options(&path)).await.unwrap();
+        migrator.run(&before).await.unwrap();
+        sqlx::query("INSERT INTO app_config (id, updated_at) VALUES (1, ?)")
+            .bind(now())
+            .execute(&before)
+            .await
+            .unwrap();
+        let seeded: i32 = sqlx::query_scalar("SELECT minimum_support_export_version FROM app_config")
+            .fetch_one(&before)
+            .await
+            .unwrap();
+        assert_eq!(seeded, 0, "0010 leaves existing installs at 0");
+        before.close().await;
+
+        let db = open(&path).await.unwrap();
+        let raised: i32 =
+            sqlx::query_scalar("SELECT minimum_support_export_version FROM app_config").fetch_one(&db).await.unwrap();
+        assert_eq!(raised, 1);
+    }
+
+    #[tokio::test]
+    async fn a_minimum_support_export_version_above_one_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("findamodel.db");
+        let mut migrator = sqlx::migrate!("./migrations");
+        migrator.migrations =
+            migrator.migrations.iter().filter(|m| m.version <= 10).cloned().collect::<Vec<_>>().into();
+        let before = SqlitePoolOptions::new().connect_with(connect_options(&path)).await.unwrap();
+        migrator.run(&before).await.unwrap();
+        sqlx::query("INSERT INTO app_config (id, minimum_support_export_version, updated_at) VALUES (1, 3, ?)")
+            .bind(now())
+            .execute(&before)
+            .await
+            .unwrap();
+        before.close().await;
+
+        let db = open(&path).await.unwrap();
+        let kept: i32 =
+            sqlx::query_scalar("SELECT minimum_support_export_version FROM app_config").fetch_one(&db).await.unwrap();
+        assert_eq!(kept, 3);
+    }
+
+    #[tokio::test]
     async fn hull_split_moves_hulls_and_compacts_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("findamodel.db");

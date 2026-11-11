@@ -32,6 +32,8 @@ pub trait PlateProgress: Send + Sync {
     fn mark_entry_completed(&self);
     /// A VOXL plate starts reading the supports of `total` pre-supported models.
     fn start_reading_supports(&self, total: usize);
+    /// Reading the supports of one of them starts.
+    fn mark_reading_supports(&self, entry_name: &str);
     /// The supports of one of them are read (or came from the cache).
     fn mark_supports_read(&self, entry_name: &str);
 }
@@ -297,13 +299,15 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     .par_iter()
                     .map(|id| {
                         let (info, triangles) = (&infos[id], &geometries[id].triangles);
+                        let reports = progress.as_ref().filter(|_| info.supported() == Some(true));
+                        if let Some(p) = reports {
+                            p.mark_reading_supports(&info.file_name);
+                        }
                         let (export, stored) = supported_export(exports.as_ref(), info, triangles);
                         if let Some(path) = stored {
                             written_by_export.lock().push((*id, path));
                         }
-                        if info.supported() == Some(true)
-                            && let Some(p) = &progress
-                        {
+                        if let Some(p) = reports {
                             p.mark_supports_read(&info.file_name);
                         }
                         match export {
@@ -369,8 +373,14 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
     // The entries this export wrote, indexed for the scan.
     let written = std::mem::take(&mut *written.lock());
     for (id, path) in written {
-        if let Err(err) = store::set_support_export_index(&models.db, id, &path, CURRENT_SUPPORT_READER_VERSION).await {
-            tracing::warn!("Failed to index the support export of {id}: {err}");
+        match store::set_support_export_index(&models.db, id, &path, CURRENT_SUPPORT_READER_VERSION).await {
+            Ok(Some(previous)) if previous != path => {
+                if let Some(exports) = models.support_exports() {
+                    exports.release(&models.db, &previous).await;
+                }
+            }
+            Ok(_) => {}
+            Err(err) => tracing::warn!("Failed to index the support export of {id}: {err}"),
         }
     }
 

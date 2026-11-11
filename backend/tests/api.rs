@@ -712,7 +712,8 @@ async fn a_model_voxl_from_an_entry_still_records_that_supports_were_found() {
     assert_eq!(trunk_count(&download_voxl(&app, &id).await), 4);
     let (_, detail) = app.get(&format!("/api/models/{id}")).await;
     assert_eq!(detail["supportSplit"], true);
-    assert_eq!(entry_files(&app).len(), 2, "checked and unchecked detections have their own entries");
+    // The unchecked detection has its own entry, which replaces the checked one the row named.
+    assert_eq!(entry_files(&app).len(), 1);
 }
 
 #[tokio::test]

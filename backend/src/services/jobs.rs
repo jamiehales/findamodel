@@ -32,6 +32,8 @@ struct Progress {
     skipped_models: Vec<String>,
     supports_total: i64,
     supports_read: i64,
+    /// The models whose supports are being read now, in the order they started.
+    reading: Vec<String>,
     updated_at: Instant,
 }
 
@@ -64,6 +66,7 @@ impl Job {
                 skipped_models: Vec::new(),
                 supports_total: 0,
                 supports_read: 0,
+                reading: Vec::new(),
                 updated_at: Instant::now(),
             }),
         })
@@ -165,14 +168,26 @@ impl PlateProgress for Job {
         self.update(|p| {
             p.supports_total = total as i64;
             p.supports_read = 0;
+            p.reading.clear();
+        });
+    }
+
+    fn mark_reading_supports(&self, entry_name: &str) {
+        let name = entry_name.to_string();
+        self.update(|p| {
+            p.reading.push(name.clone());
+            p.current_entry_name = Some(name);
         });
     }
 
     fn mark_supports_read(&self, entry_name: &str) {
-        let name = entry_name.to_string();
         self.update(|p| {
             p.supports_read += 1;
-            p.current_entry_name = Some(name);
+            if let Some(at) = p.reading.iter().position(|n| n == entry_name) {
+                p.reading.remove(at);
+            }
+            // The model now named is one still being read (the latest started), else none.
+            p.current_entry_name = p.reading.last().cloned();
         });
     }
 }
@@ -553,11 +568,18 @@ mod tests {
     fn a_plate_job_reports_reading_supports() {
         let job = Job::new(None, "plate.voxl".into(), "voxl".into(), PathBuf::from("unused"), 3);
         assert_eq!((job.plate_dto().supports_total, job.plate_dto().supports_read), (0, 0));
-        job.start_reading_supports(2);
-        job.mark_supports_read("knight.stl");
+        job.start_reading_supports(3);
+        job.mark_reading_supports("knight.stl");
+        job.mark_reading_supports("troll.stl");
         let dto = job.plate_dto();
-        assert_eq!((dto.supports_total, dto.supports_read), (2, 1));
-        assert_eq!(dto.current_entry_name.as_deref(), Some("knight.stl"));
+        assert_eq!((dto.supports_total, dto.supports_read), (3, 0));
+        assert_eq!(dto.current_entry_name.as_deref(), Some("troll.stl"), "the latest started");
+        job.mark_supports_read("troll.stl");
+        let dto = job.plate_dto();
+        assert_eq!((dto.supports_total, dto.supports_read), (3, 1));
+        assert_eq!(dto.current_entry_name.as_deref(), Some("knight.stl"), "one still being read");
+        job.mark_supports_read("knight.stl");
+        assert_eq!(job.plate_dto().current_entry_name, None, "none being read");
     }
 
     #[tokio::test]

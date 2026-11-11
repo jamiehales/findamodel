@@ -47,3 +47,5 @@
 * Fix the h05_flat_strut synthetic case: its truth clips the model by 6.12 mm (in the prototype suite too), so the case checks against geometry no real flat-ended strut has
 
 * Unify where the root top is measured from in the support reader (the plate in some rules, the raft top in others), and check the pad thresholds in `backend/src/geometry/support_reader/classify/prepare.rs` against the wording in `docs/support-reader.md`; the code follows the prototype as written
+
+* Keep plate export progress across a page refresh and add a cancel button. The plate job lives only in the printing list page's React state (`frontend/src/pages/PrintingListPage.tsx`) and the backend keeps jobs in memory (`backend/src/services/jobs.rs`), so a refresh loses the running export's progress; the page should find and show a running job for its list, and a cancel button (designed in the mockups, hidden for now) needs the backend job to support cancellation

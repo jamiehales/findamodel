@@ -379,7 +379,7 @@ function PrintingListPage() {
       : plateSupportsDone
         ? 'Writing plate'
         : plateSupportsPhase
-          ? `Reading supports ${plateJob.supportsRead} of ${plateJob.supportsTotal}`
+          ? 'Reading supports'
           : plateJob?.status === 'running'
             ? plateJob.totalEntries > 0
               ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
@@ -387,6 +387,14 @@ function PrintingListPage() {
             : plateJob?.status === 'completed'
               ? 'Plate ready, downloading'
               : null;
+  // While reading supports: the count and the model being read now, after the bar.
+  const plateMeta = plateSupportsDone
+    ? null
+    : plateSupportsPhase
+      ? [`${plateJob.supportsRead} / ${plateJob.supportsTotal}`, plateCurrentFile]
+          .filter(Boolean)
+          .join(' · ')
+      : plateCurrentFile;
   const plateProgress = plateSupportsDone
     ? null
     : plateSupportsPhase
@@ -471,11 +479,7 @@ function PrintingListPage() {
       />
 
       {plateStatusText && (
-        <JobStatus
-          text={plateStatusText}
-          job={plateProgress}
-          currentFile={plateSupportsDone ? null : plateCurrentFile}
-        />
+        <JobStatus text={plateStatusText} job={plateProgress} currentFile={plateMeta} />
       )}
       {(plateError || plateJob?.errorMessage) && (
         <Alert tone="error">

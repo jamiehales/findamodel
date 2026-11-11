@@ -353,14 +353,14 @@ async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id):
         // An entry without supports, or none: split (recording what was found) and read.
         _ => {
             let split = split_loaded(&state, model, geometry, raft_height_mm, checked).await?;
-            let (exports, export_key) = (exports.clone(), export_key.clone());
+            let (writer, export_key) = (exports.clone(), export_key.clone());
             let (export, stored) = tokio::task::spawn_blocking(move || {
                 let export = split.map(|split| {
                     let body = to_z_up(&split.body);
                     let reading = support_reader::read(&body, &to_z_up(&split.supports), raft_height_mm);
                     (split.mask, body, reading.classification.layout)
                 });
-                let stored = exports
+                let stored = writer
                     .as_ref()
                     .and_then(|e| e.store(&export_key, export.as_ref().map(|(m, _, l)| (m.as_slice(), l))));
                 (export, stored)
@@ -368,7 +368,13 @@ async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id):
             .await
             .map_err(anyhow::Error::from)?;
             if let Some(path) = stored {
-                store::set_support_export_index(&state.db, id, &path, CURRENT_SUPPORT_READER_VERSION).await?;
+                let previous =
+                    store::set_support_export_index(&state.db, id, &path, CURRENT_SUPPORT_READER_VERSION).await?;
+                if let Some(previous) = previous.filter(|p| *p != path)
+                    && let Some(exports) = &exports
+                {
+                    exports.release(&state.db, &previous).await;
+                }
             }
             let (_, body, layout) = export.ok_or_else(not_found)?;
             (body, layout)

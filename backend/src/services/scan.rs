@@ -1051,6 +1051,7 @@ impl ModelService {
 
             if let Some(existing_id) = prepared.existing_id {
                 let Some(mut entity) = store::get_model(&self.db, existing_id).await? else { continue };
+                let previous_export = entity.support_export_path.clone();
                 let (mut generated_preview, mut generated_hull, mut was_updated) = (false, false, false);
                 let mut message = "No cache changes required".to_string();
                 let mut status = "skipped";
@@ -1108,6 +1109,8 @@ impl ModelService {
                 if was_updated {
                     let mut conn = self.db.acquire().await?;
                     store::save_model(&mut conn, &entity).await?;
+                    drop(conn);
+                    self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
                 }
                 if let Some(r) = reporter {
                     r.on_file_processed(FileResult {
@@ -1204,9 +1207,31 @@ impl ModelService {
             }
         }
 
+        // A full scan has brought every row's index up to date: entry files no row names are left
+        // over from changed or removed models (or from exports of a detection since rechecked).
+        if directory_filter.is_none()
+            && limit.is_none()
+            && let Some(exports) = &self.support_exports
+        {
+            let removed = exports.sweep(&self.db, support_exports::SWEEP_GRACE).await;
+            if removed > 0 {
+                info!(target: LOG_TARGET, "Removed {removed} support export files no model uses.");
+            }
+        }
+
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models").fetch_one(&self.db).await?;
         info!(target: LOG_TARGET, "Scan complete: {new_count} new, {updated_count} updated, {total} total in cache.");
         Ok(new_count)
+    }
+
+    /// Deletes the export entry a model's row named before it was saved, when it names another
+    /// one now and no other model (with the same content) still uses it.
+    async fn release_old_export(&self, before: Option<&str>, now: Option<&str>) {
+        if let (Some(before), Some(exports)) = (before, &self.support_exports)
+            && Some(before) != now
+        {
+            exports.release(&self.db, before).await;
+        }
     }
 
     /// Indexes a single model file. Returns false when nothing needed updating.
@@ -1334,6 +1359,8 @@ impl ModelService {
                 }
                 let mut conn = self.db.acquire().await?;
                 store::save_model(&mut conn, &updated).await?;
+                drop(conn);
+                self.release_old_export(e.support_export_path.as_deref(), updated.support_export_path.as_deref()).await;
             }
             debug!(target: LOG_TARGET, "Single-model scan skipped changes for {full_text}; checksum/hulls/preview are up-to-date.");
             if let Some(r) = reporter {
@@ -1354,6 +1381,7 @@ impl ModelService {
             return Ok(false);
         }
 
+        let previous_export = existing.as_ref().and_then(|e| e.support_export_path.clone());
         let (entity, generated_preview, generated_hull, stages) = match existing {
             None => {
                 info!(target: LOG_TARGET, "Indexing single model file: {full_text}");
@@ -1463,6 +1491,7 @@ impl ModelService {
             let mut conn = self.db.acquire().await?;
             store::save_model(&mut conn, &entity).await?;
         }
+        self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
 
         if let Some(r) = reporter {
             r.on_file_processed(FileResult {
@@ -1880,6 +1909,87 @@ mod tests {
         let rebuilt = results.iter().find(|r| r.relative_path == "supported.stl").unwrap();
         assert!(rebuilt.stages.export_ms > 0.0);
         assert_eq!(rebuilt.stages.hull_ms, 0.0, "only the entry is rebuilt");
+    }
+
+    fn entry_files(exports: &SupportExports) -> Vec<String> {
+        let mut out = Vec::new();
+        for dir in std::fs::read_dir(exports.dir()).unwrap().flatten() {
+            for file in std::fs::read_dir(dir.path()).unwrap().flatten() {
+                out.push(format!("{}/{}", dir.file_name().to_string_lossy(), file.file_name().to_string_lossy()));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[tokio::test]
+    async fn a_changed_entry_key_deletes_the_old_entry_unless_another_model_uses_it() {
+        use crate::geometry::support_separation::tests::{body, posts};
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let (svc, _) = scanned_supported_and_plain(&t, root.path()).await;
+        let exports = svc.support_exports().unwrap().clone();
+        let first = support_exports::relative_path(&supported_entry_key(root.path()));
+        assert_eq!(entry_files(&exports), vec![first.clone()]);
+
+        // New content: the new entry replaces the old one.
+        let mut changed = body();
+        changed.extend(posts(60));
+        write_stl(root.path(), "supported.stl", &changed);
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        let second = support_exports::relative_path(&supported_entry_key(root.path()));
+        assert_ne!(second, first);
+        assert_eq!(entry_files(&exports), vec![second.clone()]);
+
+        // A copy with the same content shares the entry: changing the original keeps it.
+        std::fs::copy(root.path().join("supported.stl"), root.path().join("copy.stl")).unwrap();
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        assert_eq!(entry_files(&exports), vec![second.clone()]);
+        let mut again = body();
+        again.extend(posts(70));
+        write_stl(root.path(), "supported.stl", &again);
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        let third = support_exports::relative_path(&supported_entry_key(root.path()));
+        let mut want = vec![second, third];
+        want.sort();
+        assert_eq!(entry_files(&exports), want, "the copy still uses the second entry");
+
+        // Supported metadata changes the key too.
+        write_file(root.path(), "findamodel.yaml", "supported: true\n");
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        let rows: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT support_export_path FROM models WHERE support_export_path IS NOT NULL ORDER BY file_name",
+        )
+        .fetch_all(&t.db)
+        .await
+        .unwrap();
+        let mut indexed: Vec<String> = rows.into_iter().flatten().collect();
+        indexed.sort();
+        indexed.dedup();
+        assert_eq!(entry_files(&exports), indexed, "only the entries rows name are left");
+    }
+
+    #[tokio::test]
+    async fn only_a_full_scan_sweeps_entries_no_model_uses() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "sub/part.stl", SIMPLE_ASCII_STL);
+        let (svc, _) = scanned_supported_and_plain(&t, root.path()).await;
+        let exports = svc.support_exports().unwrap().clone();
+        let used = entry_files(&exports);
+        let orphan = exports.dir().join("zz/orphan.export");
+        std::fs::create_dir_all(orphan.parent().unwrap()).unwrap();
+        std::fs::write(&orphan, b"left over").unwrap();
+        let old = SystemTime::now() - support_exports::SWEEP_GRACE * 2;
+        std::fs::File::options().write(true).open(&orphan).unwrap().set_modified(old).unwrap();
+
+        svc.scan_and_cache(None, Some("sub"), None, &CancellationToken::new()).await.unwrap();
+        assert!(orphan.exists(), "a partial scan does not sweep");
+        svc.scan_and_cache_single("plain.stl", None, &CancellationToken::new()).await.unwrap();
+        assert!(orphan.exists(), "nor does a single-model scan");
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        assert!(!orphan.exists());
+        assert_eq!(entry_files(&exports), used);
     }
 
     #[tokio::test]

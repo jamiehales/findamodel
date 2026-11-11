@@ -195,15 +195,25 @@ pub async fn save_model(conn: &mut SqliteConnection, model: &ModelRow) -> sqlx::
     tx.commit().await
 }
 
-/// Records where a model's export entry is and the reader version it was written with.
-pub async fn set_support_export_index(db: &Db, model_id: Uuid, path: &str, version: i32) -> sqlx::Result<()> {
+/// Records where a model's export entry is and the reader version it was written with. Returns
+/// the path it indexed before.
+pub async fn set_support_export_index(
+    db: &Db,
+    model_id: Uuid,
+    path: &str,
+    version: i32,
+) -> sqlx::Result<Option<String>> {
+    let previous: Option<Option<String>> = sqlx::query_scalar("SELECT support_export_path FROM models WHERE id = ?")
+        .bind(model_id)
+        .fetch_optional(db)
+        .await?;
     sqlx::query("UPDATE models SET support_export_path = ?, support_export_version = ? WHERE id = ?")
         .bind(path)
         .bind(version)
         .bind(model_id)
         .execute(db)
         .await?;
-    Ok(())
+    Ok(previous.flatten())
 }
 
 /// Stores a model's hulls; empty hulls remove its row.

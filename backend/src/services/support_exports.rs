@@ -16,11 +16,13 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::db::Db;
 use crate::entities::ModelRow;
 use crate::geometry::Triangle;
 use crate::geometry::support_layout::SupportLayout;
@@ -33,6 +35,9 @@ const LOG_TARGET: &str = "findamodel.SupportExports";
 const EXTENSION: &str = "export";
 /// Enough of a file to hold any header (the key is a few hundred bytes).
 const HEADER_READ_BYTES: u64 = 4096;
+/// Files no model indexes are swept only once they are this old: an export writes its entry
+/// before indexing it, and a scan's sweep must not take a file between the two.
+pub const SWEEP_GRACE: Duration = Duration::from_secs(60 * 60);
 
 /// What an entry is made from.
 pub fn key(checksum: &str, raft_height_mm: f32, supported: Option<bool>, checked: bool) -> String {
@@ -135,6 +140,77 @@ impl SupportExports {
             }
         }
     }
+
+    /// Deletes the entry file at `relative` (relative to the store) when no model indexes it any
+    /// more. A file an export has open stays readable to it (or, where the system refuses to
+    /// delete an open file, stays until the next sweep).
+    pub async fn release(&self, db: &Db, relative: &str) {
+        match referenced(db, relative).await {
+            Ok(false) => {
+                self.remove(relative);
+            }
+            Ok(true) => {}
+            Err(err) => warn!(target: LOG_TARGET, "Failed to check who uses support export {relative}: {err}"),
+        }
+    }
+
+    /// Deletes the entry files no model indexes, of those last written before `grace` ago (see
+    /// [`SWEEP_GRACE`]), and left-over partial files as old. Returns how many were deleted. Run
+    /// at the end of a full scan only, when every row's index is up to date.
+    pub async fn sweep(&self, db: &Db, grace: Duration) -> usize {
+        let indexed: std::collections::HashSet<String> = match sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT support_export_path FROM models WHERE support_export_path IS NOT NULL",
+        )
+        .fetch_all(db)
+        .await
+        {
+            Ok(paths) => paths.into_iter().collect(),
+            Err(err) => {
+                warn!(target: LOG_TARGET, "Failed to list indexed support exports: {err}");
+                return 0;
+            }
+        };
+        let store = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let cutoff = SystemTime::now().checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
+            let mut removed = 0;
+            let Ok(dirs) = fs::read_dir(store.dir.as_path()) else { return 0 };
+            for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
+                let Ok(files) = fs::read_dir(dir.path()) else { continue };
+                for file in files.flatten() {
+                    let relative =
+                        format!("{}/{}", dir.file_name().to_string_lossy(), file.file_name().to_string_lossy());
+                    let old = file.metadata().and_then(|m| m.modified()).is_ok_and(|m| m < cutoff);
+                    if old && !indexed.contains(&relative) && store.remove(&relative) {
+                        removed += 1;
+                    }
+                }
+            }
+            removed
+        })
+        .await
+        .unwrap_or(0)
+    }
+
+    /// Deletes one file under the store; false when it could not be deleted.
+    fn remove(&self, relative: &str) -> bool {
+        match fs::remove_file(self.dir.join(relative)) {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+            Err(err) => {
+                warn!(target: LOG_TARGET, "Failed to delete support export {relative}: {err}");
+                false
+            }
+        }
+    }
+}
+
+/// Whether any model indexes the entry at `relative`.
+async fn referenced(db: &Db, relative: &str) -> sqlx::Result<bool> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM models WHERE support_export_path = ?)")
+        .bind(relative)
+        .fetch_one(db)
+        .await
 }
 
 #[cfg(test)]
@@ -205,6 +281,67 @@ mod tests {
         fs::write(&path, b"not an entry").unwrap();
         assert_eq!(store.read(&k, &tris), None);
         assert_eq!(store.stored_version(&k), None);
+    }
+
+    /// Writes an entry file at `relative` last modified `age` ago.
+    fn aged_file(store: &SupportExports, relative: &str, age: Duration) -> PathBuf {
+        let path = store.dir().join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"entry").unwrap();
+        fs::File::options().write(true).open(&path).unwrap().set_modified(SystemTime::now() - age).unwrap();
+        path
+    }
+
+    async fn model_indexing(t: &crate::test_support::TestDb, name: &str, relative: Option<&str>) {
+        let mut m = crate::test_support::model(name, "");
+        m.support_export_path = relative.map(str::to_string);
+        m.support_export_version = relative.map(|_| CURRENT_SUPPORT_READER_VERSION);
+        t.insert_model(&m).await;
+    }
+
+    #[tokio::test]
+    async fn a_released_entry_is_deleted_only_when_no_model_uses_it() {
+        let t = crate::test_support::TestDb::new().await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = SupportExports::new(dir.path().to_path_buf());
+        let shared = aged_file(&store, "ab/shared.export", Duration::ZERO);
+        let alone = aged_file(&store, "cd/alone.export", Duration::ZERO);
+        model_indexing(&t, "a.stl", Some("ab/shared.export")).await;
+        store.release(&t.db, "ab/shared.export").await;
+        assert!(shared.exists(), "another model still uses it");
+        store.release(&t.db, "cd/alone.export").await;
+        assert!(!alone.exists());
+        store.release(&t.db, "cd/alone.export").await; // Already gone: nothing to do.
+    }
+
+    #[tokio::test]
+    async fn the_sweep_deletes_old_files_no_model_uses() {
+        let t = crate::test_support::TestDb::new().await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = SupportExports::new(dir.path().to_path_buf());
+        let hour = Duration::from_secs(3600);
+        let used = aged_file(&store, "ab/used.export", 3 * hour);
+        let orphan = aged_file(&store, "ab/orphan.export", 3 * hour);
+        let young = aged_file(&store, "cd/young.export", Duration::from_secs(60));
+        let partial = aged_file(&store, "cd/left.1234.partial", 3 * hour);
+        model_indexing(&t, "a.stl", Some("ab/used.export")).await;
+        model_indexing(&t, "b.stl", None).await;
+
+        // A file an export has open is still read to the end once swept (where the system lets
+        // an open file be deleted; elsewhere it stays until a later sweep).
+        let mut open = fs::File::open(&orphan).unwrap();
+        assert_eq!(store.sweep(&t.db, SWEEP_GRACE).await, 2);
+        let mut read = String::new();
+        open.read_to_string(&mut read).unwrap();
+        assert_eq!(read, "entry");
+
+        assert!(used.exists());
+        assert!(!orphan.exists());
+        assert!(young.exists(), "written too recently: an export may be about to index it");
+        assert!(!partial.exists());
+        assert_eq!(store.sweep(&t.db, SWEEP_GRACE).await, 0);
+        let missing = SupportExports::new(dir.path().join("none"));
+        assert_eq!(missing.sweep(&t.db, SWEEP_GRACE).await, 0);
     }
 
     #[test]

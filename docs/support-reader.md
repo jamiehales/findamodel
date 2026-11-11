@@ -85,6 +85,14 @@ supports again.
   matches; otherwise they read the supports and write the entry at the current version, whatever
   the minimum. A model with supports split off but none read is stored as such; an unsupported
   model stores nothing.
+- Old entries are deleted: when a model's row names a new entry (new content, raft height,
+  supported metadata or detection check), the old file goes unless another model with the same
+  content still names it, and the end of every full scan sweeps the files no row names that were
+  last written over an hour ago (an export writes its entry before indexing it). Partial and
+  single-model scans don't sweep. An export still reading a swept file keeps reading it (or, where
+  the system refuses to delete an open file, the file waits for the next sweep).
+- Installs from before entries existed have their minimum raised to 1 by migration 0011, so their
+  next scan builds every missing entry.
 - Per model, writing an entry costs the read itself (0.5 to 21 s at 4 threads on the sample
   models) and 7 to 450 KB on disk; using one costs under 0.25 s.
 
