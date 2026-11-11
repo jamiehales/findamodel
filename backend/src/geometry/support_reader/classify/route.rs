@@ -23,13 +23,12 @@ impl Reader<'_> {
     /// Contacts' pieces, pads and sleeves.
     pub(super) fn prepare(&mut self) {
         self.contact_piece();
-        // Pads: pieces on the plate or raft wholly under the root top, holding no contact (a foot
-        // cone, a disc under a support). They are the ground: what stands on one stands on the
-        // plate, and no route runs through one.
-        let top = self.raft_top + ROOT_TOP;
+        // Pads: pieces on the plate or raft wholly under the root top (from the plate, as every
+        // root-top rule), holding no contact (a foot cone, a disc under a support). They are the
+        // ground: what stands on one stands on the plate, and no route runs through one.
         for i in 0..self.p.len() {
             let p = &self.p[i];
-            if !p.raft && !p.ball && p.plate && p.hi[2] <= top + 0.6 && self.on_of(i).is_empty() {
+            if !p.raft && !p.ball && p.plate && p.hi[2] <= ROOT_TOP + 0.6 && self.on_of(i).is_empty() {
                 self.p[i].pad = true;
             }
         }
@@ -39,7 +38,7 @@ impl Reader<'_> {
             }
             for a in self.p[i].att.clone() {
                 let q = a.q;
-                if !a.weak && !self.p[q].pad && a.at[2] <= top + 1.0 && self.p[q].lo[2] <= top + 0.6 {
+                if !a.weak && !self.p[q].pad && a.at[2] <= ROOT_TOP + 1.0 && self.p[q].lo[2] <= ROOT_TOP + 0.6 {
                     self.p[q].plate = true;
                     // A joint ball on the pad (a short trunk read as a pad, its ball, then the tip
                     // cone): the pieces on the ball stand on the plate too, else no route reaches
@@ -47,7 +46,7 @@ impl Reader<'_> {
                     if self.p[q].ball {
                         for (r, _, _) in self.hub(i as isize, q, a.at, false) {
                             let pr = &self.p[r];
-                            if !pr.pad && !pr.raft && pr.lo[2] <= top + 0.6 {
+                            if !pr.pad && !pr.raft && pr.lo[2] <= ROOT_TOP + 0.6 {
                                 self.p[r].plate = true;
                             }
                         }
@@ -77,7 +76,6 @@ impl Reader<'_> {
         // Largest first, so a host is known not to be a sleeve itself.
         let mut order: Vec<usize> = (0..self.p.len()).collect();
         order.sort_by(|&a, &b| self.p[b].vol.total_cmp(&self.p[a].vol));
-        let top = self.raft_top + ROOT_TOP;
         for qi in order {
             let q = &self.p[qi];
             if !ok(q) || !self.on_of(qi).is_empty() {
@@ -97,7 +95,7 @@ impl Reader<'_> {
                 // Wholly inside the host's span, but for a foot in the root zone (a doubled shaft
                 // standing on the host's root or the raft).
                 if inside.len() < 2
-                    || pts.iter().any(|&x| !(-ph.r <= along(x) && along(x) <= ph.l + ph.r) && x[2] > top)
+                    || pts.iter().any(|&x| !(-ph.r <= along(x) && along(x) <= ph.l + ph.r) && x[2] > ROOT_TOP)
                 {
                     continue;
                 }

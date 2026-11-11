@@ -73,13 +73,13 @@ impl Reader<'_> {
         !p.raft && !p.ball && p.claims.is_empty() && !matches!(p.role, Some(Role::Root) | Some(Role::Sleeve))
     }
 
-    /// Only a piece standing on the raft itself, or wholly under the root top, whose low end joins
-    /// a routed support: a brace between supports (a slanted brace landing on a pad at a post's
-    /// foot), not a leg or post. A piece standing on a root at a trunk's foot is still a leg or
+    /// Only a piece standing on the raft itself, or wholly under the root top (from the plate), whose
+    /// low end joins a routed support: a brace between supports (a slanted brace landing on a pad at
+    /// a post's foot), not a leg or post. A piece standing on a root at a trunk's foot is still a leg or
     /// post, which DragonFruit builds from the root top along its line.
     fn low_hosted(&self, q: usize) -> bool {
         let p = &self.p[q];
-        if !(p.on_raft || p.hi[2] <= self.raft_top + ROOT_TOP) {
+        if !(p.on_raft || p.hi[2] <= ROOT_TOP) {
             return false;
         }
         self.hosts_of(q).iter().any(|h| h.0 <= 0.6f64.max(2.5 * p.r))

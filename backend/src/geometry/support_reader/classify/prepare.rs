@@ -8,7 +8,7 @@ use super::super::math::{P, add, dist, dot, len, mul, sub};
 use super::super::pieces::{ConnectionKind, PieceKind, Pieces, Section, SectionKind, Segment};
 use super::{Att, LEVEL, NEAR_VERTICAL, PLATE_Z, Piece, RAFT_MIN_XY, ROOT_TOP, seg_closest, seg_dist};
 
-/// A pad welded under a post counts as raft up to this height.
+/// A pad welded under a post counts as raft up to this height above the plate.
 const PAD_BAND: f64 = 3.0;
 /// Profile points within this of a straighter profile are noise (see [`smooth_secs`]).
 const PROFILE_TOL: f64 = 0.06;

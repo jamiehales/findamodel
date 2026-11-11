@@ -33,7 +33,9 @@ use super::pieces::{PieceKind, Pieces, Section, SectionKind};
 use crate::geometry::support_layout::SupportLayout;
 use prepare::RawPiece;
 
-/// DragonFruit's root top: a 0.5 mm disk under a 1.5 mm cone.
+/// DragonFruit's root top: a 0.5 mm disk under a 1.5 mm cone. DragonFruit stands every root on the
+/// plate (z = 0), so every rule about the root top or the root zone measures it from the plate, never
+/// from the raft's top.
 pub const ROOT_TOP: f64 = 2.0;
 /// A piece reaching this low stands on the plate.
 pub const PLATE_Z: f64 = 0.05;
@@ -702,6 +704,76 @@ mod tests {
         let b = lay.supports[0].tip.ball.expect("a ball tip");
         assert!((b.diameter_mm - 0.6).abs() < 0.05, "{b:?}");
         assert!(r.classification.pieces.iter().filter(|p| p.kind == PieceKind::Ball).all(|p| p.role == Role::Tip));
+    }
+
+    /// A closed solid of revolution about the Z axis through `(x, y)`: `profile` is (z, radius)
+    /// from the bottom up, `n` sides.
+    fn lathe(x: f64, y: f64, profile: &[(f64, f64)], n: usize) -> Vec<[P; 3]> {
+        let ring = |z: f64, r: f64, k: usize| {
+            let t = 2.0 * std::f64::consts::PI * k as f64 / n as f64;
+            [x + r * t.cos(), y + r * t.sin(), z]
+        };
+        let (bottom, top) = ([x, y, profile[0].0], [x, y, profile[profile.len() - 1].0]);
+        let mut out = Vec::new();
+        for k in 0..n {
+            out.push([bottom, ring(profile[0].0, profile[0].1, k + 1), ring(profile[0].0, profile[0].1, k)]);
+            for w in profile.windows(2) {
+                let (p0, p1) = (ring(w[0].0, w[0].1, k), ring(w[0].0, w[0].1, k + 1));
+                let (q0, q1) = (ring(w[1].0, w[1].1, k), ring(w[1].0, w[1].1, k + 1));
+                out.push([p0, p1, q1]);
+                out.push([p0, q1, q0]);
+            }
+            let (z, r) = profile[profile.len() - 1];
+            out.push([top, ring(z, r, k), ring(z, r, k + 1)]);
+        }
+        out
+    }
+
+    /// A 20 mm square raft 2 mm thick on the plate.
+    fn raft_2mm(x0: f64) -> Vec<[P; 3]> {
+        boxm([x0, -10.0, 0.0], [x0 + 20.0, 10.0, 2.0])
+    }
+
+    #[test]
+    fn on_a_2mm_raft_the_root_zone_is_measured_from_the_plate() {
+        // Two trunks standing on a 2 mm raft, each a short rod from the raft's top to 4.2 mm under
+        // a rod on to the tip, and a brace from low on one trunk (3 mm) up to the other. The short
+        // rods reach above DragonFruit's 2 mm root top, so they are trunk, not pads (ground), and
+        // the brace keeps its low end on the trunk.
+        let model = slab(10.0);
+        let mut s = raft_2mm(-10.0);
+        for x in [-3.0, 3.0] {
+            s.extend(frustum([x, 0.0, 2.0], [x, 0.0, 4.2], 0.4, 0.4, 16));
+            s.extend(frustum([x, 0.0, 4.0], [x, 0.0, 8.1], 0.4, 0.4, 16));
+            s.extend(frustum([x, 0.0, 8.0], [x, 0.0, 10.2], 0.4, 0.12, 16));
+        }
+        s.extend(frustum([-3.0, 0.0, 3.0], [3.0, 0.0, 6.0], 0.25, 0.25, 12));
+        let r = read_points(&model, &s, 3.0);
+        assert!((r.classification.raft_top - 2.0).abs() < 0.05, "{}", r.classification.raft_top);
+        let lay = &r.classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len()), (2, 1), "{:?}", r.classification.exceptions);
+        assert!(lay.supports.iter().all(|s| matches!(s.base, SupportBase::Plate { .. })));
+        let b = &lay.braces[0];
+        assert!(b.lower.point.z < 3.5 && b.lower.point.z > 2.5, "{:?}", b.lower.point);
+        assert!(r.classification.pieces.iter().all(|p| p.role != Role::Root), "no piece is read as a pad");
+    }
+
+    #[test]
+    fn a_pad_welded_under_a_post_splits_off_as_raft_beside_a_2mm_raft() {
+        // A 2 mm raft elsewhere on the plate does not move the pad band (measured from the plate):
+        // an 8 mm pad 1.5 mm tall in one shell with its post is still cut off as raft.
+        let model = slab(10.0);
+        let mut s = raft_2mm(-25.0);
+        s.extend(lathe(0.0, 0.0, &[(0.0, 4.0), (0.6, 4.0), (1.5, 3.5), (1.5, 0.4), (8.1, 0.4)], 24));
+        s.extend(frustum([0.0, 0.0, 8.0], [0.0, 0.0, 10.2], 0.4, 0.12, 16));
+        let r = read_points(&model, &s, 3.0);
+        assert!((r.classification.raft_top - 2.0).abs() < 0.05, "{}", r.classification.raft_top);
+        let lay = &r.classification.layout;
+        assert_eq!(lay.supports.len(), 1, "{:?}", r.classification.exceptions);
+        assert!(matches!(lay.supports[0].base, SupportBase::Plate { .. }));
+        assert!((lay.supports[0].shaft_diameter_mm - 0.8).abs() < 0.05, "{}", lay.supports[0].shaft_diameter_mm);
+        let rafts = r.classification.pieces.iter().filter(|p| p.role == Role::Raft).count();
+        assert!(rafts >= 2, "the raft and the pad: {rafts}");
     }
 
     #[test]

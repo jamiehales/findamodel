@@ -96,6 +96,23 @@ supports again.
 - Per model, writing an entry costs the read itself (0.5 to 21 s at 4 threads on the sample
   models) and 7 to 450 KB on disk; using one costs under 0.25 s.
 
+## Heights
+
+All heights are measured from the plate (z = 0). DragonFruit stands every root on the plate, so its
+root top (`ROOT_TOP`, 2.0 mm: a 0.5 mm disk under a 1.5 mm cone) is 2.0 mm above the plate whatever
+the original's raft. Every rule that speaks of the root top or the root zone (below the root top)
+uses that height, never the raft's top: the pads, the sleeves' feet, low braces, webs, the posts and
+legs not written, and where a plate support's shaft starts. Two other heights are separate:
+
+- the raft band of the contacts, from the model's raft height setting (see the touch rule);
+- the raft's top (`raft_top`), the top of the pieces read as raft, which decides only what is raft
+  and what stands on the raft, and where the round trip's overlap stops counting.
+
+The owner chose the plate over the raft's top (2026-11-11): measuring pads, sleeve feet and low braces
+from the raft's top made pieces up to 4.6 mm high on a 2 mm raft into ground, which lost braces
+(real models 6b37ef0f and f03f9e3a, round-trip IoU +0.06 each with the plate; 48 models pooled
+unchanged).
+
 ## Contacts: the touch rule
 
 `contacts::read` finds where the original supports hold the model, by geometry alone.
@@ -202,9 +219,12 @@ split stretches again, then pads).
   near-vertical piece going down, and the solid goes on down at a slant, it is cut there: the tip
   follows the post down and the rest is a brace (l02_lean_cone welded). A tip welded to its own
   shaft is left whole.
-- **Pads** (`split_pads`). A wide pad on the plate in one shell with the post standing on it (first
-  sections at least `RAFT_MIN_XY` across, ending no higher than `PAD_BAND`, under a rod at most half
-  as wide) is cut at the pad's top: the pad is raft, the rest stands on it.
+- **Pads** (`split_pads`). A wide pad on the plate in one shell with the post standing on it is cut
+  at the pad's top: the pad is raft, the rest stands on it. The solid is a solid of revolution
+  starting on the plate (within `PLATE_Z` + 0.05 mm) with its axis within about 14 degrees of
+  vertical; the pad is its first sections whose wider end is at least `RAFT_MIN_XY` across (a ball
+  section ends it), its top no higher than `PAD_BAND` above the plate; the rest is at most half as
+  wide as the pad's top section at its narrower end and at least 1 mm long.
 - **Smoothing** (`smooth_secs`). An 8-sided welded shaft split by the pieces stage comes as many short
   rod and cone sections whose radius wobbles between the prism's inner and outer radius; the first
   dip would read as a tip cone. Runs of 6 or more rod and cone sections are simplified
@@ -223,7 +243,7 @@ split stretches again, then pads).
 
 | Constant | Value | Why |
 | --- | --- | --- |
-| `PAD_BAND` | 3.0 mm | A pad welded under a post counts as raft up to this height. |
+| `PAD_BAND` | 3.0 mm | A pad welded under a post counts as raft up to this height above the plate. |
 | `PROFILE_TOL` | 0.06 mm | Profile points within this of a straighter profile are polygon noise. |
 | `PLATE_Z` | 0.05 mm | A piece reaching this low stands on the plate. |
 | `RAFT_MIN_XY` | 8.0 mm | A piece on the plate at least this wide is raft. |
@@ -233,9 +253,11 @@ split stretches again, then pads).
 
 `classify/route.rs` first settles each contact's piece, the pads and the sleeves, then routes.
 
-- **Pads.** Pieces on the plate or raft wholly under the root top (with 0.6 mm slack), holding no
-  contact: a foot cone, a disc under a support. They are the ground: what stands on one stands on
-  the plate, and no route runs through one. A joint ball on a pad passes "on the plate" on to the
+- **Pads.** Pieces on the plate or raft wholly under the root top (with 0.6 mm slack, so no higher
+  than 2.6 mm above the plate whatever the raft), holding no contact: a foot cone, a disc under a
+  support. They are the ground: what stands on one stands on the plate (a piece joined to one at
+  most 1.0 mm above the root top and starting at most 0.6 mm above it), and no route runs through
+  one. A joint ball on a pad passes "on the plate" on to the
   pieces on it (a short trunk read as pad, ball, tip; real model 03a1f70b).
 - **Sleeves** (`find_sleeves`). A piece is part of its host, and never routed, when all of these
   hold: it lies along another support piece within `SLEEVE_COS` (5 degrees), its centre line within
