@@ -12,6 +12,9 @@ who use those tools in their own way. This note groups the supported models in t
 tool that made the supports and the structure the supports form, with a fingerprint for each that
 can be measured from the mesh, so check models can be grouped and results reported per group.
 
+The style groups below describe the old slice reader. The VOXL export now uses the mesh-based
+support reader documented in [Support reader](support-reader.md).
+
 The style probe, the grouping script, the benchmark list and its runner named below are kept
 with the support audit's working files, outside the repository.
 

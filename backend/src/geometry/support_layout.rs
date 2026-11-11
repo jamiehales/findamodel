@@ -62,6 +62,7 @@
 //! Coordinates are Z-up millimetres with the plate at Z = 0.
 
 use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -464,13 +465,28 @@ pub struct ContactTip {
     /// a tip buried in the model prints as part of the model.
     pub contact_diameter_mm: f32,
     pub body_diameter_mm: f32,
+    /// The ball the original sinks at the contact (a separate ball at a cone's end, or a rounded
+    /// rod end), written as DragonFruit's sphere tip when [`super::voxl::SPHERE_TIPS_ENABLED`].
+    pub ball: Option<BallTip>,
+}
+
+/// A ball the original support sinks into the model at its contact.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BallTip {
+    pub diameter_mm: f32,
+    /// The original cone's narrow end at the ball's centre (0 when unknown).
+    pub cone_end_mm: f32,
+    /// The ball's (or rounded end's dome) centre depth below the surface, negative outside; None
+    /// where a ball seated at that depth would cross the model a second time.
+    pub depth_mm: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SupportBase {
     /// A root on the plate; the shaft leaves the root's top ([`ROOT_TOP_MM`]) at `(x, y)`.
     Plate { x: f32, y: f32, diameter_mm: f32 },
-    /// Hangs from `point` on the shaft of an earlier support.
+    /// Hangs from `point` on the shaft of an earlier support, or of a post: an index past the
+    /// supports names [`SupportLayout::posts`].
     Shaft { parent: usize, point: Vec3 },
     /// A strut between two parts of the model: the shaft starts at a second, lower contact.
     Model(ContactTip),
@@ -505,9 +521,29 @@ pub struct SupportLayout {
     pub posts: Vec<PostLayout>,
     pub braces: Vec<BraceLayout>,
     pub kickstands: Vec<KickstandLayout>,
+    /// Shaft diameters per segment, bottom to top (one more than the joints), for the supports
+    /// (and posts, numbered on from them) whose width steps down a strong taper. Absent: every
+    /// segment is the support's one diameter.
+    pub segment_diameters: BTreeMap<usize, Vec<f32>>,
+    /// The same for kickstands (by index into `kickstands`), bottom to top. DragonFruit's own
+    /// kickstand taper (`profile.terminal*DiameterMm`) is drawn but not sliced, so a leg steps too.
+    pub kickstand_segment_diameters: BTreeMap<usize, Vec<f32>>,
+    /// Struts (supports on the model at both ends) written as sticks, with a contact cone at each
+    /// end, whatever their span: their original ends are cone tips.
+    pub sticks: BTreeSet<usize>,
+    /// Struts written as twigs (contact disks) whatever their span: their original ends are flat.
+    pub twigs: BTreeSet<usize>,
 }
 
 impl SupportLayout {
+    /// The diameter of segment `i` (bottom to top) of the support, or post, `support` names.
+    pub fn segment_diameter_mm(&self, support: usize, i: usize) -> f32 {
+        match self.segment_diameters.get(&support).and_then(|d| d.get(i)) {
+            Some(&d) => d,
+            None => self.shaft_diameter_mm(support),
+        }
+    }
+
     /// Whether the layout accounts for the support geometry it was rebuilt from as supports:
     /// it covers their surface (see [`MIN_SUPPORT_COVERAGE`]) and its supports hold the model
     /// up (see [`MIN_HOLDING_SHARE`]). False when the geometry classed as supports is really
@@ -1044,6 +1080,7 @@ fn contact_tip(contact: &SurfacePoint, fit: &TipFit, shaft_diameter: f32) -> Con
         from_outside,
         socket: fit.socket,
         contact_diameter_mm: contact_diameter,
+        ball: None,
         body_diameter_mm: fit.socket_width.min(shaft_diameter).max(contact_diameter),
     }
 }
@@ -4170,6 +4207,7 @@ mod tests {
                 from_outside: true,
                 socket: Vec3::new(2.0, 0.0, 8.0),
                 contact_diameter_mm: 0.3,
+                ball: None,
                 body_diameter_mm: 0.6,
             },
             base: SupportBase::Plate { x: -2.0, y: 0.0, diameter_mm: 2.0 },
@@ -4566,6 +4604,7 @@ mod tests {
                 from_outside,
                 socket: contact - Vec3::new(0.0, 0.0, 0.3),
                 contact_diameter_mm: 0.3,
+                ball: None,
                 body_diameter_mm: 0.6,
             },
             base: SupportBase::Plate { x: contact.x, y: contact.y, diameter_mm: 3.0 },
@@ -4603,6 +4642,7 @@ mod tests {
                 from_outside,
                 socket: Vec3::new(0.0, 0.0, 5.3),
                 contact_diameter_mm: 0.3,
+                ball: None,
                 body_diameter_mm: 0.6,
             });
             s

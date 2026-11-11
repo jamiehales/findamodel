@@ -1,0 +1,7527 @@
+{
+  "b01_bend25__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b01_bend25__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b02_bend25b__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "b03_bend45__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c01_sharpturn__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c02_grazing__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c02_grazing__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": false
+  },
+  "c03_shorttip__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c03_shorttip__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c04_jointclose__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c05_shallowbend__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c06_lowtip__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c07_lowtip2__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c08_shortshaft__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c09_flatwall__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c09_flatwall__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c09_flatwall__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c09_flatwall__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "c10_downtip__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c10_downtip__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c11_downcone__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "c12_widthchange__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "c12_widthchange__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f01_hub__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f02_overlap__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f03_two__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f04_branch__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "f05_branch2__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h01_strut__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h02_rungs__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h03_vee__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h04_short__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n12_r0_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n16_r0_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n16_r30_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n32_r0_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n8_r0_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n8_r17_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "h05_flat_strut__n8_r45_sep": {
+    "validate": false,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k01_cage__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k02_zigzag__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "k03_modeltree__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l01_lean_shaft__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l02_lean_cone__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "l03_lean_ball__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm03__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m01_mm05__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms03__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m02_mms05__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm03__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "m03_pm05__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n01_endin__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n02_endin_open__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n03_endin_nonman__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n03_endin_nonman__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "n03_endin_nonman__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "n03_endin_nonman__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "n03_endin_nonman__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "n03_endin_nonman__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "n03_endin_nonman__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n04_buried__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n05_through__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n06_through_open__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n07_cavity__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": false,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n08_close__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "n09_tilted__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p01_flat__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p02_dome__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p03_ball__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p04_weldball__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": false,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent30__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p05_bent60__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p05_bent60__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p06_rodend__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p06_rodend__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury01__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury05__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury0__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p07_bury2__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p08_thin__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p09_slant30__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p10_slant50__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p10_slant50__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": false
+  },
+  "p11_slantn__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p11_slantn__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p12_sphere__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p13_coarse__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p14_open__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p15_nonman__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p17_mildtaper__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "p18_contactball__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": false,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_discs__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_rim__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_thick__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_tiles__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r01_web__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r02_pad__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r03_padshell__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r04_padbrace__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "r05_padfoot__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s01_post__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s02_kick__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s03_leg__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s05_touch_face__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s06_touch_edge__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s07_touch_lap__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s08_touch_near__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s09_parallel07__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s10_parallel06__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s11_parbrace__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s12_sleeve__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s13_sleeve_part__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s14_sleeve_twin__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "s15_sleeve_thin__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t01_trunk__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t02_tilt10__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t03_tilt25__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_abut__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t04_rings_short__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t05_rings_long__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t06_rings_shared__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t07_taper_strong__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t08_taper_mild__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t09_chamfer__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t10_taper_over__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t11_taper_under__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t12_taper_long__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t13_taper_post__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t14_taper_knot__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "t15_taper_kick__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x01_sep__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x03_cut__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x04_samewidth__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x05_thin__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close15__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close20__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "x06_close30__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z01_chain__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z02_rungs__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z03_ballend__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band25__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z05_band32__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief10__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief14__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z06_brief18__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n12_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n16_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n16_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n16_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n16_r30_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n32_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n8_r0_joined": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n8_r0_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n8_r0_welded": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n8_r17_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  },
+  "z07_brief18w__n8_r45_sep": {
+    "validate": true,
+    "1 reader labels": true,
+    "2 layout": true,
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
+  }
+}

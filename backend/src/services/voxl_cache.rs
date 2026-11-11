@@ -2,7 +2,7 @@
 //! supports are split off and rebuilt once rather than on every download.
 //!
 //! Entries are files named by a hash of their [`VoxlCacheKey`]: a change to the model file,
-//! its raft height, the support detection or the support layout gives a new key, and the old
+//! its raft height, the support detection or the support reader gives a new key, and the old
 //! entry is never read again. Each file's modified time is when it was last read or written;
 //! when the cache grows past its size limit the entries read longest ago are deleted.
 
@@ -18,7 +18,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::entities::ModelRow;
-use crate::geometry::support_layout::CURRENT_SUPPORT_LAYOUT_VERSION;
+use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::services::scan_config;
 
 const LOG_TARGET: &str = "findamodel.VoxlCache";
@@ -37,11 +37,12 @@ pub struct VoxlCacheKey {
     pub raft_height_mm: f32,
     /// The model's supported metadata, which decides whether an unsure split is used.
     pub supported: Option<bool>,
-    pub layout_version: i32,
+    /// The support reader and writer that rebuilt the supports.
+    pub reader_version: i32,
 }
 
 impl VoxlCacheKey {
-    /// The key for `model`'s VOXL with the current support layout. None when the model has no
+    /// The key for `model`'s VOXL with the current support reader. None when the model has no
     /// checksum to key it by.
     pub fn for_model(model: &ModelRow, raft_height_mm: f32) -> Option<Self> {
         (!model.checksum.is_empty()).then(|| VoxlCacheKey {
@@ -49,17 +50,17 @@ impl VoxlCacheKey {
             file_name: model.file_name.clone(),
             raft_height_mm,
             supported: model.calculated_supported,
-            layout_version: CURRENT_SUPPORT_LAYOUT_VERSION,
+            reader_version: CURRENT_SUPPORT_READER_VERSION,
         })
     }
 
     fn file_name(&self) -> String {
         let canonical = format!(
-            "{}|{}|{}|layout:{}|supported:{:?}",
+            "{}|{}|{}|reader:{}|supported:{:?}",
             self.checksum,
             self.file_name,
             scan_config::compute(self.raft_height_mm),
-            self.layout_version,
+            self.reader_version,
             self.supported
         );
         format!("{}.{ENTRY_EXTENSION}", hex::encode(&Sha256::digest(canonical.as_bytes())[..16]))
@@ -194,7 +195,7 @@ mod tests {
             file_name: "knight.stl".to_string(),
             raft_height_mm: 2.0,
             supported: Some(true),
-            layout_version: CURRENT_SUPPORT_LAYOUT_VERSION,
+            reader_version: CURRENT_SUPPORT_READER_VERSION,
         }
     }
 
@@ -219,14 +220,14 @@ mod tests {
     }
 
     #[test]
-    fn a_new_raft_height_layout_version_or_model_file_misses() {
+    fn a_new_raft_height_reader_version_or_model_file_misses() {
         let dir = tempfile::tempdir().unwrap();
         let cache = VoxlCache::new(dir.path().to_path_buf(), 1 << 20);
         let cached = key("a");
         cache.put(&cached, b"voxl");
         let changes = [
             VoxlCacheKey { raft_height_mm: 1.5, ..cached.clone() },
-            VoxlCacheKey { layout_version: cached.layout_version + 1, ..cached.clone() },
+            VoxlCacheKey { reader_version: cached.reader_version + 1, ..cached.clone() },
             VoxlCacheKey { checksum: "b".to_string(), ..cached.clone() },
             VoxlCacheKey { file_name: "renamed.stl".to_string(), ..cached.clone() },
             VoxlCacheKey { supported: None, ..cached.clone() },

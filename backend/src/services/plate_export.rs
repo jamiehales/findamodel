@@ -6,15 +6,21 @@ use std::io::{Seek, Write};
 use std::sync::Arc;
 
 use futures::StreamExt;
+use rayon::prelude::*;
 use uuid::Uuid;
 
 use crate::dto::GeneratePlateRequest;
+use crate::entities::ModelRow;
 use crate::error::{AppError, AppResult, bad_request};
+use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::saver::{self, MeshObject};
+use crate::geometry::support_layout::SupportLayout;
+use crate::geometry::support_reader;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis, to_z_up};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
+use crate::services::scan_config;
 
 const MAX_CONCURRENT_MODEL_LOADS: usize = 2;
 
@@ -113,6 +119,21 @@ fn place_vertex(v: Vec3, sin: f32, cos: f32, x: f32, y: f32) -> Vec3 {
 
 fn rotate_y(n: Vec3, sin: f32, cos: f32) -> Vec3 {
     Vec3::new(n.x * cos - n.z * sin, n.y, n.x * sin + n.z * cos)
+}
+
+/// The body (Z-up) and rebuilt supports of a pre-supported model, as the model's own VOXL has
+/// them. None when the model is not supported or holds nothing that reads as supports. A
+/// detection stored under the current scan config saves looking when it found no supports.
+fn supported_export(info: &ModelRow, triangles: &[Triangle]) -> Option<(Vec<Triangle>, SupportLayout)> {
+    if info.supported() != Some(true) {
+        return None;
+    }
+    let raft_height_mm = info.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+    let checked = info.scan_config_checksum.as_deref() == Some(scan_config::compute(raft_height_mm).as_str());
+    if checked && info.support_parts_found == Some(false) {
+        return None;
+    }
+    support_reader::model_export(triangles, raft_height_mm, info.calculated_supported, checked)
 }
 
 struct Placement {
@@ -244,12 +265,26 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                 out = saver::write_3mf(out, &objects, &items)?;
             }
             "voxl" => {
-                let z_up: Vec<Vec<Triangle>> =
-                    geometry_ids.iter().map(|id| to_z_up(&geometries[id].triangles)).collect();
+                // A pre-supported model goes in without its supports, rebuilt as DragonFruit
+                // supports, as the model's own VOXL does; every other model as it is.
+                let prepared: Vec<(Vec<Triangle>, Option<SupportLayout>)> = geometry_ids
+                    .par_iter()
+                    .map(|id| {
+                        let triangles = &geometries[id].triangles;
+                        match supported_export(&infos[id], triangles) {
+                            Some((body, layout)) => (body, Some(layout)),
+                            None => (to_z_up(triangles), None),
+                        }
+                    })
+                    .collect();
                 let meshes: Vec<VoxlMesh<'_>> = geometry_ids
                     .iter()
-                    .zip(&z_up)
-                    .map(|(id, triangles)| VoxlMesh { name: &names[id], triangles, supports: None })
+                    .zip(&prepared)
+                    .map(|(id, (triangles, layout))| VoxlMesh {
+                        name: &names[id],
+                        triangles,
+                        supports: layout.as_ref(),
+                    })
                     .collect();
                 let items: Vec<VoxlPlacement> = placements
                     .iter()

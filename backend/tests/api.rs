@@ -558,6 +558,43 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
 }
 
 #[tokio::test]
+async fn a_plate_voxl_rebuilds_the_supports_of_presupported_models() {
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.write("Mini/plain.stl", STL);
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id_of = |name: &str| {
+        result["models"].as_array().unwrap().iter().find(|m| m["name"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let plate = json!({ "placements": [
+        { "modelId": id_of("knight"), "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 },
+        { "modelId": id_of("knight"), "instanceIndex": 1, "xMm": 40, "yMm": 0, "angleRad": 0 },
+        { "modelId": id_of("plain"), "instanceIndex": 0, "xMm": -40, "yMm": 0, "angleRad": 0 }
+    ], "format": "voxl", "bedWidthMm": 200, "bedDepthMm": 120 });
+    let request = Request::post("/api/plate/generate")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(plate.to_string()))
+        .unwrap();
+    let (status, _, voxl) = app.send(request).await;
+    assert_eq!(status, StatusCode::OK);
+    let models = voxl_chunk(&voxl, b"MODL");
+    let knights: Vec<&Value> =
+        models.as_array().unwrap().iter().filter(|m| m["polygonCount"] == 12 * 12 * 12).collect();
+    assert_eq!(knights.len(), 2, "both knights are stored without their supports: {models}");
+    let supports = voxl_chunk(&voxl, b"SUPP");
+    let trunks = supports["trunks"].as_array().unwrap();
+    assert_eq!(trunks.len(), 8, "four rebuilt supports under each knight");
+    for knight in knights {
+        assert_eq!(trunks.iter().filter(|t| t["modelId"] == knight["id"]).count(), 4);
+    }
+}
+
+#[tokio::test]
 async fn model_voxls_are_cached_until_the_raft_height_changes() {
     let app = TestApp::new().await;
     app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
