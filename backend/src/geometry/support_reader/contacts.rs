@@ -17,7 +17,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::math::{P, add, centroid, closest_on_tri, cross, dist, dot, len, lerp, mul, seg_dist, sub, unit};
+use super::math::{BoxIndex, P, add, centroid, closest_on_tri, cross, dist, dot, len, lerp, mul, seg_dist, sub, unit};
 
 /// Open loop ends this close are joined (numeric cracks in a body).
 const JOIN_GAP: f64 = 1e-3;
@@ -42,38 +42,48 @@ pub const RAFT_BAND_MARGIN_MM: f64 = 0.5;
 const FINE: f64 = 2.0;
 const COARSE: f64 = 16.0;
 const FAR: f64 = 3.0;
-/// The model's column grid for box queries.
+/// The model's grid cell for box queries.
 const COL: f64 = 2.0;
-
-fn col(v: f64) -> i32 {
-    (v / COL).floor() as i32
-}
 
 fn area_vec(t: &[P; 3]) -> P {
     mul(cross(sub(t[1], t[0]), sub(t[2], t[0])), 0.5)
 }
 
-/// The solid angle a triangle subtends at a point (Van Oosterom and Strackee).
-fn solid_angle(t: &[P; 3], p: P) -> f64 {
-    let (a, b, c) = (sub(t[0], p), sub(t[1], p), sub(t[2], p));
-    let (la, lb, lc) = (len(a), len(b), len(c));
+/// The solid angle a triangle subtends at a point (Van Oosterom and Strackee), from its corners
+/// relative to the point and their distances.
+fn solid_angle_from((a, la): (P, f64), (b, lb): (P, f64), (c, lc): (P, f64)) -> f64 {
     let num = dot(a, cross(b, c));
     let den = la * lb * lc + dot(a, b) * lc + dot(b, c) * la + dot(c, a) * lb;
     2.0 * num.atan2(den)
 }
 
-struct Cell {
-    ids: Vec<u32>,
+/// A cell's dipole: its centre, its area vector, and the distance beyond which it stands in for
+/// its triangles.
+struct Far {
     c: P,
     n: P,
-    r: f64,
+    reach: f64,
 }
+
+/// A fine cell's triangles, for points within its reach.
+struct Near {
+    /// The cell's triangles as corners into `verts`, in triangle order.
+    tris: Vec<[u32; 3]>,
+    /// The cell's distinct corners.
+    verts: Vec<P>,
+}
+
+/// A fine cell while the winding number is set up: its centre, area vector, radius, triangle
+/// count and triangles.
+type FineCell = (P, P, f64, usize, Near);
 
 /// The generalised winding number of a triangle soup: exact near, dipoles of cells far away.
 pub(super) struct Wind {
-    tris: Vec<[P; 3]>,
-    fine: Vec<Cell>,
-    coarse: Vec<(Cell, Vec<usize>)>,
+    /// Fine cells, numbered so that each coarse cell's run in `fine` is contiguous.
+    fine: Vec<Far>,
+    near: Vec<Near>,
+    /// Coarse cells, each with its run of fine cells.
+    coarse: Vec<(Far, std::ops::Range<usize>)>,
     lo: P,
     hi: P,
 }
@@ -81,10 +91,8 @@ pub(super) struct Wind {
 impl Wind {
     pub(super) fn new(tris: Vec<[P; 3]>) -> Self {
         let key = |p: P, s: f64| p.map(|x| (x / s).floor() as i32);
-        let mut by: BTreeMap<[i32; 3], Vec<u32>> = BTreeMap::new();
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
-        for (i, t) in tris.iter().enumerate() {
-            by.entry(key(centroid(t), FINE)).or_default().push(i as u32);
+        for t in &tris {
             for v in t {
                 for k in 0..3 {
                     lo[k] = lo[k].min(v[k]);
@@ -92,65 +100,108 @@ impl Wind {
                 }
             }
         }
-        let mut fine = Vec::new();
-        for (_, ids) in by {
-            let (mut c, mut w, mut n) = ([0.0; 3], 0.0, [0.0; 3]);
-            for &i in &ids {
-                let t = &tris[i as usize];
-                let a = area_vec(t);
-                let m = len(a).max(1e-12);
-                c = add(c, mul(add(add(t[0], t[1]), t[2]), m / 3.0));
-                w += m;
-                n = add(n, a);
+        // The fine cells in key order, each with its triangles in index order.
+        let mut keyed: Vec<([i32; 3], u32)> =
+            tris.par_iter().enumerate().map(|(i, t)| (key(centroid(t), FINE), i as u32)).collect();
+        keyed.par_sort_unstable();
+        let mut groups: Vec<&[([i32; 3], u32)]> = Vec::new();
+        let mut start = 0;
+        for k in 1..=keyed.len() {
+            if k == keyed.len() || keyed[k].0 != keyed[start].0 {
+                groups.push(&keyed[start..k]);
+                start = k;
             }
-            let c = mul(c, 1.0 / w);
-            let r = ids.iter().flat_map(|&i| tris[i as usize]).map(|v| dist(v, c)).fold(0.0, f64::max);
-            fine.push(Cell { ids, c, n, r });
         }
-        let mut groups: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
-        for (k, f) in fine.iter().enumerate() {
-            groups.entry(key(f.c, COARSE)).or_default().push(k);
-        }
-        let coarse = groups
-            .into_values()
-            .map(|kids| {
+        let cells: Vec<FineCell> = groups
+            .par_iter()
+            .map(|group| {
                 let (mut c, mut w, mut n) = ([0.0; 3], 0.0, [0.0; 3]);
-                for &k in &kids {
-                    let m = (fine[k].ids.len() as f64).max(1.0);
-                    c = add(c, mul(fine[k].c, m));
+                for &(_, i) in group.iter() {
+                    let t = &tris[i as usize];
+                    let a = area_vec(t);
+                    let m = len(a).max(1e-12);
+                    c = add(c, mul(add(add(t[0], t[1]), t[2]), m / 3.0));
                     w += m;
-                    n = add(n, fine[k].n);
+                    n = add(n, a);
                 }
                 let c = mul(c, 1.0 / w);
-                let r = kids.iter().map(|&k| dist(fine[k].c, c) + fine[k].r).fold(0.0, f64::max);
-                (Cell { ids: Vec::new(), c, n, r }, kids)
+                let r = group.iter().flat_map(|&(_, i)| tris[i as usize]).map(|v| dist(v, c)).fold(0.0, f64::max);
+                let mut at: FxHashMap<[u64; 3], u32> = FxHashMap::default();
+                let mut verts: Vec<P> = Vec::new();
+                let cell_tris = group
+                    .iter()
+                    .map(|&(_, i)| {
+                        tris[i as usize].map(|v| {
+                            *at.entry(v.map(f64::to_bits)).or_insert_with(|| {
+                                verts.push(v);
+                                verts.len() as u32 - 1
+                            })
+                        })
+                    })
+                    .collect();
+                (c, n, r, group.len(), Near { tris: cell_tris, verts })
             })
             .collect();
-        Wind { tris, fine, coarse, lo, hi }
+        let mut groups: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+        for (k, f) in cells.iter().enumerate() {
+            groups.entry(key(f.0, COARSE)).or_default().push(k);
+        }
+        let mut slots: Vec<Option<FineCell>> = cells.into_iter().map(Some).collect();
+        let (mut fine, mut near, mut coarse) = (Vec::new(), Vec::new(), Vec::new());
+        for kids in groups.into_values() {
+            let (mut c, mut w, mut n) = ([0.0; 3], 0.0, [0.0; 3]);
+            let mut r = 0.0f64;
+            let start = fine.len();
+            // The coarse centre first: its radius is measured from it.
+            for &k in &kids {
+                let f = slots[k].as_ref().expect("each fine cell in one coarse cell");
+                let m = (f.3 as f64).max(1.0);
+                c = add(c, mul(f.0, m));
+                w += m;
+                n = add(n, f.1);
+            }
+            let c = mul(c, 1.0 / w);
+            for &k in &kids {
+                let (fc, fn_, fr, _, fnear) = slots[k].take().expect("each fine cell in one coarse cell");
+                r = r.max(dist(fc, c) + fr);
+                fine.push(Far { c: fc, n: fn_, reach: FAR * fr + 1e-9 });
+                near.push(fnear);
+            }
+            coarse.push((Far { c, n, reach: FAR * r + 1e-9 }, start..fine.len()));
+        }
+        Wind { fine, near, coarse, lo, hi }
     }
 
     pub(super) fn w(&self, p: P) -> f64 {
         if (0..3).any(|k| p[k] < self.lo[k] - 0.01 || p[k] > self.hi[k] + 0.01) {
             return 0.0;
         }
-        let dipole = |cell: &Cell| {
-            let d = sub(cell.c, p);
-            let l = len(d);
-            dot(cell.n, d) / (l * l * l)
-        };
+        // Each near cell's corners from the point and their distances, shared by its triangles.
+        let mut corners: Vec<(P, f64)> = Vec::new();
         let mut s = 0.0;
         for (cc, kids) in &self.coarse {
-            if dist(p, cc.c) > FAR * cc.r + 1e-9 {
-                s += dipole(cc);
+            // The point's distance to a cell is its dipole's distance too.
+            let d = sub(cc.c, p);
+            let l = len(d);
+            if l > cc.reach {
+                s += dot(cc.n, d) / (l * l * l);
                 continue;
             }
-            for &k in kids {
+            for k in kids.clone() {
                 let f = &self.fine[k];
-                if dist(p, f.c) > FAR * f.r + 1e-9 {
-                    s += dipole(f);
+                let d = sub(f.c, p);
+                let l = len(d);
+                if l > f.reach {
+                    s += dot(f.n, d) / (l * l * l);
                 } else {
-                    for &i in &f.ids {
-                        s += solid_angle(&self.tris[i as usize], p);
+                    let cell = &self.near[k];
+                    corners.clear();
+                    corners.extend(cell.verts.iter().map(|v| {
+                        let d = sub(*v, p);
+                        (d, len(d))
+                    }));
+                    for t in &cell.tris {
+                        s += solid_angle_from(corners[t[0] as usize], corners[t[1] as usize], corners[t[2] as usize]);
                     }
                 }
             }
@@ -163,49 +214,22 @@ impl Wind {
     }
 }
 
-/// The model: triangles in columns, for box and depth queries.
+/// The model: triangles in a grid, for box and depth queries.
 pub(super) struct Model {
     pub(super) tris: Vec<[P; 3]>,
     ids: Vec<[u32; 3]>,
-    cols: FxHashMap<(i32, i32), Vec<u32>>,
+    index: BoxIndex,
 }
 
 impl Model {
     pub(super) fn new(tris: Vec<[P; 3]>) -> Self {
-        let mut cols: FxHashMap<(i32, i32), Vec<u32>> = FxHashMap::default();
-        for (i, t) in tris.iter().enumerate() {
-            let lo = [0, 1].map(|k| t.iter().map(|v| v[k]).fold(f64::MAX, f64::min));
-            let hi = [0, 1].map(|k| t.iter().map(|v| v[k]).fold(f64::MIN, f64::max));
-            for x in col(lo[0])..=col(hi[0]) {
-                for y in col(lo[1])..=col(hi[1]) {
-                    cols.entry((x, y)).or_default().push(i as u32);
-                }
-            }
-        }
-        let (ids, _) = weld_ids(&tris);
-        Self { tris, ids, cols }
+        let (index, (ids, _)) = rayon::join(|| BoxIndex::new(&tris, COL), || weld_ids(&tris));
+        Self { tris, ids, index }
     }
 
-    /// Triangles whose box meets the box.
+    /// Triangles whose box meets the box, ascending.
     pub(super) fn near(&self, lo: P, hi: P) -> Vec<u32> {
-        let mut out = Vec::new();
-        for x in col(lo[0])..=col(hi[0]) {
-            for y in col(lo[1])..=col(hi[1]) {
-                if let Some(list) = self.cols.get(&(x, y)) {
-                    out.extend_from_slice(list);
-                }
-            }
-        }
-        out.sort_unstable();
-        out.dedup();
-        out.retain(|&i| {
-            let t = &self.tris[i as usize];
-            (0..3).all(|k| {
-                t.iter().map(|v| v[k]).fold(f64::MIN, f64::max) >= lo[k]
-                    && t.iter().map(|v| v[k]).fold(f64::MAX, f64::min) <= hi[k]
-            })
-        });
-        out
+        self.index.query(lo, hi)
     }
 
     /// Distance to the surface, searching outward.
@@ -419,18 +443,17 @@ struct Seg {
 
 fn segments_of(tris: &[[P; 3]], ids: &[[u32; 3]], lo: P, hi: P, model: &Model) -> Vec<Seg> {
     let mut out = Vec::new();
-    let candidates = model.near(lo, hi);
+    let mut candidates = Vec::new();
     for (ti, t) in tris.iter().enumerate() {
         let tlo: P = [0, 1, 2].map(|k| t.iter().map(|v| v[k]).fold(f64::MAX, f64::min));
         let thi: P = [0, 1, 2].map(|k| t.iter().map(|v| v[k]).fold(f64::MIN, f64::max));
+        // The model faces whose boxes meet both the shell's box and this face's.
+        model.index.query_into(tlo, thi, &mut candidates);
         for &b in &candidates {
-            let u = &model.tris[b as usize];
-            if (0..3).any(|k| {
-                u.iter().map(|v| v[k]).fold(f64::MIN, f64::max) < tlo[k]
-                    || u.iter().map(|v| v[k]).fold(f64::MAX, f64::min) > thi[k]
-            }) {
+            if !model.index.meets(b, lo, hi) {
                 continue;
             }
+            let u = &model.tris[b as usize];
             if let Some(((pa, fa), (pb, fb))) = cross_segment(t, &ids[ti], u, &model.ids[b as usize]) {
                 let name = |f: (bool, u32, u32)| (f.0, f.1, f.2, if f.0 { ti as u32 } else { b });
                 out.push(Seg { a: name(fa), pa, b: name(fb), pb, ti: ti as u32, mi: b });
@@ -588,14 +611,20 @@ fn call_shell(tris: Vec<[P; 3]>, model: &Model, wind: &Wind) -> ShellCall {
             hi[k] = hi[k].max(v[k]);
         }
     }
-    let inside: Vec<bool> = verts.iter().map(|v| wind.inside(*v)).collect();
     let segments = segments_of(&tris, &ids, lo, hi, model);
     let walks = walks_of(&segments);
+    if walks.is_empty() {
+        // No loop on the model: the shell is buried when every vertex is inside, and nothing else
+        // here is asked of it.
+        let buried = verts.iter().all(|v| wind.inside(*v));
+        return ShellCall { patches: Vec::new(), loops: Vec::new(), buried, lo, hi, verts, inside: Vec::new() };
+    }
+    let inside: Vec<bool> = verts.par_iter().map(|v| wind.inside(*v)).collect();
     // The support's own solid: where overlapping primitives were joined into one shell, a
     // primitive's surface inside another is not the support's surface, and its loops are not where
     // it meets the model. Each closed solid of the shell on its own, so primitives wound either
     // way still count.
-    let own: Vec<Wind> = if walks.is_empty() { Vec::new() } else { solids(&tris).into_iter().map(Wind::new).collect() };
+    let own: Vec<Wind> = solids(&tris).into_iter().map(Wind::new).collect();
     let in_own = |p: P| own.iter().any(|w| w.w(p).abs() > 0.5);
     // A loop is a boundary when the model face it lies on has inside on one side and outside on
     // the other.
@@ -927,20 +956,79 @@ pub struct Contact {
     pub shells: Vec<usize>,
 }
 
+/// The pairs `(a, b)`, `a < b`, of loops (centre, width) closer than half their widths added, in
+/// the order a loop over every pair meets them.
+fn overlapping_pairs(loops: &[(P, f64)]) -> Vec<(usize, usize)> {
+    let widest = loops.iter().map(|l| l.1).fold(0.0, f64::max);
+    // Cells as wide as the widest loop: a loop's partners lie within its own and the next cells.
+    let cell = widest.max(1e-3);
+    let key = |p: P| p.map(|x| (x / cell).floor() as i64);
+    let mut grid: FxHashMap<[i64; 3], Vec<usize>> = FxHashMap::default();
+    for (i, l) in loops.iter().enumerate() {
+        grid.entry(key(l.0)).or_default().push(i);
+    }
+    let near = |a: usize, b: usize| dist(loops[a].0, loops[b].0) < (loops[a].1 + loops[b].1) / 2.0;
+    let per_loop: Vec<Vec<usize>> = (0..loops.len())
+        .into_par_iter()
+        .map(|a| {
+            let k = key(loops[a].0);
+            let mut out = Vec::new();
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        if let Some(list) = grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
+                            out.extend(list.iter().copied().filter(|&b| b > a && near(a, b)));
+                        }
+                    }
+                }
+            }
+            out.sort_unstable();
+            out
+        })
+        .collect();
+    per_loop.into_iter().enumerate().flat_map(|(a, bs)| bs.into_iter().map(move |b| (a, b))).collect()
+}
+
 /// Every contact of `support` on `model` (both Z-up), ignoring shells that stay below `raft_band`.
 pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact> {
-    let model_index = Model::new(model.to_vec());
-    let wind = Wind::new(model.to_vec());
+    let (model_index, wind) = rayon::join(|| Model::new(model.to_vec()), || Wind::new(model.to_vec()));
     let shells = shells_of(support);
     let calls: Vec<ShellCall> = shells.into_par_iter().map(|s| call_shell(s, &model_index, &wind)).collect();
-    // (shell, loop, direction, depth, graze)
-    let mut touches: Vec<(usize, usize, P, f64, bool)> = Vec::new();
-    let mut flush: Vec<(usize, P, f64, P)> = Vec::new();
+    // The loops to judge, in order: (shell, patch, loop, through a thin wall), and the loopless
+    // shells that may rest flush.
+    let mut jobs: Vec<(usize, &Patch, usize, bool)> = Vec::new();
+    let mut flush_jobs: Vec<usize> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
         if c.hi[2] <= raft_band || c.buried {
             continue;
         }
         if c.loops.is_empty() {
+            flush_jobs.push(i);
+            continue;
+        }
+        for p in &c.patches {
+            match p.loops.len() {
+                0 => {}
+                1 => jobs.push((i, p, p.loops[0], false)),
+                // A tip poking through a thin wall is a tip: its contact is the loop on the side
+                // its shaft comes from.
+                _ if is_thin_wall_tip(c, p) => jobs.push((i, p, thin_wall_entry(c, p).0, true)),
+                _ => {}
+            }
+        }
+    }
+    // (shell, loop, direction, depth, graze)
+    let touches: Vec<(usize, usize, P, f64, bool)> = jobs
+        .par_iter()
+        .map(|&(i, p, k, thin)| {
+            let (c, l) = (&calls[i], &calls[i].loops[k]);
+            (i, k, outward(c, l, &wind), depth_of(&p.inside_verts, &model_index, 32), !thin && grazes(c, l))
+        })
+        .collect();
+    let flush: Vec<(usize, P, f64, P)> = flush_jobs
+        .par_iter()
+        .filter_map(|&i| {
+            let c = &calls[i];
             // Flush: no loop, and the model right there.
             let near_gap = |v: &P| {
                 let r = [FLUSH_GAP; 3];
@@ -951,40 +1039,16 @@ pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact
                     .fold(f64::MAX, f64::min)
             };
             let gap = c.verts.iter().map(near_gap).fold(f64::MAX, f64::min);
-            if gap <= FLUSH_GAP {
+            (gap <= FLUSH_GAP).then(|| {
                 // Its footprint: the shell's vertices within the tolerance of the model.
                 let near: Vec<P> = c.verts.iter().copied().filter(|v| near_gap(v) <= FLUSH_GAP).collect();
                 let cen = mul(near.iter().fold([0.0; 3], |s, v| add(s, *v)), 1.0 / near.len().max(1) as f64);
                 let d = (2.0 * near.iter().map(|v| dist(*v, cen)).fold(0.0, f64::max)).max(0.05);
                 let mid = mul(add(c.lo, c.hi), 0.5);
-                flush.push((i, cen, d, unit(sub(mid, cen))));
-            }
-            continue;
-        }
-        for p in &c.patches {
-            match p.loops.len() {
-                0 => {}
-                1 => {
-                    let l = &c.loops[p.loops[0]];
-                    touches.push((
-                        i,
-                        p.loops[0],
-                        outward(c, l, &wind),
-                        depth_of(&p.inside_verts, &model_index, 32),
-                        grazes(c, l),
-                    ));
-                }
-                _ if is_thin_wall_tip(c, p) => {
-                    // A tip poking through a thin wall is a tip: its contact is the loop on the side
-                    // its shaft comes from.
-                    let (entry, _) = thin_wall_entry(c, p);
-                    let l = &c.loops[entry];
-                    touches.push((i, entry, outward(c, l, &wind), depth_of(&p.inside_verts, &model_index, 32), false));
-                }
-                _ => {}
-            }
-        }
-    }
+                (i, cen, d, unit(sub(mid, cen)))
+            })
+        })
+        .collect();
     let thin: FxHashSet<(usize, usize)> = calls
         .iter()
         .enumerate()
@@ -1000,14 +1064,9 @@ pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact
     let n = touches.len();
     let mut parent: Vec<u32> = (0..n as u32).collect();
     let lp = |t: &(usize, usize, P, f64, bool)| -> &LoopOut { &calls[t.0].loops[t.1] };
-    for a in 0..n {
-        for b in a + 1..n {
-            let (la, lb) = (lp(&touches[a]), lp(&touches[b]));
-            if dist(la.centre, lb.centre) < (eq_d(la.area) + eq_d(lb.area)) / 2.0 {
-                let (x, y) = (super::math::find(&mut parent, a as u32), super::math::find(&mut parent, b as u32));
-                parent[x as usize] = y;
-            }
-        }
+    for (a, b) in overlapping_pairs(&touches.iter().map(|t| (lp(t).centre, eq_d(lp(t).area))).collect::<Vec<_>>()) {
+        let (x, y) = (super::math::find(&mut parent, a as u32), super::math::find(&mut parent, b as u32));
+        parent[x as usize] = y;
     }
     let mut groups: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
     for a in 0..n {
@@ -1117,6 +1176,158 @@ pub(super) mod tests {
             }
         }
         out
+    }
+
+    /// The winding number as first written (one pass over each cell's triangles, cells by key), to
+    /// check that [`Wind`] gives the same bits.
+    fn reference_w(tris: &[[P; 3]], p: P) -> f64 {
+        let key = |p: P, s: f64| p.map(|x| (x / s).floor() as i32);
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        let mut by: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+        for (i, t) in tris.iter().enumerate() {
+            by.entry(key(centroid(t), FINE)).or_default().push(i);
+            for v in t {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(v[k]);
+                    hi[k] = hi[k].max(v[k]);
+                }
+            }
+        }
+        if (0..3).any(|k| p[k] < lo[k] - 0.01 || p[k] > hi[k] + 0.01) {
+            return 0.0;
+        }
+        // (ids, centre, area vector, radius)
+        let mut fine: Vec<(Vec<usize>, P, P, f64)> = Vec::new();
+        for (_, ids) in by {
+            let (mut c, mut w, mut n) = ([0.0; 3], 0.0, [0.0; 3]);
+            for &i in &ids {
+                let a = area_vec(&tris[i]);
+                let m = len(a).max(1e-12);
+                c = add(c, mul(add(add(tris[i][0], tris[i][1]), tris[i][2]), m / 3.0));
+                w += m;
+                n = add(n, a);
+            }
+            let c = mul(c, 1.0 / w);
+            let r = ids.iter().flat_map(|&i| tris[i]).map(|v| dist(v, c)).fold(0.0, f64::max);
+            fine.push((ids, c, n, r));
+        }
+        let mut groups: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+        for (k, f) in fine.iter().enumerate() {
+            groups.entry(key(f.1, COARSE)).or_default().push(k);
+        }
+        let dipole = |c: P, n: P| {
+            let d = sub(c, p);
+            let l = len(d);
+            dot(n, d) / (l * l * l)
+        };
+        let solid_angle = |t: &[P; 3]| {
+            let (a, b, c) = (sub(t[0], p), sub(t[1], p), sub(t[2], p));
+            solid_angle_from((a, len(a)), (b, len(b)), (c, len(c)))
+        };
+        let mut s = 0.0;
+        for kids in groups.into_values() {
+            let (mut c, mut w, mut n) = ([0.0; 3], 0.0, [0.0; 3]);
+            for &k in &kids {
+                let m = (fine[k].0.len() as f64).max(1.0);
+                c = add(c, mul(fine[k].1, m));
+                w += m;
+                n = add(n, fine[k].2);
+            }
+            let c = mul(c, 1.0 / w);
+            let r = kids.iter().map(|&k| dist(fine[k].1, c) + fine[k].3).fold(0.0, f64::max);
+            if dist(p, c) > FAR * r + 1e-9 {
+                s += dipole(c, n);
+                continue;
+            }
+            for &k in &kids {
+                let (ids, fc, fnorm, fr) = &fine[k];
+                if dist(p, *fc) > FAR * fr + 1e-9 {
+                    s += dipole(*fc, *fnorm);
+                } else {
+                    for &i in ids {
+                        s += solid_angle(&tris[i]);
+                    }
+                }
+            }
+        }
+        s / (4.0 * std::f64::consts::PI)
+    }
+
+    /// A deterministic pseudo-random number in [0, 1).
+    pub(crate) fn rand01(state: &mut u64) -> f64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (*state >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    #[test]
+    fn the_winding_number_matches_the_reference_bit_for_bit() {
+        // Spread-out solids (several coarse cells), with shared, repeated and signed-zero corners.
+        let mut tris = boxm([-30.0, -2.0, 0.0], [30.0, 2.0, 4.0]);
+        tris.extend(ball([0.0, 0.0, 20.0], 6.0));
+        tris.extend(frustum([10.0, 0.0, 4.0], [12.0, 1.0, 40.0], 2.0, 0.5, 16));
+        tris.extend(ball([-0.0, 0.0, -0.0], 1.5));
+        tris.push(tris[3]);
+        let w = Wind::new(tris.clone());
+        let mut state = 7u64;
+        for _ in 0..3000 {
+            let p = [
+                -35.0 + 70.0 * rand01(&mut state),
+                -10.0 + 20.0 * rand01(&mut state),
+                -5.0 + 50.0 * rand01(&mut state),
+            ];
+            assert_eq!(w.w(p).to_bits(), reference_w(&tris, p).to_bits(), "{p:?}");
+        }
+        for t in &tris {
+            let p = centroid(t);
+            assert_eq!(w.w(p).to_bits(), reference_w(&tris, p).to_bits(), "{p:?}");
+        }
+    }
+
+    #[test]
+    fn overlapping_loops_are_found_in_pair_order() {
+        let mut state = 9u64;
+        let loops: Vec<(P, f64)> = (0..600)
+            .map(|i| {
+                let p = [20.0 * rand01(&mut state), 20.0 * rand01(&mut state), 5.0 * rand01(&mut state)];
+                (p, if i % 50 == 0 { 3.0 } else { 0.1 + rand01(&mut state) })
+            })
+            .collect();
+        let mut want = Vec::new();
+        for a in 0..loops.len() {
+            for b in a + 1..loops.len() {
+                if dist(loops[a].0, loops[b].0) < (loops[a].1 + loops[b].1) / 2.0 {
+                    want.push((a, b));
+                }
+            }
+        }
+        assert!(want.len() > 100);
+        assert_eq!(overlapping_pairs(&loops), want);
+        assert!(overlapping_pairs(&[]).is_empty());
+    }
+
+    #[test]
+    fn box_queries_match_scanning_every_box() {
+        let mut tris = ball([0.0, 0.0, 5.0], 5.0);
+        tris.extend(frustum([0.0, 0.0, 0.0], [3.0, 2.0, 30.0], 1.0, 0.2, 12));
+        // A face spanning far more cells than the grid indexes.
+        tris.push([[-100.0, -100.0, 0.0], [100.0, -100.0, 0.0], [0.0, 100.0, 50.0]]);
+        let index = BoxIndex::new(&tris, 2.0);
+        let mut state = 3u64;
+        for k in 0..2000 {
+            let c = [
+                -20.0 + 40.0 * rand01(&mut state),
+                -20.0 + 40.0 * rand01(&mut state),
+                -5.0 + 40.0 * rand01(&mut state),
+            ];
+            let r = if k % 10 == 0 { 60.0 * rand01(&mut state) } else { 2.0 * rand01(&mut state) };
+            let (lo, hi) = (sub(c, [r; 3]), add(c, [r; 3]));
+            let scan: Vec<u32> = (0..tris.len() as u32).filter(|&i| index.meets(i, lo, hi)).collect();
+            assert_eq!(index.query(lo, hi), scan);
+        }
+        // Touching boxes meet.
+        let t = &tris[0];
+        let hi = [0, 1, 2].map(|k| t[0][k].max(t[1][k]).max(t[2][k]));
+        assert!(index.query(hi, add(hi, [1.0; 3])).contains(&0));
     }
 
     #[test]

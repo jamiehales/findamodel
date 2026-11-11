@@ -21,6 +21,7 @@ use crate::services::indexer::{IndexerService, ScanWorker, run_scheduler};
 use crate::services::jobs::{ArchiveJobService, PlateJobService};
 use crate::services::metadata_config::MetadataConfigService;
 use crate::services::models::ModelService;
+use crate::services::support_exports::SupportExports;
 use crate::services::voxl_cache::VoxlCache;
 use crate::services::{printing_lists, users};
 
@@ -96,6 +97,7 @@ impl AppState {
             metadata_config.clone(),
             app_config.clone(),
             settings.file_scan_threads,
+            Some(SupportExports::new(settings.support_exports_path())),
         );
         let indexer = IndexerService::new(
             db.clone(),

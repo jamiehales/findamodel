@@ -16,5 +16,6 @@ pub mod scan;
 pub mod scan_config;
 pub mod stats;
 pub mod store;
+pub mod support_exports;
 pub mod users;
 pub mod voxl_cache;

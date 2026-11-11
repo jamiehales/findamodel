@@ -4,6 +4,7 @@ use crate::db::Db;
 use crate::dto::InstanceStatsDto;
 use crate::error::AppResult;
 use crate::geometry::hull::CURRENT_HULL_GENERATION_VERSION;
+use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::preview::{CURRENT_PREVIEW_GENERATION_VERSION, GpuState};
 
 pub struct PreviewRuntimeInfo {
@@ -40,6 +41,7 @@ pub async fn get(db: &Db, environment: &str, preview: PreviewRuntimeInfo) -> App
         operating_system: operating_system(),
         preview_generation_version: CURRENT_PREVIEW_GENERATION_VERSION,
         hull_generation_version: CURRENT_HULL_GENERATION_VERSION,
+        support_export_version: CURRENT_SUPPORT_READER_VERSION,
         preview_gpu_enabled: preview.gpu_enabled,
         preview_gpu_available: preview.gpu_available,
         preview_renderer: preview.renderer_name,

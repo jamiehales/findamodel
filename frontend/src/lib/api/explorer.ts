@@ -101,6 +101,7 @@ export interface AppConfig {
   defaultRaftHeightMm: number;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
+  minimumSupportExportVersion: number;
   setupCompleted: boolean;
   modelsDirectoryPath: string | null;
 }
@@ -120,6 +121,7 @@ export interface UpdateAppConfigRequest {
   defaultRaftHeightMm: number;
   generatePreviewsEnabled: boolean;
   minimumPreviewGenerationVersion: number;
+  minimumSupportExportVersion: number;
 }
 
 export interface InitialSetupRequest {
@@ -149,6 +151,7 @@ export interface InstanceStats {
   operatingSystem: string;
   previewGenerationVersion: number;
   hullGenerationVersion: number;
+  supportExportVersion: number;
   previewGpuEnabled: boolean;
   previewGpuAvailable: boolean;
   previewRenderer: string;

@@ -102,6 +102,11 @@ pub struct ModelRow {
     pub sphere_centre_z: Option<f32>,
     pub sphere_radius: Option<f32>,
     pub geometry_calculated_at: Option<DateTime<Utc>>,
+    /// The model's export entry, relative to the entries folder
+    /// ([`crate::services::support_exports`]), and the reader version it was written with. An
+    /// index for the scan: the entry file itself is the authority. None until one is written.
+    pub support_export_path: Option<String>,
+    pub support_export_version: Option<i32>,
 }
 
 /// A model's footprint hulls, kept out of `models` so catalog queries don't read them. Each is
@@ -148,6 +153,7 @@ pub struct AppConfigRow {
     pub default_raft_height_mm: f32,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
+    pub minimum_support_export_version: i32,
     pub setup_completed: bool,
     pub models_directory_path: Option<String>,
     pub updated_at: DateTime<Utc>,
@@ -233,6 +239,7 @@ pub struct IndexRunFile {
     pub supports_ms: Option<f64>,
     pub preview_ms: Option<f64>,
     pub hull_ms: Option<f64>,
+    pub export_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]

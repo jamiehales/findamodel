@@ -7,6 +7,7 @@ const STAGE_LABELS: Record<IndexRunStageName, string> = {
   supports: 'Supports',
   preview: 'Preview',
   hull: 'Hull',
+  export: 'Export',
 };
 
 function formatAverage(ms: number): string {

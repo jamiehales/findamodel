@@ -812,8 +812,29 @@ fn edge(ax: f64, ay: f64, bx: f64, by: f64, px: f64, py: f64) -> f64 {
     }
 }
 
+/// Where each ray of tile (`tx`, `ty`) runs: its jittered (x, y).
+fn ray_positions(tx: i64, ty: i64, pitch: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::with_capacity((TILE * TILE) as usize);
+    for j in ty * TILE..ty * TILE + TILE {
+        for i in tx * TILE..tx * TILE + TILE {
+            let (jx, jy) = jit(i, j);
+            out.push(((i as f64 + jx) * pitch, (j as f64 + jy) * pitch));
+        }
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
-fn raster(t: &[P; 3], tx: i64, ty: i64, pitch: f64, piece: u32, mask: Option<&[bool]>, out: &mut Vec<Ev>) {
+fn raster(
+    t: &[P; 3],
+    tx: i64,
+    ty: i64,
+    pitch: f64,
+    rays: &[(f64, f64)],
+    piece: u32,
+    mask: Option<&[bool]>,
+    out: &mut Vec<Ev>,
+) {
     let area = (t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[1][1] - t[0][1]) * (t[2][0] - t[0][0]);
     if area == 0.0 {
         return;
@@ -839,8 +860,7 @@ fn raster(t: &[P; 3], tx: i64, ty: i64, pitch: f64, piece: u32, mask: Option<&[b
             {
                 continue;
             }
-            let (jx, jy) = jit(i, j);
-            let (px, py) = ((i as f64 + jx) * pitch, (j as f64 + jy) * pitch);
+            let (px, py) = rays[ray];
             let e0 = edge(t[0][0], t[0][1], t[1][0], t[1][1], px, py) * s;
             let e1 = edge(t[1][0], t[1][1], t[2][0], t[2][1], px, py) * s;
             let e2 = edge(t[2][0], t[2][1], t[0][0], t[0][1], px, py) * s;
@@ -860,19 +880,80 @@ fn raster(t: &[P; 3], tx: i64, ty: i64, pitch: f64, piece: u32, mask: Option<&[b
     }
 }
 
+/// The events in ray order, then height, then exits first, keeping the given order among equals (a
+/// stable sort): counted out by ray, then each ray's few sorted.
+fn sort_events(ev: Vec<Ev>) -> Vec<Ev> {
+    let mut start = vec![0u32; (TILE * TILE) as usize + 1];
+    for e in &ev {
+        start[e.ray as usize + 1] += 1;
+    }
+    for k in 1..start.len() {
+        start[k] += start[k - 1];
+    }
+    let mut next = start.clone();
+    let mut out = vec![ev.first().copied().unwrap_or(Ev { ray: 0, z: 0.0, d: 0, piece: 0 }); ev.len()];
+    for e in ev {
+        let slot = &mut next[e.ray as usize];
+        out[*slot as usize] = e;
+        *slot += 1;
+    }
+    for w in start.windows(2) {
+        if w[1] - w[0] > 1 {
+            out[w[0] as usize..w[1] as usize].sort_by(|a, b| a.z.total_cmp(&b.z).then(a.d.cmp(&b.d)));
+        }
+    }
+    out
+}
+
+/// The tiles a triangle's rays can fall in: (x tiles, y tiles), inclusive.
+fn tile_range(t: &[P; 3], pitch: f64) -> ((i64, i64), (i64, i64)) {
+    let w = TILE as f64 * pitch;
+    let x0 = t.iter().map(|p| p[0]).fold(f64::MAX, f64::min);
+    let x1 = t.iter().map(|p| p[0]).fold(f64::MIN, f64::max);
+    let y0 = t.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+    let y1 = t.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+    (
+        (((x0 - pitch) / w - 0.01).floor() as i64, ((x1 + pitch) / w + 0.01).floor() as i64),
+        (((y0 - pitch) / w - 0.01).floor() as i64, ((y1 + pitch) / w + 0.01).floor() as i64),
+    )
+}
+
 fn tile_index(tris: &[[P; 3]], pitch: f64) -> FxHashMap<(i64, i64), Vec<u32>> {
     let mut m: FxHashMap<(i64, i64), Vec<u32>> = FxHashMap::default();
-    let w = TILE as f64 * pitch;
     for (i, t) in tris.iter().enumerate() {
-        let x0 = t.iter().map(|p| p[0]).fold(f64::MAX, f64::min);
-        let x1 = t.iter().map(|p| p[0]).fold(f64::MIN, f64::max);
-        let y0 = t.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
-        let y1 = t.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
-        for tx in ((x0 - pitch) / w - 0.01).floor() as i64..=((x1 + pitch) / w + 0.01).floor() as i64 {
-            for ty in ((y0 - pitch) / w - 0.01).floor() as i64..=((y1 + pitch) / w + 0.01).floor() as i64 {
+        let ((tx0, tx1), (ty0, ty1)) = tile_range(t, pitch);
+        for tx in tx0..=tx1 {
+            for ty in ty0..=ty1 {
                 m.entry((tx, ty)).or_default().push(i as u32);
             }
         }
+    }
+    m
+}
+
+/// [`tile_index`] of `tris` turned by `pm`, kept to the tiles `within` holds.
+fn tile_index_within(
+    tris: &[[P; 3]],
+    pm: impl Fn(&[P; 3]) -> [P; 3] + Sync,
+    pitch: f64,
+    within: &FxHashMap<(i64, i64), Vec<u32>>,
+) -> FxHashMap<(i64, i64), Vec<u32>> {
+    // (tile, triangle) pairs, found in parallel and grouped in triangle order.
+    let mut hits: Vec<((i64, i64), u32)> = tris
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(i, t)| {
+            let ((tx0, tx1), (ty0, ty1)) = tile_range(&pm(t), pitch);
+            (tx0..=tx1)
+                .flat_map(move |tx| (ty0..=ty1).map(move |ty| (tx, ty)))
+                .filter(|k| within.contains_key(k))
+                .map(move |k| (k, i as u32))
+        })
+        .collect();
+    hits.par_sort_unstable();
+    let mut m: FxHashMap<(i64, i64), Vec<u32>> = FxHashMap::default();
+    for (k, i) in hits {
+        m.entry(k).or_default().push(i);
     }
     m
 }
@@ -889,7 +970,7 @@ struct Pair {
 }
 
 /// Per tile: the pairs' measures and each piece's (volume, volume inside the model, its moment).
-type TileTotals = (FxHashMap<(u32, u32), Pair>, FxHashMap<u32, (f64, f64, P)>);
+type TileTotals = (FxHashMap<(u32, u32), Pair>, Vec<(u32, (f64, f64, P))>);
 
 fn canon(ids: [u32; 3]) -> [u32; 3] {
     let m = *ids.iter().min().expect("three ids");
@@ -1211,148 +1292,159 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
     let mut inmc = vec![[0.0; 3]; np];
     for perm in [[0usize, 1, 2], [1, 2, 0], [2, 0, 1]] {
         let pm = |t: &[P; 3]| t.map(|v| [v[perm[0]], v[perm[1]], v[perm[2]]]);
-        let st: Vec<[P; 3]> = stris.iter().map(pm).collect();
-        let mt: Vec<[P; 3]> = model.iter().map(pm).collect();
-        let (sti, mti) = (tile_index(&st, pitch), tile_index(&mt, pitch));
+        let st: Vec<[P; 3]> = stris.par_iter().map(pm).collect();
+        let sti = tile_index(&st, pitch);
+        // The model only matters in the tiles the supports cross.
+        let mti = tile_index_within(model, pm, pitch, &sti);
         let inv = [0, 1, 2].map(|k| perm.iter().position(|&x| x == k).expect("a permutation"));
         let col = pitch * pitch;
         let mut keys: Vec<(i64, i64)> = sti.keys().copied().collect();
         keys.sort_unstable();
         let part: Vec<TileTotals> = keys
             .par_iter()
-            .map(|&(tx, ty)| {
-                let mut tp: FxHashMap<(u32, u32), Pair> = FxHashMap::default();
-                let mut tvol: FxHashMap<u32, (f64, f64, P)> = FxHashMap::default();
-                let mut ev: Vec<Ev> = Vec::new();
-                for &ti in &sti[&(tx, ty)] {
-                    if skip_tri[ti as usize] {
-                        continue;
-                    }
-                    raster(&st[ti as usize], tx, ty, pitch, piece_of[ti as usize], None, &mut ev);
-                }
-                if ev.is_empty() {
-                    return (tp, tvol);
-                }
-                let mut mask = vec![false; (TILE * TILE) as usize];
-                for e in &ev {
-                    mask[e.ray as usize] = true;
-                }
-                if let Some(l) = mti.get(&(tx, ty)) {
-                    for &ti in l {
-                        raster(&mt[ti as usize], tx, ty, pitch, u32::MAX, Some(&mask), &mut ev);
-                    }
-                }
-                // At one height, exits before entries: two solids meeting flush (a rod standing on
-                // the raft's top) then abut.
-                ev.sort_by(|a, b| a.ray.cmp(&b.ray).then(a.z.total_cmp(&b.z)).then(a.d.cmp(&b.d)));
-                let mut k = 0;
-                let mut open: Vec<(u32, i32)> = Vec::new();
-                let mut sums: Vec<(u32, i32)> = Vec::new();
-                while k < ev.len() {
-                    let ray = ev[k].ray;
-                    let mut e = k;
-                    while e < ev.len() && ev[e].ray == ray {
-                        e += 1;
-                    }
-                    // Pieces (or the model) that do not close on this ray leak: their crossings are
-                    // left out.
-                    sums.clear();
-                    for x in &ev[k..e] {
-                        if let Some(s) = sums.iter_mut().find(|s| s.0 == x.piece) {
-                            s.1 += x.d as i32;
-                        } else {
-                            sums.push((x.piece, x.d as i32));
-                        }
-                    }
-                    let leaky = |p: u32| sums.iter().any(|s| s.0 == p && s.1 != 0);
-                    let (gi, gj) = (ray as i64 % TILE + tx * TILE, ray as i64 / TILE + ty * TILE);
-                    let (jx, jy) = jit(gi, gj);
-                    let (px, py) = ((gi as f64 + jx) * pitch, (gj as f64 + jy) * pitch);
-                    let real = |z: f64| {
-                        let q = [px, py, z];
-                        [q[inv[0]], q[inv[1]], q[inv[2]]]
-                    };
-                    open.clear();
-                    let mut wm = 0i32;
-                    // The piece that closed last, with nothing open since.
-                    let mut last_close: Option<(u32, f64)> = None;
-                    for q in k..e {
-                        let x = ev[q];
-                        if leaky(x.piece) {
+            // Per thread: each piece's running totals in this tile, and the pieces touched.
+            .map_init(
+                || (vec![(0.0, 0.0, [0.0; 3]); np], vec![false; np], Vec::<u32>::new()),
+                |(acc, seen, touched), &(tx, ty)| {
+                    let mut tp: FxHashMap<(u32, u32), Pair> = FxHashMap::default();
+                    let mut ev: Vec<Ev> = Vec::new();
+                    let rays = ray_positions(tx, ty, pitch);
+                    for &ti in &sti[&(tx, ty)] {
+                        if skip_tri[ti as usize] {
                             continue;
                         }
-                        let z = x.z as f64;
-                        if x.piece == u32::MAX {
-                            wm += x.d as i32;
-                        } else {
-                            let was_open = open.iter().any(|o| o.0 == x.piece);
-                            if let Some(o) = open.iter_mut().find(|o| o.0 == x.piece) {
-                                o.1 += x.d as i32;
+                        raster(&st[ti as usize], tx, ty, pitch, &rays, piece_of[ti as usize], None, &mut ev);
+                    }
+                    if ev.is_empty() {
+                        return (tp, Vec::new());
+                    }
+                    let mut mask = vec![false; (TILE * TILE) as usize];
+                    for e in &ev {
+                        mask[e.ray as usize] = true;
+                    }
+                    if let Some(l) = mti.get(&(tx, ty)) {
+                        for &ti in l {
+                            raster(&pm(&model[ti as usize]), tx, ty, pitch, &rays, u32::MAX, Some(&mask), &mut ev);
+                        }
+                    }
+                    // At one height, exits before entries: two solids meeting flush (a rod standing on
+                    // the raft's top) then abut.
+                    let ev = sort_events(ev);
+                    let mut k = 0;
+                    let mut open: Vec<(u32, i32)> = Vec::new();
+                    let mut sums: Vec<(u32, i32)> = Vec::new();
+                    let mut kept: Vec<usize> = Vec::new();
+                    while k < ev.len() {
+                        let ray = ev[k].ray;
+                        let mut e = k;
+                        while e < ev.len() && ev[e].ray == ray {
+                            e += 1;
+                        }
+                        // Pieces (or the model) that do not close on this ray leak: their crossings are
+                        // left out.
+                        sums.clear();
+                        for x in &ev[k..e] {
+                            if let Some(s) = sums.iter_mut().find(|s| s.0 == x.piece) {
+                                s.1 += x.d as i32;
                             } else {
-                                open.push((x.piece, x.d as i32));
+                                sums.push((x.piece, x.d as i32));
                             }
-                            open.retain(|o| o.1 != 0);
-                            let is_open = open.iter().any(|o| o.0 == x.piece);
-                            if !was_open
-                                && is_open
-                                && let Some((p0, z0)) = last_close
-                                && p0 != x.piece
-                                && !open.iter().any(|o| o.0 == p0)
-                            {
-                                let gap = z - z0;
-                                if gap <= NEAR_MM {
-                                    let key = (p0.min(x.piece), p0.max(x.piece));
-                                    let pr = tp.entry(key).or_default();
-                                    let at = real(0.5 * (z + z0));
-                                    if gap <= ABUT_MM {
-                                        pr.abut += 1.0;
-                                        pr.abc = add(pr.abc, at);
-                                    } else if !pr.has_gap || gap < pr.gap {
-                                        pr.gap = gap;
-                                        pr.gapc = at;
-                                        pr.has_gap = true;
+                        }
+                        let leaky = |p: u32| sums.iter().any(|s| s.0 == p && s.1 != 0);
+                        // The crossings that count, in order.
+                        kept.clear();
+                        kept.extend((k..e).filter(|&q| !leaky(ev[q].piece)));
+                        let (px, py) = rays[ray as usize];
+                        let real = |z: f64| {
+                            let q = [px, py, z];
+                            [q[inv[0]], q[inv[1]], q[inv[2]]]
+                        };
+                        open.clear();
+                        let mut wm = 0i32;
+                        // The piece that closed last, with nothing open since.
+                        let mut last_close: Option<(u32, f64)> = None;
+                        for (n, &q) in kept.iter().enumerate() {
+                            let x = ev[q];
+                            let z = x.z as f64;
+                            if x.piece == u32::MAX {
+                                wm += x.d as i32;
+                            } else {
+                                let was_open = open.iter().any(|o| o.0 == x.piece);
+                                if let Some(o) = open.iter_mut().find(|o| o.0 == x.piece) {
+                                    o.1 += x.d as i32;
+                                } else {
+                                    open.push((x.piece, x.d as i32));
+                                }
+                                open.retain(|o| o.1 != 0);
+                                let is_open = open.iter().any(|o| o.0 == x.piece);
+                                if !was_open
+                                    && is_open
+                                    && let Some((p0, z0)) = last_close
+                                    && p0 != x.piece
+                                    && !open.iter().any(|o| o.0 == p0)
+                                {
+                                    let gap = z - z0;
+                                    if gap <= NEAR_MM {
+                                        let key = (p0.min(x.piece), p0.max(x.piece));
+                                        let pr = tp.entry(key).or_default();
+                                        let at = real(0.5 * (z + z0));
+                                        if gap <= ABUT_MM {
+                                            pr.abut += 1.0;
+                                            pr.abc = add(pr.abc, at);
+                                        } else if !pr.has_gap || gap < pr.gap {
+                                            pr.gap = gap;
+                                            pr.gapc = at;
+                                            pr.has_gap = true;
+                                        }
                                     }
                                 }
+                                if was_open && !is_open && open.is_empty() {
+                                    last_close = Some((x.piece, z));
+                                }
                             }
-                            if was_open && !is_open && open.is_empty() {
-                                last_close = Some((x.piece, z));
+                            // The stretch up to the next crossing.
+                            let Some(&nq) = kept.get(n + 1) else {
+                                break;
+                            };
+                            let z1 = ev[nq].z as f64;
+                            if z1 <= z || open.is_empty() {
+                                continue;
+                            }
+                            let l = (z1 - z) * col;
+                            let mid = real(0.5 * (z + z1));
+                            for o in &open {
+                                if !seen[o.0 as usize] {
+                                    seen[o.0 as usize] = true;
+                                    touched.push(o.0);
+                                }
+                                let v = &mut acc[o.0 as usize];
+                                v.0 += l;
+                                if wm != 0 {
+                                    v.1 += l;
+                                    v.2 = add(v.2, mul(mid, l));
+                                }
+                            }
+                            for i in 0..open.len() {
+                                for j in i + 1..open.len() {
+                                    let key = (open[i].0.min(open[j].0), open[i].0.max(open[j].0));
+                                    let pr = tp.entry(key).or_default();
+                                    pr.ov += l;
+                                    pr.ovc = add(pr.ovc, mul(mid, l));
+                                }
                             }
                         }
-                        // The stretch up to the next crossing.
-                        let mut nq = q + 1;
-                        while nq < e && leaky(ev[nq].piece) {
-                            nq += 1;
-                        }
-                        if nq >= e {
-                            break;
-                        }
-                        let z1 = ev[nq].z as f64;
-                        if z1 <= z || open.is_empty() {
-                            continue;
-                        }
-                        let l = (z1 - z) * col;
-                        let mid = real(0.5 * (z + z1));
-                        for o in &open {
-                            let v = tvol.entry(o.0).or_insert((0.0, 0.0, [0.0; 3]));
-                            v.0 += l;
-                            if wm != 0 {
-                                v.1 += l;
-                                v.2 = add(v.2, mul(mid, l));
-                            }
-                        }
-                        for i in 0..open.len() {
-                            for j in i + 1..open.len() {
-                                let key = (open[i].0.min(open[j].0), open[i].0.max(open[j].0));
-                                let pr = tp.entry(key).or_default();
-                                pr.ov += l;
-                                pr.ovc = add(pr.ovc, mul(mid, l));
-                            }
-                        }
+                        k = e;
                     }
-                    k = e;
-                }
-                (tp, tvol)
-            })
+                    let tvol = touched
+                        .drain(..)
+                        .map(|p| {
+                            seen[p as usize] = false;
+                            (p, std::mem::replace(&mut acc[p as usize], (0.0, 0.0, [0.0; 3])))
+                        })
+                        .collect();
+                    (tp, tvol)
+                },
+            )
             .collect();
         for (tp, tvol) in part {
             for (k, v) in tp {
@@ -1480,6 +1572,41 @@ mod tests {
 
     fn read1(support: &[[P; 3]], contacts: &[(P, f64)]) -> Pieces {
         read(support, &boxm([-10.0, -10.0, 10.0], [10.0, 10.0, 15.0]), contacts, RAY_PITCH_MM)
+    }
+
+    #[test]
+    fn events_sort_as_a_stable_sort_by_ray_height_and_direction() {
+        let mut state = 11u64;
+        let mut r = || super::super::contacts::tests::rand01(&mut state);
+        let ev: Vec<Ev> = (0..5000)
+            .map(|i| Ev {
+                ray: (r() * 300.0) as u32 * 50,
+                // Few heights, so equal keys are common, and both zeros.
+                z: [0.0, -0.0, 1.5, 2.25, -3.0][(r() * 5.0) as usize],
+                d: if r() < 0.5 { -1 } else { 1 },
+                piece: i,
+            })
+            .collect();
+        let mut want = ev.clone();
+        want.sort_by(|a, b| a.ray.cmp(&b.ray).then(a.z.total_cmp(&b.z)).then(a.d.cmp(&b.d)));
+        let got = sort_events(ev);
+        let key = |e: &Ev| (e.ray, e.z.to_bits(), e.d, e.piece);
+        assert_eq!(got.iter().map(key).collect::<Vec<_>>(), want.iter().map(key).collect::<Vec<_>>());
+        assert!(sort_events(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn the_model_tile_index_keeps_the_support_tiles_in_order() {
+        let pitch = RAY_PITCH_MM;
+        let model = ball([0.0, 0.0, 5.0], 6.0);
+        let support = frustum([0.5, 0.0, -3.0], [1.0, 0.5, 1.0], 0.5, 0.2, 12);
+        let pm = |t: &[P; 3]| t.map(|v| [v[1], v[2], v[0]]);
+        let sti = tile_index(&support.iter().map(pm).collect::<Vec<_>>(), pitch);
+        let all = tile_index(&model.iter().map(pm).collect::<Vec<_>>(), pitch);
+        let within = tile_index_within(&model, pm, pitch, &sti);
+        assert!(!within.is_empty());
+        let want: FxHashMap<(i64, i64), Vec<u32>> = all.into_iter().filter(|(k, _)| sti.contains_key(k)).collect();
+        assert_eq!(within, want);
     }
 
     #[test]

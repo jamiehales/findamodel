@@ -110,6 +110,96 @@ pub fn find(p: &mut [u32], mut x: u32) -> u32 {
     x
 }
 
+/// Triangles' bounding boxes in a uniform grid: every triangle whose box meets a query box, in
+/// index order, as a scan of all the boxes would give them.
+pub struct BoxIndex {
+    /// Each triangle's (min, max) corner.
+    pub bounds: Vec<(P, P)>,
+    cell: f64,
+    grid: rustc_hash::FxHashMap<[i32; 3], Vec<u32>>,
+    /// Triangles spanning more than [`BoxIndex::MAX_CELLS`] cells, checked on every query.
+    big: Vec<u32>,
+}
+
+impl BoxIndex {
+    const MAX_CELLS: i64 = 64;
+
+    /// Indexes `tris` in cells `cell` mm wide.
+    pub fn new(tris: &[[P; 3]], cell: f64) -> Self {
+        let bounds: Vec<(P, P)> = tris
+            .iter()
+            .map(|t| {
+                (
+                    [0, 1, 2].map(|k| t[0][k].min(t[1][k]).min(t[2][k])),
+                    [0, 1, 2].map(|k| t[0][k].max(t[1][k]).max(t[2][k])),
+                )
+            })
+            .collect();
+        let mut grid: rustc_hash::FxHashMap<[i32; 3], Vec<u32>> = rustc_hash::FxHashMap::default();
+        let mut big = Vec::new();
+        for (i, (lo, hi)) in bounds.iter().enumerate() {
+            let (a, b) = (Self::key(*lo, cell), Self::key(*hi, cell));
+            let cells: i64 = (0..3).map(|k| i64::from(b[k]) - i64::from(a[k]) + 1).product();
+            if cells > Self::MAX_CELLS || cells <= 0 {
+                big.push(i as u32);
+                continue;
+            }
+            for x in a[0]..=b[0] {
+                for y in a[1]..=b[1] {
+                    for z in a[2]..=b[2] {
+                        grid.entry([x, y, z]).or_default().push(i as u32);
+                    }
+                }
+            }
+        }
+        BoxIndex { bounds, cell, grid, big }
+    }
+
+    fn key(p: P, cell: f64) -> [i32; 3] {
+        p.map(|x| (x / cell).floor().clamp(-1e9, 1e9) as i32)
+    }
+
+    /// Whether triangle `i`'s box meets the closed box `[lo, hi]`.
+    pub fn meets(&self, i: u32, lo: P, hi: P) -> bool {
+        let (a, b) = &self.bounds[i as usize];
+        (0..3).all(|k| b[k] >= lo[k] && a[k] <= hi[k])
+    }
+
+    /// The triangles whose box meets the closed box `[lo, hi]`, ascending, into `out` (cleared).
+    pub fn query_into(&self, lo: P, hi: P, out: &mut Vec<u32>) {
+        out.clear();
+        let (a, b) = (Self::key(lo, self.cell), Self::key(hi, self.cell));
+        let cells: i64 = (0..3).map(|k| (i64::from(b[k]) - i64::from(a[k]) + 1).max(0)).product();
+        if cells == 0 {
+            return;
+        }
+        if cells as usize >= self.grid.len() || cells as usize * 4 >= self.bounds.len() {
+            // A box spanning most of the grid: scanning every box is quicker.
+            out.extend((0..self.bounds.len() as u32).filter(|&i| self.meets(i, lo, hi)));
+            return;
+        }
+        for x in a[0]..=b[0] {
+            for y in a[1]..=b[1] {
+                for z in a[2]..=b[2] {
+                    if let Some(list) = self.grid.get(&[x, y, z]) {
+                        out.extend(list.iter().copied().filter(|&i| self.meets(i, lo, hi)));
+                    }
+                }
+            }
+        }
+        out.extend(self.big.iter().copied().filter(|&i| self.meets(i, lo, hi)));
+        out.sort_unstable();
+        out.dedup();
+    }
+
+    /// [`BoxIndex::query_into`] into a new list.
+    pub fn query(&self, lo: P, hi: P) -> Vec<u32> {
+        let mut out = Vec::new();
+        self.query_into(lo, hi, &mut out);
+        out
+    }
+}
+
 /// The closest point to `p` on triangle `t` (Ericson, Real-Time Collision Detection 5.1.5).
 pub fn closest_on_tri(p: P, t: &[P; 3]) -> P {
     let (a, b, c) = (t[0], t[1], t[2]);

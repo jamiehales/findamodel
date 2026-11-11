@@ -461,6 +461,9 @@ export interface PlateGenerationJob {
   errorMessage: string | null;
   warning: string | null;
   skippedModels: string[];
+  /** Pre-supported models whose supports a VOXL plate reads (0 until it reaches them). */
+  supportsTotal: number;
+  supportsRead: number;
 }
 
 export async function generatePlate(

@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::contacts::Contact;
-use super::math::{P, add, dist, dot, mul, sub};
+use super::math::{BoxIndex, P, add, dist, dot, mul, sub};
 use super::pieces::{PieceKind, Pieces, Section, SectionKind};
 use crate::geometry::support_layout::SupportLayout;
 use prepare::RawPiece;
@@ -400,6 +400,8 @@ pub(crate) struct Reader<'a> {
     pub p: Vec<Piece>,
     pub c: &'a [Contact],
     pub model: &'a [[P; 3]],
+    /// The model's faces by box, built when first asked for.
+    pub model_boxes: std::cell::OnceCell<BoxIndex>,
     pub contact_pieces: Vec<Vec<prepare::Hit>>,
     pub conns: Vec<prepare::RawConn>,
     pub raft_top: f64,
@@ -435,6 +437,13 @@ impl<'a> Reader<'a> {
     }
 }
 
+impl Reader<'_> {
+    /// The model's faces by box.
+    pub(super) fn model_boxes(&self) -> &BoxIndex {
+        self.model_boxes.get_or_init(|| BoxIndex::new(self.model, 2.0))
+    }
+}
+
 /// Classifies the pieces of a support mesh holding `model` up at `contacts`, and lays them out.
 pub fn classify(pieces: &Pieces, contacts: &[Contact], model: &[[P; 3]]) -> Classification {
     let (p, raft_top, conns, contact_pieces) = prepare::load(pieces, contacts);
@@ -442,6 +451,7 @@ pub fn classify(pieces: &Pieces, contacts: &[Contact], model: &[[P; 3]]) -> Clas
         p,
         c: contacts,
         model,
+        model_boxes: std::cell::OnceCell::new(),
         contact_pieces,
         conns,
         raft_top,

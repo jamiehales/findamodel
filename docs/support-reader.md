@@ -59,7 +59,34 @@ and less, which f32 cannot hold across a 200 mm plate.
 
 Change `CURRENT_SUPPORT_READER_VERSION` (`support_reader/mod.rs`) whenever the reader or what the
 writer writes for a layout changes: cached VOXL downloads (`services/voxl_cache.rs`) are keyed on
-it.
+it, and export entries written by an older reader are not used (see below).
+
+## Export entries
+
+Reading the supports takes seconds to minutes per model, so each pre-supported model's export is
+kept as an entry (`services/support_exports.rs`): which of its triangles are supports, and the
+supports read from them. Model VOXL downloads and plate VOXL exports use it instead of reading the
+supports again.
+
+- Entries are files under `<data>/cache/support-exports/`, apart from the VOXL download cache, so
+  downloads cannot evict them; nothing evicts them. A file is named by a hash of its key: the
+  model file's checksum, the scan config (raft height and support detection version), the
+  supported metadata and whether the detection was checked under the current scan config.
+- The file is the authority. Its header (`FMEX`, format version, reader version, detection
+  version, key) says what it was made from; the `models` row only indexes it
+  (`support_export_path`, `support_export_version`). When the two disagree, the file wins.
+- Indexing writes the entry of every pre-supported model with supports found (by metadata or a
+  confident detection), from the detection's own split, as the `export` stage of the index run's
+  timings. A rescan writes an entry again when its file is missing, damaged or written by a
+  reader older than the minimum support export version (Settings; `AppConfig__MinimumSupportExportVersion`
+  seeds it, and it stays put when the reader version is bumped). A current file the row does not
+  index is only indexed.
+- Exports use an entry only when it is at the current reader and detection versions and its key
+  matches; otherwise they read the supports and write the entry at the current version, whatever
+  the minimum. A model with supports split off but none read is stored as such; an unsupported
+  model stores nothing.
+- Per model, writing an entry costs the read itself (0.5 to 21 s at 4 threads on the sample
+  models) and 7 to 450 KB on disk; using one costs under 0.25 s.
 
 ## Contacts: the touch rule
 

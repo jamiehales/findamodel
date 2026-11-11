@@ -79,7 +79,7 @@ export interface IndexRunEvent {
   relativePath: string | null;
 }
 
-export type IndexRunStageName = 'checksum' | 'load' | 'supports' | 'preview' | 'hull';
+export type IndexRunStageName = 'checksum' | 'load' | 'supports' | 'preview' | 'hull' | 'export';
 
 export interface IndexRunStage {
   stage: IndexRunStageName;

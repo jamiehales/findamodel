@@ -313,16 +313,6 @@ impl Reader<'_> {
             return;
         }
         let (su, snb) = sphere_points();
-        let bounds: Vec<(P, P)> = self
-            .model
-            .iter()
-            .map(|t| {
-                (
-                    [0, 1, 2].map(|k| t[0][k].min(t[1][k]).min(t[2][k])),
-                    [0, 1, 2].map(|k| t[0][k].max(t[1][k]).max(t[2][k])),
-                )
-            })
-            .collect();
         let tn: Vec<P> = self.model.iter().map(|t| cross(sub(t[1], t[0]), sub(t[2], t[0]))).collect();
         for t in todo {
             let cb = t.ball_c.take().expect("filtered on ball_c");
@@ -334,11 +324,9 @@ impl Reader<'_> {
                 self.seats.1 += 1;
                 continue;
             }
-            let sel: Vec<usize> = (0..self.model.len())
-                .filter(|&i| {
-                    (0..3).all(|k| bounds[i].1[k] >= at[k] - r * 2.0 - 0.1 && bounds[i].0[k] <= at[k] + r * 2.0 + 0.1)
-                })
-                .collect();
+            let lo = [0, 1, 2].map(|k| at[k] - r * 2.0 - 0.1);
+            let hi = [0, 1, 2].map(|k| at[k] + r * 2.0 + 0.1);
+            let sel: Vec<usize> = self.model_boxes().query(lo, hi).into_iter().map(|i| i as usize).collect();
             if sel.is_empty() {
                 continue;
             }

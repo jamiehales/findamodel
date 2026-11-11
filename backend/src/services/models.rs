@@ -18,6 +18,7 @@ use crate::preview::{self, PreviewService};
 use crate::services::app_config::{AppConfigService, ModelsRoot};
 use crate::services::metadata_config::MetadataConfigService;
 use crate::services::store;
+use crate::services::support_exports::SupportExports;
 
 pub const MODEL_EXTENSIONS: [&str; 5] = ["stl", "obj", "lys", "lyt", "ctb"];
 pub const NON_GEOMETRY_TYPES: [&str; 3] = ["lys", "lyt", "ctb"];
@@ -42,6 +43,7 @@ pub struct ModelService {
     pub(crate) metadata_config: MetadataConfigService,
     pub(crate) app_config: AppConfigService,
     pub(crate) file_scan_threads: usize,
+    pub(crate) support_exports: Option<SupportExports>,
 }
 
 /// Preview image candidates in priority order: the requested variant, then the other
@@ -82,8 +84,22 @@ impl ModelService {
         metadata_config: MetadataConfigService,
         app_config: AppConfigService,
         file_scan_threads: usize,
+        support_exports: Option<SupportExports>,
     ) -> Self {
-        Self { db, models_root, preview, metadata_config, app_config, file_scan_threads: file_scan_threads.max(1) }
+        Self {
+            db,
+            models_root,
+            preview,
+            metadata_config,
+            app_config,
+            file_scan_threads: file_scan_threads.max(1),
+            support_exports,
+        }
+    }
+
+    /// Where pre-supported models' export entries are kept (None: not kept).
+    pub fn support_exports(&self) -> Option<&SupportExports> {
+        self.support_exports.as_ref()
     }
 
     pub fn root(&self) -> Option<PathBuf> {
@@ -291,11 +307,16 @@ pub(crate) mod tests {
     use parking_lot::RwLock;
     use std::sync::Arc;
 
+    /// An export store for tests, inside the test's models root (no model files go there).
+    pub(crate) fn test_exports(root: &std::path::Path) -> SupportExports {
+        SupportExports::new(root.join(".support-exports"))
+    }
+
     pub(crate) fn service(t: &TestDb, root: &std::path::Path) -> ModelService {
         let models_root: ModelsRoot = Arc::new(RwLock::new(Some(root.to_path_buf())));
         let metadata = MetadataConfigService::new(t.db.clone(), models_root.clone(), 1000);
         let app_config = AppConfigService::new(t.db.clone(), AppConfigDefaults::default(), None, models_root.clone());
-        ModelService::new(t.db.clone(), models_root, None, metadata, app_config, 4)
+        ModelService::new(t.db.clone(), models_root, None, metadata, app_config, 4, Some(test_exports(root)))
     }
 
     #[tokio::test]

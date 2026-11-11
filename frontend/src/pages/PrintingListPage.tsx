@@ -366,17 +366,35 @@ function PrintingListPage() {
           ? 'Zip ready, downloading'
           : null;
   const plateCurrentFile = plateJob?.currentEntryName?.split('/').pop() ?? null;
+  // A VOXL plate reads the supports of its pre-supported models once every model is loaded.
+  const plateSupportsPhase =
+    plateJob?.status === 'running' &&
+    plateJob.supportsTotal > 0 &&
+    plateJob.completedEntries >= plateJob.totalEntries;
+  const plateSupportsDone = plateSupportsPhase && plateJob.supportsRead >= plateJob.supportsTotal;
   const plateStatusText = plateDownloading
     ? 'Downloading plate'
     : plateJob?.status === 'queued'
       ? 'Queueing plate export'
-      : plateJob?.status === 'running'
-        ? plateJob.totalEntries > 0
-          ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
-          : 'Preparing plate'
-        : plateJob?.status === 'completed'
-          ? 'Plate ready, downloading'
-          : null;
+      : plateSupportsDone
+        ? 'Writing plate'
+        : plateSupportsPhase
+          ? `Reading supports ${plateJob.supportsRead} of ${plateJob.supportsTotal}`
+          : plateJob?.status === 'running'
+            ? plateJob.totalEntries > 0
+              ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
+              : 'Preparing plate'
+            : plateJob?.status === 'completed'
+              ? 'Plate ready, downloading'
+              : null;
+  const plateProgress = plateSupportsDone
+    ? null
+    : plateSupportsPhase
+      ? {
+          totalEntries: plateJob.supportsTotal,
+          progressPercent: Math.round((plateJob.supportsRead * 100) / plateJob.supportsTotal),
+        }
+      : plateJob;
 
   const totalQuantity = list?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
   const exportDisabled = plateBusy || archiveBusy || !simulationPaused;
@@ -453,7 +471,11 @@ function PrintingListPage() {
       />
 
       {plateStatusText && (
-        <JobStatus text={plateStatusText} job={plateJob} currentFile={plateCurrentFile} />
+        <JobStatus
+          text={plateStatusText}
+          job={plateProgress}
+          currentFile={plateSupportsDone ? null : plateCurrentFile}
+        />
       )}
       {(plateError || plateJob?.errorMessage) && (
         <Alert tone="error">

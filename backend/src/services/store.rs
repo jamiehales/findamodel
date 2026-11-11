@@ -92,7 +92,7 @@ pub fn apply_calculated_metadata(model: &mut ModelRow, metadata: &ComputedMetada
     model.calculated_part_name = metadata.part_name.clone();
 }
 
-const MODEL_COLUMNS: [&str; 36] = [
+const MODEL_COLUMNS: [&str; 38] = [
     "id",
     "checksum",
     "file_name",
@@ -129,6 +129,8 @@ const MODEL_COLUMNS: [&str; 36] = [
     "sphere_centre_z",
     "sphere_radius",
     "geometry_calculated_at",
+    "support_export_path",
+    "support_export_version",
 ];
 
 fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'static str>, m: &'q ModelRow) {
@@ -167,7 +169,9 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(m.sphere_centre_y)
         .push_bind(m.sphere_centre_z)
         .push_bind(m.sphere_radius)
-        .push_bind(m.geometry_calculated_at);
+        .push_bind(m.geometry_calculated_at)
+        .push_bind(&m.support_export_path)
+        .push_bind(m.support_export_version);
 }
 
 /// Inserts or fully replaces a model row and rewrites its tag index, and its hulls when they
@@ -189,6 +193,17 @@ pub async fn save_model(conn: &mut SqliteConnection, model: &ModelRow) -> sqlx::
         save_model_hulls(&mut tx, model.id, hulls).await?;
     }
     tx.commit().await
+}
+
+/// Records where a model's export entry is and the reader version it was written with.
+pub async fn set_support_export_index(db: &Db, model_id: Uuid, path: &str, version: i32) -> sqlx::Result<()> {
+    sqlx::query("UPDATE models SET support_export_path = ?, support_export_version = ? WHERE id = ?")
+        .bind(path)
+        .bind(version)
+        .bind(model_id)
+        .execute(db)
+        .await?;
+    Ok(())
 }
 
 /// Stores a model's hulls; empty hulls remove its row.

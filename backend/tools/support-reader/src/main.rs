@@ -8,6 +8,8 @@
 //!                                                           layout and classification JSON)
 //! support-reader overlap A.stl B.stl M.stl [--raft Z] ...   volume overlap of two support meshes
 //! support-reader touch orig|built|selftest ...              touch-rule contacts and built tips
+//! support-reader export MODEL.stl SUPPORT.stl [RAFT_MM]     a plate export's per-model work, read
+//!                                                           and from the cache
 //! See README.md for every command's arguments and output.
 //! support-reader pieces MODEL.stl SUPPORT.stl CONTACTS.json OUT.json
 //!                                                           pieces, contacts taken from a JSON
@@ -15,6 +17,7 @@
 use findamodel::geometry::support_reader::{self, contacts, math, pieces};
 use findamodel::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use findamodel::geometry::{Triangle, Vec3};
+use findamodel::services::support_exports::{self, SupportExports};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -137,6 +140,42 @@ fn main() {
             println!(
                 "{}",
                 json!({ "read_s": read_s, "write_s": t_write.elapsed().as_secs_f64(), "sphere_tips": sphere })
+            );
+        }
+        "export" => {
+            // export MODEL.stl SUPPORT.stl [RAFT_MM]: the plate export's per-model work on the model
+            // and its supports as one mesh, as the app loads it: the split and the read, then what a
+            // cached export costs instead (read back from a VOXL cache entry, body split off by its
+            // mask). One JSON line.
+            let mut raw = load_stl(Path::new(&args[1]));
+            raw.extend(load_stl(Path::new(&args[2])));
+            let raft: f32 = args.get(3).map(|x| x.parse().unwrap()).unwrap_or(3.0);
+            let geometry = findamodel::geometry::loader::build_geometry(raw, Path::new(&args[1])).unwrap();
+            let triangles = &geometry.triangles;
+            let t = std::time::Instant::now();
+            let export = support_reader::model_export(triangles, raft, Some(true), true);
+            let export_s = t.elapsed().as_secs_f64();
+            let dir = std::env::temp_dir().join(format!("support-reader-export-{}", std::process::id()));
+            let store = SupportExports::new(dir.clone());
+            let key = support_exports::key("tool", raft, Some(true), true);
+            let t = std::time::Instant::now();
+            store.write(&key, export.as_ref().map(|(m, _, l)| (m.as_slice(), l))).unwrap();
+            let write_s = t.elapsed().as_secs_f64();
+            let entry_bytes = std::fs::metadata(dir.join(support_exports::relative_path(&key))).unwrap().len();
+            let t = std::time::Instant::now();
+            let cached = store.read(&key, triangles).unwrap();
+            let cached_s = t.elapsed().as_secs_f64();
+            let same = match (&export, &cached) {
+                (Some((_, b, l)), Some((cb, cl))) => b == cb && l == cl,
+                (None, None) => true,
+                _ => false,
+            };
+            let _ = std::fs::remove_dir_all(&dir);
+            println!(
+                "{}",
+                json!({ "triangles": triangles.len(), "export_s": export_s, "write_s": write_s, "cached_s": cached_s,
+                        "entry_bytes": entry_bytes, "same": same,
+                        "supports": export.as_ref().map(|e| e.2.supports.len()) })
             );
         }
         other => panic!("unknown command {other}"),

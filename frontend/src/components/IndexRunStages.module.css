@@ -76,3 +76,8 @@
 .hull {
   background: var(--chart-1);
 }
+
+.export {
+  background: var(--chart-3);
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--mm-edge) 3px 4px);
+}

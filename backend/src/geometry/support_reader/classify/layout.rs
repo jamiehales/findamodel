@@ -667,16 +667,6 @@ impl Reader<'_> {
         if self.model.is_empty() {
             return;
         }
-        let bounds: Vec<(P, P)> = self
-            .model
-            .iter()
-            .map(|t| {
-                (
-                    [0, 1, 2].map(|k| t[0][k].min(t[1][k]).min(t[2][k])),
-                    [0, 1, 2].map(|k| t[0][k].max(t[1][k]).max(t[2][k])),
-                )
-            })
-            .collect();
         let mut items: Vec<(Src, bool, f64)> = Vec::new();
         for (i, s) in lay.supports.iter().enumerate() {
             if !matches!(s.base, LBase::Lower(_)) {
@@ -709,9 +699,7 @@ impl Reader<'_> {
                 let skip_top = if has_tip && k == line.len() - 2 { r + 0.3 } else { 0.0 };
                 let lo = [0, 1, 2].map(|i| a[i].min(b[i]) - r - 0.2);
                 let hi = [0, 1, 2].map(|i| a[i].max(b[i]) + r + 0.2);
-                let sel: Vec<usize> = (0..self.model.len())
-                    .filter(|&i| (0..3).all(|j| bounds[i].1[j] >= lo[j] && bounds[i].0[j] <= hi[j]))
-                    .collect();
+                let sel = self.model_boxes().query(lo, hi);
                 if sel.is_empty() {
                     continue;
                 }
@@ -722,7 +710,7 @@ impl Reader<'_> {
                     let p = add(a, mul(u, 0.05 + i as f64 * 0.1));
                     if p[2] >= ROOT_TOP + 0.3 {
                         for &i in &sel {
-                            near = near.min(dist(p, closest_on_tri(p, &self.model[i])));
+                            near = near.min(dist(p, closest_on_tri(p, &self.model[i as usize])));
                         }
                     }
                 }
@@ -774,11 +762,26 @@ struct Surface {
 }
 
 impl Surface {
-    fn new(model: &[[P; 3]]) -> Self {
+    /// The model's faces in the grid cells that [`Surface::normal_at`] will look in for the
+    /// `queries` (point, radius); the other cells are left empty.
+    fn new(model: &[[P; 3]], queries: &[(Vec3, f32)]) -> Self {
         let cell = 0.5f32;
         let tris: Vec<[Vec3; 3]> = model.iter().map(|t| t.map(v3)).collect();
         let key = |p: Vec3| ((p.x / cell).floor() as i32, (p.y / cell).floor() as i32, (p.z / cell).floor() as i32);
         let mut grid: rustc_hash::FxHashMap<(i32, i32, i32), Vec<usize>> = Default::default();
+        let (mut need_lo, mut need_hi) = ((i32::MAX, i32::MAX, i32::MAX), (i32::MIN, i32::MIN, i32::MIN));
+        for &(p, radius) in queries {
+            let (a, b) = Self::query_cells(p, radius, cell);
+            for x in a.0..=b.0 {
+                for y in a.1..=b.1 {
+                    for z in a.2..=b.2 {
+                        grid.entry((x, y, z)).or_default();
+                    }
+                }
+            }
+            need_lo = (need_lo.0.min(a.0), need_lo.1.min(a.1), need_lo.2.min(a.2));
+            need_hi = (need_hi.0.max(b.0), need_hi.1.max(b.1), need_hi.2.max(b.2));
+        }
         for (i, t) in tris.iter().enumerate() {
             let lo = Vec3::new(
                 t[0].x.min(t[1].x).min(t[2].x),
@@ -794,15 +797,33 @@ impl Surface {
             if (b.0 - a.0 + 1) * (b.1 - a.1 + 1) * (b.2 - a.2 + 1) > 4096 {
                 continue;
             }
+            if b.0 < need_lo.0
+                || b.1 < need_lo.1
+                || b.2 < need_lo.2
+                || a.0 > need_hi.0
+                || a.1 > need_hi.1
+                || a.2 > need_hi.2
+            {
+                continue;
+            }
             for x in a.0..=b.0 {
                 for y in a.1..=b.1 {
                     for z in a.2..=b.2 {
-                        grid.entry((x, y, z)).or_default().push(i);
+                        if let Some(list) = grid.get_mut(&(x, y, z)) {
+                            list.push(i);
+                        }
                     }
                 }
             }
         }
         Surface { tris, cell, grid }
+    }
+
+    /// The grid cells (lowest, highest) holding every face within `radius` of `p`.
+    fn query_cells(p: Vec3, radius: f32, cell: f32) -> ((i32, i32, i32), (i32, i32, i32)) {
+        let key = |p: Vec3| ((p.x / cell).floor() as i32, (p.y / cell).floor() as i32, (p.z / cell).floor() as i32);
+        let r = Vec3::new(radius, radius, radius);
+        (key(p - r), key(p + r))
     }
 
     /// The closest point of a triangle to `p` (Ericson, Real-Time Collision Detection 5.1.5).
@@ -844,11 +865,7 @@ impl Surface {
     /// the back of its faces (none turned toward it): the surface it presses on is still that
     /// face, its normal turned toward the support.
     fn normal_at(&self, p: Vec3, radius: f32, toward: Vec3) -> Option<Vec3> {
-        let key = |p: Vec3| {
-            ((p.x / self.cell).floor() as i32, (p.y / self.cell).floor() as i32, (p.z / self.cell).floor() as i32)
-        };
-        let r = Vec3::new(radius, radius, radius);
-        let (a, b) = (key(p - r), key(p + r));
+        let (a, b) = Self::query_cells(p, radius, self.cell);
         let mut seen = rustc_hash::FxHashSet::default();
         let (mut sum, mut back) = (Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0));
         for x in a.0..=b.0 {
@@ -883,12 +900,17 @@ fn v3(p: P) -> Vec3 {
     Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)
 }
 
-fn contact_tip(t: &LTip, surface: &Surface) -> ContactTip {
+/// Where [`contact_tip`] asks the surface for its normal: the contact and the radius around it.
+fn normal_query(t: &LTip) -> (Vec3, f32) {
     // The writer works in f32, as the prototype's export did.
-    let contact = v3(t.contact);
+    (v3(t.contact), (t.contact_d as f32 / 2.0).max(0.15))
+}
+
+fn contact_tip(t: &LTip, surface: &Surface) -> ContactTip {
+    let (contact, radius) = normal_query(t);
     let d = t.contact_d as f32;
     let socket = v3(t.socket);
-    let normal = surface.normal_at(contact, (d / 2.0).max(0.15), socket - contact).unwrap_or_else(|| v3(t.normal));
+    let normal = surface.normal_at(contact, radius, socket - contact).unwrap_or_else(|| v3(t.normal));
     ContactTip {
         contact,
         surface_normal: normal,
@@ -906,7 +928,14 @@ fn contact_tip(t: &LTip, surface: &Surface) -> ContactTip {
 
 /// The layout as the writer takes it.
 pub(super) fn to_support_layout(lay: &Lay, model: &[[P; 3]]) -> SupportLayout {
-    let surface = Surface::new(model);
+    let mut queries = Vec::new();
+    for s in &lay.supports {
+        queries.push(normal_query(&s.tip));
+        if let LBase::Lower(low) = &s.base {
+            queries.push(normal_query(low));
+        }
+    }
+    let surface = Surface::new(model, &queries);
     let mut out = SupportLayout::default();
     for (i, s) in lay.supports.iter().enumerate() {
         let base = match &s.base {
@@ -1038,6 +1067,31 @@ pub(super) fn to_json(lay: &Lay) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surface_normals_from_the_cells_asked_for_equal_those_of_the_whole_grid() {
+        use super::super::super::contacts::tests::{ball, frustum, rand01};
+        let mut model = ball([0.0, 0.0, 10.0], 8.0);
+        model.extend(frustum([0.0, 0.0, 0.0], [4.0, 0.0, 10.0], 1.0, 0.5, 24));
+        let mut state = 5u64;
+        let queries: Vec<(Vec3, f32)> = (0..300)
+            .map(|_| {
+                let p =
+                    [-10.0 + 20.0 * rand01(&mut state), -10.0 + 20.0 * rand01(&mut state), 20.0 * rand01(&mut state)];
+                (v3(p), (0.1 + 1.5 * rand01(&mut state)) as f32)
+            })
+            .collect();
+        let asked = Surface::new(&model, &queries);
+        let whole = Surface::new(&model, &[(Vec3::new(0.0, 0.0, 10.0), 40.0)]);
+        let mut found = 0;
+        for &(p, r) in &queries {
+            let toward = Vec3::new(0.3, -0.2, 1.0);
+            let (a, b) = (asked.normal_at(p, r, toward), whole.normal_at(p, r, toward));
+            assert_eq!(a.map(|n| [n.x, n.y, n.z].map(f32::to_bits)), b.map(|n| [n.x, n.y, n.z].map(f32::to_bits)));
+            found += usize::from(a.is_some());
+        }
+        assert!(found > 10, "{found}");
+    }
 
     fn taper(r0: f64, r1: f64, n: usize) -> Vec<f64> {
         (0..n).map(|i| r0 + (r1 - r0) * (i as f64 + 0.5) / n as f64).collect()

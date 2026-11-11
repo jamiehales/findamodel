@@ -124,12 +124,22 @@ async fn settings_config_round_trip_and_validation() {
     let mut update = json!({
         "defaultRaftHeightMm": 3.5,
         "generatePreviewsEnabled": false,
-        "minimumPreviewGenerationVersion": 1
+        "minimumPreviewGenerationVersion": 1,
+        "minimumSupportExportVersion": 0
     });
     let (status, updated) = app.json("PUT", "/api/settings/config", update.clone()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(updated.get("theme").is_none());
     assert_eq!(updated["generatePreviewsEnabled"], false);
+    assert_eq!(updated["minimumSupportExportVersion"], 0);
+    let (_, stats) = app.get("/api/settings/stats").await;
+    let current = findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
+    assert_eq!(stats["supportExportVersion"], current);
+
+    let mut too_new = update.clone();
+    too_new["minimumSupportExportVersion"] = json!(current + 1);
+    let (status, _) = app.json("PUT", "/api/settings/config", too_new).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     update["defaultRaftHeightMm"] = json!(-1);
     let (status, _) = app.json("PUT", "/api/settings/config", update).await;
@@ -592,6 +602,129 @@ async fn a_plate_voxl_rebuilds_the_supports_of_presupported_models() {
     for knight in knights {
         assert_eq!(trunks.iter().filter(|t| t["modelId"] == knight["id"]).count(), 4);
     }
+}
+
+/// An indexed pre-supported knight: the app and the knight's id.
+async fn indexed_knight(app: &TestApp) -> String {
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    result["models"][0]["id"].as_str().unwrap().to_string()
+}
+
+async fn plate_voxl(app: &TestApp, id: &str) -> Vec<u8> {
+    let plate = json!({ "placements": [
+        { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
+    ], "format": "voxl", "bedWidthMm": 200, "bedDepthMm": 120 });
+    let request = Request::post("/api/plate/generate")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(plate.to_string()))
+        .unwrap();
+    let (status, _, voxl) = app.send(request).await;
+    assert_eq!(status, StatusCode::OK);
+    voxl
+}
+
+/// The export entry files in the store.
+fn entry_files(app: &TestApp) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(dirs) = std::fs::read_dir(app.state.settings.support_exports_path()) else { return out };
+    for dir in dirs.flatten() {
+        out.extend(std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.path()));
+    }
+    out
+}
+
+/// Replaces every stored entry's supports with none, so an export that uses an entry shows it.
+fn empty_entries(app: &TestApp) {
+    use findamodel::services::support_exports::codec;
+    for path in entry_files(app) {
+        let (header, export) = codec::decode(&std::fs::read(&path).unwrap()).unwrap();
+        let (mask, _) = export.expect("an entry with supports");
+        let empty = findamodel::geometry::support_layout::SupportLayout::default();
+        std::fs::write(&path, codec::encode(&header, Some((&mask, &empty)))).unwrap();
+    }
+}
+
+fn trunk_count(voxl: &[u8]) -> usize {
+    voxl_chunk(voxl, b"SUPP")["trunks"].as_array().unwrap().len()
+}
+
+#[tokio::test]
+async fn indexing_stores_an_export_entry_that_plate_and_model_voxls_use() {
+    let app = TestApp::new().await;
+    let id = indexed_knight(&app).await;
+    assert_eq!(entry_files(&app).len(), 1, "indexing wrote the knight's entry");
+    let (path, version): (Option<String>, Option<i32>) =
+        sqlx::query_as("SELECT support_export_path, support_export_version FROM models")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert!(path.is_some());
+    assert_eq!(version, Some(findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION));
+    assert_eq!(trunk_count(&plate_voxl(&app, &id).await), 4);
+
+    // Both exports read the entry rather than the mesh.
+    empty_entries(&app);
+    assert_eq!(trunk_count(&plate_voxl(&app, &id).await), 0);
+    assert_eq!(trunk_count(&download_voxl(&app, &id).await), 0);
+}
+
+#[tokio::test]
+async fn model_and_plate_voxls_write_the_entry_the_other_uses() {
+    let app = TestApp::new().await;
+    let id = indexed_knight(&app).await;
+
+    // A model VOXL writes the entry a plate then uses.
+    for path in entry_files(&app) {
+        std::fs::remove_file(path).unwrap();
+    }
+    assert_eq!(trunk_count(&download_voxl(&app, &id).await), 4);
+    assert_eq!(entry_files(&app).len(), 1);
+    empty_entries(&app);
+    assert_eq!(trunk_count(&plate_voxl(&app, &id).await), 0);
+
+    // A plate writes the entry a model VOXL (not yet in the VOXL cache) then uses.
+    for path in entry_files(&app) {
+        std::fs::remove_file(path).unwrap();
+    }
+    std::fs::remove_dir_all(app.state.settings.voxl_cache_path()).unwrap();
+    assert_eq!(trunk_count(&plate_voxl(&app, &id).await), 4);
+    assert_eq!(entry_files(&app).len(), 1);
+    empty_entries(&app);
+    assert_eq!(trunk_count(&download_voxl(&app, &id).await), 0);
+}
+
+#[tokio::test]
+async fn a_model_voxl_from_an_entry_still_records_that_supports_were_found() {
+    let app = TestApp::new().await;
+    let id = indexed_knight(&app).await;
+    sqlx::query("UPDATE models SET support_parts_found = NULL").execute(&app.state.db).await.unwrap();
+    assert_eq!(trunk_count(&download_voxl(&app, &id).await), 4);
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+
+    // With a detection from before the current scan config, the split is checked again and its
+    // entry (for an unchecked detection) written.
+    forget_support_detection(&app).await;
+    std::fs::remove_dir_all(app.state.settings.voxl_cache_path()).unwrap();
+    assert_eq!(trunk_count(&download_voxl(&app, &id).await), 4);
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+    assert_eq!(entry_files(&app).len(), 2, "checked and unchecked detections have their own entries");
+}
+
+#[tokio::test]
+async fn voxl_downloads_cannot_evict_export_entries() {
+    // A VOXL cache too small for any VOXL evicts everything it holds.
+    let app = TestApp::with(|settings| settings.voxl_cache_max_bytes = 1).await;
+    let id = indexed_knight(&app).await;
+    for _ in 0..2 {
+        download_voxl(&app, &id).await;
+    }
+    assert_eq!(entry_files(&app).len(), 1);
+    assert!(!app.state.settings.support_exports_path().starts_with(app.state.settings.voxl_cache_path()));
 }
 
 #[tokio::test]

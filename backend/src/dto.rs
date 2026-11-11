@@ -468,6 +468,10 @@ pub struct PlateGenerationJobDto {
     pub error_message: Option<String>,
     pub warning: Option<String>,
     pub skipped_models: Vec<String>,
+    /// Pre-supported models whose supports a VOXL plate reads (0 until the plate reaches them).
+    pub supports_total: i64,
+    /// How many of those have been read (or taken from the cache).
+    pub supports_read: i64,
 }
 
 // ── Printers and printing lists ──────────────────────────────────────────────
@@ -586,6 +590,7 @@ pub struct AppConfigDto {
     pub default_raft_height_mm: f32,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
+    pub minimum_support_export_version: i32,
     pub setup_completed: bool,
     pub models_directory_path: Option<String>,
 }
@@ -596,6 +601,7 @@ pub struct UpdateAppConfigRequest {
     pub default_raft_height_mm: f32,
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
+    pub minimum_support_export_version: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -648,6 +654,7 @@ pub struct InstanceStatsDto {
     pub operating_system: String,
     pub preview_generation_version: i32,
     pub hull_generation_version: i32,
+    pub support_export_version: i32,
     pub preview_gpu_enabled: bool,
     pub preview_gpu_available: bool,
     pub preview_renderer: String,

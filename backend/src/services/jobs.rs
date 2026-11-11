@@ -30,6 +30,8 @@ struct Progress {
     error_message: Option<String>,
     warning: Option<String>,
     skipped_models: Vec<String>,
+    supports_total: i64,
+    supports_read: i64,
     updated_at: Instant,
 }
 
@@ -60,6 +62,8 @@ impl Job {
                 error_message: None,
                 warning: None,
                 skipped_models: Vec::new(),
+                supports_total: 0,
+                supports_read: 0,
                 updated_at: Instant::now(),
             }),
         })
@@ -127,6 +131,8 @@ impl Job {
             error_message: p.error_message.clone(),
             warning: p.warning.clone(),
             skipped_models: p.skipped_models.clone(),
+            supports_total: p.supports_total,
+            supports_read: p.supports_read,
         }
     }
 
@@ -153,6 +159,21 @@ impl PlateProgress for Job {
 
     fn mark_entry_completed(&self) {
         self.update(|p| p.completed_entries += 1);
+    }
+
+    fn start_reading_supports(&self, total: usize) {
+        self.update(|p| {
+            p.supports_total = total as i64;
+            p.supports_read = 0;
+        });
+    }
+
+    fn mark_supports_read(&self, entry_name: &str) {
+        let name = entry_name.to_string();
+        self.update(|p| {
+            p.supports_read += 1;
+            p.current_entry_name = Some(name);
+        });
     }
 }
 
@@ -526,6 +547,40 @@ mod tests {
         assert!(file.path.is_file());
         sut.remove_job(started.job_id);
         assert!(!file.path.exists());
+    }
+
+    #[test]
+    fn a_plate_job_reports_reading_supports() {
+        let job = Job::new(None, "plate.voxl".into(), "voxl".into(), PathBuf::from("unused"), 3);
+        assert_eq!((job.plate_dto().supports_total, job.plate_dto().supports_read), (0, 0));
+        job.start_reading_supports(2);
+        job.mark_supports_read("knight.stl");
+        let dto = job.plate_dto();
+        assert_eq!((dto.supports_total, dto.supports_read), (2, 1));
+        assert_eq!(dto.current_entry_name.as_deref(), Some("knight.stl"));
+    }
+
+    #[tokio::test]
+    async fn a_voxl_plate_job_counts_the_presupported_models_it_reads() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "supported.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "plain.stl", SIMPLE_ASCII_STL);
+        let supported = crate::entities::ModelRow { calculated_supported: Some(true), ..model("supported.stl", "") };
+        let plain = model("plain.stl", "");
+        t.insert_model(&supported).await;
+        t.insert_model(&plain).await;
+
+        let sut = PlateJobService::new(service(&t, root.path()));
+        let request = GeneratePlateRequest {
+            placements: vec![placement(supported.id, 0.0), placement(plain.id, 20.0)],
+            format: Some("voxl".into()),
+            ..Default::default()
+        };
+        let started = sut.create_job(request).await.unwrap();
+        let done = wait_for_plate(&sut, started.job_id).await;
+        assert_eq!(done.status, "completed", "{:?}", done.error_message);
+        assert_eq!((done.supports_total, done.supports_read), (1, 1));
     }
 
     #[tokio::test]

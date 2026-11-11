@@ -16,8 +16,10 @@ use crate::error::{AppError, AppResult, bad_request, not_found};
 use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::support_layout;
 use crate::geometry::support_reader;
+use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
+use crate::services::support_exports;
 use crate::services::voxl_cache::VoxlCacheKey;
 use crate::services::{plate_export, query, scan_config, store};
 
@@ -209,19 +211,17 @@ async fn get_geometry(
 
 /// A pre-supported model's geometry split into body and supports.
 struct SupportSplit {
-    model: ModelRow,
     geometry: LoadedGeometry,
+    /// Each triangle's support flag.
+    mask: Vec<bool>,
     body: Vec<Triangle>,
     supports: Vec<Triangle>,
 }
 
-/// Splits the supports off a supported model and records whether support parts were found.
-/// None when the model is not supported, cannot be loaded or has no supports to split, or
-/// when its support parts are not supports (see
-/// [`support_separation::Classification::holds_supports`]). A detection stored under the
-/// current scan config was checked when the model was indexed; otherwise the supports are
-/// rebuilt to check them.
-async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<SupportSplit>> {
+/// A supported model worth splitting, loaded: its row, geometry, raft height and whether its
+/// detection was checked under the current scan config. None when it is not supported, a
+/// checked detection found no supports, or it cannot be loaded.
+async fn load_supported(state: &AppState, id: uuid::Uuid) -> AppResult<Option<(ModelRow, LoadedGeometry, f32, bool)>> {
     let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
     if model.supported() != Some(true) {
         return Ok(None);
@@ -231,27 +231,51 @@ async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<Su
     if checked && model.support_parts_found == Some(false) {
         return Ok(None);
     }
-    let metadata_supported = model.calculated_supported;
     let (_, geometry) = load_geometry(state, id).await?;
-    let Some(geometry) = geometry else {
+    Ok(geometry.map(|g| (model, g, raft_height_mm, checked)))
+}
+
+/// Splits the supports off a supported model and records whether support parts were found.
+/// None when the model is not supported, cannot be loaded or has no supports to split, or
+/// when its support parts are not supports (see
+/// [`support_separation::Classification::holds_supports`]). A detection stored under the
+/// current scan config was checked when the model was indexed; otherwise the supports are
+/// rebuilt to check them.
+async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<SupportSplit>> {
+    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id).await? else {
         return Ok(None);
     };
+    split_loaded(state, model, geometry, raft_height_mm, checked).await
+}
 
+/// [`split_supports`] on a model [`load_supported`] loaded.
+async fn split_loaded(
+    state: &AppState,
+    model: ModelRow,
+    geometry: LoadedGeometry,
+    raft_height_mm: f32,
+    checked: bool,
+) -> AppResult<Option<SupportSplit>> {
+    let id = model.id;
+    let metadata_supported = model.calculated_supported;
     let (geometry, split, found) = tokio::task::spawn_blocking(move || {
         let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
         let mut found = classification.is_some();
         let check = !checked && classification.as_ref().is_some_and(|c| !c.generated);
         let split = classification
             .and_then(|c| c.mask_for(metadata_supported))
-            .map(|mask| support_separation::split(&geometry.triangles, &mask))
-            .filter(|(_, supports)| !supports.is_empty())
-            .and_then(|(body, supports)| {
+            .map(|mask| {
+                let (body, supports) = support_separation::split(&geometry.triangles, &mask);
+                (mask, body, supports)
+            })
+            .filter(|(_, _, supports)| !supports.is_empty())
+            .and_then(|(mask, body, supports)| {
                 if check {
                     let z_up_supports = to_z_up(&supports);
                     let layout = support_layout::reconstruct(&to_z_up(&body), &z_up_supports);
                     found = layout.accounts_for(&z_up_supports, raft_height_mm);
                 }
-                found.then_some((body, supports))
+                found.then_some((mask, body, supports))
             });
         (geometry, split, found)
     })
@@ -261,7 +285,7 @@ async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<Su
     if model.support_parts_found != Some(found) {
         state.models.set_support_parts_found(id, found).await?;
     }
-    Ok(split.map(|(body, supports)| SupportSplit { model, geometry, body, supports }))
+    Ok(split.map(|(mask, body, supports)| SupportSplit { geometry, mask, body, supports }))
 }
 
 /// Body and support geometry of a pre-supported model in one envelope:
@@ -302,12 +326,57 @@ async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id):
         }
     }
 
-    let split = split_supports(&state, id).await?.ok_or_else(not_found)?;
+    let Some((model, geometry, raft_height_mm, checked)) = load_supported(&state, id).await? else {
+        return Err(not_found());
+    };
+    let name = model.file_name.clone();
+    // The model's export entry, shared with plate exports: used when it is current.
+    let exports = state.models.support_exports().cloned();
+    let export_key = support_exports::key_for(&model, raft_height_mm, checked);
+    let (geometry, entry) = {
+        let (exports, export_key) = (exports.clone(), export_key.clone());
+        tokio::task::spawn_blocking(move || {
+            let entry = exports.as_ref().and_then(|e| e.read(&export_key, &geometry.triangles));
+            (geometry, entry)
+        })
+        .await
+        .map_err(anyhow::Error::from)?
+    };
+    let (body, layout) = match entry {
+        Some(Some((body, layout))) => {
+            // An entry with supports was made from a split that holds supports.
+            if model.support_parts_found != Some(true) {
+                state.models.set_support_parts_found(id, true).await?;
+            }
+            (body, layout)
+        }
+        // An entry without supports, or none: split (recording what was found) and read.
+        _ => {
+            let split = split_loaded(&state, model, geometry, raft_height_mm, checked).await?;
+            let (exports, export_key) = (exports.clone(), export_key.clone());
+            let (export, stored) = tokio::task::spawn_blocking(move || {
+                let export = split.map(|split| {
+                    let body = to_z_up(&split.body);
+                    let reading = support_reader::read(&body, &to_z_up(&split.supports), raft_height_mm);
+                    (split.mask, body, reading.classification.layout)
+                });
+                let stored = exports
+                    .as_ref()
+                    .and_then(|e| e.store(&export_key, export.as_ref().map(|(m, _, l)| (m.as_slice(), l))));
+                (export, stored)
+            })
+            .await
+            .map_err(anyhow::Error::from)?;
+            if let Some(path) = stored {
+                store::set_support_export_index(&state.db, id, &path, CURRENT_SUPPORT_READER_VERSION).await?;
+            }
+            let (_, body, layout) = export.ok_or_else(not_found)?;
+            (body, layout)
+        }
+    };
     let cache = state.voxl_cache.clone();
     let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-        let body = to_z_up(&split.body);
-        let reading = support_reader::read(&body, &to_z_up(&split.supports), raft_height_mm);
-        let mesh = VoxlMesh { name: &split.model.file_name, triangles: &body, supports: Some(reading.layout()) };
+        let mesh = VoxlMesh { name: &name, triangles: &body, supports: Some(&layout) };
         let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
         let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();
         if let Some(key) = key {

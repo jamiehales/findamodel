@@ -52,16 +52,17 @@ pub fn read_points(model: &[[math::P; 3]], supports: &[[math::P; 3]], raft_heigh
     Reading { contacts, pieces, classification }
 }
 
-/// A pre-supported model's export: its body (Z-up) without the supports, and the supports read
-/// and laid out. None when nothing is split off, or when the split-off parts are not supports
-/// (unless `checked`: a detection stored under the current scan config was checked when the
-/// model was indexed). `triangles` are the model's loaded (Y-up) triangles.
+/// A pre-supported model's export: which of its triangles are supports, its body (Z-up) without
+/// them, and the supports read and laid out. None when nothing is split off, or when the
+/// split-off parts are not supports (unless `checked`: a detection stored under the current scan
+/// config was checked when the model was indexed). `triangles` are the model's loaded (Y-up)
+/// triangles.
 pub fn model_export(
     triangles: &[Triangle],
     raft_height_mm: f32,
     supported: Option<bool>,
     checked: bool,
-) -> Option<(Vec<Triangle>, SupportLayout)> {
+) -> Option<(Vec<bool>, Vec<Triangle>, SupportLayout)> {
     use crate::geometry::{support_separation, to_z_up};
     let classification = support_separation::classify(triangles, raft_height_mm)?;
     let guard = !checked && !classification.generated;
@@ -75,5 +76,5 @@ pub fn model_export(
     }
     let body = to_z_up(&body);
     let reading = read(&body, &to_z_up(&supports), raft_height_mm);
-    Some((body, reading.classification.layout))
+    Some((mask, body, reading.classification.layout))
 }

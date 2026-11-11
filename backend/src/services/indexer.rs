@@ -28,7 +28,7 @@ use crate::services::scan::{Cancelled, FilePlan, FileResult, ProgressReporter};
 const LOG_TARGET: &str = "findamodel.Indexing";
 
 /// Indexing stages in pipeline order, named as their `index_run_files` timing columns.
-const STAGES: [&str; 5] = ["checksum", "load", "supports", "preview", "hull"];
+const STAGES: [&str; 6] = ["checksum", "load", "supports", "preview", "hull", "export"];
 
 /// Stage timings are stored as NULL for stages that didn't run.
 fn stage_ms(ms: f64) -> Option<f64> {
@@ -730,13 +730,14 @@ impl ProgressReporter for RunProgressReporter {
             sqlx::query(
                 "INSERT INTO index_run_files (id, index_run_id, relative_path, file_type, status, is_new, was_updated,
                     generated_preview, generated_hull, message, duration_ms, processed_at,
-                    checksum_ms, load_ms, supports_ms, preview_ms, hull_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    checksum_ms, load_ms, supports_ms, preview_ms, hull_ms, export_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(index_run_id, relative_path) DO UPDATE SET status = excluded.status, is_new = excluded.is_new,
                     was_updated = excluded.was_updated, generated_preview = excluded.generated_preview,
                     generated_hull = excluded.generated_hull, message = excluded.message, duration_ms = excluded.duration_ms,
                     processed_at = excluded.processed_at, checksum_ms = excluded.checksum_ms, load_ms = excluded.load_ms,
-                    supports_ms = excluded.supports_ms, preview_ms = excluded.preview_ms, hull_ms = excluded.hull_ms",
+                    supports_ms = excluded.supports_ms, preview_ms = excluded.preview_ms, hull_ms = excluded.hull_ms,
+                    export_ms = excluded.export_ms",
             )
             .bind(Uuid::new_v4())
             .bind(self.run_id)
@@ -755,6 +756,7 @@ impl ProgressReporter for RunProgressReporter {
             .bind(stage_ms(r.stages.supports_ms))
             .bind(stage_ms(r.stages.preview_ms))
             .bind(stage_ms(r.stages.hull_ms))
+            .bind(stage_ms(r.stages.export_ms))
             .execute(&mut *tx)
             .await?;
             sqlx::query("UPDATE index_runs SET total_files = ?, processed_files = ? WHERE id = ?")
@@ -1028,7 +1030,8 @@ mod tests {
         assert!(sut.get_run_detail(Uuid::new_v4(), 1, 10, "all", 1, 10).await.unwrap().is_none());
     }
 
-    /// Reports two models with stage timings; the second skipped its preview.
+    /// Reports two models with stage timings; the second skipped its preview, the first is not
+    /// pre-supported (no export entry).
     struct TimedWorker;
 
     #[async_trait]
@@ -1044,8 +1047,22 @@ mod tests {
         ) -> anyhow::Result<()> {
             use crate::services::scan::StageTimings;
             let stages = [
-                StageTimings { checksum_ms: 10.0, load_ms: 100.0, supports_ms: 40.0, preview_ms: 30.0, hull_ms: 60.0 },
-                StageTimings { checksum_ms: 20.0, load_ms: 300.0, supports_ms: 80.0, preview_ms: 0.0, hull_ms: 140.0 },
+                StageTimings {
+                    checksum_ms: 10.0,
+                    load_ms: 100.0,
+                    supports_ms: 40.0,
+                    preview_ms: 30.0,
+                    hull_ms: 60.0,
+                    export_ms: 0.0,
+                },
+                StageTimings {
+                    checksum_ms: 20.0,
+                    load_ms: 300.0,
+                    supports_ms: 80.0,
+                    preview_ms: 0.0,
+                    hull_ms: 140.0,
+                    export_ms: 900.0,
+                },
             ];
             for (i, stages) in stages.into_iter().enumerate() {
                 reporter
@@ -1087,7 +1104,8 @@ mod tests {
                 ("load", 400.0, 2),
                 ("supports", 120.0, 2),
                 ("preview", 30.0, 1),
-                ("hull", 200.0, 2)
+                ("hull", 200.0, 2),
+                ("export", 900.0, 1)
             ]
         );
     }

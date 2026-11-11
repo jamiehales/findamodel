@@ -10,6 +10,7 @@ use crate::db::{Db, now};
 use crate::dto::{AppConfigDto, InitialSetupDefaultsDto, InitialSetupRequest, SetupStatusDto, UpdateAppConfigRequest};
 use crate::entities::AppConfigRow;
 use crate::error::{AppResult, bad_request};
+use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::preview::CURRENT_PREVIEW_GENERATION_VERSION;
 
 pub const DATABASE_DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
@@ -125,6 +126,10 @@ fn normalize_minimum_preview_version(v: i32) -> i32 {
     v.clamp(0, CURRENT_PREVIEW_GENERATION_VERSION)
 }
 
+pub fn normalize_minimum_support_export_version(v: i32) -> i32 {
+    v.clamp(0, CURRENT_SUPPORT_READER_VERSION)
+}
+
 impl AppConfigService {
     pub fn new(
         db: Db,
@@ -157,18 +162,23 @@ impl AppConfigService {
             minimum_preview_generation_version: normalize_minimum_preview_version(
                 self.defaults.minimum_preview_generation_version.unwrap_or(CURRENT_PREVIEW_GENERATION_VERSION),
             ),
+            minimum_support_export_version: normalize_minimum_support_export_version(
+                self.defaults.minimum_support_export_version.unwrap_or(CURRENT_SUPPORT_READER_VERSION),
+            ),
             setup_completed: configured.is_some(),
             models_directory_path: configured,
             updated_at: now(),
         };
         sqlx::query(
             "INSERT OR IGNORE INTO app_config (id, default_raft_height_mm, generate_previews_enabled,
-                minimum_preview_generation_version, setup_completed, models_directory_path, updated_at)
-             VALUES (1, ?, ?, ?, ?, ?, ?)",
+                minimum_preview_generation_version, minimum_support_export_version, setup_completed,
+                models_directory_path, updated_at)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.default_raft_height_mm)
         .bind(row.generate_previews_enabled)
         .bind(row.minimum_preview_generation_version)
+        .bind(row.minimum_support_export_version)
         .bind(row.setup_completed)
         .bind(&row.models_directory_path)
         .bind(row.updated_at)
@@ -183,6 +193,9 @@ impl AppConfigService {
             generate_previews_enabled: row.generate_previews_enabled,
             minimum_preview_generation_version: normalize_minimum_preview_version(
                 row.minimum_preview_generation_version,
+            ),
+            minimum_support_export_version: normalize_minimum_support_export_version(
+                row.minimum_support_export_version,
             ),
             setup_completed: row.setup_completed,
             models_directory_path: row.models_directory_path.clone(),
@@ -206,14 +219,22 @@ impl AppConfigService {
                 "Minimum preview version must be between 0 and {CURRENT_PREVIEW_GENERATION_VERSION}."
             )));
         }
+        if req.minimum_support_export_version < 0 || req.minimum_support_export_version > CURRENT_SUPPORT_READER_VERSION
+        {
+            return Err(bad_request(format!(
+                "Minimum support export version must be between 0 and {CURRENT_SUPPORT_READER_VERSION}."
+            )));
+        }
         self.ensure_config().await?;
         sqlx::query(
             "UPDATE app_config SET default_raft_height_mm = ?, generate_previews_enabled = ?,
-                minimum_preview_generation_version = ?, updated_at = ? WHERE id = 1",
+                minimum_preview_generation_version = ?, minimum_support_export_version = ?, updated_at = ?
+                WHERE id = 1",
         )
         .bind(req.default_raft_height_mm)
         .bind(req.generate_previews_enabled)
         .bind(req.minimum_preview_generation_version)
+        .bind(req.minimum_support_export_version)
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -295,6 +316,7 @@ mod tests {
         assert_eq!(dto.default_raft_height_mm, DATABASE_DEFAULT_RAFT_HEIGHT_MM);
         assert!(dto.generate_previews_enabled);
         assert_eq!(dto.minimum_preview_generation_version, CURRENT_PREVIEW_GENERATION_VERSION);
+        assert_eq!(dto.minimum_support_export_version, CURRENT_SUPPORT_READER_VERSION);
         assert!(!dto.setup_completed);
         sut.get().await.unwrap();
         assert_eq!(row_count(&t).await, 1);
@@ -324,10 +346,41 @@ mod tests {
             default_raft_height_mm: 3.0,
             generate_previews_enabled: true,
             minimum_preview_generation_version: version,
+            minimum_support_export_version: 0,
         };
         assert_eq!(sut.update(&request(5)).await.unwrap().minimum_preview_generation_version, 5);
         assert!(sut.update(&request(-1)).await.is_err());
         assert!(sut.update(&request(CURRENT_PREVIEW_GENERATION_VERSION + 1)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn the_minimum_support_export_version_is_seeded_validated_and_clamped() {
+        let t = TestDb::new().await;
+        let defaults = AppConfigDefaults { minimum_support_export_version: Some(0), ..Default::default() };
+        let sut = AppConfigService::new(t.db.clone(), defaults, None, Arc::new(RwLock::new(None)));
+        assert_eq!(sut.get().await.unwrap().minimum_support_export_version, 0, "seeded from the default");
+        let request = |version: i32| UpdateAppConfigRequest {
+            default_raft_height_mm: 3.0,
+            generate_previews_enabled: true,
+            minimum_preview_generation_version: 0,
+            minimum_support_export_version: version,
+        };
+        let current = CURRENT_SUPPORT_READER_VERSION;
+        assert_eq!(sut.update(&request(current)).await.unwrap().minimum_support_export_version, current);
+        assert!(sut.update(&request(-1)).await.is_err());
+        assert!(sut.update(&request(current + 1)).await.is_err());
+        // A stored minimum past the current version (from a newer build) reads as the current one.
+        sqlx::query("UPDATE app_config SET minimum_support_export_version = ?")
+            .bind(current + 5)
+            .execute(&t.db)
+            .await
+            .unwrap();
+        assert_eq!(sut.get().await.unwrap().minimum_support_export_version, current);
+        // A default past the current version is clamped when seeding.
+        let fresh = TestDb::new().await;
+        let defaults = AppConfigDefaults { minimum_support_export_version: Some(current + 3), ..Default::default() };
+        let sut = AppConfigService::new(fresh.db.clone(), defaults, None, Arc::new(RwLock::new(None)));
+        assert_eq!(sut.get().await.unwrap().minimum_support_export_version, current);
     }
 
     #[tokio::test]

@@ -18,12 +18,15 @@ use uuid::Uuid;
 use super::models::{ModelService, is_model_extension, is_non_geometry_type};
 use crate::db::now;
 use crate::entities::{DirectoryConfig, ModelHulls, ModelRow};
+use crate::geometry::support_reader::{self, CURRENT_SUPPORT_READER_VERSION};
 use crate::geometry::{LoadedGeometry, hull, loader, support_separation};
 use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::{self, ComputedMetadata};
 use crate::metadata::rules;
 use crate::preview::{self, CURRENT_PREVIEW_GENERATION_VERSION};
+use crate::services::app_config::normalize_minimum_support_export_version;
+use crate::services::support_exports::{self, SupportExports};
 use crate::services::{scan_config, store};
 
 const LOG_TARGET: &str = "findamodel.Models";
@@ -57,6 +60,8 @@ pub struct StageTimings {
     pub supports_ms: f64,
     pub preview_ms: f64,
     pub hull_ms: f64,
+    /// Reading a pre-supported model's supports and writing its export entry.
+    pub export_ms: f64,
 }
 
 fn elapsed_ms(started: Instant) -> f64 {
@@ -227,7 +232,20 @@ struct FileData {
     metadata: ComputedMetadata,
     dir_config_id: Option<Uuid>,
     geometry: Option<GeometrySummary>,
+    export: ExportOutcome,
     stages: StageTimings,
+}
+
+/// What became of a model's export entry while its geometry was processed.
+#[derive(Debug, Clone, Default, PartialEq)]
+enum ExportOutcome {
+    /// Not asked for, or not a pre-supported model with supports to read.
+    #[default]
+    None,
+    /// Written at the current reader version, at this relative path.
+    Written(String),
+    /// Read but not stored (the entry could not be written).
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -267,27 +285,85 @@ struct GeometryRefresh {
     hull_generated: bool,
     raft_height_mm: f32,
     supports: SupportDetection,
+    export: ExportOutcome,
     stages: StageTimings,
 }
 
-/// (id, directory, file_name, checksum, file_modified_at, scan_config_checksum,
-/// preview_generation_version, preview_image_path)
-type ExistingScanRow = (Uuid, String, String, String, DateTime<Utc>, Option<String>, Option<i32>, Option<String>);
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct ExistingScanState {
     id: Uuid,
+    directory: String,
+    file_name: String,
     checksum: String,
     file_modified_at: DateTime<Utc>,
     scan_config_checksum: Option<String>,
     preview_generation_version: Option<i32>,
     preview_image_path: Option<String>,
+    detected_supported: Option<bool>,
+    support_parts_found: Option<bool>,
+    support_export_path: Option<String>,
+    support_export_version: Option<i32>,
 }
 
 enum Change {
     Content(Box<FileData>),
     Geometry(GeometryRefresh),
+    /// The model's export entry is current but the row's index of it is not.
+    ExportIndex(String, i32),
     FileMetadataOnly,
+}
+
+/// Whether a model is pre-supported by its metadata or a confident detection.
+fn presupported(calculated: Option<bool>, detected_confident: bool) -> bool {
+    calculated.or(detected_confident.then_some(true)) == Some(true)
+}
+
+/// The staleness of an indexed model's export entry, read from the entry file itself.
+#[derive(Debug, Clone, PartialEq)]
+enum ExportState {
+    /// Not a pre-supported model with supports to read (or entries are not kept): nothing to do.
+    NotWanted,
+    /// Missing, damaged or below the minimum version: read the supports again.
+    Stale,
+    /// Current enough; the row's index should name this path and version.
+    Current(String, i32),
+}
+
+/// The export entry state of an indexed model whose content and scan config are unchanged.
+#[allow(clippy::too_many_arguments)]
+fn export_state(
+    exports: Option<&SupportExports>,
+    geometry_type: bool,
+    checksum: &str,
+    raft_height_mm: f32,
+    calculated_supported: Option<bool>,
+    detected_supported: Option<bool>,
+    support_parts_found: Option<bool>,
+    minimum_version: i32,
+) -> ExportState {
+    let Some(exports) = exports else { return ExportState::NotWanted };
+    if !geometry_type
+        || support_parts_found != Some(true)
+        || !presupported(calculated_supported, detected_supported == Some(true))
+    {
+        return ExportState::NotWanted;
+    }
+    // The scan indexes under the current scan config, so its entries are for checked detections.
+    let key = support_exports::key(checksum, raft_height_mm, calculated_supported, true);
+    match exports.stored_version(&key) {
+        Some(version) if version >= minimum_version => {
+            ExportState::Current(support_exports::relative_path(&key), version)
+        }
+        _ => ExportState::Stale,
+    }
+}
+
+/// Whether the row's index already names the entry the file says is there.
+fn export_index_matches(state: &ExportState, path: Option<&str>, version: Option<i32>) -> bool {
+    match state {
+        ExportState::Current(p, v) => path == Some(p.as_str()) && version == Some(*v),
+        _ => true,
+    }
 }
 
 struct Prepared {
@@ -309,6 +385,9 @@ struct ScanContext {
     default_raft_height_mm: f32,
     generate_previews: bool,
     minimum_preview_version: i32,
+    /// The oldest export entry version accepted; older entries are written again.
+    minimum_export_version: i32,
+    exports: Option<SupportExports>,
 }
 
 impl ScanContext {
@@ -366,11 +445,24 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
     model.sphere_centre_z = g.and_then(|g| g.sphere_centre_z);
     model.sphere_radius = g.and_then(|g| g.sphere_radius);
     model.geometry_calculated_at = g.map(|_| now());
+    // New content: the index names the new entry, or none (an unsupported model stores none).
+    (model.support_export_path, model.support_export_version) = export_index(&data.export);
+}
+
+/// The row's index of an export entry the scan wrote.
+fn export_index(export: &ExportOutcome) -> (Option<String>, Option<i32>) {
+    match export {
+        ExportOutcome::Written(path) => (Some(path.clone()), Some(CURRENT_SUPPORT_READER_VERSION)),
+        _ => (None, None),
+    }
 }
 
 fn apply_geometry_refresh(model: &mut ModelRow, refresh: &GeometryRefresh) {
     if refresh.include_hulls {
         apply_hull_data(model, &refresh.hulls, refresh.geometry_loaded, refresh.raft_height_mm, refresh.supports);
+    }
+    if refresh.include_hulls || refresh.export != ExportOutcome::None {
+        (model.support_export_path, model.support_export_version) = export_index(&refresh.export);
     }
     if !refresh.include_preview || !refresh.geometry_loaded {
         return;
@@ -445,8 +537,9 @@ impl ModelService {
         (None, None)
     }
 
-    /// Loads geometry, detects supports, renders previews (when requested) and computes
-    /// hulls. Returns (summary, preview generated, hulls, support detection).
+    /// Loads geometry, detects supports, renders previews (when requested), computes hulls and
+    /// (when `include_export`) reads a pre-supported model's supports into its export entry.
+    /// Returns (summary, preview generated, hulls, support detection, export entry).
     #[allow(clippy::too_many_arguments)]
     async fn process_geometry(
         &self,
@@ -455,21 +548,25 @@ impl ModelService {
         checksum: &str,
         preview_refresh: PreviewRefresh,
         include_hulls: bool,
+        include_export: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
-    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, SupportDetection, StageTimings) {
+    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, SupportDetection, ExportOutcome, StageTimings) {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
         let stem = preview::preview_stem(checksum, raft_height_mm, supported);
         let preview = self.preview.clone().filter(|_| preview_refresh.included());
         let redraw = preview_refresh == PreviewRefresh::Redraw;
+        let exports = self.support_exports.clone().filter(|_| include_export && supported != Some(false));
+        // Indexed under the current scan config, the detection counts as checked.
+        let export_key = support_exports::key(checksum, raft_height_mm, supported, true);
         tokio::task::spawn_blocking(move || {
             let mut stages = StageTimings::default();
             let started = Instant::now();
             let geometry = loader::load_model(&path, &file_type);
             stages.load_ms = elapsed_ms(started);
             let Some(geometry) = geometry else {
-                return (None, false, None, SupportDetection::default(), stages);
+                return (None, false, None, SupportDetection::default(), ExportOutcome::None, stages);
             };
             let started = Instant::now();
             let classification = support_separation::classify(&geometry.triangles, raft_height_mm)
@@ -489,10 +586,37 @@ impl ModelService {
                 stages.hull_ms = elapsed_ms(started);
                 hulls
             });
-            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected, stages)
+            // A pre-supported model with supports found: its export entry, as an export of it
+            // would read it (split by the detection's mask, supports read from the split).
+            let mut export = ExportOutcome::None;
+            if let Some(exports) = exports.filter(|_| detected.found && presupported(supported, detected.confident)) {
+                let started = Instant::now();
+                let read = support_mask.and_then(|mask| {
+                    let (body, supports) = support_separation::split(&geometry.triangles, &mask);
+                    (!supports.is_empty()).then(|| {
+                        let body = crate::geometry::to_z_up(&body);
+                        let supports = crate::geometry::to_z_up(&supports);
+                        let layout = support_reader::read(&body, &supports, raft_height_mm).classification.layout;
+                        (mask, layout)
+                    })
+                });
+                export = match exports.store(&export_key, read.as_ref().map(|(m, l)| (m.as_slice(), l))) {
+                    Some(path) => ExportOutcome::Written(path),
+                    None => ExportOutcome::Failed,
+                };
+                stages.export_ms = elapsed_ms(started);
+            }
+            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected, export, stages)
         })
         .await
-        .unwrap_or((None, false, None, SupportDetection::default(), StageTimings::default()))
+        .unwrap_or((
+            None,
+            false,
+            None,
+            SupportDetection::default(),
+            ExportOutcome::None,
+            StageTimings::default(),
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -528,6 +652,7 @@ impl ModelService {
             metadata,
             dir_config_id: dir_config.map(|d| d.id),
             geometry: None,
+            export: ExportOutcome::None,
             stages: StageTimings { checksum_ms, ..Default::default() },
         };
 
@@ -535,17 +660,19 @@ impl ModelService {
             return Ok(data);
         }
 
-        let (summary, preview_generated, hulls, detected, stages) = self
+        let (summary, preview_generated, hulls, detected, export, stages) = self
             .process_geometry(
                 file,
                 file_type,
                 &checksum,
                 if include_preview { PreviewRefresh::Missing } else { PreviewRefresh::Skip },
                 true,
+                true,
                 raft_height_mm,
                 supported,
             )
             .await;
+        data.export = export;
         data.stages = StageTimings { checksum_ms, ..stages };
         (data.preview_image_path, data.preview_generated_at) = self.resolve_cached_preview_metadata(
             &preview::preview_stem(&checksum, raft_height_mm, supported),
@@ -571,10 +698,20 @@ impl ModelService {
         supported: Option<bool>,
         preview_refresh: PreviewRefresh,
         include_hulls: bool,
+        include_export: bool,
     ) -> GeometryRefresh {
         let include_preview = preview_refresh.included();
-        let (summary, preview_generated, hulls, detected, stages) = self
-            .process_geometry(file, file_type, checksum, preview_refresh, include_hulls, raft_height_mm, supported)
+        let (summary, preview_generated, hulls, detected, export, stages) = self
+            .process_geometry(
+                file,
+                file_type,
+                checksum,
+                preview_refresh,
+                include_hulls,
+                include_export,
+                raft_height_mm,
+                supported,
+            )
             .await;
         let mut refresh = GeometryRefresh {
             include_preview,
@@ -587,6 +724,7 @@ impl ModelService {
             hull_generated: false,
             raft_height_mm,
             supports: detected,
+            export,
             stages,
         };
         if summary.is_none() {
@@ -654,11 +792,38 @@ impl ModelService {
                 &expected_preview_path(&checksum, expected_raft, supported),
             );
 
-        prepared.change = if checksum == existing.checksum && !hull_mismatch && !preview_stale {
-            if !recomputed {
+        // The export entry, from its file, when nothing else rewrites it.
+        let export = if checksum == existing.checksum && !hull_mismatch {
+            export_state(
+                ctx.exports.as_ref(),
+                geometry_type,
+                &checksum,
+                expected_raft,
+                supported,
+                existing.detected_supported,
+                existing.support_parts_found,
+                ctx.minimum_export_version,
+            )
+        } else {
+            ExportState::NotWanted
+        };
+        let export_stale = export == ExportState::Stale;
+
+        prepared.change = if checksum == existing.checksum && !hull_mismatch && !preview_stale && !export_stale {
+            if let ExportState::Current(path, version) = &export
+                && !export_index_matches(
+                    &export,
+                    existing.support_export_path.as_deref(),
+                    existing.support_export_version,
+                )
+            {
+                // The file is the authority: the row's index follows it.
+                Some(Change::ExportIndex(path.clone(), *version))
+            } else if !recomputed {
                 return Ok(None);
+            } else {
+                Some(Change::FileMetadataOnly)
             }
-            Some(Change::FileMetadataOnly)
         } else if checksum != existing.checksum {
             let data = self
                 .compute_file_data(
@@ -692,16 +857,26 @@ impl ModelService {
                         ctx.minimum_preview_version,
                     ),
                     true,
+                    true,
                 )
                 .await,
             ))
         } else {
-            info!(
-                target: LOG_TARGET,
-                "Preview version mismatch, regenerating preview for: {full} (stored version: {:?}, required minimum version: {}, current version: {CURRENT_PREVIEW_GENERATION_VERSION})",
-                existing.preview_generation_version,
-                ctx.minimum_preview_version
-            );
+            if preview_stale {
+                info!(
+                    target: LOG_TARGET,
+                    "Preview version mismatch, regenerating preview for: {full} (stored version: {:?}, required minimum version: {}, current version: {CURRENT_PREVIEW_GENERATION_VERSION})",
+                    existing.preview_generation_version,
+                    ctx.minimum_preview_version
+                );
+            }
+            if export_stale {
+                info!(
+                    target: LOG_TARGET,
+                    "Support export missing or older than version {}, reading supports for: {full}",
+                    ctx.minimum_export_version
+                );
+            }
             Some(Change::Geometry(
                 self.compute_geometry_refresh(
                     &file,
@@ -709,8 +884,13 @@ impl ModelService {
                     &checksum,
                     expected_raft,
                     supported,
-                    PreviewRefresh::for_stale(true, existing.preview_generation_version, ctx.minimum_preview_version),
+                    PreviewRefresh::for_stale(
+                        preview_stale,
+                        existing.preview_generation_version,
+                        ctx.minimum_preview_version,
+                    ),
                     false,
+                    export_stale,
                 )
                 .await,
             ))
@@ -738,45 +918,22 @@ impl ModelService {
             minimum_preview_version: resolve_minimum_preview_generation_version(
                 app_config.minimum_preview_generation_version,
             ),
+            minimum_export_version: normalize_minimum_support_export_version(app_config.minimum_support_export_version),
+            exports: self.support_exports.clone(),
         })
     }
 
     async fn load_existing_states(
         &self,
     ) -> sqlx::Result<std::collections::HashMap<(String, String), ExistingScanState>> {
-        let rows: Vec<ExistingScanRow> = sqlx::query_as(
-            "SELECT id, directory, file_name, checksum, file_modified_at, scan_config_checksum, preview_generation_version, preview_image_path
+        let rows: Vec<ExistingScanState> = sqlx::query_as(
+            "SELECT id, directory, file_name, checksum, file_modified_at, scan_config_checksum, preview_generation_version,
+                preview_image_path, detected_supported, support_parts_found, support_export_path, support_export_version
              FROM models",
         )
         .fetch_all(&self.db)
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(
-                |(
-                    id,
-                    directory,
-                    file_name,
-                    checksum,
-                    file_modified_at,
-                    scan_config_checksum,
-                    preview_generation_version,
-                    preview_image_path,
-                )| {
-                    (
-                        (directory, file_name),
-                        ExistingScanState {
-                            id,
-                            checksum,
-                            file_modified_at,
-                            scan_config_checksum,
-                            preview_generation_version,
-                            preview_image_path,
-                        },
-                    )
-                },
-            )
-            .collect())
+        Ok(rows.into_iter().map(|row| ((row.directory.clone(), row.file_name.clone()), row)).collect())
     }
 
     /// Scans all model files (optionally below `directory_filter`) and updates the cache.
@@ -921,9 +1078,21 @@ impl ModelService {
                         status = "processed";
                         message = if refresh.include_hulls {
                             "Regenerated hulls/preview from config or version changes".into()
-                        } else {
+                        } else if refresh.include_preview {
                             "Regenerated preview from version changes".into()
+                        } else {
+                            "Rebuilt the support export entry".into()
                         };
+                    }
+                    Some(Change::ExportIndex(path, version)) => {
+                        entity.support_export_path = Some(path.clone());
+                        entity.support_export_version = Some(*version);
+                        entity.cached_at = now();
+                        entity.file_modified_at = prepared.stat.modified;
+                        entity.file_size = prepared.stat.size;
+                        was_updated = true;
+                        status = "processed";
+                        message = "Indexed the support export entry found on disk".into();
                     }
                     Some(Change::FileMetadataOnly) => {
                         entity.cached_at = now();
@@ -1130,16 +1299,39 @@ impl ModelService {
             geometry_type && needs_hull_regeneration(e.scan_config_checksum.as_deref(), expected_raft)
         });
 
+        let export = match &existing {
+            Some(e) if e.checksum == checksum && !hull_stale => export_state(
+                ctx.exports.as_ref(),
+                geometry_type,
+                &checksum,
+                expected_raft,
+                supported,
+                e.detected_supported,
+                e.support_parts_found,
+                ctx.minimum_export_version,
+            ),
+            _ => ExportState::NotWanted,
+        };
+        let export_stale = export == ExportState::Stale;
+
         if let Some(e) = &existing
             && e.checksum == checksum
             && !hull_stale
             && !preview_stale
+            && !export_stale
         {
-            if recomputed {
+            let index_matches =
+                export_index_matches(&export, e.support_export_path.as_deref(), e.support_export_version);
+            if recomputed || !index_matches {
                 let mut updated = e.clone();
                 updated.file_modified_at = file_stat.modified;
                 updated.file_size = file_stat.size;
                 updated.cached_at = now();
+                if let ExportState::Current(path, version) = &export {
+                    // The file is the authority: the row's index follows it.
+                    updated.support_export_path = Some(path.clone());
+                    updated.support_export_version = Some(*version);
+                }
                 let mut conn = self.db.acquire().await?;
                 store::save_model(&mut conn, &updated).await?;
             }
@@ -1232,6 +1424,7 @@ impl ModelService {
                             ctx.minimum_preview_version,
                         ),
                         true,
+                        true,
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
@@ -1241,7 +1434,7 @@ impl ModelService {
                 (entity, refresh.preview_generated, refresh.hull_generated, refresh.stages)
             }
             Some(mut entity) => {
-                info!(target: LOG_TARGET, "Single-model index refreshing preview due to version mismatch: {full_text}");
+                info!(target: LOG_TARGET, "Single-model index refreshing preview or support export: {full_text}");
                 let refresh = self
                     .compute_geometry_refresh(
                         &full_path,
@@ -1249,8 +1442,13 @@ impl ModelService {
                         &entity.checksum.clone(),
                         expected_raft,
                         supported,
-                        PreviewRefresh::for_stale(true, entity.preview_generation_version, ctx.minimum_preview_version),
+                        PreviewRefresh::for_stale(
+                            preview_stale,
+                            entity.preview_generation_version,
+                            ctx.minimum_preview_version,
+                        ),
                         false,
+                        export_stale,
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
@@ -1428,7 +1626,15 @@ mod tests {
         let metadata = MetadataConfigService::new(t.db.clone(), models_root.clone(), 1000);
         let app_config = AppConfigService::new(t.db.clone(), AppConfigDefaults::default(), None, models_root.clone());
         let preview = PreviewService::new(Some(cache.to_path_buf()), false, Arc::new(GpuState::default()));
-        ModelService::new(t.db.clone(), models_root, Some(preview), metadata, app_config, 4)
+        ModelService::new(
+            t.db.clone(),
+            models_root,
+            Some(preview),
+            metadata,
+            app_config,
+            4,
+            Some(crate::services::models::tests::test_exports(root)),
+        )
     }
 
     /// An indexed model whose preview files are in the cache (as `old` placeholders) and whose
@@ -1568,6 +1774,158 @@ mod tests {
             ]
         );
         assert_eq!(svc.scan_and_cache(None, None, None, &cancel).await.unwrap(), 0);
+    }
+
+    type ExportIndexRow = (String, Option<String>, Option<i32>);
+
+    async fn export_index_rows(t: &TestDb) -> Vec<ExportIndexRow> {
+        sqlx::query_as(
+            "SELECT directory || '/' || file_name, support_export_path, support_export_version FROM models
+             ORDER BY directory, file_name",
+        )
+        .fetch_all(&t.db)
+        .await
+        .unwrap()
+    }
+
+    /// A supported model and a plain one, scanned once.
+    async fn scanned_supported_and_plain(t: &TestDb, root: &Path) -> (ModelService, RecordingReporter) {
+        use crate::geometry::support_separation::tests::{body, posts};
+        disable_previews(t).await;
+        let mut supported = body();
+        supported.extend(posts(50));
+        write_stl(root, "supported.stl", &supported);
+        write_stl(root, "plain.stl", &body());
+        let svc = service(t, root);
+        let reporter = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&reporter), &CancellationToken::new()).await.unwrap();
+        (svc, reporter)
+    }
+
+    fn supported_entry_key(t_root: &Path) -> String {
+        let checksum = sha256_hex(&std::fs::read(t_root.join("supported.stl")).unwrap());
+        support_exports::key(&checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None, true)
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    #[tokio::test]
+    async fn the_scan_writes_export_entries_for_presupported_models_and_times_them() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let (svc, reporter) = scanned_supported_and_plain(&t, root.path()).await;
+        let key = supported_entry_key(root.path());
+        let path = support_exports::relative_path(&key);
+        assert_eq!(
+            export_index_rows(&t).await,
+            vec![
+                ("/plain.stl".into(), None, None),
+                ("/supported.stl".into(), Some(path.clone()), Some(CURRENT_SUPPORT_READER_VERSION)),
+            ]
+        );
+        let exports = svc.support_exports().unwrap();
+        let triangles = loader::load_model(&root.path().join("supported.stl"), "stl").unwrap().triangles;
+        let (body, _) = exports.read(&key, &triangles).expect("a current entry").expect("with a split");
+        assert!(body.len() < triangles.len(), "the supports are split off");
+        let stage =
+            |name: &str| reporter.results.lock().iter().find(|r| r.relative_path == name).unwrap().stages.export_ms;
+        assert!(stage("supported.stl") > 0.0, "the entry's generation is timed");
+        assert_eq!(stage("plain.stl"), 0.0, "a model without supports has no entry");
+
+        // Nothing to do on a rescan: the entry is current.
+        let modified = std::fs::metadata(exports.dir().join(&path)).unwrap().modified().unwrap();
+        let again = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&again), &CancellationToken::new()).await.unwrap();
+        assert!(again.results.lock().iter().all(|r| r.stages.export_ms == 0.0));
+        assert_eq!(std::fs::metadata(exports.dir().join(&path)).unwrap().modified().unwrap(), modified);
+    }
+
+    /// Rewrites the entry for `key` as if an older reader had written it.
+    fn age_entry(exports: &SupportExports, key: &str, version: i32) {
+        let path = exports.dir().join(support_exports::relative_path(key));
+        let (header, export) = support_exports::codec::decode(&std::fs::read(&path).unwrap()).unwrap();
+        let old = support_exports::Header { reader_version: version, ..header };
+        let bytes = support_exports::codec::encode(&old, export.as_ref().map(|(m, l)| (m.as_slice(), l)));
+        std::fs::write(&path, bytes).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_scan_rewrites_entries_below_the_minimum_version_only() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let (svc, _) = scanned_supported_and_plain(&t, root.path()).await;
+        let exports = svc.support_exports().unwrap().clone();
+        let key = supported_entry_key(root.path());
+        let old = CURRENT_SUPPORT_READER_VERSION - 1;
+        age_entry(&exports, &key, old);
+
+        // At or above the minimum (0 here), an old entry stays for the scan; exports refresh it.
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        assert_eq!(exports.stored_version(&key), Some(old));
+        assert_eq!(export_index_rows(&t).await[1].2, Some(old), "the row's index follows the file");
+
+        sqlx::query("UPDATE app_config SET minimum_support_export_version = ?")
+            .bind(CURRENT_SUPPORT_READER_VERSION)
+            .execute(&t.db)
+            .await
+            .unwrap();
+        let reporter = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&reporter), &CancellationToken::new()).await.unwrap();
+        assert_eq!(exports.stored_version(&key), Some(CURRENT_SUPPORT_READER_VERSION));
+        assert_eq!(export_index_rows(&t).await[1].2, Some(CURRENT_SUPPORT_READER_VERSION));
+        let results = reporter.results.lock();
+        let rebuilt = results.iter().find(|r| r.relative_path == "supported.stl").unwrap();
+        assert!(rebuilt.stages.export_ms > 0.0);
+        assert_eq!(rebuilt.stages.hull_ms, 0.0, "only the entry is rebuilt");
+    }
+
+    #[tokio::test]
+    async fn the_entry_file_wins_when_the_row_disagrees() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        let (svc, _) = scanned_supported_and_plain(&t, root.path()).await;
+        let exports = svc.support_exports().unwrap().clone();
+        let key = supported_entry_key(root.path());
+        let file = exports.dir().join(support_exports::relative_path(&key));
+
+        // The row says nothing is stored, but the file is current: only the index is fixed.
+        sqlx::query("UPDATE models SET support_export_path = NULL, support_export_version = NULL")
+            .execute(&t.db)
+            .await
+            .unwrap();
+        let modified = std::fs::metadata(&file).unwrap().modified().unwrap();
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        assert_eq!(std::fs::metadata(&file).unwrap().modified().unwrap(), modified, "not rewritten");
+        assert_eq!(export_index_rows(&t).await[1].2, Some(CURRENT_SUPPORT_READER_VERSION));
+
+        // The row says it is current, but the file is gone or damaged: it is written again.
+        for damage in [None, Some(&b"FMEX\x01broken"[..])] {
+            match damage {
+                None => std::fs::remove_file(&file).unwrap(),
+                Some(bytes) => std::fs::write(&file, bytes).unwrap(),
+            }
+            svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+            assert_eq!(exports.stored_version(&key), Some(CURRENT_SUPPORT_READER_VERSION), "{damage:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_single_model_scan_writes_its_entry() {
+        use crate::geometry::support_separation::tests::{body, posts};
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        let mut supported = body();
+        supported.extend(posts(50));
+        write_stl(root.path(), "supported.stl", &supported);
+        let svc = service(&t, root.path());
+        assert!(svc.scan_and_cache_single("supported.stl", None, &CancellationToken::new()).await.unwrap());
+        let key = supported_entry_key(root.path());
+        assert_eq!(svc.support_exports().unwrap().stored_version(&key), Some(CURRENT_SUPPORT_READER_VERSION));
+        assert_eq!(export_index_rows(&t).await[0].2, Some(CURRENT_SUPPORT_READER_VERSION));
     }
 
     #[tokio::test]

@@ -236,6 +236,7 @@ function InstanceStatsSection({
           { label: 'GPU renderer', value: stats.previewRenderer },
           { label: 'Preview version', value: stats.previewGenerationVersion },
           { label: 'Hull version', value: stats.hullGenerationVersion },
+          { label: 'Support export version', value: stats.supportExportVersion },
         ]}
       />
       <StatsGroup
@@ -265,6 +266,7 @@ export default function SettingsPage() {
   const [defaultRaftHeightMm, setDefaultRaftHeightMm] = useState('');
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
+  const [minimumSupportExportVersion, setMinimumSupportExportVersion] = useState('0');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -293,6 +295,7 @@ export default function SettingsPage() {
       setDefaultRaftHeightMm(String(appConfig.defaultRaftHeightMm));
       setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
       setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
+      setMinimumSupportExportVersion(String(appConfig.minimumSupportExportVersion));
     }
   }, [appConfig]);
 
@@ -313,6 +316,8 @@ export default function SettingsPage() {
   const raftHeightValue = Number(defaultRaftHeightMm);
   const minimumPreviewGenerationVersionValue = Number(minimumPreviewGenerationVersion);
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
+  const minimumSupportExportVersionValue = Number(minimumSupportExportVersion);
+  const supportExportVersionLimit = instanceStats?.supportExportVersion;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
@@ -321,7 +326,11 @@ export default function SettingsPage() {
     Number.isInteger(minimumPreviewGenerationVersionValue) &&
     minimumPreviewGenerationVersionValue >= 0 &&
     (previewGenerationVersionLimit === undefined ||
-      minimumPreviewGenerationVersionValue <= previewGenerationVersionLimit);
+      minimumPreviewGenerationVersionValue <= previewGenerationVersionLimit) &&
+    Number.isInteger(minimumSupportExportVersionValue) &&
+    minimumSupportExportVersionValue >= 0 &&
+    (supportExportVersionLimit === undefined ||
+      minimumSupportExportVersionValue <= supportExportVersionLimit);
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -350,6 +359,7 @@ export default function SettingsPage() {
       defaultRaftHeightMm: raftHeightValue,
       generatePreviewsEnabled,
       minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
+      minimumSupportExportVersion: minimumSupportExportVersionValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -363,6 +373,11 @@ export default function SettingsPage() {
     minimumPreviewGenerationVersionValue < 0 ||
     (previewGenerationVersionLimit !== undefined &&
       minimumPreviewGenerationVersionValue > previewGenerationVersionLimit);
+  const supportExportVersionInvalid =
+    !Number.isInteger(minimumSupportExportVersionValue) ||
+    minimumSupportExportVersionValue < 0 ||
+    (supportExportVersionLimit !== undefined &&
+      minimumSupportExportVersionValue > supportExportVersionLimit);
 
   return (
     <PageLayout>
@@ -446,6 +461,34 @@ export default function SettingsPage() {
                 {previewVersionInvalid && previewGenerationVersionLimit !== undefined && (
                   <p role="alert" className={styles.error}>
                     Use a whole number from 0 to {previewGenerationVersionLimit}.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowLabelInline}>
+                <Label htmlFor="min-support-export-version" className={styles.rowTitle}>
+                  Minimum support export version
+                </Label>
+                <HelpTooltip
+                  aria-label="About minimum support export version"
+                  content="Support exports can be slow to build on large libraries, change this version to force exports built on old versions to be rebuilt"
+                />
+              </div>
+              <div className={styles.versionField}>
+                <Input
+                  id="min-support-export-version"
+                  type="number"
+                  min={0}
+                  max={supportExportVersionLimit}
+                  step={1}
+                  value={minimumSupportExportVersion}
+                  aria-invalid={supportExportVersionInvalid || undefined}
+                  onChange={(e) => setMinimumSupportExportVersion(e.target.value)}
+                />
+                {supportExportVersionInvalid && supportExportVersionLimit !== undefined && (
+                  <p role="alert" className={styles.error}>
+                    Use a whole number from 0 to {supportExportVersionLimit}.
                   </p>
                 )}
               </div>

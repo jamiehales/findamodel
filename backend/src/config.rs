@@ -20,6 +20,7 @@ pub struct AppConfigDefaults {
     pub default_raft_height_mm: Option<f32>,
     pub generate_previews_enabled: Option<bool>,
     pub minimum_preview_generation_version: Option<i32>,
+    pub minimum_support_export_version: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +151,7 @@ impl Settings {
                 default_raft_height_mm: env_parse(&["AppConfig__DefaultRaftHeightMm"]),
                 generate_previews_enabled: env_bool(&["AppConfig__GeneratePreviewsEnabled"]),
                 minimum_preview_generation_version: env_parse(&["AppConfig__MinimumPreviewGenerationVersion"]),
+                minimum_support_export_version: env_parse(&["AppConfig__MinimumSupportExportVersion"]),
             },
         })
     }
@@ -185,6 +187,11 @@ impl Settings {
 
     pub fn renders_path(&self) -> PathBuf {
         self.data_path.join("cache").join("renders")
+    }
+
+    /// Pre-supported models' export entries ([`crate::services::support_exports`]).
+    pub fn support_exports_path(&self) -> PathBuf {
+        self.data_path.join("cache").join("support-exports")
     }
 
     pub fn voxl_cache_path(&self) -> PathBuf {
