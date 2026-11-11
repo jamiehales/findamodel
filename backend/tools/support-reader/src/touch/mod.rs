@@ -1,6 +1,8 @@
 // Copied from the prototype's touch tool (scratchpad t52_merge/touch_tool as of merge r7: sphere-tip recognition, a sphere
 // tip sized by the larger of its ball's and its cone's loop, and
-// TOUCH_PEN) with only its entry point changed; the algorithm and tolerances are the prototype's.
+// TOUCH_PEN) with only its entry point changed, and the maps it iterates (winding-number cells, loop chaining) ordered
+// so that every run gives the same answer (the prototype's hash order did not); the algorithm and tolerances are the
+// prototype's.
 //
 // Touch rule: the original mesh's own contacts, by geometry alone, and the built mesh's patches.
 //
@@ -287,7 +289,7 @@ impl Part {
     }
 
     fn edges(&self) -> Vec<(P, P)> {
-        let mut seen = HashMap::new();
+        let mut seen = BTreeMap::new();
         for t in &self.tris {
             for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
                 let key = |p: P| p.map(|x| (x * 1e5) as i64);
@@ -413,15 +415,15 @@ pub fn loops_of(part: &Part, model: &Model) -> Vec<Loop> {
 }
 
 /// Chains segments through their named ends.
-pub fn chain<K: std::hash::Hash + Eq + Copy>(segments: &[(K, P, K, P)]) -> Vec<Loop> {
-    let mut at: HashMap<K, Vec<u32>> = HashMap::new();
+pub fn chain<K: Ord + Copy>(segments: &[(K, P, K, P)]) -> Vec<Loop> {
+    let mut at: BTreeMap<K, Vec<u32>> = BTreeMap::new();
     for (i, s) in segments.iter().enumerate() {
         at.entry(s.0).or_default().push(i as u32);
         at.entry(s.2).or_default().push(i as u32);
     }
     let mut used = vec![false; segments.len()];
     let mut walks: Vec<(Vec<P>, bool)> = Vec::new();
-    let walk = |start: K, used: &mut Vec<bool>, at: &HashMap<K, Vec<u32>>| -> Option<(Vec<P>, bool)> {
+    let walk = |start: K, used: &mut Vec<bool>, at: &BTreeMap<K, Vec<u32>>| -> Option<(Vec<P>, bool)> {
         let mut node = start;
         let mut points = Vec::new();
         loop {

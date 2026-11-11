@@ -32,7 +32,10 @@ All STL files are binary and Z-up. Reader commands print their run time on stder
 | `touch selftest` | The touch rule's own scene checks. |
 
 `overlap` and `touch` are the prototype's measuring tools copied unchanged apart from their entry
-points (the sources say where they came from), so their numbers equal the prototype's.
+points (the sources say where they came from) and, in `touch`, ordered maps where the prototype
+iterated hash maps: its winding-number cells and the loop chaining are now walked in key order, as
+the backend's contact reader does, so `touch` gives the same answer on every run. Their numbers equal
+the prototype's wherever the prototype's own runs agreed.
 
 ## DragonFruit setup
 

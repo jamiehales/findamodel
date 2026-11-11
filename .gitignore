@@ -1,5 +1,6 @@
 # Rust
 /target
+/target-tool
 
 # Node / Frontend
 node_modules/
@@ -20,3 +21,6 @@ debug
 
 # Tauri generated schemas
 desktop-tauri/src-tauri/gen/
+
+# Python
+__pycache__/

@@ -42,12 +42,8 @@
 
 * Use the real tip depth when exporting support contact sizes to VOXL. DragonFruit runs a tip's cone into the model by a tip offset it works out when slicing (`calculateTipOffset`, from the material's anti-aliasing settings, layer height and pixel pitch) and ignores the `penetrationMm` stored in the file, so a tapered tip's width at the model surface depends on that depth. The mesh export assumes a fixed 0.05 mm (`NOMINAL_TIP_OFFSET_MM`), so at other depths cones come out about 5% too wide per extra 0.1 mm (15% on short or slanted tips); blunt tips don't change. Printer configs only hold a name and bed size, so options are a tip depth setting per printer, or adding layer height, anti-aliasing and pixel pitch and copying DragonFruit's calculation. Single-model downloads have no printer, so they would use the default one
 
-* Re-run the DragonFruit round trip of the support reader (`scripts/support-roundtrip.py`) on the 25 small check models after the switch to an f32 surface normal at each contact. Before it, 9 short contact cones in 6 models were written slightly differently from the prototype, costing fd7a5cf0 2.1 mm² of clip and one tip; the written VOXLs now match the prototype, but the build has not been measured again
-
 * Make the synthetic suite's nominal build (`backend/tests/support_synthetic`) place contacts the way the VOXL writer does (lean-tip placement, sunk blunt ends), so its stage 4b tracks DragonFruit's build more closely. It now agrees with DragonFruit on 1,068 (clips) and 1,028 (loops) of 1,075 variants, and only fails where DragonFruit passes
 
 * Fix the h05_flat_strut synthetic case: its truth clips the model by 6.12 mm (in the prototype suite too), so the case checks against geometry no real flat-ended strut has
 
 * Unify where the root top is measured from in the support reader (the plate in some rules, the raft top in others), and check the pad thresholds in `backend/src/geometry/support_reader/classify/prepare.rs` against the wording in `docs/support-reader.md`; the code follows the prototype as written
-
-* Make the touch measure in `backend/tools/support-reader` deterministic. Some inputs give different results from run to run (k03_modeltree's clip reads 2.03 or 2.45 mm²), and the prototype pieces tool it was ported from had hash-order dependent splits on welded pieces (f03_two, b0f32f5b)

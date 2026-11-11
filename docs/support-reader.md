@@ -531,6 +531,15 @@ against its own labels (earlier measures flattered the reader).
   pieces tool's segment order and welded-union axis on f03_two (16 sides, welded); and the same
   segment order on real model b0f32f5b (post and leg roles of mirror pieces swap between prototype
   runs).
+  The port's reading is the same on every run and on any number of threads (checked on all 1075
+  variants at 1, 4 and 40 threads and on real models; the synthetic suite's
+  `the_reader_is_deterministic_across_runs_and_thread_counts` holds it on those cases). The round
+  trip's `touch` measure walks its maps in key order as the reader does, so it no longer varies
+  between runs either (k03_modeltree's clip was 2.03 or 2.45 mm2 and is now always 2.45, the value
+  where the shaft on the y side clips as its twin on the x side does). On n03_endin_nonman the measure's
+  contacts now equal the reader's; there the body-top loop under the tip is judged by a vote of
+  three of its segments, and the stray sheet's winding fails the vote on one side of the sheet, so
+  the answer depends on where the loop's chain starts (fixed now, but not chosen on merit).
 - **Nominal build.** Stage 4 in cargo runs on an approximation of DragonFruit's build; leaning tip
   placement differs, so only the round trip is final on stage 4.
 - **Unread pieces** are used as straight stretches at their width; a bent or welded solid that

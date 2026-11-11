@@ -56,7 +56,7 @@ const FAR: f64 = 3.0;
 impl Wind {
     fn new(tris: Vec<[P; 3]>) -> Self {
         let key = |p: P, s: f64| p.map(|x| (x / s).floor() as i32);
-        let mut by: HashMap<[i32; 3], Vec<u32>> = HashMap::new();
+        let mut by: BTreeMap<[i32; 3], Vec<u32>> = BTreeMap::new();
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
         for (i, t) in tris.iter().enumerate() {
             let c = mul(add(add(t[0], t[1]), t[2]), 1.0 / 3.0);
@@ -83,7 +83,7 @@ impl Wind {
             let r = ids.iter().flat_map(|&i| tris[i as usize]).map(|v| dist(v, c)).fold(0.0, f64::max);
             fine.push(Cell { ids, c, n, r });
         }
-        let mut groups: HashMap<[i32; 3], Vec<usize>> = HashMap::new();
+        let mut groups: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
         for (k, f) in fine.iter().enumerate() {
             groups.entry(key(f.c, COARSE)).or_default().push(k);
         }
@@ -184,7 +184,7 @@ struct Walk {
 }
 
 fn walks_of(segments: &[Seg]) -> Vec<Walk> {
-    let mut at: HashMap<Key, Vec<u32>> = HashMap::new();
+    let mut at: BTreeMap<Key, Vec<u32>> = BTreeMap::new();
     for (i, s) in segments.iter().enumerate() {
         at.entry(s.a).or_default().push(i as u32);
         at.entry(s.b).or_default().push(i as u32);

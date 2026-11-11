@@ -213,3 +213,74 @@ fn the_generator_makes_every_listed_case() {
         assert!(known.contains(&parse(&id).0), "{id}");
     }
 }
+
+/// One read of a variant, as text: the whole classification and the layout the VOXL writer takes.
+fn read_text(id: &str) -> String {
+    let (case, sides, rot, style) = parse(id);
+    let g = cases::generate(&case, sides, rot, &style).expect("the variant generates");
+    let model32: Vec<[[f32; 3]; 3]> = g.model.iter().map(to_f32).collect();
+    let support32: Vec<[[f32; 3]; 3]> = g.support.iter().map(to_f32).collect();
+    let r = support_reader::read(&triangles(&model32), &triangles(&support32), RAFT_MM);
+    format!("{}\n{:?}", serde_json::to_string(&r.classification).expect("json"), r.classification.layout)
+}
+
+/// Reads the variants in a thread pool of `threads`.
+fn read_in_pool(ids: &[String], threads: usize) -> Vec<String> {
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().expect("thread pool");
+    pool.install(|| ids.iter().map(|id| read_text(id)).collect())
+}
+
+/// The reader gives the same reading on every run and on any number of threads, on the cases
+/// where the prototype's tools were hash-order dependent (welded f03_two, n03_endin_nonman's
+/// loops) or gave two answers (k03_modeltree).
+#[test]
+fn the_reader_is_deterministic_across_runs_and_thread_counts() {
+    let ids: Vec<String> = [
+        "f03_two__n16_r0_welded",
+        "f03_two__n8_r0_welded",
+        "n03_endin_nonman__n12_r0_sep",
+        "n03_endin_nonman__n16_r30_sep",
+        "k03_modeltree__n12_r0_sep",
+        "k03_modeltree__n16_r0_joined",
+    ]
+    .map(String::from)
+    .to_vec();
+    let first = read_in_pool(&ids, 1);
+    for threads in [1, 4, 40] {
+        let again = read_in_pool(&ids, threads);
+        for (k, id) in ids.iter().enumerate() {
+            assert!(first[k] == again[k], "{id} reads differently on {threads} threads");
+        }
+    }
+}
+
+/// SYNTHETIC_DETERMINISM=<threads,...>: every variant's reading hashed in pools of those sizes
+/// (a manual check; prints the variants whose reading differs).
+#[test]
+fn determinism_sweep() {
+    let Ok(spec) = std::env::var("SYNTHETIC_DETERMINISM") else { return };
+    use std::hash::{Hash, Hasher};
+    let ids = variant_ids();
+    let mut runs: Vec<(usize, Vec<u64>)> = Vec::new();
+    for t in spec.split(',').map(|x| x.parse::<usize>().expect("threads")) {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(t).build().expect("pool");
+        let hs: Vec<u64> = pool.install(|| {
+            ids.par_iter()
+                .map(|id| {
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    read_text(id).hash(&mut h);
+                    h.finish()
+                })
+                .collect()
+        });
+        runs.push((t, hs));
+    }
+    let mut bad = 0;
+    for (k, id) in ids.iter().enumerate() {
+        if runs.iter().any(|r| r.1[k] != runs[0].1[k]) {
+            bad += 1;
+            eprintln!("DIFF {id}");
+        }
+    }
+    eprintln!("determinism sweep: {} variants, {bad} differ across {spec}", ids.len());
+}
