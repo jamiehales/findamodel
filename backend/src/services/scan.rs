@@ -89,7 +89,39 @@ pub fn needs_preview_regeneration(
     expected_path: &str,
 ) -> bool {
     preview_image_path.is_none_or(|p| p.trim().is_empty() || p != expected_path)
-        || stored_version.is_none_or(|v| v < minimum_version)
+        || preview_version_stale(stored_version, minimum_version)
+}
+
+/// The stored preview was drawn by a renderer older than the minimum version.
+fn preview_version_stale(stored_version: Option<i32>, minimum_version: i32) -> bool {
+    stored_version.is_none_or(|v| v < minimum_version)
+}
+
+/// Which preview files a geometry pass writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewRefresh {
+    Skip,
+    /// Render only the files missing from the cache.
+    Missing,
+    /// Render over the cached files too. Preview file names hold the checksum, raft height and
+    /// supported flag but not the preview version, so a preview older than the minimum version
+    /// would otherwise be reused as it is.
+    Redraw,
+}
+
+impl PreviewRefresh {
+    /// For a model whose preview is `stale` (see [`needs_preview_regeneration`]).
+    fn for_stale(stale: bool, stored_version: Option<i32>, minimum_version: i32) -> Self {
+        match (stale, preview_version_stale(stored_version, minimum_version)) {
+            (false, _) => Self::Skip,
+            (true, true) => Self::Redraw,
+            (true, false) => Self::Missing,
+        }
+    }
+
+    fn included(self) -> bool {
+        self != Self::Skip
+    }
 }
 
 pub fn resolve_minimum_preview_generation_version(configured: i32) -> i32 {
@@ -421,7 +453,7 @@ impl ModelService {
         file: &Path,
         file_type: &str,
         checksum: &str,
-        include_preview: bool,
+        preview_refresh: PreviewRefresh,
         include_hulls: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
@@ -429,7 +461,8 @@ impl ModelService {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
         let stem = preview::preview_stem(checksum, raft_height_mm, supported);
-        let preview = self.preview.clone().filter(|_| include_preview);
+        let preview = self.preview.clone().filter(|_| preview_refresh.included());
+        let redraw = preview_refresh == PreviewRefresh::Redraw;
         tokio::task::spawn_blocking(move || {
             let mut stages = StageTimings::default();
             let started = Instant::now();
@@ -446,7 +479,7 @@ impl ModelService {
             stages.supports_ms = elapsed_ms(started);
             let preview_generated = preview.is_some_and(|p| {
                 let started = Instant::now();
-                let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true);
+                let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true, redraw);
                 stages.preview_ms = elapsed_ms(started);
                 result.with_supports.generated || result.without_supports.generated
             });
@@ -502,8 +535,17 @@ impl ModelService {
             return Ok(data);
         }
 
-        let (summary, preview_generated, hulls, detected, stages) =
-            self.process_geometry(file, file_type, &checksum, include_preview, true, raft_height_mm, supported).await;
+        let (summary, preview_generated, hulls, detected, stages) = self
+            .process_geometry(
+                file,
+                file_type,
+                &checksum,
+                if include_preview { PreviewRefresh::Missing } else { PreviewRefresh::Skip },
+                true,
+                raft_height_mm,
+                supported,
+            )
+            .await;
         data.stages = StageTimings { checksum_ms, ..stages };
         (data.preview_image_path, data.preview_generated_at) = self.resolve_cached_preview_metadata(
             &preview::preview_stem(&checksum, raft_height_mm, supported),
@@ -527,11 +569,12 @@ impl ModelService {
         checksum: &str,
         raft_height_mm: f32,
         supported: Option<bool>,
-        include_preview: bool,
+        preview_refresh: PreviewRefresh,
         include_hulls: bool,
     ) -> GeometryRefresh {
+        let include_preview = preview_refresh.included();
         let (summary, preview_generated, hulls, detected, stages) = self
-            .process_geometry(file, file_type, checksum, include_preview, include_hulls, raft_height_mm, supported)
+            .process_geometry(file, file_type, checksum, preview_refresh, include_hulls, raft_height_mm, supported)
             .await;
         let mut refresh = GeometryRefresh {
             include_preview,
@@ -643,7 +686,11 @@ impl ModelService {
                     &checksum,
                     expected_raft,
                     supported,
-                    ctx.generate_previews && preview_stale,
+                    PreviewRefresh::for_stale(
+                        preview_stale,
+                        existing.preview_generation_version,
+                        ctx.minimum_preview_version,
+                    ),
                     true,
                 )
                 .await,
@@ -656,8 +703,16 @@ impl ModelService {
                 ctx.minimum_preview_version
             );
             Some(Change::Geometry(
-                self.compute_geometry_refresh(&file, &file_type, &checksum, expected_raft, supported, true, false)
-                    .await,
+                self.compute_geometry_refresh(
+                    &file,
+                    &file_type,
+                    &checksum,
+                    expected_raft,
+                    supported,
+                    PreviewRefresh::for_stale(true, existing.preview_generation_version, ctx.minimum_preview_version),
+                    false,
+                )
+                .await,
             ))
         };
 
@@ -1171,7 +1226,11 @@ impl ModelService {
                         &entity.checksum.clone(),
                         expected_raft,
                         supported,
-                        ctx.generate_previews && preview_stale,
+                        PreviewRefresh::for_stale(
+                            preview_stale,
+                            entity.preview_generation_version,
+                            ctx.minimum_preview_version,
+                        ),
                         true,
                     )
                     .await;
@@ -1190,7 +1249,7 @@ impl ModelService {
                         &entity.checksum.clone(),
                         expected_raft,
                         supported,
-                        true,
+                        PreviewRefresh::for_stale(true, entity.preview_generation_version, ctx.minimum_preview_version),
                         false,
                     )
                     .await;
@@ -1356,6 +1415,88 @@ mod tests {
         );
         let unchanged = store::get_model(&t.db, m.id).await.unwrap().unwrap();
         assert_eq!(unchanged.preview_generation_version, Some(accepted));
+    }
+
+    /// A model service rendering previews into `cache` on the CPU.
+    fn service_with_previews(t: &TestDb, root: &Path, cache: &Path) -> ModelService {
+        use crate::config::AppConfigDefaults;
+        use crate::preview::{GpuState, PreviewService};
+        use crate::services::app_config::AppConfigService;
+        use crate::services::metadata_config::MetadataConfigService;
+        use parking_lot::RwLock;
+        let models_root = Arc::new(RwLock::new(Some(root.to_path_buf())));
+        let metadata = MetadataConfigService::new(t.db.clone(), models_root.clone(), 1000);
+        let app_config = AppConfigService::new(t.db.clone(), AppConfigDefaults::default(), None, models_root.clone());
+        let preview = PreviewService::new(Some(cache.to_path_buf()), false, Arc::new(GpuState::default()));
+        ModelService::new(t.db.clone(), models_root, Some(preview), metadata, app_config, 4)
+    }
+
+    /// An indexed model whose preview files are in the cache (as `old` placeholders) and whose
+    /// stored preview version is `version`; previews required at the current version.
+    async fn model_with_cached_preview(
+        t: &TestDb,
+        root: &Path,
+        cache: &Path,
+        version: i32,
+    ) -> (ModelRow, Vec<PathBuf>) {
+        sqlx::query("INSERT OR REPLACE INTO app_config (id, generate_previews_enabled, minimum_preview_generation_version, updated_at) VALUES (1, 1, ?, ?)")
+            .bind(CURRENT_PREVIEW_GENERATION_VERSION)
+            .bind(now())
+            .execute(&t.db)
+            .await
+            .unwrap();
+        let path = write_file(root, "dragon.stl", SIMPLE_ASCII_STL);
+        let checksum = crate::metadata::config_reader::sha256_hex(&std::fs::read(&path).unwrap());
+        let stem = preview::preview_stem(&checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None);
+        let files: Vec<PathBuf> = [true, false].map(|with| cache.join(preview::relative_path(&stem, with))).into();
+        for f in &files {
+            std::fs::write(f, b"old").unwrap();
+        }
+        let mut m = model("dragon.stl", "");
+        m.checksum = checksum.clone();
+        m.preview_image_path = Some(expected_preview_path(&checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None));
+        m.preview_generation_version = Some(version);
+        m.scan_config_checksum = Some(scan_config::compute(hull::DEFAULT_RAFT_HEIGHT_MM));
+        m.file_modified_at = stat(&path).unwrap().modified;
+        t.insert_model(&m).await;
+        (m, files)
+    }
+
+    #[tokio::test]
+    async fn stale_preview_version_redraws_cached_preview_files() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (m, files) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION - 1).await;
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        assert!(svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        for f in &files {
+            assert_ne!(std::fs::read(f).unwrap(), b"old", "{} redrawn", f.display());
+        }
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        assert_eq!(updated.preview_generation_version, Some(CURRENT_PREVIEW_GENERATION_VERSION));
+    }
+
+    #[tokio::test]
+    async fn current_preview_files_are_reused_when_only_hulls_are_refreshed() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (mut m, files) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION).await;
+        // A stale scan config (a support detection version bump) refreshes the hulls only.
+        m.scan_config_checksum = Some("stale".into());
+        let mut conn = t.db.acquire().await.unwrap();
+        store::save_model(&mut conn, &m).await.unwrap();
+        drop(conn);
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        assert!(svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        for f in &files {
+            assert_eq!(std::fs::read(f).unwrap(), b"old", "{} reused", f.display());
+        }
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        assert_eq!(updated.scan_config_checksum, Some(scan_config::compute(hull::DEFAULT_RAFT_HEIGHT_MM)));
     }
 
     #[tokio::test]

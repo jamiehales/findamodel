@@ -22,7 +22,7 @@ const LOG_TARGET: &str = "findamodel.Preview";
 
 /// Increment when the preview rendering implementation changes so existing cached
 /// previews are invalidated on the next scan.
-pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 19;
+pub const CURRENT_PREVIEW_GENERATION_VERSION: i32 = 20;
 
 const RENDER_WIDTH: u32 = 512;
 const RENDER_HEIGHT: u32 = 512;
@@ -143,7 +143,9 @@ impl PreviewService {
 
     /// Renders whichever requested variants are missing from the cache and saves them,
     /// tinting the triangles flagged in `is_support`. Cached files matching the stem are
-    /// reused. Blocking; run on a blocking thread.
+    /// reused, unless `redraw` is set: the stem does not hold the preview version, so a model
+    /// whose stored preview is older than the minimum version is redrawn over its cached files.
+    /// Blocking; run on a blocking thread.
     pub fn generate_variants(
         &self,
         geometry: &LoadedGeometry,
@@ -151,6 +153,7 @@ impl PreviewService {
         is_support: Option<&[bool]>,
         generate_with_supports: bool,
         generate_without_supports: bool,
+        redraw: bool,
     ) -> PreviewVariants {
         let none = PreviewVariants {
             with_supports: PreviewResult { relative_path: None, generated: false },
@@ -182,8 +185,8 @@ impl PreviewService {
             },
         };
 
-        let needs_with = generate_with_supports && !with_exists;
-        let needs_without = generate_without_supports && !without_exists;
+        let needs_with = generate_with_supports && (redraw || !with_exists);
+        let needs_without = generate_without_supports && (redraw || !without_exists);
         if !needs_with && !needs_without {
             debug!(target: LOG_TARGET, "Reusing cached previews for {stem}");
             return result;
@@ -388,14 +391,35 @@ mod tests {
         let geometry = cube_with_support();
 
         let mask = support_mask(&geometry);
-        let first = service.generate_variants(&geometry, "abc", Some(&mask), true, true);
+        let first = service.generate_variants(&geometry, "abc", Some(&mask), true, true, false);
         assert!(first.with_supports.generated && first.without_supports.generated);
         assert!(dir.path().join("abc.png").exists());
         assert!(dir.path().join("abc_supportsremoved.png").exists());
 
-        let second = service.generate_variants(&geometry, "abc", Some(&mask), true, true);
+        let second = service.generate_variants(&geometry, "abc", Some(&mask), true, true, false);
         assert!(!second.with_supports.generated && !second.without_supports.generated);
         assert_eq!(second.with_supports.relative_path.as_deref(), Some("abc.png"));
+    }
+
+    #[test]
+    fn generate_variants_redraws_cached_files_when_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = PreviewService::new(Some(dir.path().to_path_buf()), false, Arc::new(GpuState::default()));
+        let geometry = cube_with_support();
+        let mask = support_mask(&geometry);
+        for name in ["abc.png", "abc_supportsremoved.png"] {
+            std::fs::write(dir.path().join(name), b"old").unwrap();
+        }
+
+        let reused = service.generate_variants(&geometry, "abc", Some(&mask), true, true, false);
+        assert!(!reused.with_supports.generated && !reused.without_supports.generated);
+        assert_eq!(std::fs::read(dir.path().join("abc.png")).unwrap(), b"old");
+
+        let redrawn = service.generate_variants(&geometry, "abc", Some(&mask), true, true, true);
+        assert!(redrawn.with_supports.generated && redrawn.without_supports.generated);
+        for name in ["abc.png", "abc_supportsremoved.png"] {
+            assert_ne!(std::fs::read(dir.path().join(name)).unwrap(), b"old", "{name} redrawn");
+        }
     }
 
     #[test]
