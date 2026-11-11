@@ -176,6 +176,10 @@ def nominal_labels(lay, n_tris):
             add(ROOT_TRIS, "root")
         elif role == "branch":
             add(BALL_TRIS, "knot")
+        if s.get("written") == "twig":
+            # A twig's ends: per end a disk (a frustum and its capping ball) and the joint off it.
+            add(2 * (128 + 2 * BALL_TRIS), "tip")
+            continue
         for tip in [s["tip"]] + ([s["lower"]] if s.get("lower") else []):
             sock, contact = np.asarray(tip["socket"], float), np.asarray(tip["contact"], float)
             u = contact - sock
@@ -483,8 +487,10 @@ def write_page(cases, df):
         "sides. The base variant is `n8_r0_sep` (8 sides, no rotation, separate shells).",
         "- **Cargo stages** (`cargo test -p findamodel --test support_synthetic`): V validate (the truth against its own "
         "mesh), 1 reader labels, 2 layout, 4a clips and 4b loops on the nominal build. The nominal build "
-        "(`support_synthetic/nominal.rs`) meshes the layout roughly as DragonFruit builds it; it agrees with "
-        "DragonFruit's own build on most variants but is an approximation (leaning tip placement differs).",
+        "(`support_synthetic/nominal.rs`) meshes the layout roughly as DragonFruit builds what the VOXL writer writes "
+        "(tips placed by the writer's own placement, twigs with their contact disks), clips at tip offset 0 and loops "
+        "at DragonFruit's 0.05 mm as on DragonFruit's builds; it is an approximation (no socket joints, rounder "
+        "knots), but its 4a and 4b agree with DragonFruit's own build on nearly every variant.",
         f"- **DragonFruit stages** (3 build recall and precision, 4a clips and 4b loops on DragonFruit's own build) come "
         f"from the round trip in `backend/tools/support-reader`; on this page they are {df_note}.",
         "- **Images.** Left to right: the original supports from the front, the reader's nominal build from the front, "

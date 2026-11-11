@@ -56,6 +56,8 @@ pub(crate) struct LSupport {
     pub seg_d: Option<Vec<f64>>,
     pub stick: bool,
     pub twig: bool,
+    /// A micro support between two parts of the model (its twig disks are short).
+    pub micro: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +317,9 @@ impl Reader<'_> {
             let k = lay.supports.len();
             index.insert(si, k);
             lines.insert(Src::Support(k), line.clone());
-            let (stick, twig) = if matches!(base, LBase::Lower(_)) && s.role == Role::Strut {
+            let lower = matches!(base, LBase::Lower(_));
+            // Struts and micro supports between two parts of the model alike: written by their end shapes.
+            let (stick, twig) = if lower && matches!(s.role, Role::Strut | Role::Micro) {
                 self.strut_kind(&s.path)
             } else {
                 (false, false)
@@ -328,6 +332,7 @@ impl Reader<'_> {
                 seg_d: None,
                 stick,
                 twig,
+                micro: lower && s.role == Role::Micro,
             });
             step_src.push((Src::Support(k), s.path.clone()));
         }
@@ -959,6 +964,9 @@ pub(super) fn to_support_layout(lay: &Lay, model: &[[P; 3]]) -> SupportLayout {
         }
         if s.twig {
             out.twigs.insert(i);
+        }
+        if s.micro {
+            out.micro.insert(i);
         }
     }
     let n = lay.supports.len();

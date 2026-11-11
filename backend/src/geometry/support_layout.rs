@@ -533,6 +533,9 @@ pub struct SupportLayout {
     pub sticks: BTreeSet<usize>,
     /// Struts written as twigs (contact disks) whatever their span: their original ends are flat.
     pub twigs: BTreeSet<usize>,
+    /// Micro supports between two parts of the model: as twigs, their disks are short
+    /// (`voxl::MICRO_TWIG_STANDOFF_SHARE`).
+    pub micro: BTreeSet<usize>,
 }
 
 impl SupportLayout {

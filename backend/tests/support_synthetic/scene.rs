@@ -207,6 +207,9 @@ pub struct Scene {
     pub model_open: bool,
     pub tree_free: bool,
     pub passes_through: bool,
+    /// How struts are to be written, by support name: "twig" (flat rod ends) or "stick" (cone
+    /// tips), the owner's rule whatever the span. Struts not named are not checked.
+    pub written: Vec<(String, &'static str)>,
 }
 
 pub fn lst(p: V3) -> Value {
@@ -234,6 +237,7 @@ impl Scene {
             model_open: false,
             tree_free: false,
             passes_through: false,
+            written: vec![],
         }
     }
 
@@ -653,6 +657,7 @@ impl Scene {
         let tl = self.tip(&format!("{name}-foot"), low, nl, -direction, length, dn, d, bury, kind, None);
         let (ls, us) = (self.tips[tl].socket, self.tips[tu].socket);
         self.rod(&format!("{name}-shaft"), "shaft", ls, us, d / 2.0);
+        self.written.push((name.to_string(), "stick"));
         self.supports.push(Sup {
             name: name.to_string(),
             tip: tu,

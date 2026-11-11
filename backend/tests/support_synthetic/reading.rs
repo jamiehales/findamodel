@@ -6,6 +6,7 @@
 
 use findamodel::geometry::support_reader::classify::{Classification, Owner, Role};
 use findamodel::geometry::support_reader::pieces::SectionKind;
+use findamodel::geometry::voxl::support_strut_ends;
 use serde_json::{Value, json};
 
 fn role_name(r: Role) -> &'static str {
@@ -105,12 +106,17 @@ pub fn reading(c: &Classification) -> Value {
 }
 
 /// The layout in the suite's shape: a strut's base is "model", with its lower tip beside it.
+/// A strut also says how the writer writes it ("written": "twig" or "stick", from
+/// `voxl::support_strut_ends`).
 pub fn layout(c: &Classification) -> Value {
     let mut lay = c.layout_json.clone();
-    for s in lay["supports"].as_array_mut().expect("supports") {
+    for (i, s) in lay["supports"].as_array_mut().expect("supports").iter_mut().enumerate() {
         if let Some(low) = s["base"].get("lower").cloned() {
             s["lower"] = low;
             s["base"] = json!("model");
+            if let Some(ends) = support_strut_ends(&c.layout, i) {
+                s["written"] = json!(if ends.twig { "twig" } else { "stick" });
+            }
         }
     }
     lay

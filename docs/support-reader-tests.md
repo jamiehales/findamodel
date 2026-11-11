@@ -15,7 +15,7 @@ Regenerate this page and its images with `python3 scripts/synthetic-catalogue.py
 ## Reading the results
 
 - **Variants.** A case runs in up to 11 variants: 8, 12, 16 and 32 sides; the scene turned 17, 45 and 30 degrees about z; and, where the case allows, joined shells (rods split where another part's end lands on them, so end caps weld) and welded shells (every support but raft and roots unioned into one shell), at 8 and 16 sides. The base variant is `n8_r0_sep` (8 sides, no rotation, separate shells).
-- **Cargo stages** (`cargo test -p findamodel --test support_synthetic`): V validate (the truth against its own mesh), 1 reader labels, 2 layout, 4a clips and 4b loops on the nominal build. The nominal build (`support_synthetic/nominal.rs`) meshes the layout roughly as DragonFruit builds it; it agrees with DragonFruit's own build on most variants but is an approximation (leaning tip placement differs).
+- **Cargo stages** (`cargo test -p findamodel --test support_synthetic`): V validate (the truth against its own mesh), 1 reader labels, 2 layout, 4a clips and 4b loops on the nominal build. The nominal build (`support_synthetic/nominal.rs`) meshes the layout roughly as DragonFruit builds what the VOXL writer writes (tips placed by the writer's own placement, twigs with their contact disks), clips at tip offset 0 and loops at DragonFruit's 0.05 mm as on DragonFruit's builds; it is an approximation (no socket joints, rounder knots), but its 4a and 4b agree with DragonFruit's own build on nearly every variant.
 - **DragonFruit stages** (3 build recall and precision, 4a clips and 4b loops on DragonFruit's own build) come from the round trip in `backend/tools/support-reader`; on this page they are empty (no round-trip results were given).
 - **Images.** Left to right: the original supports from the front, the reader's nominal build from the front, then both from the side. The model is cut away: only its far faces are drawn, and always under the supports.
 
@@ -35,15 +35,15 @@ Regenerate this page and its images with `python3 scripts/synthetic-catalogue.py
 
 ## Summary
 
-122 cases, 1075 variants. All cargo stages pass on 980 of 1075 variants, on 110 of 122 base variants, and on every variant of 108 cases.
+122 cases, 1075 variants. All cargo stages pass on 1030 of 1075 variants, on 116 of 122 base variants, and on every variant of 114 cases.
 
 | Stage | Variants passing |
 | --- | --- |
-| validate | 1068 of 1075 |
+| validate | 1075 of 1075 |
 | 1 reader labels | 1056 of 1075 |
 | 2 layout | 1041 of 1075 |
-| 4a clips (nominal) | 1040 of 1075 |
-| 4b loops (nominal) | 1027 of 1075 |
+| 4a clips (nominal) | 1047 of 1075 |
+| 4b loops (nominal) | 1073 of 1075 |
 
 Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a, 4b), and how many of the case's variants pass every cargo stage.
 
@@ -53,7 +53,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [b02_bend25b](#b02_bend25b) | The same with a joint ball at the bend | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
 | [b03_bend45](#b03_bend45) | Shaft bending 45 degrees round part of the model | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [c01_sharpturn](#c01_sharpturn) | Shaft turning 60 degrees over a lower part of the model | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
-| [c02_grazing](#c02_grazing) | Tip meeting the surface at a shallow angle (about 28 degrees) | pass | pass | pass | **fail** | **fail** | - | - | - | 0 of 7 |
+| [c02_grazing](#c02_grazing) | Tip meeting the surface at a shallow angle (about 28 degrees) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [c03_shorttip](#c03_shorttip) | Tip only 0.4 mm long on a 1 mm shaft: the joint sits close to the model | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [c04_jointclose](#c04_jointclose) | A bend 0.045 mm clear of the model | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [c05_shallowbend](#c05_shallowbend) | A 0.2 mm dodge round part of the model | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
@@ -61,8 +61,8 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [c07_lowtip2](#c07_lowtip2) | Tip with its shaft all inside the raft band (contact at z = 6) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [c08_shortshaft](#c08_shortshaft) | A branch with a shaft only 0.8 mm long | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [c09_flatwall](#c09_flatwall) | 3 mm polygon shaft with a flat 0.05 mm from a model wall | pass | pass | pass | pass | pass | - | - | - | 4 of 4 |
-| [c10_downtip](#c10_downtip) | Tip pointing down onto a ledge, shaft off a trunk | pass | pass | pass | pass | **fail** | - | - | - | 0 of 9 |
-| [c11_downcone](#c11_downcone) | Tip pointing down onto a ledge, cone straight off a trunk | pass | pass | pass | pass | **fail** | - | - | - | 0 of 9 |
+| [c10_downtip](#c10_downtip) | Tip pointing down onto a ledge, shaft off a trunk | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
+| [c11_downcone](#c11_downcone) | Tip pointing down onto a ledge, cone straight off a trunk | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
 | [c12_widthchange](#c12_widthchange) | A thin shaft carrying on from a thick post, past a wall | pass | **fail** | **fail** | **fail** | pass | - | - | - | 0 of 9 |
 | [f01_hub](#f01_hub) | Fan of tip cones into one hub on a post | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
 | [f02_overlap](#f02_overlap) | Fan with the cones overlapping, no hub | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
@@ -87,7 +87,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [m03_pm05](#m03_pm05) | Micro support, pillar to model, 0.5 mm wide | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [n01_endin](#n01_endin) | A non-tip rod ending in the model | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [n02_endin_open](#n02_endin_open) | A rod ending in an open body (top face missing) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
-| [n03_endin_nonman](#n03_endin_nonman) | A rod ending in a non-manifold body | pass | pass | **fail** | pass | **fail** | - | - | - | 1 of 7 |
+| [n03_endin_nonman](#n03_endin_nonman) | A rod ending in a non-manifold body | pass | pass | **fail** | pass | pass | - | - | - | 1 of 7 |
 | [n04_buried](#n04_buried) | A part wholly inside the model, not to be exported | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [n05_through](#n05_through) | A shaft passing through a wall, then a tip on the body beyond | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [n06_through_open](#n06_through_open) | The same with the wall's body open | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
@@ -99,7 +99,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [p03_ball](#p03_ball) | Tip: separate ball shell | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [p04_weldball](#p04_weldball) | Tip: welded ball | pass | **fail** | pass | pass | pass | - | - | - | 3 of 7 |
 | [p05_bent30](#p05_bent30) | Tip bent 30 degrees, joined through a mitre ring (regular to within the ring tolerance) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
-| [p05_bent60](#p05_bent60) | Tip bent 60 degrees, joined through an irregular ring | pass | pass | pass | pass | **fail** | - | - | - | 0 of 7 |
+| [p05_bent60](#p05_bent60) | Tip bent 60 degrees, joined through an irregular ring | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [p06_rodend](#p06_rodend) | Tip: plain rod end with no cone | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p07_bury01](#p07_bury01) | Tip buried 0.1 mm | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p07_bury05](#p07_bury05) | Tip buried 0.5 mm | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
@@ -107,7 +107,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [p07_bury2](#p07_bury2) | Tip buried 2.0 mm | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p08_thin](#p08_thin) | Tip through a thin wall (0.6 mm) | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p09_slant30](#p09_slant30) | Upright tip on a 30 degree slanted surface | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
-| [p10_slant50](#p10_slant50) | Upright tip on a 50 degree slanted surface | pass | pass | pass | pass | **fail** | - | - | - | 0 of 11 |
+| [p10_slant50](#p10_slant50) | Upright tip on a 50 degree slanted surface | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p11_slantn](#p11_slantn) | Tip normal to a 40 degree surface, bent at a ball | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
 | [p12_sphere](#p12_sphere) | Tip on a sphere | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [p13_coarse](#p13_coarse) | Tip on a coarse box (12 triangles) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
@@ -170,7 +170,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [s13_sleeve_part](#s13_sleeve_part) | A doubled rod 0.12 mm off its trunk's line, about 85% shared (as e1c9688c) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [s14_sleeve_twin](#s14_sleeve_twin) | Two doubled rods in one column, up to two different branches (as a4278c33) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 | [s15_sleeve_thin](#s15_sleeve_thin) | A 1.0 mm doubled rod inside a 1.5 mm trunk (as e1c9688c's piece 75) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
-| [h05_flat_strut](#h05_flat_strut) | Short flat-ended strut, 4 mm, 1 mm wide, rod ends square on both faces (a twig) | **fail** | pass | pass | pass | pass | - | - | - | 0 of 7 |
+| [h05_flat_strut](#h05_flat_strut) | Short flat-ended strut, 4 mm, 1 mm wide, rod ends square on both faces (a twig) | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
 
 ## Cases
 
@@ -270,13 +270,7 @@ Tip meeting the surface at a shallow angle (about 28 degrees).
 - 2 layout: 1 trunk, 1 branch, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 2 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `c02_grazing__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) **fail**, 4b loops (nominal) **fail**. Every cargo stage passes on 0 of 7 variants.
-
-- `4: clips the model: 2.03 mm of cone near [1.9, -0.3, 20.0], 0.00 mm2 buried`
-- `4: tip b-tip: contact 0.32 mm off`
-- `4: tip b-tip: loop 0.86 mm, is 0.76`
-
-Failing variants: `n12_r0_sep` (4a, 4b); `n16_r0_sep` (4a, 4b); `n16_r30_sep` (4a, 4b); `n32_r0_sep` (4a, 4b); `n8_r0_sep` (4a, 4b); `n8_r17_sep` (4a, 4b); `n8_r45_sep` (4a, 4b).
+**Result.** Base variant `c02_grazing__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 7 of 7 variants.
 
 <a id="c03_shorttip"></a>
 
@@ -432,11 +426,7 @@ Note: A tip pointing down onto an upward face of the model, off a trunk that car
 - 2 layout: 1 trunk, 1 branch, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 2 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `c10_downtip__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) **fail**. Every cargo stage passes on 0 of 9 variants.
-
-- `4: tip b-tip: contact 0.19 mm off`
-
-Failing variants: `n12_r0_sep` (4b); `n16_r0_joined` (4b); `n16_r0_sep` (4b); `n16_r30_sep` (4b); `n32_r0_sep` (4b); `n8_r0_joined` (4b); `n8_r0_sep` (4b); `n8_r17_sep` (4b); `n8_r45_sep` (4b).
+**Result.** Base variant `c10_downtip__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 9 of 9 variants.
 
 <a id="c11_downcone"></a>
 
@@ -458,11 +448,7 @@ Note: A tip pointing down onto an upward face of the model, off a trunk that car
 - 2 layout: 1 trunk, 1 branch, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 2 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `c11_downcone__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) **fail**. Every cargo stage passes on 0 of 9 variants.
-
-- `4: tip b-tip: contact 0.17 mm off`
-
-Failing variants: `n12_r0_sep` (4b); `n16_r0_joined` (4b); `n16_r0_sep` (4b); `n16_r30_sep` (4b); `n32_r0_sep` (4b); `n8_r0_joined` (4b); `n8_r0_sep` (4b); `n8_r17_sep` (4b); `n8_r45_sep` (4b).
+**Result.** Base variant `c11_downcone__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 9 of 9 variants.
 
 <a id="c12_widthchange"></a>
 
@@ -962,13 +948,12 @@ A rod ending in a non-manifold body.
 - Open model: the model mesh is not closed.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 2 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `n03_endin_nonman__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout **fail**, 4a clips (nominal) pass, 4b loops (nominal) **fail**. Every cargo stage passes on 1 of 7 variants.
+**Result.** Base variant `n03_endin_nonman__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout **fail**, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 1 of 7 variants.
 
 - `2: tip e contact off by 0.21 mm`
 - `2: tip e contact 0.49 mm, is 0.70`
-- `4: tip e-tip: loop 0.60 mm, is 0.70`
 
-Failing variants: `n16_r0_sep` (2, 4b); `n16_r30_sep` (2, 4b); `n32_r0_sep` (2, 4b); `n8_r0_sep` (2, 4b); `n8_r17_sep` (2, 4b); `n8_r45_sep` (2).
+Failing variants: `n16_r0_sep` (2); `n16_r30_sep` (2); `n32_r0_sep` (2, 4b); `n8_r0_sep` (2); `n8_r17_sep` (2, 4b); `n8_r45_sep` (2).
 
 <a id="n04_buried"></a>
 
@@ -1055,7 +1040,7 @@ Note: A rod crossing the shell and ending in the cavity: neither a contact nor r
 
 - `2: counts trunks 1/0`
 - `2: 1 support(s) not in truth, contact [2.2, 1.4, 9.0]`
-- `4: clips the model: 14.96 mm of root near [1.9, 3.3, 0.0], 55.62 mm2 buried`
+- `4: clips the model: 14.94 mm of root near [1.9, 3.3, 0.0], 58.36 mm2 buried`
 
 Failing variants: `n12_r0_sep` (2, 4a); `n16_r0_sep` (2, 4a); `n16_r30_sep` (2, 4a); `n32_r0_sep` (2, 4a); `n8_r0_sep` (2, 4a); `n8_r17_sep` (2, 4a); `n8_r45_sep` (2, 4a).
 
@@ -1205,11 +1190,7 @@ Tip bent 60 degrees, joined through an irregular ring.
 - 2 layout: 1 trunk, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 1 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `p05_bent60__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) **fail**. Every cargo stage passes on 0 of 7 variants.
-
-- `4: tip a-tip: contact 0.22 mm off`
-
-Failing variants: `n12_r0_sep` (4b); `n16_r0_sep` (4b); `n16_r30_sep` (4b); `n32_r0_sep` (4b); `n8_r0_sep` (4b); `n8_r17_sep` (4b); `n8_r45_sep` (4b).
+**Result.** Base variant `p05_bent60__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 7 of 7 variants.
 
 <a id="p06_rodend"></a>
 
@@ -1355,11 +1336,7 @@ Upright tip on a 50 degree slanted surface.
 - 2 layout: 1 trunk, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 1 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `p10_slant50__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) **fail**. Every cargo stage passes on 0 of 11 variants.
-
-- `4: tip a-tip: contact 0.16 mm off`
-
-Failing variants: `n12_r0_sep` (4b); `n16_r0_joined` (4b); `n16_r0_sep` (4b); `n16_r0_welded` (4b); `n16_r30_sep` (4b); `n32_r0_sep` (4b); `n8_r0_joined` (4b); `n8_r0_sep` (4b); `n8_r0_welded` (4b); `n8_r17_sep` (4b); `n8_r45_sep` (4b).
+**Result.** Base variant `p10_slant50__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 11 of 11 variants.
 
 <a id="p11_slantn"></a>
 
@@ -1491,7 +1468,7 @@ Note: The contact is the ball's: 1 mm across at the surface against a 0.4 mm con
 
 **Result.** Base variant `p18_contactball__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) **fail**, 4b loops (nominal) pass. Every cargo stage passes on 0 of 7 variants.
 
-- `4: clips the model: 3.05 mm of cone near [2.1, 1.9, 20.0], 0.74 mm2 buried`
+- `4: clips the model: 3.04 mm of cone near [2.2, 0.9, 20.0], 0.74 mm2 buried`
 
 Failing variants: `n12_r0_sep` (4a); `n16_r0_sep` (4a); `n16_r30_sep` (4a); `n32_r0_sep` (4a); `n8_r0_sep` (4a); `n8_r17_sep` (4a); `n8_r45_sep` (4a).
 
@@ -2569,8 +2546,4 @@ Note: Flat rod ends on both faces: written as a twig (contact disks), not a stic
 - 2 layout: 1 strut, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 2 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `h05_flat_strut__n8_r0_sep`: validate **fail**, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 0 of 7 variants.
-
-- `validate: truth's non-tip parts clip the model: 6.12 mm`
-
-Failing variants: `n8_r0_sep` (V); `n12_r0_sep` (V); `n16_r0_sep` (V); `n32_r0_sep` (V); `n8_r17_sep` (V); `n8_r45_sep` (V); `n16_r30_sep` (V).
+**Result.** Base variant `h05_flat_strut__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 7 of 7 variants.

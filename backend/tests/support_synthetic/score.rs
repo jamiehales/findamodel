@@ -594,6 +594,12 @@ pub fn stage2(t: &Value, lay: &Value) -> Value {
                     }
                 }
             }
+            // Flat rod ends are written as a twig, cone tips as a stick (the owner's rule).
+            if let (Some(want), Some(got)) = (ts["written"].as_str(), sp["written"].as_str())
+                && want != got
+            {
+                errors.push(format!("{tname} written as a {got}, is a {want}"));
+            }
         }
         let (ssd, tsd) = (f(&sp["shaft_d"]), f(&ts["shaft_d"]));
         let sd = (ssd - tsd).abs();

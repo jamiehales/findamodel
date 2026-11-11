@@ -283,50 +283,50 @@
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n16_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n32_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n8_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n8_r17_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c02_grazing__n8_r45_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
-    "4a clips (nominal)": false,
-    "4b loops (nominal)": false
+    "4a clips (nominal)": true,
+    "4b loops (nominal)": true
   },
   "c03_shorttip__n12_r0_sep": {
     "validate": true,
@@ -655,126 +655,126 @@
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n16_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n16_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n32_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n8_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n8_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n8_r17_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c10_downtip__n8_r45_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n12_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n16_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n16_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n32_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n8_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n8_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n8_r17_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c11_downcone__n8_r45_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "c12_widthchange__n12_r0_sep": {
     "validate": true,
@@ -1449,49 +1449,49 @@
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n12_r0_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n16_r0_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n16_r30_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n32_r0_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n8_r0_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n8_r17_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },
   "h05_flat_strut__n8_r45_sep": {
-    "validate": false,
+    "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
@@ -2349,14 +2349,14 @@
     "1 reader labels": true,
     "2 layout": false,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "n03_endin_nonman__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": false,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "n03_endin_nonman__n32_r0_sep": {
     "validate": true,
@@ -2370,7 +2370,7 @@
     "1 reader labels": true,
     "2 layout": false,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "n03_endin_nonman__n8_r17_sep": {
     "validate": true,
@@ -2986,49 +2986,49 @@
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n16_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n32_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n8_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n8_r17_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p05_bent60__n8_r45_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p06_rodend__n12_r0_sep": {
     "validate": true,
@@ -3574,77 +3574,77 @@
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n16_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n16_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n16_r0_welded": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n16_r30_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n32_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n8_r0_joined": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n8_r0_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n8_r0_welded": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n8_r17_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p10_slant50__n8_r45_sep": {
     "validate": true,
     "1 reader labels": true,
     "2 layout": true,
     "4a clips (nominal)": true,
-    "4b loops (nominal)": false
+    "4b loops (nominal)": true
   },
   "p11_slantn__n12_r0_sep": {
     "validate": true,

@@ -18,8 +18,8 @@ use crate::geometry::support_layout::{
 pub type ModelExport = Option<(Vec<bool>, SupportLayout)>;
 
 const MAGIC: &[u8; 4] = b"FMEX";
-/// Increment when the encoding changes.
-const FORMAT_VERSION: u8 = 1;
+/// Increment when the encoding changes (2: the layout's micro supports).
+const FORMAT_VERSION: u8 = 2;
 
 /// What an entry file says about itself.
 #[derive(Debug, Clone, PartialEq)]
@@ -210,6 +210,7 @@ impl Writer {
         self.diameters(&l.kickstand_segment_diameters);
         self.set(&l.sticks);
         self.set(&l.twigs);
+        self.set(&l.micro);
     }
 }
 
@@ -346,6 +347,7 @@ impl Reader<'_> {
             kickstand_segment_diameters: self.diameters()?,
             sticks: self.set()?,
             twigs: self.set()?,
+            micro: self.set()?,
         })
     }
 }
@@ -417,6 +419,7 @@ mod tests {
         layout.kickstand_segment_diameters.insert(0, vec![0.9, 0.7]);
         layout.sticks.insert(2);
         layout.twigs.insert(1);
+        layout.micro.insert(1);
         layout
     }
 

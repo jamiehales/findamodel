@@ -7,8 +7,9 @@
 //! - validate: the truth itself (its surface on the mesh, closed welds, truth loops);
 //! - stage 1 "reader labels": the reader's elements against the truth parts (axis, width, label);
 //! - stage 2 "layout": counts, contacts, sockets, widths, routes and brace ends against the truth;
-//! - stage 4 on a nominal build (`nominal.rs`, the layout meshed roughly as DragonFruit builds it):
-//!   4a clips (no build triangle inside the model but tips) and 4b contact loops.
+//! - stage 4 on a nominal build (`nominal.rs`, the layout meshed roughly as DragonFruit builds what
+//!   the VOXL writer writes): 4a clips (no build triangle inside the model but tips) at tip offset 0
+//!   and 4b contact loops at DragonFruit's 0.05 mm, as on DragonFruit's own builds.
 //!
 //! Stage 3 (recall and precision of DragonFruit's own build) and stage 4 on DragonFruit's build
 //! need DragonFruit; `backend/tools/support-reader` runs them. Tolerances are the prototype's.
@@ -113,10 +114,13 @@ fn run(id: &str, keep: bool) -> Outcome {
     let lay = reading::layout(&r.classification);
     let s1 = score::stage1(&truth, &rd);
     let s2 = score::stage2(&truth, &lay);
-    let nm = nominal::build(&lay);
+    // Clips on the build at tip offset 0, loops on the one at DragonFruit's own offset (as stage 4 on
+    // DragonFruit's builds).
+    let nm = nominal::build(&lay, &r.classification.layout, nominal::CLIP_TIP_OFFSET_MM);
+    let nm_loops = nominal::build(&lay, &r.classification.layout, nominal::LOOP_TIP_OFFSET_MM);
     let model64: Vec<[[f64; 3]; 3]> = model32.iter().map(measure::widen).collect();
-    let sup: Vec<[[f64; 3]; 3]> = nm.tris.iter().map(|t| t.map(|p| p.0)).collect();
-    let (isect, touch) = (measure::isect(&sup, &model64), measure::touch(&sup, &model64));
+    let tris64 = |n: &nominal::Nominal| -> Vec<[[f64; 3]; 3]> { n.tris.iter().map(|t| t.map(|p| p.0)).collect() };
+    let (isect, touch) = (measure::isect(&tris64(&nm), &model64), measure::touch(&tris64(&nm_loops), &model64));
     let labels = |i: u32| nm.labels[i as usize].name().to_string();
     let s4 = score::stage4(&truth, &nm.tris, &isect, &touch, &labels, &v);
     let stages = json!({

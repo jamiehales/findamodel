@@ -52,6 +52,12 @@ const STICK_MIN_SPAN_MM: f32 = 5.0;
 /// their radius plus this clearance.
 const TWIG_JOINT_RATIO: f32 = 1.1;
 const TWIG_JOINT_CLEARANCE_MM: f32 = 0.05;
+/// A micro support's twig disks stand off by this share of the shaft width: the radius of the ball
+/// DragonFruit caps each disk with, so the ball stays out of the model. The longer disks of other
+/// twigs (the joint's radius plus clearance, at least the disk thickness) bend a micro support of a
+/// few tenths of a millimetre into a kink (owner, 2026-11-11). Other twigs keep their disks: this
+/// short stub sank their wider end joints into the model (5.9 mm2 of clip on 8e6618e3).
+const MICRO_TWIG_STANDOFF_SHARE: f32 = 0.5;
 /// DragonFruit marks down a brace knot within this share of its segment's length of either end
 /// (`t <= 0.02` or `t >= 0.98`), so brace knots are kept just inside it.
 const BRACE_KNOT_END_SHARE: f64 = 0.025;
@@ -345,16 +351,8 @@ impl SupportDocument {
         // Each support's segments, so later supports can hang knots on them.
         let mut shafts: Vec<Vec<Span>> = Vec::with_capacity(layout.supports.len());
         for (si, support) in layout.supports.iter().enumerate() {
-            if let SupportBase::Model(lower) = &support.base {
-                shafts.push(self.add_strut(
-                    support,
-                    lower,
-                    layout.sticks.contains(&si),
-                    layout.twigs.contains(&si),
-                    model_id,
-                    &place,
-                    &turn,
-                ));
+            if let (SupportBase::Model(lower), Some(ends)) = (&support.base, support_strut_ends(layout, si)) {
+                shafts.push(self.add_strut(support, lower, ends, model_id, &place, &turn));
                 continue;
             }
             let seg = |i: usize| layout.segment_diameter_mm(si, i);
@@ -532,31 +530,19 @@ impl SupportDocument {
 
     /// A strut between two parts of the model, lower end first (A), as DragonFruit's own
     /// placement would make it: a twig when the contacts are close, otherwise a stick.
-    #[allow(clippy::too_many_arguments)]
     fn add_strut(
         &mut self,
         support: &SupportPath,
         lower: &ContactTip,
-        stick: bool,
-        flat: bool,
+        strut_ends: StrutEnds,
         model_id: &str,
         place: &dyn Fn(Vec3) -> [f64; 3],
         turn: &dyn Fn(Vec3) -> [f64; 3],
     ) -> Vec<Span> {
         let upper = &support.tip;
         let diameter = support.shaft_diameter_mm;
-        // A strut with cone tips at its ends is a stick and one with flat ends a twig, whatever its
-        // span (the span cutoff is only DragonFruit's default for placing new struts); otherwise the cutoff.
-        let twig = flat || (!stick && (upper.contact - lower.contact).length() < STICK_MIN_SPAN_MM);
-        // A twig's shaft runs between joints standing off its disks; a stick's between its sockets.
-        let (joint_diameter, standoff) = if twig {
-            let joint = diameter * TWIG_JOINT_RATIO;
-            (joint, (joint / 2.0 + TWIG_JOINT_CLEARANCE_MM).max(TIP_DISK_THICKNESS_MM))
-        } else {
-            (diameter + JOINT_DIAMETER_OFFSET_MM, 0.0)
-        };
-        let end = |tip: &ContactTip| if twig { tip.contact + tip.surface_normal * standoff } else { tip.socket };
-        let (a, b) = (end(lower), end(upper));
+        let StrutEnds { twig, joint_diameter_mm: joint_diameter, standoff_mm: standoff } = strut_ends;
+        let (a, b) = (strut_ends.end(lower), strut_ends.end(upper));
 
         let mut ends = vec![place(a)];
         ends.extend(support.joints.iter().map(|&p| place(p)));
@@ -613,6 +599,75 @@ impl SupportDocument {
         }
         spans
     }
+}
+
+/// How a strut (a support between two parts of the model) is written at its ends.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrutEnds {
+    /// A twig (contact disks `diameter` wide at both contacts), else a stick (contact cones).
+    pub twig: bool,
+    /// The width of the joints at both ends of the shaft.
+    pub joint_diameter_mm: f32,
+    /// A twig's disk length: its shaft's end joints stand this far off the contacts along the
+    /// surface normal (0 for a stick).
+    pub standoff_mm: f32,
+}
+
+impl StrutEnds {
+    /// Where the shaft ends at `tip`: a twig's joint off the disk, a stick's socket.
+    pub fn end(&self, tip: &ContactTip) -> Vec3 {
+        if self.twig { tip.contact + tip.surface_normal * self.standoff_mm } else { tip.socket }
+    }
+}
+
+/// How a strut of shaft width `diameter` between `lower` and `upper` is written. A strut with cone
+/// tips at its ends (`stick`) is a stick and one with flat ends (`flat`) a twig, whatever its span
+/// (the span cutoff is only DragonFruit's default for placing new struts); otherwise the cutoff.
+/// A twig's shaft runs between joints standing off its disks; a stick's between its sockets. A
+/// `micro` support with cone ends that is shorter than its two contact cones as DragonFruit builds
+/// them (each cone to the far side of its socket joint) is a twig all the same: as a stick its
+/// cones and socket joints overlap and build about twice its width at the contacts (owner,
+/// 2026-11-11). A micro support's twig disks are short ([`MICRO_TWIG_STANDOFF_SHARE`]).
+pub fn strut_ends(
+    lower: &ContactTip,
+    upper: &ContactTip,
+    diameter: f32,
+    stick: bool,
+    flat: bool,
+    micro: bool,
+) -> StrutEnds {
+    let span = (upper.contact - lower.contact).length();
+    // A micro support shorter than its two contact cones as DragonFruit builds them (each from the
+    // contact to the far side of its socket joint, which is wider than the shaft): a twig.
+    let built_cone =
+        |tip: &ContactTip| (tip.socket - tip.contact).length() + (diameter + JOINT_DIAMETER_OFFSET_MM) / 2.0;
+    let too_short = micro && span < built_cone(lower) + built_cone(upper);
+    let twig = flat || (stick && too_short) || (!stick && span < STICK_MIN_SPAN_MM);
+    if twig {
+        let joint = diameter * TWIG_JOINT_RATIO;
+        let standoff = if micro {
+            diameter * MICRO_TWIG_STANDOFF_SHARE
+        } else {
+            (joint / 2.0 + TWIG_JOINT_CLEARANCE_MM).max(TIP_DISK_THICKNESS_MM)
+        };
+        StrutEnds { twig, joint_diameter_mm: joint, standoff_mm: standoff }
+    } else {
+        StrutEnds { twig, joint_diameter_mm: diameter + JOINT_DIAMETER_OFFSET_MM, standoff_mm: 0.0 }
+    }
+}
+
+/// How support `i` of a layout is written at its ends, if it is a strut.
+pub fn support_strut_ends(layout: &SupportLayout, i: usize) -> Option<StrutEnds> {
+    let path = layout.supports.get(i)?;
+    let SupportBase::Model(lower) = &path.base else { return None };
+    Some(strut_ends(
+        lower,
+        &path.tip,
+        path.shaft_diameter_mm,
+        layout.sticks.contains(&i),
+        layout.twigs.contains(&i),
+        layout.micro.contains(&i),
+    ))
 }
 
 /// Where DragonFruit's sliced contact cone meets the surface, in the surface plane through the
@@ -782,11 +837,13 @@ fn contact_cone(
     place: &dyn Fn(Vec3) -> [f64; 3],
     turn: &dyn Fn(Vec3) -> [f64; 3],
 ) -> Value {
-    if let Some(sphere) = sphere_tip(tip, sphere_tips) {
-        return sphere_cone(tip, sphere, socket_id, place, turn);
-    }
+    let (pos, diameter) = match written_tip(tip, sphere_tips) {
+        WrittenTip::Sphere { contact_diameter_mm, radius_ratio, depth_mm } => {
+            return sphere_cone(tip, (contact_diameter_mm, radius_ratio, depth_mm), socket_id, place, turn);
+        }
+        WrittenTip::Cone { pos, diameter_mm } => (pos, diameter_mm),
+    };
     let disk = (tip.contact_diameter_mm / 2.0).max(TIP_DISK_THICKNESS_MM);
-    let (pos, diameter) = sliced_contact_placement(tip);
     let axis = tip.socket - (pos + tip.surface_normal * disk);
     let length = axis.length();
     let direction = if length > 1e-4 { axis * (1.0 / length) } else { tip.surface_normal };
@@ -808,6 +865,32 @@ fn contact_cone(
         },
         "socketJointId": socket_id,
     })
+}
+
+/// The contact a tip is written as: what DragonFruit gets to build the tip from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WrittenTip {
+    /// A contact cone written at `pos` (in model coordinates, before placement) and `diameter_mm`
+    /// wide there ([`sliced_contact_placement`]; a blunt end wider than its rod is sunk below the
+    /// surface). DragonFruit slices it as one frustum from `pos - surface_normal * tip offset`,
+    /// `diameter_mm` wide, to the socket at the body width.
+    Cone { pos: Vec3, diameter_mm: f32 },
+    /// A sphere tip at the tip's contact ([`SPHERE_TIPS_ENABLED`]): the cone's narrow end
+    /// `contact_diameter_mm` wide at the ball's centre, the ball `radius_ratio` times that end's
+    /// radius, its centre `depth_mm` below the surface before the tip offset, or DragonFruit's own
+    /// seat (`sqrt(R^2 - r^2)` outside the surface, before the offset) when None.
+    Sphere { contact_diameter_mm: f64, radius_ratio: f64, depth_mm: Option<f64> },
+}
+
+/// How the writer writes a tip's contact, `sphere_tips` saying whether ball tips are sphere tips
+/// (the writer uses [`SPHERE_TIPS_ENABLED`]). The one place tip placement is decided, so that what
+/// is written and what checks model from it (the synthetic suite's nominal build) agree.
+pub fn written_tip(tip: &ContactTip, sphere_tips: bool) -> WrittenTip {
+    if let Some((contact_diameter_mm, radius_ratio, depth_mm)) = sphere_tip(tip, sphere_tips) {
+        return WrittenTip::Sphere { contact_diameter_mm, radius_ratio, depth_mm };
+    }
+    let (pos, diameter_mm) = sliced_contact_placement(tip);
+    WrittenTip::Cone { pos, diameter_mm }
 }
 
 /// Whether tips whose original has a ball at the contact (a separate ball sunk at a cone's end, or
@@ -1962,5 +2045,65 @@ mod tests_reader_layouts {
         let (p, d) = sliced_contact_placement(&t);
         assert!((d - 1.0).abs() < 1e-6, "{d}");
         assert!(p.z > 10.0 - 1e-6, "sunk into the model (along the surface normal, which faces down): {p}");
+    }
+
+    #[test]
+    fn the_written_tip_is_the_contact_cone_written() {
+        let leaning = tip(Vec3::new(0.0, 0.0, 10.0), Vec3::new(2.0, 0.0, 8.0), 0.4, 0.8);
+        let WrittenTip::Cone { pos, diameter_mm } = written_tip(&leaning, false) else { panic!("a cone") };
+        let cone = &supp(&trunk(leaning.clone()), false)["trunks"][0]["contactCone"];
+        let at = |k: &str| cone["pos"][k].as_f64().unwrap();
+        assert!((at("x") - f64::from(pos.x)).abs() < 1e-4 && (at("z") - f64::from(pos.z)).abs() < 1e-4, "{cone} {pos}");
+        assert!((cone["profile"]["contactDiameterMm"].as_f64().unwrap() - f64::from(diameter_mm)).abs() < 1e-4);
+        let mut ball = leaning;
+        ball.ball = Some(BallTip { diameter_mm: 0.6, cone_end_mm: 0.4, depth_mm: Some(0.15) });
+        assert!(matches!(written_tip(&ball, true), WrittenTip::Sphere { depth_mm: Some(_), .. }));
+        assert!(matches!(written_tip(&ball, false), WrittenTip::Cone { .. }));
+    }
+
+    #[test]
+    fn strut_ends_follow_the_end_kind_then_the_span() {
+        let lower = tip(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 10.4), 1.0, 1.0);
+        let upper = tip(Vec3::new(0.0, 0.0, 12.0), Vec3::new(0.0, 0.0, 11.6), 1.0, 1.0);
+        let short = strut_ends(&lower, &upper, 1.0, false, false, false);
+        assert!(short.twig && short.standoff_mm > 0.0);
+        assert!((short.end(&lower).z - (10.0 - short.standoff_mm)).abs() < 1e-6, "off the disk along the normal");
+        let stick = strut_ends(&lower, &upper, 1.0, true, false, false);
+        assert!(!stick.twig && stick.end(&upper) == upper.socket);
+        assert!(strut_ends(&lower, &upper, 1.0, false, true, false).twig);
+    }
+
+    #[test]
+    fn a_cone_ended_micro_support_shorter_than_its_built_cones_is_a_twig() {
+        // Cones 0.06 mm long on a 0.05 mm shaft: each built cone reaches 0.06 + 0.075 mm (the socket joint's radius).
+        let at = |z: f32, dz: f32, nz: f32| {
+            let mut t = tip(Vec3::new(0.0, 0.0, z), Vec3::new(0.0, 0.0, z + dz), 0.05, 0.05);
+            t.surface_normal = Vec3::new(0.0, 0.0, nz);
+            t
+        };
+        let short = strut_ends(&at(10.0, 0.06, 1.0), &at(10.2, -0.06, -1.0), 0.05, true, false, true);
+        assert!(short.twig, "0.2 mm < 2 x 0.135 mm: {short:?}");
+        let long = strut_ends(&at(10.0, 0.06, 1.0), &at(10.4, -0.06, -1.0), 0.05, true, false, true);
+        assert!(!long.twig, "0.4 mm is longer than its cones: {long:?}");
+        let strut = strut_ends(&at(10.0, 0.06, 1.0), &at(10.2, -0.06, -1.0), 0.05, true, false, false);
+        assert!(!strut.twig, "struts with cone ends stay sticks: {strut:?}");
+    }
+
+    #[test]
+    fn a_micro_twig_stands_off_by_its_disk_ball_radius() {
+        let lower = tip(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, 10.05), 0.05, 0.05);
+        let upper = tip(Vec3::new(0.0, 0.0, 10.2), Vec3::new(0.0, 0.0, 10.15), 0.05, 0.05);
+        let micro = strut_ends(&lower, &upper, 0.05, false, true, true);
+        assert!(micro.twig && (micro.standoff_mm - 0.025).abs() < 1e-6, "{micro:?}");
+        let plain = strut_ends(&lower, &upper, 0.05, false, true, false);
+        assert!(plain.standoff_mm >= TIP_DISK_THICKNESS_MM, "other twigs keep their disks: {plain:?}");
+        // Written: the micro twig's disks are as long as the stand-off.
+        let path = SupportPath { tip: upper, base: SupportBase::Model(lower), joints: vec![], shaft_diameter_mm: 0.05 };
+        let mut layout = SupportLayout { supports: vec![path], ..SupportLayout::default() };
+        layout.twigs.insert(0);
+        layout.micro.insert(0);
+        assert_eq!(support_strut_ends(&layout, 0), Some(micro));
+        let twig = &supp(&layout, false)["twigs"][0];
+        assert_eq!(twig["contactDiskA"]["diskLengthOverride"], 0.025);
     }
 }

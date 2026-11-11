@@ -991,35 +991,10 @@ fn run_built(dir: &Path, id: &str, truth: &Value) -> Value {
     let tip_rows: Vec<Value> = tips
         .par_iter()
         .map(|t| {
-            // merge r7: a sphere tip's ball (cball) is the part that crosses the surface: taken before the cone.
-            let sphere = parts
-                .iter()
-                .filter(|p| p.kind == "tip")
-                .filter(|p| p.sphere_like().is_some_and(|(c, r)| dist(c, t.pos) <= r + 0.15 && dist(c, t.pos) < dist(c, t.socket)))
-                .min_by(|x, y| {
-                    let d = |p: &Part| p.sphere_like().map_or(f64::MAX, |(c, _)| dist(c, t.pos));
-                    d(x).total_cmp(&d(y))
-                });
-            let nearest = parts
-                .iter()
-                .filter(|p| p.kind == "tip")
-                .filter(|p| p.tris.iter().flatten().any(|v| dist(*v, t.pos) <= t.radius + 0.1))
-                .min_by(|x, y| {
-                    let d = |p: &Part| p.tris.iter().flatten().map(|v| dist(*v, t.pos)).fold(f64::MAX, f64::min);
-                    d(x).total_cmp(&d(y))
-                });
             // merge (owner decision 9): TOUCH_PEN (default 0.05) is how far the built cone is run on into the model before
             // its loop is taken; 0 for a build made at DragonFruit's own 0.05 mm tip offset (the loop as built).
             let pen: f64 = std::env::var("TOUCH_PEN").ok().and_then(|v| v.parse().ok()).unwrap_or(0.05);
-            // Of the ball and the nearest tip part, the one leaving the larger loop (a ball sunk past its cone's end).
-            let area_of = |p: &Part| {
-                let deep = if pen > 0.0 { with_penetration(p, t, t.normal, pen) } else { p.clone() };
-                loops_of(&deep, &model).iter().map(|l| l.area).fold(0.0, f64::max)
-            };
-            let own = match (sphere, nearest) {
-                (Some(a), Some(b)) if !std::ptr::eq(a, b) => if area_of(a) > area_of(b) { Some(a) } else { Some(b) },
-                (s, n) => n.or(s),
-            };
+            let own = tip_part(t, &parts, &model, pen);
             let d05 = own.map(|p| {
                 let deep = if pen > 0.0 { with_penetration(p, t, t.normal, pen) } else { p.clone() };
                 loops_of(&deep, &model).iter().map(|l| l.area).fold(0.0, f64::max)
@@ -1154,6 +1129,49 @@ fn scene_check(name: &str, model: Vec<[P; 3]>, support: Vec<[P; 3]>, want: (usiz
     let ok = got == want;
     println!("{} {name}: touch/through/buried {got:?}, want {want:?}", if ok { "ok  " } else { "FAIL" });
     ok
+}
+
+/// The built part whose loop is a tip's size. A cone tip: the tip part nearest its contact, or a sphere tip's ball
+/// sunk past the cone's end when that leaves the larger loop. A twig's disk: of the tip parts at the contact (the
+/// disk, the ball DragonFruit caps it with and the shaft's end joint are shells of their own, each crossing the
+/// surface when the disk is short), the one leaving the largest loop centred within the disk.
+fn tip_part<'a>(t: &BuiltTip, parts: &'a [Part], model: &Model, pen: f64) -> Option<&'a Part> {
+    let deep = |p: &Part| if pen > 0.0 { with_penetration(p, t, t.normal, pen) } else { p.clone() };
+    let near = |p: &&Part| p.kind == "tip" && p.tris.iter().flatten().any(|v| dist(*v, t.pos) <= t.radius + 0.1);
+    if t.disk {
+        let area_at = |p: &Part| {
+            loops_of(&deep(p), model)
+                .iter()
+                .filter(|l| dist(l.centre, t.pos) <= t.radius + 0.05)
+                .map(|l| l.area)
+                .fold(0.0, f64::max)
+        };
+        return parts
+            .iter()
+            .filter(near)
+            .map(|p| (area_at(p), p))
+            .max_by(|x, y| x.0.total_cmp(&y.0))
+            .map(|x| x.1);
+    }
+    // merge r7: a sphere tip's ball (cball) is the part that crosses the surface: taken before the cone.
+    let sphere = parts
+        .iter()
+        .filter(|p| p.kind == "tip")
+        .filter(|p| p.sphere_like().is_some_and(|(c, r)| dist(c, t.pos) <= r + 0.15 && dist(c, t.pos) < dist(c, t.socket)))
+        .min_by(|x, y| {
+            let d = |p: &Part| p.sphere_like().map_or(f64::MAX, |(c, _)| dist(c, t.pos));
+            d(x).total_cmp(&d(y))
+        });
+    let nearest = parts.iter().filter(near).min_by(|x, y| {
+        let d = |p: &Part| p.tris.iter().flatten().map(|v| dist(*v, t.pos)).fold(f64::MAX, f64::min);
+        d(x).total_cmp(&d(y))
+    });
+    // Of the ball and the nearest tip part, the one leaving the larger loop (a ball sunk past its cone's end).
+    let area_of = |p: &Part| loops_of(&deep(p), model).iter().map(|l| l.area).fold(0.0, f64::max);
+    match (sphere, nearest) {
+        (Some(a), Some(b)) if !std::ptr::eq(a, b) => Some(if area_of(a) > area_of(b) { a } else { b }),
+        (s, n) => n.or(s),
+    }
 }
 
 fn tframe(a: P, b: P, ra: f64, rb: f64) -> Vec<[P; 3]> {
@@ -1338,4 +1356,34 @@ pub fn run(args: &[String]) {
         _ => panic!("unknown mode"),
     };
     println!("{out}");
+}
+
+#[cfg(test)]
+mod tip_part_tests {
+    use super::*;
+
+    #[test]
+    fn a_short_twig_disk_is_sized_by_its_largest_loop() {
+        // The slab's underside at z = 10; a twig's disk 0.05 mm wide sunk 0.075 mm into it, standing off 0.025 mm
+        // (its radius), with DragonFruit's ball on the disk and the shaft's end joint (1.1 x) as shells of their own.
+        let model = Model::new(boxm([-10.0, -10.0, 10.0], [10.0, 10.0, 14.0]));
+        let r = 0.025;
+        let parts = vec![
+            Part::new(ball([0.0, 0.0, 10.0 - r], r), "tip"),
+            Part::new(ball([0.0, 0.0, 10.0 - r], 1.1 * r), "tip"),
+            Part::new(tframe([0.0, 0.0, 10.0 - r], [0.0, 0.0, 10.05], r, r), "tip"),
+        ];
+        let tip = BuiltTip {
+            pos: [0.0, 0.0, 10.0],
+            socket: [0.0, 0.0, 10.0 - 3.0 * r],
+            radius: r,
+            contact_d: 2.0 * r,
+            disk: true,
+            normal: [0.0, 0.0, -1.0],
+        };
+        let own = tip_part(&tip, &parts, &model, 0.0).expect("a tip part");
+        let area = loops_of(own, &model).iter().map(|l| l.area).fold(0.0, f64::max);
+        let full = std::f64::consts::PI * r * r;
+        assert!(area > 0.8 * full, "the disk's own loop: {area} of {full}");
+    }
 }

@@ -2,7 +2,7 @@
 //! widths, and the line helpers the layout uses.
 
 use super::super::math::{P, add, closest_on_tri, cross, dist, dot, len, mul, sub, unit_div};
-use super::super::pieces::{PieceKind, SectionKind};
+use super::super::pieces::{PieceKind, Section, SectionKind};
 use super::layout::{LTip, Lay};
 use super::{BLUNT_MM, DRAWN_AREA_SHARE, MAX_CD, MIN_CD, Owner, ROOT_TOP, Reader, STRAIGHT_MM, STUB_MM, Step};
 
@@ -534,20 +534,56 @@ impl Reader<'_> {
         best.map(|b| b.1)
     }
 
-    /// (stick, twig): a strut whose end pieces both carry a cone is a stick, one where neither
-    /// does a twig.
+    /// (stick, twig): a strut (or micro support between two parts of the model) whose end pieces
+    /// both carry a cone is a stick, one where neither does a twig. When both ends are on one piece
+    /// (a micro support's single rod), each end is judged by the section at that end.
     pub(super) fn strut_kind(&self, path: &[Step]) -> (bool, bool) {
-        let cone = |q: usize| {
-            self.p[q].secs.iter().any(|s| s.k == SectionKind::Cone && s.r0.max(s.r1) > 1.15 * s.r0.min(s.r1))
+        let (first, last) = (path[0], path[path.len() - 1]);
+        let (a, b) = if first.0 == last.0 {
+            let secs = &self.p[first.0].secs;
+            (end_is_cone(secs, first.1), end_is_cone(secs, last.2))
+        } else {
+            (has_cone(&self.p[first.0].secs), has_cone(&self.p[last.0].secs))
         };
-        let (a, b) = (cone(path[0].0), cone(path[path.len() - 1].0));
         (a && b, !a && !b)
     }
+}
+
+fn is_cone(s: &Section) -> bool {
+    s.k == SectionKind::Cone && s.r0.max(s.r1) > 1.15 * s.r0.min(s.r1)
+}
+
+/// Whether a piece carries a cone anywhere.
+fn has_cone(secs: &[Section]) -> bool {
+    secs.iter().any(is_cone)
+}
+
+/// Whether the section of a piece at axial position `t` (one of its ends) is a cone.
+fn end_is_cone(secs: &[Section], t: f64) -> bool {
+    secs.iter()
+        .min_by(|x, y| {
+            let d = |s: &Section| (s.t0.min(s.t1) - t).max(t - s.t0.max(s.t1)).max(0.0);
+            d(x).total_cmp(&d(y))
+        })
+        .is_some_and(is_cone)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sec(k: SectionKind, t0: f64, t1: f64, r0: f64, r1: f64) -> Section {
+        Section { k, t0, t1, r0, r1, tc: None, big_r: None }
+    }
+
+    #[test]
+    fn each_end_of_one_piece_is_judged_by_its_own_section() {
+        let rod = [sec(SectionKind::Rod, 0.0, 8.0, 0.15, 0.15)];
+        assert!(!end_is_cone(&rod, 0.0) && !end_is_cone(&rod, 8.0));
+        let tapered = [sec(SectionKind::Cone, 0.0, 1.0, 0.1, 0.25), sec(SectionKind::Rod, 1.0, 8.0, 0.25, 0.25)];
+        assert!(end_is_cone(&tapered, 0.0) && !end_is_cone(&tapered, 8.0));
+        assert!(has_cone(&tapered) && !has_cone(&rod));
+    }
 
     #[test]
     fn points_along_a_polyline_and_the_line_cut_from_them() {

@@ -3,7 +3,9 @@
 
 use crate::geom::{self, Tri};
 use crate::scene::PRef::{Post as Pp, Sup as Sp};
-use crate::scene::{Base, Brace, Kick, Line, PRef, Post, Prim, ROOT_TOP, Scene, Shape, Sup, TipArgs, Z, radians, strs};
+use crate::scene::{
+    Base, Brace, Kick, Line, PRef, Part, Post, Prim, ROOT_TOP, Scene, Shape, Sup, TipArgs, Z, radians, strs,
+};
 use crate::vec::{V3, mat_vec, pairwise_sum, v3};
 use serde_json::{Value, json};
 
@@ -883,6 +885,8 @@ fn micro_model(s: &mut Scene, d: f64, span: f64) -> R {
     let tu = s.bare_tip("m-tip", up, v3(0.0, 0.0, -1.0), v3(0.0, 0.0, 1.0), d);
     let tl = s.bare_tip("m-foot", low, v3(0.0, 0.0, 1.0), v3(0.0, 0.0, -1.0), d);
     s.rod_ext("m", "micro", low - v3(0.0, 0.0, 0.1), up + v3(0.0, 0.0, 0.1), d / 2.0, None, (false, false));
+    // Flat rod ends: a twig, whatever its span (the owner's rule for struts and micro supports alike).
+    s.written.push(("m".into(), "twig"));
     let line = vec![s.tips[tl].socket, s.tips[tu].socket];
     s.supports.push(Sup {
         name: "m".into(),
@@ -1126,6 +1130,24 @@ fn h05_flat_strut(s: &mut Scene) -> R {
         Some(strs(&["shaft", "contact_rod", "micro"])),
         None,
     );
+    // Each rod end inside the model, bounded by one loop, is a tip (the touch rule): the end, from the rod's
+    // face 0.1 mm inside the model to the tip's socket, is the tip's part. It is truth only (the rod reads as
+    // one strut, so it has no reading of its own to check).
+    for (tip, end) in [(tu, up + v3(0.0, 0.0, 0.1)), (tl, low - v3(0.0, 0.0, 0.1))] {
+        let name = s.tips[tip].name.clone();
+        let socket = s.tips[tip].socket;
+        s.parts.push(Part {
+            name,
+            kind: "tip".into(),
+            a: end,
+            b: socket,
+            ra: 0.5,
+            rb: 0.5,
+            required: false,
+            expect: vec![],
+        });
+        s.tips[tip].part = Some(s.parts.len() - 1);
+    }
     let line = vec![s.tips[tl].socket, s.tips[tu].socket];
     s.supports.push(Sup {
         name: "a".into(),
@@ -1134,6 +1156,7 @@ fn h05_flat_strut(s: &mut Scene) -> R {
         shaft_d: 1.0,
         l: Line { line, ..Default::default() },
     });
+    s.written.push(("a".into(), "twig"));
     s.notes.push("Flat rod ends on both faces: written as a twig (contact disks), not a stick.".into());
     Ok(())
 }

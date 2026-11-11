@@ -7,27 +7,35 @@
 //! - joint balls (width + JOINT_EXTRA_MM) at every bend inside a pillar, and knots (host width +
 //!   0.1) where a branch or kickstand meets its host and at both ends of every brace (brace
 //!   width + 0.1);
-//! - a contact cone at every tip, placed by `tip_cone` (sunk 0.05 mm into the model);
+//! - a contact cone at every tip, from the contact the VOXL writer writes for it
+//!   (`voxl::written_tip`: lean-tip placement, blunt ends wider than their rod sunk, sphere tips
+//!   when the writer has them on), built as DragonFruit's slicer builds it at a given tip offset
+//!   (`CLIP_TIP_OFFSET_MM` for the clip check, `LOOP_TIP_OFFSET_MM` for the loops);
+//! - at a twig's ends (a strut the writer writes with contact disks, `voxl::support_strut_ends`), the
+//!   disks and the joints standing off them instead of contact cones;
 //! - braces as frusta of their width.
 //!
 //! Every solid is closed and has `SIDES` sides.
 
 use crate::vec::V3;
+use findamodel::geometry::Vec3;
+use findamodel::geometry::support_layout::{ContactTip, SupportBase, SupportLayout};
+use findamodel::geometry::voxl::{SPHERE_TIPS_ENABLED, StrutEnds, WrittenTip, support_strut_ends, written_tip};
 use serde_json::Value;
 
 pub const SIDES: usize = 32;
 const BALL_LAT: usize = 16;
 const ROOT_TOP: f64 = 2.0;
 const ROOT_DISK: f64 = 0.5;
-/// How far a contact cone's narrow end sinks into the model along the surface normal (the
-/// slicer's tip offset).
-pub const TIP_SINK_MM: f64 = 0.05;
+/// The tip offsets of the DragonFruit builds stage 4 is scored on: clips (4a) on the round trip's
+/// offset 0 build (`mesh/`), loops (4b) on the build at DragonFruit's own 0.05 mm (`mesh_tipoffset/`,
+/// as the slicer runs it). DragonFruit starts a contact cone (or a twig's disk) this far below the
+/// written contact, along the surface normal.
+pub const CLIP_TIP_OFFSET_MM: f64 = 0.0;
+pub const LOOP_TIP_OFFSET_MM: f64 = 0.05;
 /// How much wider than its pillar a joint ball at a bend inside one pillar is.
 /// (0.0: DragonFruit's own builds show no wider ball at a bend; 0.1 clipped c04 and c05.)
 pub const JOINT_EXTRA_MM: f64 = 0.0;
-/// Whether a contact cone's narrow end sinks along the cone's axis (true; agrees with DragonFruit's
-/// stage 4 on more variants) or along the surface normal (false).
-pub const SINK_ALONG_AXIS: bool = true;
 /// How much wider than its host a knot ball (branch or kickstand on a host, brace ends) is.
 pub const KNOT_EXTRA_MM: f64 = 0.1;
 
@@ -61,6 +69,8 @@ impl Element {
 pub struct Nominal {
     pub tris: Vec<[V3; 3]>,
     pub labels: Vec<Element>,
+    /// The tip offset it is built at.
+    offset: f64,
 }
 
 fn arr(x: &Value) -> V3 {
@@ -73,19 +83,32 @@ fn pts(x: &Value) -> Vec<V3> {
     x.as_array().map(|a| a.iter().map(arr).collect()).unwrap_or_default()
 }
 
-/// The contact cone of one tip: (socket, socket width, narrow end, narrow width). The narrow end
-/// is the contact sunk TIP_SINK_MM into the model (along the cone's axis, or along the surface
-/// normal with SINK_ALONG_AXIS false), at contact_d; the socket end is at the tip's socket, at
-/// body_d. This is the one place that decides tip placement.
-pub fn tip_cone(tip: &Value) -> (V3, f64, V3, f64) {
-    let n = arr(&tip["normal"]).unit();
-    let contact = arr(&tip["contact"]);
-    let narrow = if SINK_ALONG_AXIS {
-        contact + (contact - arr(&tip["socket"])).unit() * TIP_SINK_MM
-    } else {
-        contact - n * TIP_SINK_MM
-    };
-    (arr(&tip["socket"]), num(&tip["body_d"]), narrow, num(&tip["contact_d"]))
+fn v(p: Vec3) -> V3 {
+    V3([p.x, p.y, p.z].map(f64::from))
+}
+
+/// A frustum (start, start width, end, end width).
+pub type Cone = (V3, f64, V3, f64);
+
+/// The contact of one tip as DragonFruit builds what the writer writes for it: a cone
+/// (start, start width, socket, body width) and, for a sphere tip, its ball (centre, width).
+pub fn tip_cone(tip: &ContactTip, offset: f64) -> (Cone, Option<(V3, f64)>) {
+    let n = v(tip.surface_normal.normalized());
+    let (socket, body) = (v(tip.socket), f64::from(tip.body_diameter_mm));
+    match written_tip(tip, SPHERE_TIPS_ENABLED) {
+        WrittenTip::Cone { pos, diameter_mm } => ((v(pos) - n * offset, f64::from(diameter_mm), socket, body), None),
+        WrittenTip::Sphere { contact_diameter_mm: end, radius_ratio, depth_mm } => {
+            let big = radius_ratio * end / 2.0;
+            // The centre below the surface by the written depth plus the offset, or DragonFruit's own seat:
+            // sqrt(R^2 - r^2) outside the surface, less the offset.
+            let lift = match depth_mm {
+                Some(d) => -(d + offset),
+                None => (big * big - end * end / 4.0).max(0.0).sqrt() - offset,
+            };
+            let centre = v(tip.contact) + n * lift;
+            ((centre, end, socket, body.max(end)), Some((centre, 2.0 * big)))
+        }
+    }
 }
 
 fn frame(axis: V3) -> (V3, V3) {
@@ -185,9 +208,20 @@ impl Nominal {
         }
     }
 
-    fn tip(&mut self, tip: &Value) {
-        let (s, sd, n, nd) = tip_cone(tip);
-        self.frustum(s, sd, n, nd, Element::Cone);
+    /// A twig's contact disk as DragonFruit slices it: a cylinder `d` wide from the tip offset
+    /// below the contact to `length` off it along the surface normal, capped by a ball as wide.
+    fn disk(&mut self, tip: &ContactTip, d: f64, length: f64) {
+        let (c, n) = (v(tip.contact), v(tip.surface_normal.normalized()));
+        self.frustum(c - n * self.offset, d, c + n * length, d, Element::Cone);
+        self.ball(c + n * length, d);
+    }
+
+    fn tip(&mut self, tip: &ContactTip) {
+        let ((a, da, b, db), ball) = tip_cone(tip, self.offset);
+        self.frustum(a, da, b, db, Element::Cone);
+        if let Some((c, d)) = ball {
+            self.ball(c, d);
+        }
     }
 }
 
@@ -215,14 +249,22 @@ fn host_width(lay: &Value, lines: &[(Vec<V3>, Vec<f64>)], i: usize, p: V3) -> f6
     best.1
 }
 
-/// Meshes a layout.
-pub fn build(lay: &Value) -> Nominal {
-    let mut m = Nominal::default();
+/// Meshes a layout: `lay` in the suite's shape, `written` the same layout as the writer takes it
+/// (its tips, as the writer places them); DragonFruit's tip offset `offset`.
+pub fn build(lay: &Value, written: &SupportLayout, offset: f64) -> Nominal {
+    let mut m = Nominal { offset, ..Nominal::default() };
     let empty = vec![];
     let sups = lay["supports"].as_array().unwrap_or(&empty);
     let posts = lay["posts"].as_array().unwrap_or(&empty);
     let mut lines: Vec<(Vec<V3>, Vec<f64>)> = Vec::new();
-    for s in sups {
+    // A strut's ends as the writer writes them (a twig's shaft ends stand off its disks).
+    let strut = |i: usize| -> Option<(&ContactTip, StrutEnds)> {
+        match (&written.supports[i].base, support_strut_ends(written, i)) {
+            (SupportBase::Model(lower), Some(ends)) => Some((lower, ends)),
+            _ => None,
+        }
+    };
+    for (i, s) in sups.iter().enumerate() {
         let b = &s["base"];
         let mut line = Vec::new();
         if let Some(p) = b.get("plate") {
@@ -234,6 +276,11 @@ pub fn build(lay: &Value) -> Nominal {
         }
         line.extend(pts(&s["joints"]));
         line.push(arr(&s["tip"]["socket"]));
+        if let Some((lower, ends)) = strut(i).filter(|e| e.1.twig) {
+            line[0] = v(ends.end(lower));
+            let last = line.len() - 1;
+            line[last] = v(ends.end(&written.supports[i].tip));
+        }
         let w = widths(s, num(&s["shaft_d"]), line.len() - 1);
         lines.push((line, w));
     }
@@ -254,9 +301,20 @@ pub fn build(lay: &Value) -> Nominal {
             let host = b["parent"].as_u64().unwrap() as usize;
             m.ball(arr(at), host_width(lay, &lines, host, arr(at)) + KNOT_EXTRA_MM);
         }
-        m.tip(&s["tip"]);
-        if s.get("lower").is_some_and(|l| !l.is_null()) {
-            m.tip(&s["lower"]);
+        let path = &written.supports[i];
+        match strut(i) {
+            Some((lower, ends)) if ends.twig => {
+                let d = f64::from(path.shaft_diameter_mm);
+                for tip in [lower, &path.tip] {
+                    m.disk(tip, d, f64::from(ends.standoff_mm));
+                    m.ball(v(ends.end(tip)), f64::from(ends.joint_diameter_mm));
+                }
+            }
+            Some((lower, _)) => {
+                m.tip(&path.tip);
+                m.tip(lower);
+            }
+            None => m.tip(&path.tip),
         }
     }
     for (j, p) in posts.iter().enumerate() {

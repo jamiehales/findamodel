@@ -13,7 +13,7 @@ use crate::geometry::support_layout::SupportLayout;
 
 /// Increment when the reader or the way its layout is written changes, so anything derived from
 /// it (cached VOXL downloads) is rebuilt.
-pub const CURRENT_SUPPORT_READER_VERSION: i32 = 1;
+pub const CURRENT_SUPPORT_READER_VERSION: i32 = 2;
 
 /// Shells reaching no higher than this are raft and give no contacts. The prototype measured the
 /// suite (raft 3.0 mm) and the real models with 3.5 mm; a taller raft raises it.

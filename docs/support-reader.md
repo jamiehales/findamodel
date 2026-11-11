@@ -364,8 +364,10 @@ split stretches again, then pads).
 - **Root width** (`root_d`). The width whose DragonFruit root (a 0.5 mm disk under a 1.5 mm cone to
   the shaft at the 2 mm root top) best overlaps the original foot above the raft (the root pieces and
   the foot's own flare, taken as round), by intersection over union, never narrower than the shaft.
-- **Strut kind** (`strut_kind`). A strut whose two end pieces both carry a cone is a stick; one where
-  neither does is a twig (owner: h04_short, h05_flat_strut).
+- **Strut kind** (`strut_kind`). A strut, or a micro support between two parts of the model, whose
+  two end pieces both carry a cone is a stick; one where neither does is a twig, whatever its span
+  (owner: h04_short, h05_flat_strut, m01 and m02). When both ends lie on one piece (a micro support's
+  single rod), each end is judged by the section at that end.
 
 | Constant | Value | Why |
 | --- | --- | --- |
@@ -387,8 +389,10 @@ split stretches again, then pads).
   the route in 0.05 mm steps until the ball clears the surface by `SOCKET_CLEAR_MM`, by at most
   `SOCKET_MOVE_MM` (c03_shorttip). A shaft at a slant clears the surface with its own side, as the
   original's does. A longer move made real model fd7a5cf0 clip elsewhere.
-- **Struts.** Both end tips with cones: written as a stick. Both flat: a twig. Otherwise
-  DragonFruit's span rule (a twig under `STICK_MIN_SPAN_MM`). Micro supports keep the span rule.
+- **Struts and micro supports between two parts of the model.** Both end tips with cones: written
+  as a stick. Both flat: a twig. Otherwise (one end of each) DragonFruit's span rule (a twig under
+  `STICK_MIN_SPAN_MM`). Micro supports are listed in the layout's `micro` set; the writer turns a
+  short cone-ended one into a twig (below).
 - **Braces.** A brace end at a branch's own knot that lies on the parent's line (within the parent's
   radius, within 1 mm of the knot) goes on the parent, never putting both ends on one support
   (l03_lean_ball). A brace with both ends on one support, or an end on a support that was not
@@ -445,8 +449,19 @@ are trunks without a contact cone.
   `kickstand_segment_diameters` give each segment its own width. A joint is as wide as the wider
   segment it joins plus `JOINT_DIAMETER_OFFSET_MM`. A knot on a host takes the width of the host
   segment it sits on.
-- **Strut type.** The `sticks` and `twigs` sets force the strut type whatever the span; other struts
-  follow DragonFruit's own rule (a twig under `STICK_MIN_SPAN_MM`).
+- **Strut type** (`strut_ends`). The `sticks` and `twigs` sets force the strut type whatever the span;
+  other struts follow DragonFruit's own rule (a twig under `STICK_MIN_SPAN_MM`). A micro support in
+  the `sticks` set that is shorter than its two contact cones as DragonFruit builds them (each from
+  the contact to the far side of its socket joint, the tip's length plus half the shaft width plus
+  `JOINT_DIAMETER_OFFSET_MM`) is written as a twig all the same: as a stick its cones and socket
+  joints overlap and build about twice its width at the contacts (owner, 2026-11-11).
+- **Twig disks.** DragonFruit builds each twig contact disk along the surface normal and caps it with
+  a ball of the disk's radius; the shaft runs between joints at the disk tops. A micro support's
+  disks stand off by that ball's radius (`MICRO_TWIG_STANDOFF_SHARE`, half the shaft width), so the
+  ball stays out of the model and a support of a few tenths of a millimetre does not bend into a kink.
+  Other twigs keep the longer disk (the joint's radius plus clearance, at least the disk thickness):
+  on Eastman's twigs the short disk sank the wider end joints into the model (8e6618e3: 5.9 mm2 more
+  clip).
 - **Contact placement** (`sliced_contact_placement`). The slicer runs the contact cone on into the
   model by the tip offset along the surface normal and leaves its flat cap square to the cone's axis,
   so a leaning cone meets the surface in an ellipse whose centre moves along the lean, cut short once
@@ -470,8 +485,9 @@ are trunks without a contact cone.
 | `NOMINAL_TIP_OFFSET_MM` | 0.05 mm | The slicer's default tip offset (one 0.05 mm layer, no 3D anti-aliasing); the contact placement is solved for it. `penetrationMm` plays no part in slicing. |
 | `MIN_WRITTEN_CONTACT_MM` | 0.05 mm | Narrowest contact DragonFruit accepts. |
 | `TIP_PENETRATION_MM`, `TIP_DISK_THICKNESS_MM`, `TIP_MAX_STANDOFF_MM` | 0.1, 0.1, 0.25 mm | DragonFruit's own contact tip defaults. |
-| `STICK_MIN_SPAN_MM` | 5.0 mm | DragonFruit's span rule: a strut between model surfaces closer than this is a twig, else a stick. |
+| `STICK_MIN_SPAN_MM` | 5.0 mm | DragonFruit's span rule, for struts with one cone end and one flat end: closer than this is a twig, else a stick. |
 | `TWIG_JOINT_RATIO`, `TWIG_JOINT_CLEARANCE_MM` | 1.1, 0.05 mm | A twig's end joints are this much wider than its disks and stand off by their radius plus this. |
+| `MICRO_TWIG_STANDOFF_SHARE` | 0.5 | A micro support's twig disks stand off by half the shaft width (the radius of DragonFruit's disk ball). |
 | `BRACE_KNOT_END_SHARE` | 0.025 | DragonFruit marks down a brace knot within 0.02 of either end of its segment; knots are kept just inside that. |
 | `COORDINATE_DECIMALS` | 4 | Support coordinates are rounded to 0.1 micron. |
 | `SPHERE_TIPS_ENABLED` | false | Sphere tips need DragonFruit's `sphereDepthMm`, not released yet; released DragonFruit builds sphere tips with undersized contacts (owner: off in the app). |
@@ -515,7 +531,8 @@ against its own labels (earlier measures flattered the reader).
   in 1075 variants (8, 12, 16 and 32 sides, the scene turned, joined and welded shells), each with
   exact truth, reads them and checks: validate (the truth against its own mesh), 1 reader labels, 2
   layout, and 4a clips and 4b loops on a nominal build (the layout meshed roughly as DragonFruit
-  builds it, `support_synthetic/nominal.rs`). Every variant's stage results are held to
+  builds what the VOXL writer writes, with the writer's own tip placement and strut ends,
+  `support_synthetic/nominal.rs`). Every variant's stage results are held to
   `support_synthetic/expected.json`; a stage that starts or stops passing fails the test
   (`SYNTHETIC_UPDATE=1` rewrites the file). Tolerances are the prototype's, unchanged. See
   [Support reader test cases](support-reader-tests.md) for every case and its result;

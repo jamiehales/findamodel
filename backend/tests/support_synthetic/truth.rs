@@ -47,8 +47,12 @@ impl Scene {
                     }
                     Base::Lower { tip } => json!({"lower": self.tip_json(&self.tips[*tip])}),
                 };
-                let m = json!({"name": s.name, "tip": self.tip_json(&self.tips[s.tip]), "base": base, "joints": self.pts_json(&s.l.joints),
+                let mut m = json!({"name": s.name, "tip": self.tip_json(&self.tips[s.tip]), "base": base, "joints": self.pts_json(&s.l.joints),
                                "shaft_d": s.shaft_d, "line": self.pts_json(&s.l.line)});
+                // How a strut is to be written (a twig or a stick), where the case says.
+                if let Some((_, w)) = self.written.iter().find(|w| w.0 == s.name) {
+                    m["written"] = json!(w);
+                }
                 self.with_seg(m.as_object().unwrap().clone(), &s.l)
             })
             .collect();
