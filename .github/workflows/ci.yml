@@ -23,6 +23,10 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
+      # The backend links Manifold, built from source with CMake (preinstalled on GitHub's images).
+      - name: Check CMake
+        run: cmake --version
+
       - name: Check formatting
         run: cargo fmt --all --check
 

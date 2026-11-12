@@ -14,12 +14,18 @@ path = "src/lib.rs"
 name = "findamodel"
 path = "src/main.rs"
 
+[features]
+# Manifold's multi-threaded booleans (builds and links oneTBB as well). Off by default: the mesh
+# repair's booleans take seconds without it.
+manifold-parallel = ["manifold-csg/parallel"]
+
 [dependencies]
 adler2 = "2"
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["query"] }
+manifold-csg = { version = "0.4", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 croner = "2"

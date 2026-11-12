@@ -823,3 +823,156 @@ fn voxl_chunk(bytes: &[u8], tag: &[u8; 4]) -> Value {
     flate2::read::ZlibDecoder::new(&bytes[offset..offset + size]).read_to_end(&mut data).unwrap();
     serde_json::from_slice(&data).unwrap()
 }
+
+/// The knight with a second block crossing its body: a model mesh that is not watertight.
+fn crossed_knight() -> Vec<Triangle> {
+    let mut mesh = presupported_knight();
+    mesh.extend(cuboid([2.0, 2.0, 13.0], [7.0, 7.0, 17.0], 4));
+    mesh
+}
+
+/// The triangles of a VOXL's mesh chunks (binary STL each).
+fn voxl_mesh_triangles(bytes: &[u8]) -> Vec<Triangle> {
+    use std::io::Read;
+    let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    let mut out = Vec::new();
+    for i in 0..u32_at(8) {
+        let base = 16 + i * 20;
+        if &bytes[base..base + 4] != b"MESH" {
+            continue;
+        }
+        let (offset, size) = (u32_at(base + 8), u32_at(base + 12));
+        let mut stl = Vec::new();
+        flate2::read::ZlibDecoder::new(&bytes[offset..offset + size]).read_to_end(&mut stl).unwrap();
+        let n = u32::from_le_bytes(stl[80..84].try_into().unwrap()) as usize;
+        let f = |at: usize| f32::from_le_bytes(stl[at..at + 4].try_into().unwrap());
+        out.extend((0..n).map(|t| {
+            let b = 84 + t * 50;
+            let p = |k: usize| Vec3::new(f(b + k * 12), f(b + k * 12 + 4), f(b + k * 12 + 8));
+            Triangle::new(p(1), p(2), p(3), p(0))
+        }));
+    }
+    out
+}
+
+/// A VOXL's support entities without their ids and links by id (new on every write).
+fn support_entities(bytes: &[u8]) -> Value {
+    fn strip(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                m.retain(|k, _| k != "id" && !k.ends_with("Id") && !k.ends_with("Ids"));
+                m.values_mut().for_each(strip);
+            }
+            Value::Array(a) => a.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut supports = voxl_chunk(bytes, b"SUPP");
+    strip(&mut supports);
+    supports
+}
+
+fn watertight_check(triangles: &[Triangle]) -> findamodel::geometry::watertight::mesh::Check {
+    use findamodel::geometry::watertight::mesh;
+    let points = findamodel::geometry::support_reader::math::points_of(triangles);
+    mesh::check(&mesh::Indexed::weld(&points), true)
+}
+
+#[tokio::test]
+async fn the_remeshed_voxl_holds_the_watertight_model_and_the_same_supports() {
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&crossed_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+
+    let normal = download_voxl(&app, &id).await;
+    let (status, headers, remeshed) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("knight-remeshed.voxl"));
+
+    let before = watertight_check(&voxl_mesh_triangles(&normal));
+    assert!(before.self_intersecting_pairs > 0, "the stored model crosses itself: {before:?}");
+    let model = voxl_mesh_triangles(&remeshed);
+    let after = watertight_check(&model);
+    assert!(after.watertight() && after.shells == 1, "{after:?}");
+    // The union of the body and the crossing block, and nothing of the supports (below z 10).
+    let expected = 10.0 * 10.0 * 5.0 + 5.0 * 5.0 * 4.0 - 3.0 * 3.0 * 2.0;
+    assert!((after.volume - expected).abs() < 1e-3, "{} vs {expected}", after.volume);
+    // Nothing of the supports: the repaired mesh spans the same box as the stored model.
+    let (lo, hi) = bounds(&voxl_mesh_triangles(&normal));
+    let (rlo, rhi) = bounds(&model);
+    assert!(
+        (0..3).all(|k| (lo[k] - rlo[k]).abs() < 1e-3 && (hi[k] - rhi[k]).abs() < 1e-3),
+        "{lo:?} {hi:?} vs {rlo:?} {rhi:?}"
+    );
+    assert_close(&support_entities(&remeshed), &support_entities(&normal), "the same DragonFruit supports");
+
+    // Cached under its own key, apart from the normal VOXL.
+    let entries = std::fs::read_dir(app.state.settings.voxl_cache_path()).unwrap().count();
+    assert_eq!(entries, 2);
+}
+
+#[tokio::test]
+async fn a_remeshed_plate_voxl_repairs_each_model_and_keeps_the_supports() {
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&crossed_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let plate = |format: &str| {
+        json!({ "placements": [
+            { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
+        ], "format": format, "bedWidthMm": 200, "bedDepthMm": 120 })
+    };
+    let mut voxls = Vec::new();
+    for format in ["voxl", "voxl-remeshed"] {
+        let request = Request::post("/api/plate/generate")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(plate(format).to_string()))
+            .unwrap();
+        let (status, _, voxl) = app.send(request).await;
+        assert_eq!(status, StatusCode::OK);
+        voxls.push(voxl);
+    }
+    let after = watertight_check(&voxl_mesh_triangles(&voxls[1]));
+    assert!(after.watertight() && after.shells == 1, "{after:?}");
+    assert!(!watertight_check(&voxl_mesh_triangles(&voxls[0])).watertight());
+    assert_close(&support_entities(&voxls[1]), &support_entities(&voxls[0]), "the same DragonFruit supports");
+}
+
+fn bounds(triangles: &[Triangle]) -> ([f32; 3], [f32; 3]) {
+    let mut lo = [f32::MAX; 3];
+    let mut hi = [f32::MIN; 3];
+    for v in triangles.iter().flat_map(|t| [t.v0, t.v1, t.v2]) {
+        for (k, x) in [v.x, v.y, v.z].into_iter().enumerate() {
+            lo[k] = lo[k].min(x);
+            hi[k] = hi[k].max(x);
+        }
+    }
+    (lo, hi)
+}
+
+/// Equal JSON, numbers within a micron (single-precision placement of a re-written mesh).
+fn assert_close(a: &Value, b: &Value, what: &str) {
+    fn diff(a: &Value, b: &Value, path: &str) -> Option<String> {
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => {
+                ((x.as_f64().unwrap() - y.as_f64().unwrap()).abs() >= 1e-3).then(|| format!("{path}: {x} vs {y}"))
+            }
+            (Value::Array(x), Value::Array(y)) if x.len() == y.len() => {
+                x.iter().zip(y).enumerate().find_map(|(i, (p, q))| diff(p, q, &format!("{path}[{i}]")))
+            }
+            (Value::Object(x), Value::Object(y)) if x.len() == y.len() => x.iter().find_map(|(k, v)| {
+                y.get(k).map_or(Some(format!("{path}.{k} missing")), |w| diff(v, w, &format!("{path}.{k}")))
+            }),
+            _ => (a != b).then(|| format!("{path}: {a} vs {b}")),
+        }
+    }
+    if let Some(d) = diff(a, b, "") {
+        panic!("{what}: {d}");
+    }
+}

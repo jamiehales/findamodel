@@ -34,6 +34,8 @@ struct Progress {
     supports_read: i64,
     /// The models whose supports are being read now, in the order they started.
     reading: Vec<String>,
+    repairs_total: i64,
+    repairs_done: i64,
     updated_at: Instant,
 }
 
@@ -66,6 +68,8 @@ impl Job {
                 skipped_models: Vec::new(),
                 supports_total: 0,
                 supports_read: 0,
+                repairs_total: 0,
+                repairs_done: 0,
                 reading: Vec::new(),
                 updated_at: Instant::now(),
             }),
@@ -136,6 +140,8 @@ impl Job {
             skipped_models: p.skipped_models.clone(),
             supports_total: p.supports_total,
             supports_read: p.supports_read,
+            repairs_total: p.repairs_total,
+            repairs_done: p.repairs_done,
         }
     }
 
@@ -188,6 +194,39 @@ impl PlateProgress for Job {
             }
             // The model now named is one still being read (the latest started), else none.
             p.current_entry_name = p.reading.last().cloned();
+        });
+    }
+
+    fn start_repairing(&self, total: usize) {
+        self.update(|p| {
+            p.repairs_total = total as i64;
+            p.repairs_done = 0;
+            p.reading.clear();
+        });
+    }
+
+    fn mark_repairing(&self, entry_name: &str) {
+        self.mark_reading_supports_named(entry_name);
+    }
+
+    fn mark_repaired(&self, entry_name: &str) {
+        self.update(|p| {
+            p.repairs_done += 1;
+            if let Some(at) = p.reading.iter().position(|n| n == entry_name) {
+                p.reading.remove(at);
+            }
+            p.current_entry_name = p.reading.last().cloned();
+        });
+    }
+}
+
+impl Job {
+    /// Names `entry_name` as being worked on now (the latest started).
+    fn mark_reading_supports_named(&self, entry_name: &str) {
+        let name = entry_name.to_string();
+        self.update(|p| {
+            p.reading.push(name.clone());
+            p.current_entry_name = Some(name);
         });
     }
 }

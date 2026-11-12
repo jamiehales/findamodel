@@ -23,6 +23,7 @@ Desktop mode requires these tools in addition to normal server/web development r
 
 - Node.js 24+ and Yarn
 - Rust toolchain (rustup + cargo)
+- git, CMake 3.18+ and a C++17 compiler (the backend builds Manifold from source for its mesh repair)
 
 Platform prerequisites:
 

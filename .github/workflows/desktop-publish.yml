@@ -60,7 +60,13 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            cmake
+
+      # The backend links Manifold, built from source with CMake and a C++ compiler; GitHub's
+      # Windows (MSVC) and macOS (Xcode) images ship both, the Linux job installs CMake above.
+      - name: Check CMake
+        run: cmake --version
 
       - name: Install frontend dependencies
         run: yarn --cwd frontend install --frozen-lockfile

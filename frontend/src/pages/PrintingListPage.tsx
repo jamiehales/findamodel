@@ -372,37 +372,53 @@ function PrintingListPage() {
     plateJob.supportsTotal > 0 &&
     plateJob.completedEntries >= plateJob.totalEntries;
   const plateSupportsDone = plateSupportsPhase && plateJob.supportsRead >= plateJob.supportsTotal;
+  // A remeshed VOXL plate then repairs each model mesh.
+  const plateRepairPhase =
+    plateJob?.status === 'running' &&
+    plateJob.repairsTotal > 0 &&
+    plateJob.repairsDone < plateJob.repairsTotal;
   const plateStatusText = plateDownloading
     ? 'Downloading plate'
     : plateJob?.status === 'queued'
       ? 'Queueing plate export'
-      : plateSupportsDone
-        ? 'Writing plate'
-        : plateSupportsPhase
-          ? 'Reading supports'
-          : plateJob?.status === 'running'
-            ? plateJob.totalEntries > 0
-              ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
-              : 'Preparing plate'
-            : plateJob?.status === 'completed'
-              ? 'Plate ready, downloading'
-              : null;
+      : plateRepairPhase
+        ? 'Repairing mesh'
+        : plateSupportsDone
+          ? 'Writing plate'
+          : plateSupportsPhase
+            ? 'Reading supports'
+            : plateJob?.status === 'running'
+              ? plateJob.totalEntries > 0
+                ? `Preparing plate, ${plateJob.completedEntries} of ${plateJob.totalEntries} models`
+                : 'Preparing plate'
+              : plateJob?.status === 'completed'
+                ? 'Plate ready, downloading'
+                : null;
   // While reading supports: the count and the model being read now, after the bar.
-  const plateMeta = plateSupportsDone
-    ? null
-    : plateSupportsPhase
-      ? [`${plateJob.supportsRead} / ${plateJob.supportsTotal}`, plateCurrentFile]
-          .filter(Boolean)
-          .join(' · ')
-      : plateCurrentFile;
-  const plateProgress = plateSupportsDone
-    ? null
-    : plateSupportsPhase
-      ? {
-          totalEntries: plateJob.supportsTotal,
-          progressPercent: Math.round((plateJob.supportsRead * 100) / plateJob.supportsTotal),
-        }
-      : plateJob;
+  const plateMeta = plateRepairPhase
+    ? [`${plateJob.repairsDone} / ${plateJob.repairsTotal}`, plateCurrentFile]
+        .filter(Boolean)
+        .join(' · ')
+    : plateSupportsDone
+      ? null
+      : plateSupportsPhase
+        ? [`${plateJob.supportsRead} / ${plateJob.supportsTotal}`, plateCurrentFile]
+            .filter(Boolean)
+            .join(' · ')
+        : plateCurrentFile;
+  const plateProgress = plateRepairPhase
+    ? {
+        totalEntries: plateJob.repairsTotal,
+        progressPercent: Math.round((plateJob.repairsDone * 100) / plateJob.repairsTotal),
+      }
+    : plateSupportsDone
+      ? null
+      : plateSupportsPhase
+        ? {
+            totalEntries: plateJob.supportsTotal,
+            progressPercent: Math.round((plateJob.supportsRead * 100) / plateJob.supportsTotal),
+          }
+        : plateJob;
 
   const totalQuantity = list?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
   const exportDisabled = plateBusy || archiveBusy || !simulationPaused;
@@ -467,6 +483,9 @@ function PrintingListPage() {
                   </MenuTrigger>
                   <MenuContent align="end">
                     <MenuItem onSelect={() => handleSavePlate('voxl')}>Export as VOXL</MenuItem>
+                    <MenuItem onSelect={() => handleSavePlate('voxl-remeshed')}>
+                      Export as VOXL (remeshed)
+                    </MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('3mf')}>Export as 3MF</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('stl')}>Export as STL</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('glb')}>Export as GLB</MenuItem>

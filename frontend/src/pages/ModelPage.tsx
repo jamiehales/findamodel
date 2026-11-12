@@ -211,6 +211,14 @@ function ModelPage() {
                       DragonFruit .voxl
                     </a>
                   </MenuItem>
+                  <MenuItem asChild>
+                    <a
+                      href={getModelVoxlUrl(model.id, true)}
+                      download={`${model.name}-remeshed.voxl`}
+                    >
+                      DragonFruit .voxl (remeshed)
+                    </a>
+                  </MenuItem>
                 </MenuContent>
               </Menu>
             ) : (

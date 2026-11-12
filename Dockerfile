@@ -14,6 +14,9 @@ RUN yarn build
 FROM rust:1-trixie AS backend-build
 WORKDIR /src
 
+# The mesh repair links Manifold, which the manifold-csg build script clones and builds with CMake.
+RUN apt-get update && apt-get install -y --no-install-recommends cmake && rm -rf /var/lib/apt/lists/*
+
 # Build dependencies against stub sources first so they are cached independently of
 # application changes.
 COPY Cargo.toml Cargo.lock ./

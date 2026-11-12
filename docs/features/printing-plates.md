@@ -71,3 +71,10 @@ Set `raftHeight` globally in [Settings](settings) or per-directory in `findamode
 |---------|-------------|
 | **Hull mode** | Convex or concave hull for collision/placement |
 | **Spawn position** | Where newly added models appear (centre, edge, etc.) |
+
+---
+
+## Exporting
+
+**Export plate** writes a DragonFruit VOXL; the menu next to it offers VOXL (remeshed), 3MF, STL and GLB. A VOXL plate stores each pre-supported model without its supports and rebuilds them as DragonFruit supports. VOXL (remeshed) also repairs every model mesh as the remeshed model download does (see [Models](models.html#downloads)); the export shows a **Repairing mesh** stage while it does.
+

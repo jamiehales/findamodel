@@ -19,7 +19,7 @@ nav_order: 2
 ## Requirements
 
 - **Docker** (recommended) - the easiest way to run FindAModel.
-- Or: a Rust toolchain (rustup + cargo) and Node.js 24+ with Yarn for local development.
+- Or: a Rust toolchain (rustup + cargo), git, CMake and a C++ compiler, and Node.js 24+ with Yarn for local development.
 
 For desktop-specific prerequisites and build flow, see [Desktop > Getting started (desktop)](desktop/getting-started).
 
@@ -112,7 +112,7 @@ At startup the container also registers the NVIDIA Vulkan ICD and GLVND EGL vend
 
 The repository includes a complete VS Code configuration. Open `findamodel.code-workspace` in VS Code and use the pre-configured launch profiles and tasks.
 
-**Prerequisites:** a Rust toolchain (rustup + cargo), Node.js and Yarn must be installed on your machine. Install the recommended VS Code extensions when prompted (Prettier, rust-analyzer, CodeLLDB).
+**Prerequisites:** a Rust toolchain (rustup + cargo), Node.js and Yarn must be installed on your machine. The backend's mesh repair links Manifold (through the `manifold-csg` crate), whose build script clones Manifold with git and builds it with CMake, so building the backend also needs git, CMake 3.18+ and a C++17 compiler (GCC or Clang on Linux, the Xcode command line tools on macOS, the Visual Studio C++ build tools on Windows), and network access on the first build. Install the recommended VS Code extensions when prompted (Prettier, rust-analyzer, CodeLLDB).
 
 **Launch profiles** (Run and Debug panel):
 

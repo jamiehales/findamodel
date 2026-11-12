@@ -440,7 +440,7 @@ export interface PlateGenerationResult {
   skippedModels: string[];
 }
 
-export type PlateFormat = '3mf' | 'stl' | 'glb' | 'voxl';
+export type PlateFormat = '3mf' | 'stl' | 'glb' | 'voxl' | 'voxl-remeshed';
 
 /** Plate context for formats that carry it (VOXL centres on the bed and names the plate). */
 export interface PlateOptions {
@@ -464,6 +464,9 @@ export interface PlateGenerationJob {
   /** Pre-supported models whose supports a VOXL plate reads (0 until it reaches them). */
   supportsTotal: number;
   supportsRead: number;
+  /** Model meshes a remeshed VOXL plate repairs (0 until it reaches them). */
+  repairsTotal: number;
+  repairsDone: number;
 }
 
 export async function generatePlate(
@@ -521,9 +524,12 @@ export async function fetchPlateGenerationJob(jobId: string): Promise<PlateGener
   return r.json();
 }
 
-/** The model without its supports, with their layout as DragonFruit supports. */
-export function getModelVoxlUrl(id: string): string {
-  return apiUrl(`/api/models/${id}/voxl`);
+/**
+ * The model without its supports, with their layout as DragonFruit supports. `remeshed`: the
+ * model mesh made watertight (the supports are the same).
+ */
+export function getModelVoxlUrl(id: string, remeshed = false): string {
+  return apiUrl(`/api/models/${id}/voxl${remeshed ? '?remeshed=true' : ''}`);
 }
 
 export function getPlateGenerationDownloadUrl(jobId: string): string {

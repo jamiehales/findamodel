@@ -18,6 +18,7 @@ use crate::geometry::support_layout;
 use crate::geometry::support_reader;
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
+use crate::geometry::watertight;
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
 use crate::services::support_exports;
 use crate::services::voxl_cache::VoxlCacheKey;
@@ -310,14 +311,36 @@ async fn get_split_geometry(
     Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE_SPLIT)], envelope).into_response())
 }
 
+#[derive(Deserialize, Default)]
+struct VoxlQuery {
+    /// The remeshed variant: the model mesh made watertight ([`watertight::repair_model`]); the
+    /// supports are the same DragonFruit supports.
+    #[serde(default)]
+    remeshed: bool,
+}
+
 /// The model stripped of its supports, with the supports read from their mesh
 /// ([`support_reader`]) and rebuilt as DragonFruit supports, as a VOXL scene. 404 when the supports cannot be split off. Served from the VOXL cache
 /// when the model, its raft height and the support layout are unchanged since it was written.
-async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
+async fn get_voxl(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    IdPath(id): IdPath,
+    Query(q): Query<VoxlQuery>,
+) -> AppResult<Response> {
     let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
-    let download_name = format!("{}.voxl", store::file_stem(&model.file_name));
+    let stem = store::file_stem(&model.file_name);
+    let download_name = if q.remeshed { format!("{stem}-remeshed.voxl") } else { format!("{stem}.voxl") };
     let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
-    let key = (model.supported() == Some(true)).then(|| VoxlCacheKey::for_model(&model, raft_height_mm)).flatten();
+    let key = (model.supported() == Some(true))
+        .then(|| {
+            if q.remeshed {
+                VoxlCacheKey::for_remeshed_model(&model, raft_height_mm)
+            } else {
+                VoxlCacheKey::for_model(&model, raft_height_mm)
+            }
+        })
+        .flatten();
     if let Some(key) = key.clone() {
         let cache = state.voxl_cache.clone();
         let cached = tokio::task::spawn_blocking(move || cache.get(&key)).await.map_err(anyhow::Error::from)?;
@@ -381,7 +404,10 @@ async fn get_voxl(State(state): State<AppState>, _user: CurrentUser, IdPath(id):
         }
     };
     let cache = state.voxl_cache.clone();
+    let remeshed = q.remeshed;
     let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        // Only the model mesh is repaired; the supports stay DragonFruit supports.
+        let body = if remeshed { watertight::repair_model(&body) } else { body };
         let mesh = VoxlMesh { name: &name, triangles: &body, supports: Some(&layout) };
         let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
         let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();

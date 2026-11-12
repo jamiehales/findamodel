@@ -39,6 +39,8 @@ pub struct VoxlCacheKey {
     pub supported: Option<bool>,
     /// The support reader and writer that rebuilt the supports.
     pub reader_version: i32,
+    /// For the remeshed VOXL: the mesh repair that made the model watertight.
+    pub repair_version: Option<i32>,
 }
 
 impl VoxlCacheKey {
@@ -51,11 +53,19 @@ impl VoxlCacheKey {
             raft_height_mm,
             supported: model.calculated_supported,
             reader_version: CURRENT_SUPPORT_READER_VERSION,
+            repair_version: None,
         })
     }
 
+    /// The key for `model`'s remeshed VOXL (its model mesh repaired, see
+    /// [`crate::geometry::watertight::repair_model`]).
+    pub fn for_remeshed_model(model: &ModelRow, raft_height_mm: f32) -> Option<Self> {
+        Self::for_model(model, raft_height_mm)
+            .map(|k| VoxlCacheKey { repair_version: Some(crate::geometry::watertight::CURRENT_REPAIR_VERSION), ..k })
+    }
+
     fn file_name(&self) -> String {
-        let canonical = format!(
+        let mut canonical = format!(
             "{}|{}|{}|reader:{}|supported:{:?}",
             self.checksum,
             self.file_name,
@@ -63,6 +73,9 @@ impl VoxlCacheKey {
             self.reader_version,
             self.supported
         );
+        if let Some(v) = self.repair_version {
+            canonical.push_str(&format!("|repair:{v}"));
+        }
         format!("{}.{ENTRY_EXTENSION}", hex::encode(&Sha256::digest(canonical.as_bytes())[..16]))
     }
 }
@@ -196,6 +209,7 @@ mod tests {
             raft_height_mm: 2.0,
             supported: Some(true),
             reader_version: CURRENT_SUPPORT_READER_VERSION,
+            repair_version: None,
         }
     }
 
@@ -220,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_raft_height_reader_version_or_model_file_misses() {
+    fn a_new_raft_height_reader_version_repair_or_model_file_misses() {
         let dir = tempfile::tempdir().unwrap();
         let cache = VoxlCache::new(dir.path().to_path_buf(), 1 << 20);
         let cached = key("a");
@@ -231,6 +245,7 @@ mod tests {
             VoxlCacheKey { checksum: "b".to_string(), ..cached.clone() },
             VoxlCacheKey { file_name: "renamed.stl".to_string(), ..cached.clone() },
             VoxlCacheKey { supported: None, ..cached.clone() },
+            VoxlCacheKey { repair_version: Some(1), ..cached.clone() },
         ];
         for changed in changes {
             assert_eq!(cache.get(&changed), None, "{changed:?}");

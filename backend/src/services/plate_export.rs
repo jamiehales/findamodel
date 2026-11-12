@@ -18,6 +18,7 @@ use crate::geometry::support_layout::SupportLayout;
 use crate::geometry::support_reader;
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
+use crate::geometry::watertight;
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis, to_z_up};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
@@ -36,6 +37,12 @@ pub trait PlateProgress: Send + Sync {
     fn mark_reading_supports(&self, entry_name: &str);
     /// The supports of one of them are read (or came from the cache).
     fn mark_supports_read(&self, entry_name: &str);
+    /// A remeshed VOXL plate starts repairing `total` model meshes.
+    fn start_repairing(&self, total: usize);
+    /// Repairing one of them starts.
+    fn mark_repairing(&self, entry_name: &str);
+    /// One of them is repaired.
+    fn mark_repaired(&self, entry_name: &str);
 }
 
 #[derive(Debug, Clone)]
@@ -48,20 +55,25 @@ pub struct PlateExportResult {
 
 pub fn normalize_format(format: Option<&str>) -> AppResult<String> {
     let normalized = format.unwrap_or("voxl").to_ascii_lowercase();
-    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | "voxl") {
+    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | "voxl" | REMESHED_VOXL) {
         return Err(bad_request(format!(
-            "Unsupported format '{}'. Supported: 3mf, stl, glb, voxl",
+            "Unsupported format '{}'. Supported: 3mf, stl, glb, voxl, voxl-remeshed",
             format.unwrap_or_default()
         )));
     }
     Ok(normalized)
 }
 
+/// A VOXL plate whose model meshes are made watertight ([`watertight::repair_model`]); the
+/// supports are the same DragonFruit supports.
+pub const REMESHED_VOXL: &str = "voxl-remeshed";
+
 pub fn file_name(format: &str) -> &'static str {
     match format {
         "stl" => "plate.stl",
         "glb" => "plate.glb",
         "voxl" => "plate.voxl",
+        REMESHED_VOXL => "plate-remeshed.voxl",
         _ => "plate.3mf",
     }
 }
@@ -70,7 +82,7 @@ pub fn content_type(format: &str) -> &'static str {
     match format {
         "stl" => "model/stl",
         "glb" => "model/gltf-binary",
-        "voxl" => "application/vnd.dragonfruit.voxl",
+        "voxl" | REMESHED_VOXL => "application/vnd.dragonfruit.voxl",
         _ => "application/vnd.ms-3mf",
     }
 }
@@ -288,7 +300,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     .collect();
                 out = saver::write_3mf(out, &objects, &items)?;
             }
-            "voxl" => {
+            "voxl" | REMESHED_VOXL => {
                 // A pre-supported model goes in without its supports, rebuilt as DragonFruit
                 // supports, as the model's own VOXL does; every other model as it is.
                 let reading = geometry_ids.iter().filter(|id| infos[*id].supported() == Some(true)).count();
@@ -316,6 +328,28 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                         }
                     })
                     .collect();
+                // The remeshed plate: every model mesh made watertight (never the supports).
+                let prepared: Vec<(Vec<Triangle>, Option<SupportLayout>)> = if format == REMESHED_VOXL {
+                    if let Some(p) = &progress {
+                        p.start_repairing(prepared.len());
+                    }
+                    geometry_ids
+                        .par_iter()
+                        .zip(prepared.into_par_iter())
+                        .map(|(id, (body, layout))| {
+                            if let Some(p) = &progress {
+                                p.mark_repairing(&infos[id].file_name);
+                            }
+                            let body = watertight::repair_model(&body);
+                            if let Some(p) = &progress {
+                                p.mark_repaired(&infos[id].file_name);
+                            }
+                            (body, layout)
+                        })
+                        .collect()
+                } else {
+                    prepared
+                };
                 let meshes: Vec<VoxlMesh<'_>> = geometry_ids
                     .iter()
                     .zip(&prepared)

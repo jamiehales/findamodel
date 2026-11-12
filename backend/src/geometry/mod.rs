@@ -9,6 +9,7 @@ pub mod support_layout;
 pub mod support_reader;
 pub mod support_separation;
 pub mod voxl;
+pub mod watertight;
 
 use std::ops::{Add, Mul, Neg, Sub};
 

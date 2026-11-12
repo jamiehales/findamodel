@@ -78,7 +78,7 @@ struct Near {
 type FineCell = (P, P, f64, usize, Near);
 
 /// The generalised winding number of a triangle soup: exact near, dipoles of cells far away.
-pub(super) struct Wind {
+pub struct Wind {
     /// Fine cells, numbered so that each coarse cell's run in `fine` is contiguous.
     fine: Vec<Far>,
     near: Vec<Near>,
@@ -89,7 +89,7 @@ pub(super) struct Wind {
 }
 
 impl Wind {
-    pub(super) fn new(tris: Vec<[P; 3]>) -> Self {
+    pub fn new(tris: Vec<[P; 3]>) -> Self {
         let key = |p: P, s: f64| p.map(|x| (x / s).floor() as i32);
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
         for t in &tris {
@@ -172,7 +172,7 @@ impl Wind {
         Wind { fine, near, coarse, lo, hi }
     }
 
-    pub(super) fn w(&self, p: P) -> f64 {
+    pub fn w(&self, p: P) -> f64 {
         if (0..3).any(|k| p[k] < self.lo[k] - 0.01 || p[k] > self.hi[k] + 0.01) {
             return 0.0;
         }
@@ -209,7 +209,7 @@ impl Wind {
         s / (4.0 * std::f64::consts::PI)
     }
 
-    pub(super) fn inside(&self, p: P) -> bool {
+    pub(crate) fn inside(&self, p: P) -> bool {
         self.w(p) > 0.5
     }
 }
