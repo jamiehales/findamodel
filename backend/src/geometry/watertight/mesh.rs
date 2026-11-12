@@ -508,6 +508,8 @@ fn pinched(m: &Indexed) -> usize {
 pub struct Finish {
     /// Edges under [`SHORT_EDGE_MM`] collapsed first.
     pub short_edges_collapsed: usize,
+    /// Caps (faces flatter than [`CAP_HEIGHT_MM`] across their long side) flipped away.
+    pub caps_flipped: usize,
     /// Corners no face uses, dropped.
     pub merged_vertices: usize,
     /// Corners nudged by a single-precision step so they stay apart when rounded (as STL and
@@ -532,6 +534,7 @@ pub fn finish(m: &Indexed) -> (Indexed, Finish) {
     let mut st = Finish::default();
     let mut m = m.clone();
     st.short_edges_collapsed = collapse_short_edges(&mut m, SHORT_EDGE_MM);
+    st.caps_flipped = flip_caps(&mut m, CAP_HEIGHT_MM);
     // Unused corners go; the rest are rounded to single precision, nudged apart by a step where
     // two would land on one point (or already share one), so the topology survives a reader that
     // welds by position.
@@ -638,6 +641,105 @@ pub fn compact(m: &Indexed) -> Indexed {
 /// Edges shorter than this (well under what single precision holds apart at model sizes) are
 /// collapsed before rounding, so the rounding does not pinch the surface.
 pub const SHORT_EDGE_MM: f64 = 1e-4;
+
+/// A face whose corner lies within this of its long side is a cap: rounding to single precision
+/// can fold it through its neighbours.
+pub const CAP_HEIGHT_MM: f64 = 1e-4;
+
+/// Flips the long side of each cap with the face across it, where the two new faces keep their
+/// winding and the new side is not an edge already. Returns the number flipped.
+pub fn flip_caps(m: &mut Indexed, height: f64) -> usize {
+    use crate::geometry::support_reader::math::len;
+    let mut across: FxHashMap<(u32, u32), u32> = FxHashMap::default();
+    for (f, t) in m.faces.iter().enumerate() {
+        for k in 0..3 {
+            across.insert((t[k], t[(k + 1) % 3]), f as u32);
+        }
+    }
+    let area2 = |m: &Indexed, t: [u32; 3]| {
+        let [a, b, c] = t.map(|v| m.verts[v as usize]);
+        cross(sub(b, a), sub(c, a))
+    };
+    let mut around: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
+    for (f, t) in m.faces.iter().enumerate() {
+        for &v in t {
+            around[v as usize].push(f as u32);
+        }
+    }
+    let mut done = vec![false; m.faces.len()];
+    let mut flipped = 0;
+    for f in 0..m.faces.len() {
+        if done[f] {
+            continue;
+        }
+        let t = m.faces[f];
+        let p = t.map(|v| m.verts[v as usize]);
+        let sides: Vec<f64> = (0..3).map(|k| len(sub(p[(k + 1) % 3], p[k]))).collect();
+        let k = (0..3).max_by(|&x, &y| sides[x].total_cmp(&sides[y])).expect("three sides");
+        if sides[k] <= 0.0 || len(area2(m, t)) / sides[k] >= height {
+            continue;
+        }
+        // Long side a-b, apex c; the face across has b-a with apex d.
+        let (a, b, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+        let Some(&g) = across.get(&(b, a)) else { continue };
+        let g = g as usize;
+        if done[g] {
+            continue;
+        }
+        let u = m.faces[g];
+        let Some(d) = u.iter().copied().find(|&v| v != a && v != b) else { continue };
+        if c == d || across.contains_key(&(c, d)) || across.contains_key(&(d, c)) {
+            continue;
+        }
+        let (n1, n2) = ([c, a, d], [d, b, c]);
+        let (old1, old2) = (area2(m, t), area2(m, u));
+        let (new1, new2) = (area2(m, n1), area2(m, n2));
+        let reference = add(old1, old2);
+        if dot(new1, reference) <= 0.0 || dot(new2, reference) <= 0.0 {
+            continue;
+        }
+        // Neither new face may cross a face round the four corners.
+        let corners = [a, b, c, d];
+        let crosses_near = [n1, n2].iter().any(|n| {
+            let tn = n.map(|v| m.verts[v as usize]);
+            corners.iter().flat_map(|&v| around[v as usize].iter()).any(|&h| {
+                let h = h as usize;
+                if h == f || h == g {
+                    return false;
+                }
+                let u = m.faces[h];
+                let to = u.map(|v| m.verts[v as usize]);
+                match n.iter().filter(|v| u.contains(v)).count() {
+                    0 => super::intersect::crosses(&tn, &to),
+                    1 => super::intersect::crosses_at_corner(n, &tn, &u, &to),
+                    _ => false,
+                }
+            })
+        });
+        if crosses_near {
+            continue;
+        }
+        for (x, y) in [(a, b), (b, c), (c, a)].into_iter().chain([(u[0], u[1]), (u[1], u[2]), (u[2], u[0])]) {
+            across.remove(&(x, y));
+        }
+        // c joins the face across, d the cap; a and b each lose one of the two.
+        around[c as usize].push(g as u32);
+        around[d as usize].push(f as u32);
+        around[a as usize].retain(|&h| h as usize != g);
+        around[b as usize].retain(|&h| h as usize != f);
+        m.faces[f] = n1;
+        m.faces[g] = n2;
+        for (tri, idx) in [(n1, f), (n2, g)] {
+            for q in 0..3 {
+                across.insert((tri[q], tri[(q + 1) % 3]), idx as u32);
+            }
+        }
+        done[f] = true;
+        done[g] = true;
+        flipped += 1;
+    }
+    flipped
+}
 
 /// Collapses edges shorter than `eps` to their midpoints where that keeps the surface manifold
 /// (the ends share exactly the two corners across the edge). Returns the number collapsed.
@@ -812,6 +914,21 @@ pub(crate) mod tests {
         assert_eq!((c.corners_split, c.non_manifold_faces_removed, c.holes_filled), (2, 0, 0));
         let k = check(&m, false);
         assert!(k.watertight() && k.shells == 2 && (k.volume - 2.0).abs() < 1e-12, "{k:?}");
+    }
+
+    #[test]
+    fn a_cap_is_flipped_away_and_the_mesh_stays_closed() {
+        // One half of a cube's bottom split by a point a hair off the diagonal it shares with the
+        // other half: the face along the diagonal is a cap.
+        let mut tris = cube([0.0; 3], [1.0; 3]);
+        let t1 = tris.remove(1);
+        let (c0, c3, c1) = (t1[0], t1[1], t1[2]);
+        let mid = [0.5 + 1e-6, 0.5 - 1e-6, 0.0];
+        tris.extend([[c0, c3, mid], [c0, mid, c1], [mid, c3, c1]]);
+        let mut m = Indexed::weld(&tris);
+        assert_eq!(flip_caps(&mut m, 1e-4), 1);
+        let c = check(&m, true);
+        assert!(c.watertight() && (c.volume - 1.0).abs() < 1e-9, "{c:?}");
     }
 
     #[test]

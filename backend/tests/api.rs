@@ -825,9 +825,15 @@ fn voxl_chunk(bytes: &[u8], tag: &[u8; 4]) -> Value {
 }
 
 /// The knight with a second block crossing its body: a model mesh that is not watertight.
+/// Finely tessellated (19,200 body faces), so the mesh chunk dominates the file size.
 fn crossed_knight() -> Vec<Triangle> {
-    let mut mesh = presupported_knight();
-    mesh.extend(cuboid([2.0, 2.0, 13.0], [7.0, 7.0, 17.0], 4));
+    let mut mesh = cuboid([-5.0, -5.0, 10.0], [5.0, 5.0, 15.0], 40);
+    for (x, y) in [(-3.0, -3.0), (3.0, -3.0), (-3.0, 3.0), (3.0, 3.0)] {
+        mesh.extend(post(x, y, 0.0, 8.0, 0.4, 0.4));
+        mesh.extend(post(x, y, 8.0, 10.2, 0.4, 0.12));
+    }
+    // Off the body's grid, so the faces cross in general position.
+    mesh.extend(cuboid([2.05, 2.05, 13.05], [7.05, 7.05, 17.05], 4));
     mesh
 }
 
@@ -899,7 +905,7 @@ async fn the_remeshed_voxl_holds_the_watertight_model_and_the_same_supports() {
     let after = watertight_check(&model);
     assert!(after.watertight() && after.shells == 1, "{after:?}");
     // The union of the body and the crossing block, and nothing of the supports (below z 10).
-    let expected = 10.0 * 10.0 * 5.0 + 5.0 * 5.0 * 4.0 - 3.0 * 3.0 * 2.0;
+    let expected = 10.0 * 10.0 * 5.0 + 5.0 * 5.0 * 4.0 - 2.95 * 2.95 * 1.95;
     assert!((after.volume - expected).abs() < 1e-3, "{} vs {expected}", after.volume);
     // Nothing of the supports: the repaired mesh spans the same box as the stored model.
     let (lo, hi) = bounds(&voxl_mesh_triangles(&normal));
@@ -909,6 +915,9 @@ async fn the_remeshed_voxl_holds_the_watertight_model_and_the_same_supports() {
         "{lo:?} {hi:?} vs {rlo:?} {rhi:?}"
     );
     assert_close(&support_entities(&remeshed), &support_entities(&normal), "the same DragonFruit supports");
+
+    // About as compact as the normal VOXL: the repaired mesh stores no per-face normals.
+    assert!(remeshed.len() * 4 < normal.len() * 5, "{} bytes against {}", remeshed.len(), normal.len());
 
     // Cached under its own key, apart from the normal VOXL.
     let entries = std::fs::read_dir(app.state.settings.voxl_cache_path()).unwrap().count();
