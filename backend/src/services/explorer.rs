@@ -16,7 +16,7 @@ use crate::metadata::model_metadata::{self, ComputedMetadata};
 use crate::metadata::rules::{self, RuleSet};
 use crate::metadata::{fields, tags, yaml};
 use crate::services::metadata_config::{config_fields_from_raw, config_fields_from_resolved};
-use crate::services::models::is_model_extension;
+use crate::services::models::{is_ignored_entry, is_ignored_path, is_model_extension};
 use crate::services::store;
 
 /// Fields whose rules describe a model file, never a folder; folder cards don't evaluate them.
@@ -42,8 +42,11 @@ fn list_dir(path: &Path) -> std::io::Result<Listing> {
     let mut dirs = Vec::new();
     let mut files = Vec::new();
     for entry in std::fs::read_dir(path)?.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
         let name = entry.file_name().to_string_lossy().into_owned();
+        if is_ignored_entry(&name) {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else { continue };
         if file_type.is_dir() {
             dirs.push(name);
         } else if file_type.is_file() {
@@ -61,10 +64,14 @@ fn count_entries(path: &Path) -> (i64, i64) {
     };
     let (mut dirs, mut models) = (0, 0);
     for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_ignored_entry(&name) {
+            continue;
+        }
         let Ok(t) = entry.file_type() else { continue };
         if t.is_dir() {
             dirs += 1;
-        } else if t.is_file() && is_model_extension(&extension(&entry.file_name().to_string_lossy())) {
+        } else if t.is_file() && is_model_extension(&extension(&name)) {
             models += 1;
         }
     }
@@ -154,8 +161,9 @@ fn model_metadata_for(
 }
 
 /// Lists folders (sorted), model files (sorted) and previewable files at `relative_path`.
+/// Ignored entries ([`is_ignored_entry`]) are left out, and an ignored folder is not found.
 pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -> AppResult<ExplorerResponseDto> {
-    if relative_path.split('/').any(|s| s == "..") {
+    if relative_path.split('/').any(|s| s == "..") || is_ignored_path(relative_path) {
         return Err(AppError::NotFound(format!("Directory not found: {relative_path}")));
     }
     let full: PathBuf = if relative_path.is_empty() { root.to_path_buf() } else { root.join(relative_path) };
@@ -412,7 +420,7 @@ pub fn resolve_previewable_file(root: &Path, relative: &str) -> AppResult<(PathB
         "txt" | "md" => "text/plain; charset=utf-8",
         _ => return Err(AppError::BadRequest("Unsupported file type.".into())),
     };
-    if !full.is_file() {
+    if is_ignored_path(relative) || !full.is_file() {
         return Err(AppError::NotFound(String::new()));
     }
     Ok((full, content_type))
@@ -483,6 +491,42 @@ mod tests {
         assert_eq!(nested.parent_path.as_deref(), Some(""));
         assert_eq!(nested.models[0].id, None);
         assert!(matches!(get_directory_contents(&t.db, root.path(), "missing").await, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn listings_leave_out_dot_entries_and_macosx_folders() {
+        let t = TestDb::new().await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "Dice Set/d100.stl", "x");
+        write_file(root.path(), "Dice Set/._d100.stl", [0u8; 4096]);
+        write_file(root.path(), "Dice Set/d6.v2.stl", "x");
+        write_file(root.path(), "Dice Set/.DS_Store", "x");
+        write_file(root.path(), "Dice Set/.notes.md", "x");
+        write_file(root.path(), "Dice Set/readme.md", "x");
+        write_file(root.path(), "Dice Set/.git/model.stl", "x");
+        write_file(root.path(), "Dice Set/__MACOSX/Dice Set/._d6.stl", "x");
+        write_file(root.path(), ".hidden/inside.stl", "x");
+        write_file(root.path(), "._Dice Set", "x");
+        // An already-indexed AppleDouble file is not listed either.
+        t.insert_model(&model("._d100.stl", "Dice Set")).await;
+
+        let top = get_directory_contents(&t.db, root.path(), "").await.unwrap();
+        assert_eq!(top.folders.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Dice Set"]);
+        assert_eq!((top.folders[0].subdirectory_count, top.folders[0].model_count), (0, 2));
+
+        let dice = get_directory_contents(&t.db, root.path(), "Dice Set").await.unwrap();
+        assert!(dice.folders.is_empty());
+        assert_eq!(dice.models.iter().map(|m| m.file_name.as_str()).collect::<Vec<_>>(), vec!["d100.stl", "d6.v2.stl"]);
+        assert_eq!(dice.files.iter().map(|f| f.file_name.as_str()).collect::<Vec<_>>(), vec!["readme.md"]);
+
+        for path in [".hidden", "Dice Set/.git", "Dice Set/__MACOSX", "Dice Set/__MACOSX/Dice Set"] {
+            assert!(
+                matches!(get_directory_contents(&t.db, root.path(), path).await, Err(AppError::NotFound(_))),
+                "{path}"
+            );
+        }
+        assert!(matches!(resolve_previewable_file(root.path(), "Dice Set/.notes.md"), Err(AppError::NotFound(_))));
+        assert!(resolve_previewable_file(root.path(), "Dice Set/readme.md").is_ok());
     }
 
     #[tokio::test]

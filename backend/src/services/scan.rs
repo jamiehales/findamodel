@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use super::models::{ModelService, is_model_extension, is_non_geometry_type};
+use super::models::{ModelService, is_ignored_entry, is_ignored_path, is_model_extension, is_non_geometry_type};
 use crate::db::now;
 use crate::entities::{DirectoryConfig, ModelHulls, ModelRow};
 use crate::geometry::support_reader::{self, CURRENT_SUPPORT_READER_VERSION};
@@ -517,13 +517,13 @@ fn apply_geometry_refresh(model: &mut ModelRow, refresh: &GeometryRefresh) {
 /// file before the model's row names it, and a sweep must not take a file between the two.
 pub const SPIN_SWEEP_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
-/// Deletes one spin mesh file in the renders folder.
-fn remove_spin_file(renders: &Path, relative: &str) -> bool {
+/// Deletes one file (a spin mesh or preview) in the renders folder.
+fn remove_render_file(renders: &Path, relative: &str) -> bool {
     match std::fs::remove_file(renders.join(relative)) {
         Ok(()) => true,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
         Err(err) => {
-            warn!(target: LOG_TARGET, "Failed to delete spin mesh {relative}: {err}");
+            warn!(target: LOG_TARGET, "Failed to delete render {relative}: {err}");
             false
         }
     }
@@ -544,13 +544,17 @@ fn extension_of(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
-/// Recursively finds model files under `dir`, sorted by path.
+/// Recursively finds model files under `dir`, sorted by path. Ignored files and folders
+/// ([`is_ignored_entry`]) are skipped and never descended into.
 pub fn discover_model_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&current) else { continue };
         for entry in entries.flatten() {
+            if is_ignored_entry(&entry.file_name().to_string_lossy()) {
+                continue;
+            }
             let Ok(file_type) = entry.file_type() else { continue };
             let path = entry.path();
             if file_type.is_dir() {
@@ -1070,6 +1074,10 @@ impl ModelService {
             warn!(target: LOG_TARGET, "Filter directory not found: {}", search_root.display());
             return Ok(0);
         }
+        if directory_filter.is_some_and(is_ignored_path) {
+            warn!(target: LOG_TARGET, "Filter directory is ignored: {}", search_root.display());
+            return Ok(0);
+        }
 
         let walk = search_root.clone();
         let files = tokio::task::spawn_blocking(move || discover_model_files(&walk)).await?;
@@ -1320,6 +1328,14 @@ impl ModelService {
             }
         }
 
+        // Models indexed before their names were ignored are never discovered, so they are among
+        // the rows left over; dropping them here also lets the sweeps below take their files.
+        let ignored: Vec<ExistingScanState> = existing
+            .into_values()
+            .filter(|row| is_ignored_entry(&row.file_name) || is_ignored_path(&row.directory))
+            .collect();
+        self.remove_ignored_models(&ignored).await?;
+
         // A full scan has brought every row's index up to date: entry files no row names are left
         // over from changed or removed models (or from exports of a detection since rechecked).
         if directory_filter.is_none()
@@ -1354,6 +1370,50 @@ impl ModelService {
         Ok(new_count)
     }
 
+    /// Drops the rows of models whose path is ignored ([`is_ignored_entry`]), indexed before such
+    /// names were skipped: their hulls, tags and repaired mesh index go with the row, their
+    /// printing list entries are removed, and their preview, spin mesh and export files are
+    /// deleted unless another model (with the same content) still uses them.
+    async fn remove_ignored_models(&self, rows: &[ExistingScanState]) -> anyhow::Result<()> {
+        for row in rows {
+            let mut tx = self.db.begin().await?;
+            sqlx::query("DELETE FROM printing_list_items WHERE model_id = ?").bind(row.id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM models WHERE id = ?").bind(row.id).execute(&mut *tx).await?;
+            tx.commit().await?;
+            self.release_old_export(row.support_export_path.as_deref(), None).await;
+            self.release_old_spin(row.spin_mesh_path.as_deref(), None).await;
+            self.release_preview(row.preview_image_path.as_deref()).await;
+            let relative = if row.directory.is_empty() {
+                row.file_name.clone()
+            } else {
+                format!("{}/{}", row.directory, row.file_name)
+            };
+            info!(target: LOG_TARGET, "Removed ignored model from the index: {relative}");
+        }
+        Ok(())
+    }
+
+    /// Deletes both preview variants of a removed model's preview when no model uses it any more.
+    async fn release_preview(&self, preview_image_path: Option<&str>) {
+        let Some(renders) = self.preview.as_ref().and_then(|p| p.cache_dir()) else { return };
+        let Some(path) = preview_image_path.filter(|p| !p.trim().is_empty()) else { return };
+        let used: sqlx::Result<bool> =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM models WHERE preview_image_path = ?)")
+                .bind(path)
+                .fetch_one(&self.db)
+                .await;
+        match used {
+            Ok(false) => {
+                let stem = preview::stem_of(path);
+                for include_supports in [true, false] {
+                    remove_render_file(renders, &preview::relative_path(stem, include_supports));
+                }
+            }
+            Ok(true) => {}
+            Err(err) => warn!(target: LOG_TARGET, "Failed to check who uses preview {path}: {err}"),
+        }
+    }
+
     /// Deletes the export entry a model's row named before it was saved, when it names another
     /// one now and no other model (with the same content) still uses it.
     async fn release_old_export(&self, before: Option<&str>, now: Option<&str>) {
@@ -1376,7 +1436,7 @@ impl ModelService {
                 .await;
         match used {
             Ok(false) => {
-                remove_spin_file(renders, before);
+                remove_render_file(renders, before);
             }
             Ok(true) => {}
             Err(err) => warn!(target: LOG_TARGET, "Failed to check who uses spin mesh {before}: {err}"),
@@ -1409,7 +1469,7 @@ impl ModelService {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let old = entry.metadata().and_then(|m| m.modified()).is_ok_and(|m| m < cutoff);
-                if spin::is_spin_file(&name) && old && !indexed.contains(&name) && remove_spin_file(&renders, &name) {
+                if spin::is_spin_file(&name) && old && !indexed.contains(&name) && remove_render_file(&renders, &name) {
                     removed += 1;
                 }
             }
@@ -1444,6 +1504,10 @@ impl ModelService {
         let root_full = std::path::absolute(&root)?;
         if normalized.split('/').any(|s| s == "..") || !full_path.starts_with(&root_full) {
             warn!(target: LOG_TARGET, "Rejected model path outside models root: {relative_model_path}");
+            return Ok(false);
+        }
+        if is_ignored_path(&normalized) {
+            warn!(target: LOG_TARGET, "Ignored model path for single-model indexing: {relative_model_path}");
             return Ok(false);
         }
         if !full_path.is_file() {
@@ -2428,6 +2492,114 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    /// Indexed `(directory, file_name)` pairs, sorted.
+    async fn indexed_paths(t: &TestDb) -> Vec<(String, String)> {
+        sqlx::query_as("SELECT directory, file_name FROM models ORDER BY directory, file_name")
+            .fetch_all(&t.db)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn scan_skips_dot_files_and_folders_and_macosx_folders() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        write_file(root.path(), "Dice Set/d100.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "Dice Set/._d100.stl", [0u8; 4096]);
+        write_file(root.path(), "Dice Set/.DS_Store", [0u8; 16]);
+        write_file(root.path(), "Dice Set/d6.v2.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), ".hidden/inside.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "kit/__MACOSX/kit/._part.stl", [0u8; 4096]);
+        write_file(root.path(), "kit/__MACOSX/kit/part.stl", SIMPLE_ASCII_STL);
+        let svc = service(&t, root.path());
+
+        assert_eq!(svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap(), 2);
+        assert_eq!(
+            indexed_paths(&t).await,
+            vec![("Dice Set".into(), "d100.stl".into()), ("Dice Set".into(), "d6.v2.stl".into())]
+        );
+        let configs: Vec<String> =
+            sqlx::query_scalar("SELECT directory_path FROM directory_configs").fetch_all(&t.db).await.unwrap();
+        assert!(configs.iter().all(|c| !is_ignored_path(c)), "{configs:?}");
+
+        // Neither a filtered nor a single-file scan reaches into an ignored path.
+        let cancel = CancellationToken::new();
+        assert_eq!(svc.scan_and_cache(None, Some(".hidden"), None, &cancel).await.unwrap(), 0);
+        assert!(!svc.scan_and_cache_single("Dice Set/._d100.stl", None, &cancel).await.unwrap());
+        assert!(!svc.scan_and_cache_single("kit/__MACOSX/kit/part.stl", None, &cancel).await.unwrap());
+        assert_eq!(indexed_paths(&t).await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_rescan_removes_models_indexed_from_ignored_paths_with_their_files_and_list_entries() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        write_file(root.path(), "Dice Set/d100.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "Dice Set/._d100.stl", [0u8; 4096]);
+        write_file(root.path(), ".hidden/inside.stl", SIMPLE_ASCII_STL);
+
+        // Indexed before such names were skipped: an AppleDouble file with a preview and a spin
+        // mesh, a model in a dot folder sharing a preview with a model that stays, and a model
+        // missing from disk under a normal name (kept, as deleted files are).
+        let mut apple_double = model("._d100.stl", "Dice Set");
+        apple_double.preview_image_path = Some("ad_r2.00a.png".into());
+        apple_double.spin_mesh_path = Some("ad_r2.00a_spin_v1.bin".into());
+        let mut hidden = model("inside.stl", ".hidden");
+        hidden.preview_image_path = Some("shared_r2.00a.png".into());
+        let mut keeper = model("gone.stl", "Dice Set");
+        keeper.preview_image_path = Some("shared_r2.00a.png".into());
+        for m in [&apple_double, &hidden, &keeper] {
+            t.insert_model(m).await;
+        }
+        let renders = [
+            "ad_r2.00a.png",
+            "ad_r2.00a_supportsremoved.png",
+            "ad_r2.00a_spin_v1.bin",
+            "shared_r2.00a.png",
+            "shared_r2.00a_supportsremoved.png",
+        ];
+        for f in renders {
+            std::fs::write(cache.path().join(f), b"x").unwrap();
+        }
+        let user = t.add_user("owner", false).await;
+        let list = crate::services::printing_lists::create_list(&t.db, user, "Dice").await.unwrap();
+        for (m, quantity) in [(&apple_double, 2), (&keeper, 1)] {
+            sqlx::query(
+                "INSERT INTO printing_list_items (id, printing_list_id, model_id, quantity) VALUES (?, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(list.id)
+            .bind(m.id)
+            .bind(quantity)
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+
+        assert_eq!(
+            indexed_paths(&t).await,
+            vec![("Dice Set".into(), "d100.stl".into()), ("Dice Set".into(), "gone.stl".into())]
+        );
+        let items: Vec<Uuid> =
+            sqlx::query_scalar("SELECT model_id FROM printing_list_items WHERE printing_list_id = ?")
+                .bind(list.id)
+                .fetch_all(&t.db)
+                .await
+                .unwrap();
+        assert_eq!(items, vec![keeper.id]);
+        for f in &renders[..3] {
+            assert!(!cache.path().join(f).exists(), "{f} deleted");
+        }
+        for f in &renders[3..] {
+            assert!(cache.path().join(f).exists(), "{f} kept for the model still using it");
+        }
     }
 
     #[derive(Default)]

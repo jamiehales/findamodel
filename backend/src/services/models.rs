@@ -38,6 +38,18 @@ pub fn is_model_extension(ext: &str) -> bool {
     MODEL_EXTENSIONS.iter().any(|t| t.eq_ignore_ascii_case(ext))
 }
 
+/// Files and folders the app never indexes, lists or descends into: any name starting with '.'
+/// (the `._*` AppleDouble companions a Mac writes onto other volumes, `.DS_Store`, `.git`,
+/// `.Trash`...) and the `__MACOSX` folders of archives made on a Mac.
+pub fn is_ignored_entry(name: &str) -> bool {
+    name.starts_with('.') || name.eq_ignore_ascii_case("__MACOSX")
+}
+
+/// Whether any segment of a relative path (`/` or `\` separated) is an ignored entry.
+pub fn is_ignored_path(relative: &str) -> bool {
+    relative.split(['/', '\\']).any(|segment| !segment.is_empty() && is_ignored_entry(segment))
+}
+
 #[derive(Clone)]
 pub struct ModelService {
     pub(crate) db: Db,
@@ -328,6 +340,28 @@ pub(crate) mod tests {
     /// An export store for tests, inside the test's models root (no model files go there).
     pub(crate) fn test_exports(root: &std::path::Path) -> SupportExports {
         SupportExports::new(root.join(".support-exports"))
+    }
+
+    #[test]
+    fn dot_names_and_macosx_folders_are_ignored() {
+        for name in ["._d100_16mm.stl", ".DS_Store", ".hidden", ".git", ".Trash", "__MACOSX", "__macosx"] {
+            assert!(is_ignored_entry(name), "{name}");
+        }
+        for name in ["d6.v2.stl", "dragon.stl", "Dice Set", "_MACOSX", "__MACOSX_notes", "a.", "stl"] {
+            assert!(!is_ignored_entry(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_path_is_ignored_when_any_segment_is() {
+        assert!(is_ignored_path("Mostly Making/Dice Set/._d100.stl"));
+        assert!(is_ignored_path(".hidden/model.stl"));
+        assert!(is_ignored_path("foo/.git"));
+        assert!(is_ignored_path("kit/__MACOSX/part.stl"));
+        assert!(is_ignored_path("kit\\__MACOSX\\part.stl"));
+        assert!(!is_ignored_path("Mostly Making/Dice Set/d6.v2.stl"));
+        assert!(!is_ignored_path(""));
+        assert!(!is_ignored_path("/a/b/"));
     }
 
     pub(crate) fn service(t: &TestDb, root: &std::path::Path) -> ModelService {

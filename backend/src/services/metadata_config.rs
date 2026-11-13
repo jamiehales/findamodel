@@ -18,6 +18,7 @@ use crate::metadata::config_reader::{self, CONFIG_FILE_NAME};
 use crate::metadata::inheritance::{self, DirectoryMap};
 use crate::metadata::{model_metadata, rules, tags};
 use crate::services::app_config::ModelsRoot;
+use crate::services::models::is_ignored_entry;
 use crate::services::store;
 
 const LOG_TARGET: &str = "findamodel.Indexing";
@@ -99,7 +100,8 @@ pub fn config_fields_from_resolved(d: Option<&DirectoryConfig>) -> ConfigFieldsD
 }
 
 /// Directories under `root` in depth-first pre-order (root first, parents before children),
-/// as forward-slash relative paths.
+/// as forward-slash relative paths. Ignored folders ([`is_ignored_entry`]) and everything below
+/// them are left out.
 pub fn enumerate_depth_first(root: &Path) -> Vec<String> {
     let mut out = vec![String::new()];
     let mut stack: Vec<PathBuf> = sorted_subdirectories(root).into_iter().rev().collect();
@@ -116,8 +118,11 @@ fn sorted_subdirectories(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut dirs: Vec<PathBuf> =
-        entries.filter_map(|e| e.ok()).filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+    let mut dirs: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| !is_ignored_entry(&e.file_name().to_string_lossy()) && e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.path())
+        .collect();
     dirs.sort();
     dirs
 }
@@ -422,6 +427,15 @@ mod tests {
             std::fs::create_dir_all(dir.path().join(d)).unwrap();
         }
         assert_eq!(enumerate_depth_first(dir.path()), vec!["", "a", "a/c", "a/y", "a/y/z", "b", "b/x"]);
+    }
+
+    #[test]
+    fn depth_first_order_leaves_out_ignored_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        for d in ["a/.git/objects", "a/__MACOSX/a", ".Trash/b", "a/c.d"] {
+            std::fs::create_dir_all(dir.path().join(d)).unwrap();
+        }
+        assert_eq!(enumerate_depth_first(dir.path()), vec!["", "a", "a/c.d"]);
     }
 
     #[tokio::test]
