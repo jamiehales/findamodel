@@ -64,6 +64,11 @@ impl VoxlCacheKey {
             .map(|k| VoxlCacheKey { repair_version: Some(crate::geometry::watertight::CURRENT_REPAIR_VERSION), ..k })
     }
 
+    /// A name for the key, the same for equal keys and different for others.
+    pub fn id(&self) -> String {
+        self.file_name()
+    }
+
     fn file_name(&self) -> String {
         let mut canonical = format!(
             "{}|{}|{}|reader:{}|supported:{:?}",

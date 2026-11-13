@@ -17,6 +17,7 @@ use crate::metadata::{fields, model_metadata, rules, tags, yaml};
 use crate::preview::{self, PreviewService};
 use crate::services::app_config::{AppConfigService, ModelsRoot};
 use crate::services::metadata_config::MetadataConfigService;
+use crate::services::repaired_meshes::RepairedMeshes;
 use crate::services::store;
 use crate::services::support_exports::SupportExports;
 
@@ -44,6 +45,7 @@ pub struct ModelService {
     pub(crate) app_config: AppConfigService,
     pub(crate) file_scan_threads: usize,
     pub(crate) support_exports: Option<SupportExports>,
+    pub(crate) repaired_meshes: Option<RepairedMeshes>,
 }
 
 /// Preview image candidates in priority order: the requested variant, then the other
@@ -94,7 +96,18 @@ impl ModelService {
             app_config,
             file_scan_threads: file_scan_threads.max(1),
             support_exports,
+            repaired_meshes: None,
         }
+    }
+
+    /// Keeps repaired model meshes in `store` ([`crate::services::repaired_meshes`]).
+    pub fn with_repaired_meshes(self, store: RepairedMeshes) -> Self {
+        Self { repaired_meshes: Some(store), ..self }
+    }
+
+    /// Where repaired model meshes are kept (None: not kept).
+    pub fn repaired_meshes(&self) -> Option<&RepairedMeshes> {
+        self.repaired_meshes.as_ref()
     }
 
     /// Where pre-supported models' export entries are kept (None: not kept).

@@ -595,6 +595,7 @@ pub struct AppConfigDto {
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
     pub minimum_support_export_version: i32,
+    pub repaired_mesh_cache_size_mb: i64,
     pub setup_completed: bool,
     pub models_directory_path: Option<String>,
 }
@@ -606,6 +607,7 @@ pub struct UpdateAppConfigRequest {
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
     pub minimum_support_export_version: i32,
+    pub repaired_mesh_cache_size_mb: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

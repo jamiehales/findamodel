@@ -26,6 +26,7 @@ use crate::metadata::model_metadata::{self, ComputedMetadata};
 use crate::metadata::rules;
 use crate::preview::{self, CURRENT_PREVIEW_GENERATION_VERSION};
 use crate::services::app_config::normalize_minimum_support_export_version;
+use crate::services::repaired_meshes;
 use crate::services::support_exports::{self, SupportExports};
 use crate::services::{scan_config, store};
 
@@ -1216,6 +1217,16 @@ impl ModelService {
             let removed = exports.sweep(&self.db, support_exports::SWEEP_GRACE).await;
             if removed > 0 {
                 info!(target: LOG_TARGET, "Removed {removed} support export files no model uses.");
+            }
+        }
+        // Repaired meshes of changed or removed models, or of an older repair version.
+        if directory_filter.is_none()
+            && limit.is_none()
+            && let Some(repaired) = &self.repaired_meshes
+        {
+            let removed = repaired.sweep(&self.db, repaired_meshes::SWEEP_GRACE).await;
+            if removed > 0 {
+                info!(target: LOG_TARGET, "Removed {removed} repaired mesh files no model uses.");
             }
         }
 

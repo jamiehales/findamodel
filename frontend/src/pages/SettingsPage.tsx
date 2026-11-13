@@ -39,6 +39,9 @@ import PageLayout, { PageHeader } from '../components/layouts/PageLayout';
 import { useApplicationLogs } from '../lib/queries';
 import styles from './SettingsPage.module.css';
 
+/** The largest repaired mesh cache the backend accepts (1 TB). */
+const MAX_REPAIRED_MESH_CACHE_SIZE_MB = 1024 * 1024;
+
 type FieldKey = 'category' | 'type' | 'material' | 'tags';
 
 const FIELD_LABELS: Record<FieldKey, string> = {
@@ -267,6 +270,7 @@ export default function SettingsPage() {
   const [generatePreviewsEnabled, setGeneratePreviewsEnabled] = useState(true);
   const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
   const [minimumSupportExportVersion, setMinimumSupportExportVersion] = useState('0');
+  const [repairedMeshCacheSizeMb, setRepairedMeshCacheSizeMb] = useState('5120');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -296,6 +300,7 @@ export default function SettingsPage() {
       setGeneratePreviewsEnabled(appConfig.generatePreviewsEnabled);
       setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
       setMinimumSupportExportVersion(String(appConfig.minimumSupportExportVersion));
+      setRepairedMeshCacheSizeMb(String(appConfig.repairedMeshCacheSizeMb));
     }
   }, [appConfig]);
 
@@ -318,6 +323,11 @@ export default function SettingsPage() {
   const previewGenerationVersionLimit = instanceStats?.previewGenerationVersion;
   const minimumSupportExportVersionValue = Number(minimumSupportExportVersion);
   const supportExportVersionLimit = instanceStats?.supportExportVersion;
+  const repairedMeshCacheSizeMbValue = Number(repairedMeshCacheSizeMb);
+  const repairedMeshCacheSizeInvalid =
+    !Number.isInteger(repairedMeshCacheSizeMbValue) ||
+    repairedMeshCacheSizeMbValue < 1 ||
+    repairedMeshCacheSizeMbValue > MAX_REPAIRED_MESH_CACHE_SIZE_MB;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
@@ -330,7 +340,8 @@ export default function SettingsPage() {
     Number.isInteger(minimumSupportExportVersionValue) &&
     minimumSupportExportVersionValue >= 0 &&
     (supportExportVersionLimit === undefined ||
-      minimumSupportExportVersionValue <= supportExportVersionLimit);
+      minimumSupportExportVersionValue <= supportExportVersionLimit) &&
+    !repairedMeshCacheSizeInvalid;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -360,6 +371,7 @@ export default function SettingsPage() {
       generatePreviewsEnabled,
       minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
       minimumSupportExportVersion: minimumSupportExportVersionValue,
+      repairedMeshCacheSizeMb: repairedMeshCacheSizeMbValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -489,6 +501,37 @@ export default function SettingsPage() {
                 {supportExportVersionInvalid && supportExportVersionLimit !== undefined && (
                   <p role="alert" className={styles.error}>
                     Use a whole number from 0 to {supportExportVersionLimit}.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowLabelInline}>
+                <Label htmlFor="repaired-mesh-cache-size" className={styles.rowTitle}>
+                  Repaired mesh cache
+                </Label>
+                <HelpTooltip
+                  aria-label="About repaired mesh cache"
+                  content="Disk space kept for watertight model meshes so remeshed downloads and plates don't repair a model again, the meshes used longest ago are removed first"
+                />
+              </div>
+              <div className={styles.versionField}>
+                <div className={styles.unit}>
+                  <Input
+                    id="repaired-mesh-cache-size"
+                    type="number"
+                    min={1}
+                    max={MAX_REPAIRED_MESH_CACHE_SIZE_MB}
+                    step={1}
+                    value={repairedMeshCacheSizeMb}
+                    aria-invalid={repairedMeshCacheSizeInvalid || undefined}
+                    onChange={(e) => setRepairedMeshCacheSizeMb(e.target.value)}
+                  />
+                  <span>MB</span>
+                </div>
+                {repairedMeshCacheSizeInvalid && (
+                  <p role="alert" className={styles.error}>
+                    Use a whole number from 1 to {MAX_REPAIRED_MESH_CACHE_SIZE_MB}.
                   </p>
                 )}
               </div>

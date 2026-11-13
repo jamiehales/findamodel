@@ -12,6 +12,7 @@ pub mod plate_export;
 pub mod printers;
 pub mod printing_lists;
 pub mod query;
+pub mod repaired_meshes;
 pub mod scan;
 pub mod scan_config;
 pub mod stats;

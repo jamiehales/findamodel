@@ -13,6 +13,7 @@ pub mod metadata;
 pub mod preview;
 pub mod routes;
 pub mod services;
+pub mod single_flight;
 
 #[cfg(test)]
 pub mod test_support;

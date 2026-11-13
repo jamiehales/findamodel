@@ -13,6 +13,7 @@ pub mod simplify;
 pub mod union;
 
 use crate::geometry::Triangle;
+use crate::single_flight::SingleFlight;
 
 /// Increment when the repair's output changes, so cached repaired exports are rebuilt.
 pub const CURRENT_REPAIR_VERSION: i32 = 2;
@@ -25,30 +26,70 @@ pub const REPAIR_TOLERANCE_MM: f64 = 0.01;
 /// manifold and consistently oriented, the exact surface kept outside the mended spots, sealed
 /// voids filled and drained cavities kept. Supports are never passed in.
 ///
-/// A repair runs once per mesh at a time: a call for a mesh (by its corners) already being repaired,
-/// by a model download or a plate export, waits for that repair and gets its result. Call it from
-/// a thread outside rayon's pool (a blocking task, or a thread of its own): a pool thread kept
-/// waiting could hold work the running repair needs.
-pub fn repair_model(triangles: &[Triangle]) -> Vec<Triangle> {
-    repair_shared(triangles).as_ref().clone()
+/// A mesh is repaired once: a repair kept in `store` is used when there is one, a call for a mesh
+/// (by its corners) already being repaired, by a model download or a plate export, waits for that
+/// repair and gets its result, and a new repair is kept in `store`. Call it from a thread outside
+/// rayon's pool (a blocking task, or a thread of its own): a pool thread kept waiting could hold
+/// work the running repair needs.
+pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>) -> Repair {
+    let key = mesh_key(triangles);
+    if let Some(stored) = store.and_then(|s| s.load(&key)) {
+        return Repair { triangles: stored, key };
+    }
+    let shared = repair_shared(triangles, key, store);
+    // The only holder once the waiters have taken theirs: no copy then.
+    let triangles = std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| shared.as_ref().clone());
+    Repair { triangles, key }
+}
+
+/// A mesh's content key ([`mesh_key`]): a SHA-256 of its corners.
+pub type MeshKey = [u8; 32];
+
+/// Where repaired meshes are kept between repairs, by the key of the mesh each was repaired from
+/// (at [`CURRENT_REPAIR_VERSION`]). Both calls are blocking.
+pub trait RepairStore: Sync {
+    /// The repaired mesh kept for `key`, when there is a whole one.
+    fn load(&self, key: &MeshKey) -> Option<Vec<Triangle>>;
+    /// Keeps `repaired` as the repair of the mesh with `key`; a failure is the store's to log.
+    fn save(&self, key: &MeshKey, repaired: &[Triangle]);
+}
+
+/// A repaired mesh and the key of the mesh it was repaired from.
+pub struct Repair {
+    pub triangles: Vec<Triangle>,
+    pub key: MeshKey,
 }
 
 /// How many [`repair_model`] calls so far got the result of a repair another call ran.
 pub fn repairs_shared() -> usize {
-    REPAIRS.shared.load(std::sync::atomic::Ordering::Relaxed)
+    REPAIRS.shared()
 }
 
-/// [`repair_model`]'s result as shared with the other calls that waited for it.
-fn repair_shared(triangles: &[Triangle]) -> std::sync::Arc<Vec<Triangle>> {
-    REPAIRS.run(mesh_key(triangles), || repair_now(triangles))
+/// The repair of the mesh with `key`, shared with the other calls that waited for it.
+fn repair_shared(
+    triangles: &[Triangle],
+    key: MeshKey,
+    store: Option<&dyn RepairStore>,
+) -> std::sync::Arc<Vec<Triangle>> {
+    REPAIRS.run(key, || {
+        // Kept by a repair that finished after the caller looked.
+        if let Some(stored) = store.and_then(|s| s.load(&key)) {
+            return stored;
+        }
+        let repaired = repair_now(triangles);
+        if let Some(s) = store {
+            s.save(&key, &repaired);
+        }
+        repaired
+    })
 }
 
 /// The repairs under way, by [`mesh_key`].
-static REPAIRS: std::sync::LazyLock<SingleFlight<[u8; 32], Vec<Triangle>>> =
+static REPAIRS: std::sync::LazyLock<SingleFlight<MeshKey, Vec<Triangle>>> =
     std::sync::LazyLock::new(SingleFlight::default);
 
 /// A hash of a mesh's corners (normals play no part in the repair), in chunks hashed in parallel.
-fn mesh_key(triangles: &[Triangle]) -> [u8; 32] {
+pub fn mesh_key(triangles: &[Triangle]) -> MeshKey {
     use rayon::prelude::*;
     use sha2::{Digest, Sha256};
     let chunks: Vec<[u8; 32]> = triangles
@@ -71,42 +112,6 @@ fn mesh_key(triangles: &[Triangle]) -> [u8; 32] {
         h.update(c);
     }
     h.finalize().into()
-}
-
-/// Work done once per key at a time: callers asking for a key whose work is running wait for it
-/// and share its result; the entry goes once the work is done, so a later call works again.
-pub struct SingleFlight<K, V> {
-    running: parking_lot::Mutex<std::collections::HashMap<K, std::sync::Arc<std::sync::OnceLock<std::sync::Arc<V>>>>>,
-    /// Calls that got the result of work another call ran.
-    shared: std::sync::atomic::AtomicUsize,
-}
-
-impl<K, V> Default for SingleFlight<K, V> {
-    fn default() -> Self {
-        SingleFlight { running: parking_lot::Mutex::new(std::collections::HashMap::new()), shared: Default::default() }
-    }
-}
-
-impl<K: std::hash::Hash + Eq + Clone, V> SingleFlight<K, V> {
-    /// `work`'s result for `key`, or that of the same key's work already running.
-    pub fn run(&self, key: K, work: impl FnOnce() -> V) -> std::sync::Arc<V> {
-        let cell = self.running.lock().entry(key.clone()).or_default().clone();
-        let mut ran = false;
-        let out = cell
-            .get_or_init(|| {
-                ran = true;
-                std::sync::Arc::new(work())
-            })
-            .clone();
-        if !ran {
-            self.shared.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        let mut running = self.running.lock();
-        if running.get(&key).is_some_and(|c| std::sync::Arc::ptr_eq(c, &cell)) {
-            running.remove(&key);
-        }
-        out
-    }
 }
 
 /// [`repair_model`] without waiting for or sharing with other calls.
@@ -194,45 +199,36 @@ mod tests {
         voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None).unwrap().into_inner().len()
     }
 
-    #[test]
-    fn work_for_a_key_already_running_is_waited_for_and_shared() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::time::{Duration, Instant};
-        let flight: SingleFlight<u32, u32> = SingleFlight::default();
-        let runs = AtomicUsize::new(0);
-        let work = |v: u32| {
-            runs.fetch_add(1, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(300));
-            v
-        };
-        let start = Instant::now();
-        let (a, b, c) = std::thread::scope(|s| {
-            let a = s.spawn(|| flight.run(1, || work(10)));
-            let b = s.spawn(|| flight.run(1, || work(20)));
-            let c = s.spawn(|| flight.run(2, || work(30)));
-            (a.join().unwrap(), b.join().unwrap(), c.join().unwrap())
-        });
-        // One run for key 1, shared by both callers; key 2 alongside it.
-        assert!(std::sync::Arc::ptr_eq(&a, &b), "{a} {b}");
-        assert_eq!((*c, runs.load(Ordering::SeqCst)), (30, 2));
-        assert!(start.elapsed() < Duration::from_millis(550), "{:?}", start.elapsed());
-        // Once done, the key runs again.
-        assert_eq!(*flight.run(1, || work(40)), 40);
-        assert_eq!(runs.load(Ordering::SeqCst), 3);
+    /// A store in memory, counting what it keeps.
+    #[derive(Default)]
+    struct Memory {
+        kept: parking_lot::Mutex<std::collections::HashMap<MeshKey, Vec<Triangle>>>,
+        saves: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RepairStore for Memory {
+        fn load(&self, key: &MeshKey) -> Option<Vec<Triangle>> {
+            self.kept.lock().get(key).cloned()
+        }
+        fn save(&self, key: &MeshKey, repaired: &[Triangle]) {
+            self.saves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.kept.lock().insert(*key, repaired.to_vec());
+        }
     }
 
     #[test]
     fn two_repairs_of_one_mesh_at_once_share_one_result() {
         let original = sphere(7.0, 40);
+        let key = mesh_key(&original);
         let gate = std::sync::Barrier::new(2);
         let (a, b) = std::thread::scope(|s| {
             let a = s.spawn(|| {
                 gate.wait();
-                repair_shared(&original)
+                repair_shared(&original, key, None)
             });
             let b = s.spawn(|| {
                 gate.wait();
-                repair_shared(&original)
+                repair_shared(&original, key, None)
             });
             (a.join().unwrap(), b.join().unwrap())
         });
@@ -241,9 +237,26 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_repair_is_used_instead_of_repairing_again() {
+        use std::sync::atomic::Ordering;
+        let original = sphere(8.0, 30);
+        let store = Memory::default();
+        let first = repair_model(&original, Some(&store));
+        assert_eq!(first.key, mesh_key(&original));
+        assert_eq!(store.saves.load(Ordering::SeqCst), 1, "a new repair is kept");
+        let second = repair_model(&original, Some(&store));
+        assert_eq!(store.saves.load(Ordering::SeqCst), 1, "the kept one is used");
+        assert_eq!(second.triangles, first.triangles);
+        // Another mesh is repaired for itself.
+        let other = sphere(8.5, 30);
+        assert_ne!(repair_model(&other, Some(&store)).key, first.key);
+        assert_eq!(store.saves.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
     fn a_repaired_mesh_is_written_about_as_compactly_as_the_original() {
         let original = sphere(10.0, 60);
-        let repaired = repair_model(&original);
+        let repaired = repair_model(&original, None).triangles;
         assert_eq!(repaired.len(), original.len(), "a closed sphere comes through as it is");
         assert!(repaired.iter().all(|t| t.normal == Vec3::default()), "no stored normals");
         let (before, after) = (voxl_size(&original), voxl_size(&repaired));

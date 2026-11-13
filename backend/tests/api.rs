@@ -125,12 +125,14 @@ async fn settings_config_round_trip_and_validation() {
         "defaultRaftHeightMm": 3.5,
         "generatePreviewsEnabled": false,
         "minimumPreviewGenerationVersion": 1,
-        "minimumSupportExportVersion": 0
+        "minimumSupportExportVersion": 0,
+        "repairedMeshCacheSizeMb": 2048
     });
     let (status, updated) = app.json("PUT", "/api/settings/config", update.clone()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(updated.get("theme").is_none());
     assert_eq!(updated["generatePreviewsEnabled"], false);
+    assert_eq!(updated["repairedMeshCacheSizeMb"], 2048);
     assert_eq!(updated["minimumSupportExportVersion"], 0);
     let (_, stats) = app.get("/api/settings/stats").await;
     let current = findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
@@ -139,6 +141,11 @@ async fn settings_config_round_trip_and_validation() {
     let mut too_new = update.clone();
     too_new["minimumSupportExportVersion"] = json!(current + 1);
     let (status, _) = app.json("PUT", "/api/settings/config", too_new).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let mut no_cache = update.clone();
+    no_cache["repairedMeshCacheSizeMb"] = json!(0);
+    let (status, _) = app.json("PUT", "/api/settings/config", no_cache).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     update["defaultRaftHeightMm"] = json!(-1);
@@ -956,22 +963,8 @@ async fn a_remeshed_plate_voxl_repairs_each_model_and_keeps_the_supports() {
 #[tokio::test]
 async fn a_download_and_a_plate_asking_for_one_model_at_once_share_its_repair() {
     let app = TestApp::new().await;
-    // A knight of its own (moved off the others' place), so no other test repairs this mesh.
-    let knight: Vec<Triangle> = crossed_knight()
-        .into_iter()
-        .map(|t| {
-            let m = |v: findamodel::geometry::Vec3| findamodel::geometry::Vec3::new(v.x + 37.0, v.y, v.z);
-            Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
-        })
-        .collect();
-    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&knight, None));
-    app.write("Mini/findamodel.yaml", "supported: true\n");
-    app.index_and_wait(3).await;
-    let (_, result) = app.get("/api/query?limit=10").await;
-    let id = result["models"][0]["id"].as_str().unwrap().to_string();
-    let plate = json!({ "placements": [
-        { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
-    ], "format": "voxl-remeshed", "bedWidthMm": 200, "bedDepthMm": 120 });
+    let id = indexed_knight_of_its_own(&app, 1.01).await;
+    let plate = remeshed_plate(&id);
     let shared_before = findamodel::geometry::watertight::repairs_shared();
     let download = app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap());
     let plate = app.send(
@@ -987,6 +980,103 @@ async fn a_download_and_a_plate_asking_for_one_model_at_once_share_its_repair() 
     let (a, b) = (voxl_mesh_triangles(&single), voxl_mesh_triangles(&plated));
     assert_eq!(a.len(), b.len());
     assert!(a.iter().zip(&b).all(|(x, y)| [x.v0, x.v1, x.v2] == [y.v0, y.v1, y.v2]), "the same repaired faces");
+}
+
+/// Indexes a crossed knight of its own (stretched along x by `stretch`: a load centres the model,
+/// so only a change of shape keeps other tests from repairing this mesh) as a pre-supported
+/// model. Returns its id.
+async fn indexed_knight_of_its_own(app: &TestApp, stretch: f32) -> String {
+    let knight: Vec<Triangle> = crossed_knight()
+        .into_iter()
+        .map(|t| {
+            let m = |v: Vec3| Vec3::new(v.x * stretch, v.y, v.z);
+            Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
+        })
+        .collect();
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&knight, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    result["models"][0]["id"].as_str().unwrap().to_string()
+}
+
+fn remeshed_plate(id: &str) -> Value {
+    json!({ "placements": [
+        { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
+    ], "format": "voxl-remeshed", "bedWidthMm": 200, "bedDepthMm": 120 })
+}
+
+fn corner_bits(triangles: &[Triangle]) -> Vec<u32> {
+    triangles.iter().flat_map(|t| [t.v0, t.v1, t.v2]).flat_map(|v| [v.x, v.y, v.z]).map(f32::to_bits).collect()
+}
+
+#[tokio::test]
+async fn two_remeshed_downloads_of_one_model_at_once_build_it_once() {
+    let app = TestApp::new().await;
+    let id = indexed_knight_of_its_own(&app, 1.02).await;
+    let uri = format!("/api/models/{id}/voxl?remeshed=true");
+    let ((s1, _, a), (s2, _, b)) = tokio::join!(
+        app.send(Request::get(&uri).body(Body::empty()).unwrap()),
+        app.send(Request::get(&uri).body(Body::empty()).unwrap())
+    );
+    assert_eq!((s1, s2), (StatusCode::OK, StatusCode::OK));
+    assert_eq!(a, b, "the same bytes");
+    // One build, waited for by the other download: one split, support reading, repair and write.
+    assert_eq!((app.state.voxl_builds.runs(), app.state.voxl_builds.shared()), (1, 1));
+    let repaired = app.state.models.repaired_meshes().unwrap();
+    assert_eq!((repaired.writes(), repaired.hits()), (1, 0));
+
+    // A later download (in a flight of its own) is served from the VOXL cache.
+    let (status, _, c) = app.send(Request::get(&uri).body(Body::empty()).unwrap()).await;
+    assert_eq!((status, c == a), (StatusCode::OK, true));
+    assert_eq!((repaired.writes(), repaired.hits()), (1, 0), "not repaired again");
+}
+
+#[tokio::test]
+async fn a_remeshed_plate_after_a_download_uses_the_kept_repair() {
+    let app = TestApp::new().await;
+    let id = indexed_knight_of_its_own(&app, 1.03).await;
+    let (status, _, single) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let repaired = app.state.models.repaired_meshes().unwrap().clone();
+    assert_eq!((repaired.writes(), repaired.hits()), (1, 0), "the download repaired and kept it");
+    let files: Vec<_> = walk(repaired.dir());
+    assert_eq!(files.len(), 1, "{files:?}");
+
+    let request = Request::post("/api/plate/generate")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(remeshed_plate(&id).to_string()))
+        .unwrap();
+    let (status, _, plated) = app.send(request).await;
+    assert_eq!(status, StatusCode::OK);
+    // Read from the store: no new repair.
+    assert_eq!((repaired.writes(), repaired.hits()), (1, 1));
+    // Bit for bit the faces the fresh repair wrote.
+    let (a, b) = (voxl_mesh_triangles(&single), voxl_mesh_triangles(&plated));
+    assert!(!a.is_empty());
+    assert_eq!(corner_bits(&a), corner_bits(&b));
+
+    // A download after the VOXL cache is cleared reads it too, and writes the same mesh.
+    std::fs::remove_dir_all(app.state.settings.voxl_cache_path()).unwrap();
+    let (status, _, again) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((repaired.writes(), repaired.hits()), (1, 2));
+    assert_eq!(corner_bits(&voxl_mesh_triangles(&again)), corner_bits(&a));
+}
+
+/// Every file under `dir`, relative.
+fn walk(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if entry.path().is_dir() {
+            out.extend(walk(&entry.path()).into_iter().map(|f| format!("{}/{f}", entry.file_name().to_string_lossy())));
+        } else {
+            out.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    out
 }
 
 fn bounds(triangles: &[Triangle]) -> ([f32; 3], [f32; 3]) {

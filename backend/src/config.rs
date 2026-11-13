@@ -194,6 +194,11 @@ impl Settings {
         self.data_path.join("cache").join("support-exports")
     }
 
+    /// Repaired (watertight) model meshes ([`crate::services::repaired_meshes`]).
+    pub fn repaired_meshes_path(&self) -> PathBuf {
+        self.data_path.join("cache").join("repaired-meshes")
+    }
+
     pub fn voxl_cache_path(&self) -> PathBuf {
         self.data_path.join("cache").join("voxl")
     }

@@ -22,6 +22,7 @@ use crate::geometry::watertight;
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis, to_z_up};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
+use crate::services::repaired_meshes;
 use crate::services::support_exports::{self, SupportExports};
 use crate::services::{scan_config, store};
 
@@ -279,6 +280,10 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
     let exports = models.support_exports().cloned();
     let written: Arc<parking_lot::Mutex<Vec<(Uuid, String)>>> = Arc::default();
     let written_by_export = written.clone();
+    let repaired_store = models.repaired_meshes().cloned();
+    let repairs: Arc<parking_lot::Mutex<Vec<(Uuid, watertight::MeshKey)>>> = Arc::default();
+    let repairs_by_export = repairs.clone();
+    let rows = infos.clone();
     let result = PlateExportResult {
         content_type: content_type(&format),
         file_name: file_name(&format),
@@ -334,7 +339,8 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                         p.start_repairing(prepared.len());
                     }
                     // On threads of their own, not rayon's: a repair of a mesh already being
-                    // repaired (by a download, or another plate) waits for it.
+                    // repaired (by a download, or another plate) waits for it. A mesh repaired
+                    // before is read from the store.
                     let next = std::sync::atomic::AtomicUsize::new(0);
                     let repaired: Vec<parking_lot::Mutex<Option<Vec<Triangle>>>> =
                         prepared.iter().map(|_| parking_lot::Mutex::new(None)).collect();
@@ -349,7 +355,9 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                                     if let Some(p) = &progress {
                                         p.mark_repairing(name);
                                     }
-                                    *repaired[i].lock() = Some(watertight::repair_model(body));
+                                    let repair = repaired_meshes::repair(body, repaired_store.as_ref());
+                                    repairs_by_export.lock().push((geometry_ids[i], repair.key));
+                                    *repaired[i].lock() = Some(repair.triangles);
                                     if let Some(p) = &progress {
                                         p.mark_repaired(name);
                                     }
@@ -430,6 +438,14 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
             }
             Ok(_) => {}
             Err(err) => tracing::warn!("Failed to index the support export of {id}: {err}"),
+        }
+    }
+
+    // The repaired meshes this export used, indexed for the scan.
+    if let Some(store) = models.repaired_meshes() {
+        let repairs = std::mem::take(&mut *repairs.lock());
+        for (id, key) in repairs {
+            store.index_or_warn(&models.db, &rows[&id], &key).await;
         }
     }
 

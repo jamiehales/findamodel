@@ -13,6 +13,7 @@ use tracing::info;
 
 use crate::config::{RuntimeMode, Settings};
 use crate::db::{self, Db};
+use crate::error::AppResult;
 use crate::logging::LogBuffer;
 use crate::preview::{GpuState, PreviewService};
 use crate::routes;
@@ -21,9 +22,11 @@ use crate::services::indexer::{IndexerService, ScanWorker, run_scheduler};
 use crate::services::jobs::{ArchiveJobService, PlateJobService};
 use crate::services::metadata_config::MetadataConfigService;
 use crate::services::models::ModelService;
+use crate::services::repaired_meshes::RepairedMeshes;
 use crate::services::support_exports::SupportExports;
 use crate::services::voxl_cache::VoxlCache;
 use crate::services::{printing_lists, users};
+use crate::single_flight::SingleFlight;
 
 const LOG_TARGET: &str = "findamodel.Startup";
 
@@ -38,6 +41,9 @@ pub struct AppState {
     pub preview: PreviewService,
     /// Generated model VOXLs (`/api/models/{id}/voxl`).
     pub voxl_cache: VoxlCache,
+    /// Model VOXLs being built, by [`crate::services::voxl_cache::VoxlCacheKey::id`]: one
+    /// build per VOXL at a time.
+    pub voxl_builds: Arc<SingleFlight<String, AppResult<axum::body::Bytes>>>,
     pub indexer: Arc<IndexerService>,
     pub plate_jobs: PlateJobService,
     pub archive_jobs: ArchiveJobService,
@@ -81,6 +87,8 @@ impl AppState {
             }
         };
         *models_root.write() = configured;
+        // Loads the settings services read as they go (the repaired mesh cache size).
+        app_config.get().await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         let gpu = Arc::new(GpuState::default());
         if settings.preview_use_gpu {
@@ -98,7 +106,11 @@ impl AppState {
             app_config.clone(),
             settings.file_scan_threads,
             Some(SupportExports::new(settings.support_exports_path())),
-        );
+        )
+        .with_repaired_meshes(RepairedMeshes::new(
+            settings.repaired_meshes_path(),
+            app_config.repaired_mesh_cache_bytes(),
+        ));
         let indexer = IndexerService::new(
             db.clone(),
             Arc::new(ScanWorker { metadata_config: metadata_config.clone(), models: models.clone() }),
@@ -123,6 +135,7 @@ impl AppState {
             models,
             preview,
             voxl_cache,
+            voxl_builds: Arc::default(),
             indexer,
             log_buffer,
         })

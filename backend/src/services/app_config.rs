@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
@@ -14,6 +15,11 @@ use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::preview::CURRENT_PREVIEW_GENERATION_VERSION;
 
 pub const DATABASE_DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
+/// The repaired mesh store's size limit until the settings say otherwise (5 GB).
+pub const DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB: i64 = 5120;
+/// The largest size limit the settings accept (1 TB).
+pub const MAX_REPAIRED_MESH_CACHE_SIZE_MB: i64 = 1024 * 1024;
+const BYTES_PER_MB: u64 = 1024 * 1024;
 
 /// The models root in effect, shared by every service. Set from the environment or the
 /// setup wizard.
@@ -26,6 +32,9 @@ pub struct AppConfigService {
     /// Models path configured by the environment, if any.
     configured_models_path: Option<String>,
     models_root: ModelsRoot,
+    /// The repaired mesh store's size limit in bytes, as last read from the settings: shared with
+    /// the store, which reads it each time it evicts.
+    repaired_mesh_cache_bytes: Arc<AtomicU64>,
 }
 
 /// Resolves a configured models directory to an absolute path. On macOS, `smb://` URLs
@@ -137,7 +146,21 @@ impl AppConfigService {
         configured_models_path: Option<String>,
         models_root: ModelsRoot,
     ) -> Self {
-        Self { db, defaults: Arc::new(defaults), configured_models_path, models_root }
+        Self {
+            db,
+            defaults: Arc::new(defaults),
+            configured_models_path,
+            models_root,
+            repaired_mesh_cache_bytes: Arc::new(AtomicU64::new(
+                DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB as u64 * BYTES_PER_MB,
+            )),
+        }
+    }
+
+    /// The repaired mesh store's size limit in bytes, kept up to date with the settings (see
+    /// [`crate::services::repaired_meshes::RepairedMeshes`]).
+    pub fn repaired_mesh_cache_bytes(&self) -> Arc<AtomicU64> {
+        self.repaired_mesh_cache_bytes.clone()
     }
 
     pub fn models_root(&self) -> &ModelsRoot {
@@ -165,6 +188,7 @@ impl AppConfigService {
             minimum_support_export_version: normalize_minimum_support_export_version(
                 self.defaults.minimum_support_export_version.unwrap_or(CURRENT_SUPPORT_READER_VERSION),
             ),
+            repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
             setup_completed: configured.is_some(),
             models_directory_path: configured,
             updated_at: now(),
@@ -187,7 +211,9 @@ impl AppConfigService {
         Ok(sqlx::query_as("SELECT * FROM app_config WHERE id = 1").fetch_one(&self.db).await?)
     }
 
-    fn to_dto(row: &AppConfigRow) -> AppConfigDto {
+    fn to_dto(&self, row: &AppConfigRow) -> AppConfigDto {
+        let size_mb = row.repaired_mesh_cache_size_mb.clamp(1, MAX_REPAIRED_MESH_CACHE_SIZE_MB);
+        self.repaired_mesh_cache_bytes.store(size_mb as u64 * BYTES_PER_MB, Ordering::Relaxed);
         AppConfigDto {
             default_raft_height_mm: row.default_raft_height_mm,
             generate_previews_enabled: row.generate_previews_enabled,
@@ -197,13 +223,14 @@ impl AppConfigService {
             minimum_support_export_version: normalize_minimum_support_export_version(
                 row.minimum_support_export_version,
             ),
+            repaired_mesh_cache_size_mb: size_mb,
             setup_completed: row.setup_completed,
             models_directory_path: row.models_directory_path.clone(),
         }
     }
 
     pub async fn get(&self) -> AppResult<AppConfigDto> {
-        Ok(Self::to_dto(&self.ensure_config().await?))
+        Ok(self.to_dto(&self.ensure_config().await?))
     }
 
     pub async fn get_default_raft_height_mm(&self) -> AppResult<f32> {
@@ -225,16 +252,23 @@ impl AppConfigService {
                 "Minimum support export version must be between 0 and {CURRENT_SUPPORT_READER_VERSION}."
             )));
         }
+        if !(1..=MAX_REPAIRED_MESH_CACHE_SIZE_MB).contains(&req.repaired_mesh_cache_size_mb) {
+            return Err(bad_request(format!(
+                "Repaired mesh cache size must be between 1 and {MAX_REPAIRED_MESH_CACHE_SIZE_MB} MB."
+            )));
+        }
         self.ensure_config().await?;
         sqlx::query(
             "UPDATE app_config SET default_raft_height_mm = ?, generate_previews_enabled = ?,
-                minimum_preview_generation_version = ?, minimum_support_export_version = ?, updated_at = ?
+                minimum_preview_generation_version = ?, minimum_support_export_version = ?,
+                repaired_mesh_cache_size_mb = ?, updated_at = ?
                 WHERE id = 1",
         )
         .bind(req.default_raft_height_mm)
         .bind(req.generate_previews_enabled)
         .bind(req.minimum_preview_generation_version)
         .bind(req.minimum_support_export_version)
+        .bind(req.repaired_mesh_cache_size_mb)
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -347,6 +381,7 @@ mod tests {
             generate_previews_enabled: true,
             minimum_preview_generation_version: version,
             minimum_support_export_version: 0,
+            repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
         };
         assert_eq!(sut.update(&request(5)).await.unwrap().minimum_preview_generation_version, 5);
         assert!(sut.update(&request(-1)).await.is_err());
@@ -364,6 +399,7 @@ mod tests {
             generate_previews_enabled: true,
             minimum_preview_generation_version: 0,
             minimum_support_export_version: version,
+            repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
         };
         let current = CURRENT_SUPPORT_READER_VERSION;
         assert_eq!(sut.update(&request(current)).await.unwrap().minimum_support_export_version, current);
@@ -381,6 +417,28 @@ mod tests {
         let defaults = AppConfigDefaults { minimum_support_export_version: Some(current + 3), ..Default::default() };
         let sut = AppConfigService::new(fresh.db.clone(), defaults, None, Arc::new(RwLock::new(None)));
         assert_eq!(sut.get().await.unwrap().minimum_support_export_version, current);
+    }
+
+    #[tokio::test]
+    async fn the_repaired_mesh_cache_size_defaults_to_5_gb_is_validated_and_shared() {
+        let t = TestDb::new().await;
+        let sut = service(&t, None);
+        let limit = sut.repaired_mesh_cache_bytes();
+        assert_eq!(sut.get().await.unwrap().repaired_mesh_cache_size_mb, 5120);
+        assert_eq!(limit.load(Ordering::Relaxed), 5120 * BYTES_PER_MB);
+        let request = |mb: i64| UpdateAppConfigRequest {
+            default_raft_height_mm: 3.0,
+            generate_previews_enabled: true,
+            minimum_preview_generation_version: 0,
+            minimum_support_export_version: 0,
+            repaired_mesh_cache_size_mb: mb,
+        };
+        assert_eq!(sut.update(&request(300)).await.unwrap().repaired_mesh_cache_size_mb, 300);
+        assert_eq!(limit.load(Ordering::Relaxed), 300 * BYTES_PER_MB, "the store sees it at once");
+        for bad in [0, -1, MAX_REPAIRED_MESH_CACHE_SIZE_MB + 1] {
+            assert!(sut.update(&request(bad)).await.is_err(), "{bad}");
+        }
+        assert_eq!(sut.get().await.unwrap().repaired_mesh_cache_size_mb, 300);
     }
 
     #[tokio::test]

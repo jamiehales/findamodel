@@ -1,6 +1,7 @@
 //! /api/models and /api/query endpoints.
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
@@ -18,8 +19,8 @@ use crate::geometry::support_layout;
 use crate::geometry::support_reader;
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
-use crate::geometry::watertight;
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
+use crate::services::repaired_meshes;
 use crate::services::support_exports;
 use crate::services::voxl_cache::VoxlCacheKey;
 use crate::services::{plate_export, query, scan_config, store};
@@ -313,7 +314,7 @@ async fn get_split_geometry(
 
 #[derive(Deserialize, Default)]
 struct VoxlQuery {
-    /// The remeshed variant: the model mesh made watertight ([`watertight::repair_model`]); the
+    /// The remeshed variant: the model mesh made watertight ([`crate::geometry::watertight::repair_model`]); the
     /// supports are the same DragonFruit supports.
     #[serde(default)]
     remeshed: bool,
@@ -322,6 +323,9 @@ struct VoxlQuery {
 /// The model stripped of its supports, with the supports read from their mesh
 /// ([`support_reader`]) and rebuilt as DragonFruit supports, as a VOXL scene. 404 when the supports cannot be split off. Served from the VOXL cache
 /// when the model, its raft height and the support layout are unchanged since it was written.
+///
+/// A VOXL is built once at a time: a download of one (by its cache key) already being built
+/// waits, without holding a thread, for that build and gets the same bytes.
 async fn get_voxl(
     State(state): State<AppState>,
     _user: CurrentUser,
@@ -341,17 +345,41 @@ async fn get_voxl(
             }
         })
         .flatten();
+    let flight = key.as_ref().map_or_else(|| format!("{id}|remeshed:{}", q.remeshed), VoxlCacheKey::id);
+    let built = state.voxl_builds.run_async(flight, || build_voxl(&state, id, key, q.remeshed)).await;
+    match built.as_ref() {
+        Ok(bytes) => Ok(voxl_response(&download_name, bytes.clone())),
+        Err(err) => Err(shared_error(err)),
+    }
+}
+
+/// An error a VOXL build ended with, for each download that waited for it.
+fn shared_error(err: &AppError) -> AppError {
+    match err {
+        AppError::BadRequest(m) => AppError::BadRequest(m.clone()),
+        AppError::NotFound(m) => AppError::NotFound(m.clone()),
+        AppError::Conflict(m) => AppError::Conflict(m.clone()),
+        AppError::Unprocessable(m) => AppError::Unprocessable(m.clone()),
+        AppError::Unauthorized(m) => AppError::Unauthorized(m.clone()),
+        AppError::UnprocessableJson(v) => AppError::UnprocessableJson(v.clone()),
+        AppError::Internal(e) => AppError::Internal(anyhow::anyhow!("{e:#}")),
+    }
+}
+
+/// [`get_voxl`]'s VOXL, from the VOXL cache or built (and cached).
+async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>, remeshed: bool) -> AppResult<Bytes> {
     if let Some(key) = key.clone() {
         let cache = state.voxl_cache.clone();
         let cached = tokio::task::spawn_blocking(move || cache.get(&key)).await.map_err(anyhow::Error::from)?;
         if let Some(bytes) = cached {
-            return Ok(voxl_response(&download_name, bytes));
+            return Ok(bytes.into());
         }
     }
 
-    let Some((model, geometry, raft_height_mm, checked)) = load_supported(&state, id).await? else {
+    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id).await? else {
         return Err(not_found());
     };
+    let row = model.clone();
     let name = model.file_name.clone();
     // The model's export entry, shared with plate exports: used when it is current.
     let exports = state.models.support_exports().cloned();
@@ -375,7 +403,7 @@ async fn get_voxl(
         }
         // An entry without supports, or none: split (recording what was found) and read.
         _ => {
-            let split = split_loaded(&state, model, geometry, raft_height_mm, checked).await?;
+            let split = split_loaded(state, model, geometry, raft_height_mm, checked).await?;
             let (writer, export_key) = (exports.clone(), export_key.clone());
             let (export, stored) = tokio::task::spawn_blocking(move || {
                 let export = split.map(|split| {
@@ -404,24 +432,32 @@ async fn get_voxl(
         }
     };
     let cache = state.voxl_cache.clone();
-    let remeshed = q.remeshed;
-    let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+    let repaired_store = state.models.repaired_meshes().cloned();
+    let (bytes, repaired) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         // Only the model mesh is repaired; the supports stay DragonFruit supports.
-        let body = if remeshed { watertight::repair_model(&body) } else { body };
+        let (body, repaired) = if remeshed {
+            let repair = repaired_meshes::repair(&body, repaired_store.as_ref());
+            (repair.triangles, Some(repair.key))
+        } else {
+            (body, None)
+        };
         let mesh = VoxlMesh { name: &name, triangles: &body, supports: Some(&layout) };
         let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
         let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();
         if let Some(key) = key {
             cache.put(&key, &bytes);
         }
-        Ok(bytes)
+        Ok((bytes, repaired))
     })
     .await
     .map_err(anyhow::Error::from)??;
-    Ok(voxl_response(&download_name, bytes))
+    if let (Some(key), Some(store)) = (repaired, state.models.repaired_meshes()) {
+        store.index_or_warn(&state.db, &row, &key).await;
+    }
+    Ok(bytes.into())
 }
 
-fn voxl_response(download_name: &str, bytes: Vec<u8>) -> Response {
+fn voxl_response(download_name: &str, bytes: Bytes) -> Response {
     (
         [
             (header::CONTENT_TYPE, plate_export::content_type("voxl").parse().expect("valid header")),

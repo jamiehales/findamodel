@@ -109,6 +109,15 @@ pub struct ModelRow {
     pub support_export_version: Option<i32>,
 }
 
+/// The index of a model's repaired mesh ([`crate::services::repaired_meshes`]): the key of the
+/// mesh it was repaired from (hex) and what that mesh was made from. The file is the authority.
+#[derive(Debug, Clone, PartialEq, Default, sqlx::FromRow)]
+pub struct ModelRepairedMesh {
+    pub model_id: Uuid,
+    pub mesh_key: String,
+    pub source: String,
+}
+
 /// A model's footprint hulls, kept out of `models` so catalog queries don't read them. Each is
 /// a JSON array of [x, z] pairs on the X-Z plane (bird's eye view, Y up).
 #[derive(Debug, Clone, PartialEq, Default, sqlx::FromRow)]
@@ -154,6 +163,8 @@ pub struct AppConfigRow {
     pub generate_previews_enabled: bool,
     pub minimum_preview_generation_version: i32,
     pub minimum_support_export_version: i32,
+    /// The most disk space kept repaired model meshes may take up, in MB.
+    pub repaired_mesh_cache_size_mb: i64,
     pub setup_completed: bool,
     pub models_directory_path: Option<String>,
     pub updated_at: DateTime<Utc>,
