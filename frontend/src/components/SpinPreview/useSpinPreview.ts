@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { fetchSpinMesh } from '../../lib/api';
-import { queryKeys } from '../../lib/queries';
+import { spinMeshQueryOptions } from '../../lib/queries';
 import { spinPlayer } from './spinPlayer';
 
 /**
@@ -32,12 +31,7 @@ export function useSpinPreview<T extends HTMLElement>(
       const image = imageRef.current;
       if (!spinUrl || e.pointerType !== 'mouse' || !image) return;
       spinPlayer().start(image, withSupports, () =>
-        queryClient.fetchQuery({
-          queryKey: queryKeys.spinMesh(spinUrl),
-          queryFn: () => fetchSpinMesh(spinUrl),
-          staleTime: Infinity,
-          gcTime: Infinity,
-        }),
+        queryClient.fetchQuery(spinMeshQueryOptions(spinUrl)),
       );
     },
     [queryClient, spinUrl, withSupports],

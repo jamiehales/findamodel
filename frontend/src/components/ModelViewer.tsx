@@ -13,9 +13,12 @@ import {
   useModel,
   useRepairedGeometry,
   useResupportedGeometry,
+  useSpinMesh,
   useSplitGeometry,
 } from '../lib/queries';
+import type { Model } from '../lib/api';
 import { createPreviewMaterial } from '../lib/previewShading';
+import type { SpinMesh } from '../lib/spinMesh';
 import styles from './ModelViewer.module.css';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
@@ -171,6 +174,9 @@ interface GeometryModelProps {
   /** One flag per triangle: drawn in the repaired-face accent when set. */
   changed?: Uint8Array | null;
   color: string;
+}
+
+interface HullOverlaysProps {
   convexHull: string | null;
   concaveHull: string | null;
   convexSansRaftHull: string | null;
@@ -220,15 +226,7 @@ function buildBodyGeometry(
   return geo;
 }
 
-function GeometryModel({
-  geometry: data,
-  changed,
-  color,
-  convexHull,
-  concaveHull,
-  convexSansRaftHull,
-  raftHeightMm,
-}: GeometryModelProps) {
+function GeometryModel({ geometry: data, changed, color }: GeometryModelProps) {
   const bufferGeometry = useMemo(() => buildBodyGeometry(data, changed), [data, changed]);
   useEffect(() => () => bufferGeometry.dispose(), [bufferGeometry]);
   const bodyMaterial = usePreviewMaterial(color);
@@ -239,6 +237,49 @@ function GeometryModel({
     [changed, bodyMaterial, changedMaterial],
   );
 
+  return <mesh geometry={bufferGeometry} material={material} />;
+}
+
+/**
+ * The reduced body (the tile spin mesh) shown while the full mesh downloads. Its positions are
+ * already in the full mesh's frame, so it sits where the full body will appear. The geometry is
+ * disposed when it unmounts (once the full mesh replaces it); the cached arrays are left alone.
+ */
+function SpinPreviewModel({ spin, color }: { spin: SpinMesh; color: string }) {
+  const bufferGeometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(spin.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(spin.indices, 1));
+    return geo;
+  }, [spin]);
+  useEffect(() => () => bufferGeometry.dispose(), [bufferGeometry]);
+  const material = usePreviewMaterial(color);
+  return <mesh geometry={bufferGeometry} material={material} />;
+}
+
+/**
+ * Whether a spin mesh was built in the frame the full mesh is drawn in: its whole-model bounds
+ * are the loaded model's box (X/Z centred, the plate at Y = 0) that the model's dimensions
+ * describe. A mesh built some other way is not shown, so the swap never jumps.
+ */
+function spinMatchesModel(spin: SpinMesh, model: Model): boolean {
+  const dims = [model.dimensionXMm, model.dimensionYMm, model.dimensionZMm];
+  const expectedMin = [-(dims[0] ?? 0) / 2, 0, -(dims[2] ?? 0) / 2];
+  return dims.every((dim, k) => {
+    if (dim == null) return false;
+    const tolerance = Math.max(dim * 0.005, 0.05);
+    const min = spin.modelBounds.min[k];
+    const max = spin.modelBounds.max[k];
+    return Math.abs(min - expectedMin[k]) <= tolerance && Math.abs(max - min - dim) <= tolerance;
+  });
+}
+
+function HullOverlays({
+  convexHull,
+  concaveHull,
+  convexSansRaftHull,
+  raftHeightMm,
+}: HullOverlaysProps) {
   const hullCoords = useMemo((): Array<[number, number]> | null => {
     if (!convexHull) return null;
     try {
@@ -268,7 +309,6 @@ function GeometryModel({
 
   return (
     <group>
-      <mesh geometry={bufferGeometry} material={material} />
       <HullPolygon coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
       <HullLine coordinates={hullCoords} color={CONVEX_HULL_COLOR} />
       <HullPolygon
@@ -348,12 +388,17 @@ export default function ModelViewer({
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
   const isSupportModel = supported === true;
-  const { data: splitData, isPending: isSplitPending } = useSplitGeometry(modelId, isSupportModel);
+  const {
+    data: splitData,
+    isPending: isSplitPending,
+    isError: isSplitError,
+  } = useSplitGeometry(modelId, isSupportModel);
   const shouldFetchFullGeometry = !isSupportModel || splitData === null;
-  const { data: fullData, isPending: isFullGeometryPending } = useGeometry(
-    modelId,
-    shouldFetchFullGeometry,
-  );
+  const {
+    data: fullData,
+    isPending: isFullGeometryPending,
+    isError: isFullGeometryError,
+  } = useGeometry(modelId, shouldFetchFullGeometry);
   const hasSupportMesh = isSupportModel && splitData?.supports != null;
   // Rebuilt from the original supports, so only asked for when there are some.
   const { data: resupported } = useResupportedGeometry(modelId, hasSupportMesh);
@@ -377,6 +422,21 @@ export default function ModelViewer({
   const loadedBody = isSupportModel && splitData != null ? splitData.body : fullData;
   const repairedData = showRepaired ? repaired.data : undefined;
   const geometryData = repairedData?.geometry ?? loadedBody;
+  // The reduced body stands in until the full mesh has loaded. Asked for only while the full
+  // mesh is missing (so not at all when it is cached), alongside the full mesh's own requests.
+  // A full mesh that failed to load leaves the viewer as it was without one.
+  const fullFailed = isSupportModel
+    ? isSplitError || (splitData === null && isFullGeometryError)
+    : isFullGeometryError;
+  const { data: spinData } = useSpinMesh(model?.spinUrl ?? null, loadedBody == null && !fullFailed);
+  const preview =
+    loadedBody == null &&
+    !fullFailed &&
+    spinData != null &&
+    model != null &&
+    spinMatchesModel(spinData, model)
+      ? spinData
+      : null;
   const orbitTarget = useMemo<[number, number, number]>(
     () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
     [model?.sphereCentreX, model?.sphereCentreY, model?.sphereCentreZ],
@@ -405,8 +465,7 @@ export default function ModelViewer({
 
   if (
     isPending ||
-    isGeometryPending ||
-    geometryData == null ||
+    ((isGeometryPending || geometryData == null) && preview == null) ||
     model.dimensionXMm == null ||
     model.dimensionYMm == null ||
     model.dimensionZMm == null
@@ -421,7 +480,7 @@ export default function ModelViewer({
         }}
       >
         <span style={messageStyle}>
-          {isPending || isGeometryPending || geometryData == null
+          {isPending || isGeometryPending || (geometryData == null && preview == null)
             ? 'Loading model'
             : 'Model dimensions not available yet'}
         </span>
@@ -430,6 +489,9 @@ export default function ModelViewer({
   }
 
   const repairing = showRepaired && repaired.isPending;
+  // The reduced body is on screen: supports, the support modes and the repaired view wait for
+  // the full mesh (the mode control appears with it, as the split decides which modes exist).
+  const previewing = geometryData == null;
 
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
@@ -442,10 +504,16 @@ export default function ModelViewer({
             direction={DEFAULT_VIEW_DIRECTION}
           />
           <Grid />
-          <GeometryModel
-            geometry={geometryData}
-            changed={repairedData?.changed ?? null}
-            color={color}
+          {geometryData != null ? (
+            <GeometryModel
+              geometry={geometryData}
+              changed={repairedData?.changed ?? null}
+              color={color}
+            />
+          ) : (
+            preview && <SpinPreviewModel spin={preview} color={color} />
+          )}
+          <HullOverlays
             convexHull={convexHull ?? null}
             concaveHull={concaveHull ?? null}
             convexSansRaftHull={convexSansRaftHull ?? null}
@@ -490,6 +558,7 @@ export default function ModelViewer({
           )}
           <Checkbox
             className={styles.repaired}
+            disabled={previewing}
             checked={showRepaired}
             onCheckedChange={(checked) => setShowRepaired(checked === true)}
           >
@@ -501,6 +570,7 @@ export default function ModelViewer({
             Couldn't repair the mesh.
           </p>
         )}
+        {previewing && <Spinner className={styles.previewing} label="Loading model" />}
         {repairing && (
           <div className={styles.busy} role="status">
             <Spinner />

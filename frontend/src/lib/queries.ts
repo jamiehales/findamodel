@@ -15,6 +15,7 @@ import {
   fetchSplitGeometry,
   fetchResupportedGeometry,
   fetchRepairedGeometry,
+  fetchSpinMesh,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -191,6 +192,28 @@ export function useGeometry(id: string, enabled: boolean = true) {
     queryKey: queryKeys.geometry(id),
     queryFn: () => fetchGeometry(id),
     enabled: !!id && enabled,
+  });
+}
+
+/**
+ * A model's spin mesh, kept for the session: shared by the tiles that turn it on hover and the
+ * viewer that shows it while the full mesh loads.
+ */
+export function spinMeshQueryOptions(spinUrl: string) {
+  return {
+    queryKey: queryKeys.spinMesh(spinUrl),
+    queryFn: () => fetchSpinMesh(spinUrl),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  };
+}
+
+/** The spin mesh at `spinUrl` (none when null). A failure is not retried. */
+export function useSpinMesh(spinUrl: string | null, enabled: boolean = true) {
+  return useQuery({
+    ...spinMeshQueryOptions(spinUrl ?? ''),
+    enabled: !!spinUrl && enabled,
+    retry: false,
   });
 }
 

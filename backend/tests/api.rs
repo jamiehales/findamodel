@@ -284,19 +284,12 @@ async fn index_query_preview_geometry_and_plate_export() {
     assert_eq!(headers[header::CACHE_CONTROL], "public, max-age=31536000, immutable");
     assert_eq!(&png[1..4], b"PNG");
 
-    let request = Request::get(format!("/api/models/{id}/geometry"))
-        .header(header::ACCEPT, "application/vnd.findamodel.mesh")
-        .body(Body::empty())
-        .unwrap();
-    let (status, headers, mesh) = app.send(request).await;
+    let (status, headers, mesh) =
+        app.send(Request::get(format!("/api/models/{id}/geometry")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.findamodel.mesh");
-    assert_eq!(u32::from_le_bytes(mesh[12..16].try_into().unwrap()), 2);
-
-    let (status, legacy) = app.get(&format!("/api/models/{id}/geometry?format=json")).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(legacy["triangleCount"], 2);
-    assert_eq!(legacy["positions"].as_array().unwrap().len(), 18);
+    let mesh = findamodel::geometry::mesh_transfer::decode(&mesh).unwrap();
+    assert_eq!(mesh.indices.len(), 6);
 
     let (status, _, _) =
         app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
@@ -1368,4 +1361,100 @@ async fn spin_meshes_need_a_signed_in_user() {
     let uri = "/api/models/00000000-0000-0000-0000-000000000001/spin";
     assert_eq!(get_spin(&app, uri, Some("br")).await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(get_spin(&app, &format!("{uri}?desktopToken=secret"), Some("br")).await.0, StatusCode::NOT_FOUND);
+}
+
+/// A response body with its `Content-Encoding` undone.
+fn decoded_body(headers: &axum::http::HeaderMap, body: &[u8]) -> Vec<u8> {
+    use std::io::Read;
+    match headers.get(header::CONTENT_ENCODING).map(|v| v.to_str().unwrap()) {
+        None => body.to_vec(),
+        Some("br") => findamodel::preview::spin::decompress(body).unwrap(),
+        Some("zstd") => zstd::stream::decode_all(body).unwrap(),
+        Some("gzip") => {
+            let mut out = Vec::new();
+            flate2::read::GzDecoder::new(body).read_to_end(&mut out).unwrap();
+            out
+        }
+        Some(other) => panic!("unexpected encoding {other}"),
+    }
+}
+
+#[tokio::test]
+async fn every_mesh_endpoint_sends_meshopt_meshes_compressed_for_the_client() {
+    use findamodel::geometry::mesh_transfer::{self, Decoded};
+    let app = TestApp::new().await;
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&presupported_knight(), None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let triangles = presupported_knight().len();
+
+    let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+    // Each endpoint's meshes, decoded from the uncompressed payload.
+    let meshes = |path: &str, payload: &[u8]| -> Vec<Decoded> {
+        match path {
+            "geometry" | "geometry/resupported" => vec![mesh_transfer::decode(payload).unwrap()],
+            "geometry/split" => {
+                let body = u32_at(payload, 0);
+                let supports = u32_at(payload, 4 + body);
+                assert_eq!(payload.len(), 8 + body + supports);
+                vec![
+                    mesh_transfer::decode(&payload[4..4 + body]).unwrap(),
+                    mesh_transfer::decode(&payload[8 + body..]).unwrap(),
+                ]
+            }
+            "geometry/repaired" => {
+                let len = u32_at(payload, 0);
+                let mesh = mesh_transfer::decode(&payload[4..4 + len]).unwrap();
+                let faces = u32_at(payload, 4 + len);
+                assert_eq!(faces * 3, mesh.indices.len());
+                let flags: Vec<bool> = (0..faces).map(|t| payload[8 + len + t / 8] >> (t % 8) & 1 == 1).collect();
+                // The repair's own faces come last, after the body's.
+                let first = flags.iter().position(|&f| f).unwrap_or(faces);
+                assert!(flags[first..].iter().all(|&f| f), "flags are one run at the end");
+                vec![mesh]
+            }
+            _ => unreachable!(),
+        }
+    };
+
+    for path in ["geometry", "geometry/split", "geometry/resupported", "geometry/repaired"] {
+        let uri = format!("/api/models/{id}/{path}");
+        let mut identity: Option<Vec<u8>> = None;
+        // A browser's list (zstd preferred), then each encoding alone, then none.
+        for (accept, expected) in [
+            (Some("gzip, deflate, br, zstd"), Some("zstd")),
+            (Some("gzip, deflate, br"), Some("br")),
+            (Some("gzip"), Some("gzip")),
+            (None, None),
+        ] {
+            let mut request = Request::get(&uri);
+            if let Some(accept) = accept {
+                request = request.header(header::ACCEPT_ENCODING, accept);
+            }
+            let (status, headers, body) = app.send(request.body(Body::empty()).unwrap()).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert_eq!(
+                headers.get(header::CONTENT_ENCODING).map(|v| v.to_str().unwrap()),
+                expected,
+                "{path} with {accept:?}"
+            );
+            let payload = decoded_body(&headers, &body);
+            if let Some(identity) = &identity {
+                assert_eq!(&payload, identity, "{path}: the same mesh in every encoding");
+            } else {
+                identity = Some(payload.clone());
+            }
+            let decoded = meshes(path, &payload);
+            assert!(decoded.iter().all(|m| !m.indices.is_empty()), "{path}");
+            assert!(decoded.iter().all(|m| m.indices.iter().all(|&i| (i as usize) < m.positions.len())), "{path}");
+            if path == "geometry" {
+                assert_eq!(decoded[0].indices.len(), triangles * 3);
+            }
+            if path == "geometry/split" {
+                assert_eq!(decoded.iter().map(|m| m.indices.len()).sum::<usize>(), triangles * 3);
+            }
+        }
+    }
 }

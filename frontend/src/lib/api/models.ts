@@ -1,5 +1,6 @@
 import type { CommonMetadataFields } from './metadata';
 import { apiFetch, apiUrl } from '../http';
+import { decodeMesh } from '../meshTransfer';
 import { decodeSpinMesh, type SpinMesh } from '../spinMesh';
 
 function mapModelUrls(model: Model): Model {
@@ -215,133 +216,9 @@ export interface RelatedModel {
 }
 
 export async function fetchGeometry(id: string): Promise<GeometryResponse> {
-  const r = await apiFetch(`/api/models/${id}/geometry`, {
-    headers: {
-      Accept: 'application/vnd.findamodel.mesh',
-    },
-  });
+  const r = await apiFetch(`/api/models/${id}/geometry`);
   if (!r.ok) throw new Error('Failed to fetch geometry');
-
-  const contentType = r.headers.get('content-type') ?? '';
-  if (contentType.includes('application/vnd.findamodel.mesh')) {
-    return decodeBinaryGeometry(await r.arrayBuffer());
-  }
-
-  const legacy = (await r.json()) as {
-    positions: number[];
-    normals: number[];
-    triangleCount: number;
-    sphereRadius: number;
-    sphereCentre: { x: number; y: number; z: number };
-    dimensionXMm: number;
-    dimensionYMm: number;
-    dimensionZMm: number;
-  };
-
-  const triangleIndices = new Uint32Array(legacy.triangleCount * 3);
-  for (let i = 0; i < triangleIndices.length; i++) triangleIndices[i] = i;
-
-  return {
-    positions: new Float32Array(legacy.positions),
-    indices: triangleIndices,
-    triangleCount: legacy.triangleCount,
-    sphereRadius: legacy.sphereRadius,
-    sphereCentre: legacy.sphereCentre,
-    dimensionXMm: legacy.dimensionXMm,
-    dimensionYMm: legacy.dimensionYMm,
-    dimensionZMm: legacy.dimensionZMm,
-  };
-}
-
-const BINARY_MESH_MAGIC = 0x48534d46;
-const BINARY_MESH_HEADER_SIZE = 56;
-
-function decodeBinaryGeometry(buffer: ArrayBuffer): GeometryResponse {
-  if (buffer.byteLength < BINARY_MESH_HEADER_SIZE) {
-    throw new Error('Binary mesh payload too small');
-  }
-
-  const view = new DataView(buffer);
-  const magic = view.getUint32(0, true);
-  if (magic !== BINARY_MESH_MAGIC) {
-    throw new Error('Unexpected binary mesh format');
-  }
-
-  const version = view.getUint8(4);
-  if (version !== 1) {
-    throw new Error(`Unsupported binary mesh version ${version}`);
-  }
-
-  const indexElementSize = view.getUint8(5);
-  const quantizationBits = view.getUint8(6);
-  if (quantizationBits !== 16) {
-    throw new Error(`Unsupported mesh quantization ${quantizationBits}`);
-  }
-
-  const vertexCount = view.getUint32(8, true);
-  const triangleCount = view.getUint32(12, true);
-  const dimensionXMm = view.getFloat32(16, true);
-  const dimensionYMm = view.getFloat32(20, true);
-  const dimensionZMm = view.getFloat32(24, true);
-  const sphereCentre = {
-    x: view.getFloat32(28, true),
-    y: view.getFloat32(32, true),
-    z: view.getFloat32(36, true),
-  };
-  const sphereRadius = view.getFloat32(40, true);
-  const positionsByteLength = view.getUint32(44, true);
-  const indexOffset = view.getUint32(48, true);
-  const indicesByteLength = view.getUint32(52, true);
-
-  const expectedPositionsByteLength = vertexCount * 3 * Uint16Array.BYTES_PER_ELEMENT;
-  if (positionsByteLength !== expectedPositionsByteLength) {
-    throw new Error('Corrupt binary mesh positions section');
-  }
-
-  if (indexOffset + indicesByteLength > buffer.byteLength) {
-    throw new Error('Corrupt binary mesh index section');
-  }
-
-  const quantized = new Uint16Array(buffer, BINARY_MESH_HEADER_SIZE, vertexCount * 3);
-  const positions = new Float32Array(vertexCount * 3);
-  const xScale = dimensionXMm === 0 ? 0 : dimensionXMm / 65535;
-  const yScale = dimensionYMm === 0 ? 0 : dimensionYMm / 65535;
-  const zScale = dimensionZMm === 0 ? 0 : dimensionZMm / 65535;
-  const minX = -dimensionXMm / 2;
-  const minZ = -dimensionZMm / 2;
-
-  for (let i = 0; i < quantized.length; i += 3) {
-    positions[i] = minX + quantized[i] * xScale;
-    positions[i + 1] = quantized[i + 1] * yScale;
-    positions[i + 2] = minZ + quantized[i + 2] * zScale;
-  }
-
-  const indexCount = triangleCount * 3;
-  let indices: Uint16Array | Uint32Array;
-  if (indexElementSize === Uint16Array.BYTES_PER_ELEMENT) {
-    if (indicesByteLength !== indexCount * Uint16Array.BYTES_PER_ELEMENT) {
-      throw new Error('Corrupt Uint16 mesh index data');
-    }
-    indices = new Uint16Array(buffer, indexOffset, indexCount);
-  } else if (indexElementSize === Uint32Array.BYTES_PER_ELEMENT) {
-    if (indicesByteLength !== indexCount * Uint32Array.BYTES_PER_ELEMENT) {
-      throw new Error('Corrupt Uint32 mesh index data');
-    }
-    indices = new Uint32Array(buffer, indexOffset, indexCount);
-  } else {
-    throw new Error(`Unsupported mesh index size ${indexElementSize}`);
-  }
-
-  return {
-    positions,
-    indices,
-    triangleCount,
-    sphereRadius,
-    sphereCentre,
-    dimensionXMm,
-    dimensionYMm,
-    dimensionZMm,
-  };
+  return decodeMesh(new Uint8Array(await r.arrayBuffer()));
 }
 
 export interface SplitGeometryResponse {
@@ -350,37 +227,30 @@ export interface SplitGeometryResponse {
 }
 
 export async function fetchSplitGeometry(id: string): Promise<SplitGeometryResponse | null> {
-  const r = await apiFetch(`/api/models/${id}/geometry/split`, {
-    headers: { Accept: 'application/vnd.findamodel.mesh-split' },
-  });
+  const r = await apiFetch(`/api/models/${id}/geometry/split`);
   if (r.status === 204) return null;
   if (!r.ok) throw new Error('Failed to fetch split geometry');
 
-  const buf = await r.arrayBuffer();
-  const view = new DataView(buf);
-  let offset = 0;
-
-  const bodyLength = view.getUint32(offset, true);
-  offset += 4;
-  const body = decodeBinaryGeometry(buf.slice(offset, offset + bodyLength));
-  offset += bodyLength;
-
-  const supportLength = view.getUint32(offset, true);
-  offset += 4;
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const view = new DataView(bytes.buffer);
+  const bodyLength = view.getUint32(0, true);
+  const body = await decodeMesh(bytes.subarray(4, 4 + bodyLength));
+  const supportOffset = 4 + bodyLength;
+  const supportLength = view.getUint32(supportOffset, true);
   const supports =
-    supportLength > 0 ? decodeBinaryGeometry(buf.slice(offset, offset + supportLength)) : null;
+    supportLength > 0
+      ? await decodeMesh(bytes.subarray(supportOffset + 4, supportOffset + 4 + supportLength))
+      : null;
 
   return { body, supports };
 }
 
 /** The supports as findamodel rebuilds them for the VOXL export; null when it has none. */
 export async function fetchResupportedGeometry(id: string): Promise<GeometryResponse | null> {
-  const r = await apiFetch(`/api/models/${id}/geometry/resupported`, {
-    headers: { Accept: 'application/vnd.findamodel.mesh' },
-  });
+  const r = await apiFetch(`/api/models/${id}/geometry/resupported`);
   if (r.status === 204) return null;
   if (!r.ok) throw new Error('Failed to fetch rebuilt supports');
-  return decodeBinaryGeometry(await r.arrayBuffer());
+  return decodeMesh(new Uint8Array(await r.arrayBuffer()));
 }
 
 export interface RepairedGeometryResponse {
@@ -389,21 +259,22 @@ export interface RepairedGeometryResponse {
   changed: Uint8Array;
 }
 
-/** The model body made watertight, with the faces the repair made flagged. */
+/**
+ * The model body made watertight, with the faces the repair made flagged (sent after the
+ * others).
+ */
 export async function fetchRepairedGeometry(id: string): Promise<RepairedGeometryResponse> {
-  const r = await apiFetch(`/api/models/${id}/geometry/repaired`, {
-    headers: { Accept: 'application/vnd.findamodel.mesh-repaired' },
-  });
+  const r = await apiFetch(`/api/models/${id}/geometry/repaired`);
   if (!r.ok) throw new Error('Failed to fetch repaired geometry');
 
-  const buf = await r.arrayBuffer();
-  const view = new DataView(buf);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const view = new DataView(bytes.buffer);
   const meshLength = view.getUint32(0, true);
-  const geometry = decodeBinaryGeometry(buf.slice(4, 4 + meshLength));
+  const geometry = await decodeMesh(bytes.subarray(4, 4 + meshLength));
   const flagOffset = 4 + meshLength;
   const faceCount = view.getUint32(flagOffset, true);
   if (faceCount !== geometry.triangleCount) throw new Error('Corrupt repaired mesh flags');
-  const bits = new Uint8Array(buf, flagOffset + 4, Math.ceil(faceCount / 8));
+  const bits = bytes.subarray(flagOffset + 4, flagOffset + 4 + Math.ceil(faceCount / 8));
   const changed = new Uint8Array(faceCount);
   for (let i = 0; i < faceCount; i++) changed[i] = (bits[i >> 3] >> (i & 7)) & 1;
   return { geometry, changed };

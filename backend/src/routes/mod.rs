@@ -21,6 +21,7 @@ use axum::routing::get;
 use futures::StreamExt;
 use serde_json::json;
 use tower::ServiceExt;
+use tower_http::CompressionLevel;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
@@ -53,7 +54,10 @@ pub fn router(state: AppState) -> Router {
         app = app.fallback_service(ServeDir::new(&web_root).fallback(ServeFile::new(index)));
     }
 
-    let mut app = app.layer(CompressionLayer::new().compress_when(compressible));
+    // The mesh layer is inner: a response it compresses is left alone by the general one.
+    let mut app = app
+        .layer(CompressionLayer::new().quality(MESH_COMPRESSION_LEVEL).compress_when(compressible_mesh))
+        .layer(CompressionLayer::new().compress_when(compressible));
     // The desktop window loads the frontend from the webview's own origin and calls this
     // backend on 127.0.0.1, so every request (and its token header) is cross-origin. Outermost,
     // so preflights are answered before the token guard sees them.
@@ -82,22 +86,34 @@ pub fn router(state: AppState) -> Router {
 /// and Linux, `http(s)://tauri.localhost` on Windows.
 const DESKTOP_WEBVIEW_ORIGINS: [&str; 3] = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"];
 
-/// Compress JSON and mesh payloads only; exports and previews are already compressed and
-/// downloads keep their Content-Length for progress reporting.
-fn compressible(_: StatusCode, _: axum::http::Version, headers: &HeaderMap, _: &axum::http::Extensions) -> bool {
-    let Some(content_type) = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) else {
-        return false;
-    };
+/// A response's media type (without parameters) when it is worth compressing: over 256 bytes
+/// or of unknown length.
+fn compressible_type(headers: &HeaderMap) -> Option<&str> {
+    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok())?;
     let large_enough = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .is_none_or(|len| len > 256);
-    large_enough
-        && ["application/json", "model/gltf-binary", crate::geometry::mesh_transfer::CONTENT_TYPE]
-            .iter()
-            .any(|t| content_type.starts_with(t))
+    large_enough.then(|| content_type.split(';').next().unwrap_or_default().trim())
 }
+
+/// Compress JSON (and glTF) payloads only; exports and previews are already compressed and
+/// downloads keep their Content-Length for progress reporting. Meshes have their own layer.
+fn compressible(_: StatusCode, _: axum::http::Version, headers: &HeaderMap, _: &axum::http::Extensions) -> bool {
+    compressible_type(headers).is_some_and(|t| ["application/json", "model/gltf-binary"].contains(&t))
+}
+
+/// The meshes sent to the viewer ([`crate::geometry::mesh_transfer`]).
+fn compressible_mesh(_: StatusCode, _: axum::http::Version, headers: &HeaderMap, _: &axum::http::Extensions) -> bool {
+    compressible_type(headers).is_some_and(|t| crate::geometry::mesh_transfer::CONTENT_TYPES.contains(&t))
+}
+
+/// Meshes are already meshopt-encoded, so the pass on top runs at the fastest level: on a 2.5M
+/// triangle model zstd 1 takes about 40 ms (brotli 1 and gzip 1 about 150 ms) and still saves
+/// about 20% (40% on small models), where the default levels take 130 ms (zstd 3), 370 ms
+/// (brotli 4) and 780 ms (gzip 6) to save 2-3% more.
+const MESH_COMPRESSION_LEVEL: CompressionLevel = CompressionLevel::Precise(1);
 
 async fn health() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))

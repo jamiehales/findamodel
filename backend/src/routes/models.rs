@@ -7,7 +7,6 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
-use serde_json::json;
 
 use super::{CurrentUser, IdPath, content_disposition, serve_file};
 use crate::app::AppState;
@@ -208,59 +207,10 @@ async fn load_geometry(
     Ok((model, geometry))
 }
 
-#[derive(Deserialize)]
-struct GeometryQuery {
-    format: Option<String>,
-}
-
-fn prefers_binary_mesh(headers: &HeaderMap, q: &GeometryQuery) -> bool {
-    if q.format.as_deref().is_some_and(|f| f.eq_ignore_ascii_case("json")) {
-        return false;
-    }
-    headers
-        .get(header::ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|a| a.to_ascii_lowercase().contains(mesh_transfer::CONTENT_TYPE))
-}
-
-/// Geometry in Y-up, mm, centred coordinates: the binary FMSH format when requested via
-/// Accept, otherwise legacy JSON with flat per-vertex arrays.
-async fn get_geometry(
-    State(state): State<AppState>,
-    _user: CurrentUser,
-    IdPath(id): IdPath,
-    Query(q): Query<GeometryQuery>,
-    headers: HeaderMap,
-) -> AppResult<Response> {
+/// Geometry in Y-up, mm, centred coordinates, as an FMSH mesh ([`mesh_transfer`]).
+async fn get_geometry(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
     let (_, geometry) = load_geometry(&state, id).await?;
     let geometry = geometry.ok_or_else(|| AppError::Internal(anyhow::anyhow!("Failed to load model geometry")))?;
-
-    if !prefers_binary_mesh(&headers, &q) {
-        let body = tokio::task::spawn_blocking(move || {
-            let mut positions = Vec::with_capacity(geometry.triangles.len() * 9);
-            let mut normals = Vec::with_capacity(geometry.triangles.len() * 9);
-            for t in &geometry.triangles {
-                for v in [t.v0, t.v1, t.v2] {
-                    positions.extend_from_slice(&[v.x, v.y, v.z]);
-                    normals.extend_from_slice(&[t.normal.x, t.normal.y, t.normal.z]);
-                }
-            }
-            json!({
-                "positions": positions,
-                "normals": normals,
-                "triangleCount": geometry.triangles.len(),
-                "sphereRadius": geometry.sphere_radius,
-                "sphereCentre": { "x": geometry.sphere_centre.x, "y": geometry.sphere_centre.y, "z": geometry.sphere_centre.z },
-                "dimensionXMm": geometry.dimension_x_mm,
-                "dimensionYMm": geometry.dimension_y_mm,
-                "dimensionZMm": geometry.dimension_z_mm,
-            })
-        })
-        .await
-        .map_err(anyhow::Error::from)?;
-        return Ok(Json(body).into_response());
-    }
-
     let payload =
         tokio::task::spawn_blocking(move || mesh_transfer::encode(&geometry)).await.map_err(anyhow::Error::from)?;
     Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE)], payload).into_response())
@@ -575,7 +525,7 @@ async fn get_repaired_geometry(
         let repair = repaired_meshes::repair(&body, store.as_ref(), threads);
         let changed = crate::geometry::watertight::changed_faces(&body, &repair.triangles);
         let geometry = mesh_transfer::covering(to_z_up(&repair.triangles));
-        (mesh_transfer::encode_flagged(&mesh_transfer::encode(&geometry), &changed), repair.key)
+        (mesh_transfer::encode_flagged(&geometry, &changed), repair.key)
     })
     .await
     .map_err(anyhow::Error::from)?;

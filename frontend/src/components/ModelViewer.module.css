@@ -40,3 +40,12 @@
   background: color-mix(in srgb, var(--background) 55%, transparent);
   pointer-events: none;
 }
+
+/* Shown in a corner while the reduced body stands in for the full mesh. */
+.previewing {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
