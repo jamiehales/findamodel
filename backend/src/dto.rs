@@ -29,6 +29,8 @@ pub struct ModelDto {
     pub file_url: String,
     pub has_preview: bool,
     pub preview_url: Option<String>,
+    /// The reduced body turned in 3D while the tile is hovered (None until generated).
+    pub spin_url: Option<String>,
     pub creator: Option<String>,
     pub collection: Option<String>,
     pub subcollection: Option<String>,
@@ -63,6 +65,8 @@ pub struct RelatedModelDto {
     pub file_type: String,
     pub file_size: i64,
     pub preview_url: Option<String>,
+    /// The reduced body turned in 3D while the tile is hovered (None until generated).
+    pub spin_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -221,6 +225,8 @@ pub struct ExplorerModelItemDto {
     pub file_size: Option<i64>,
     pub has_preview: bool,
     pub preview_url: Option<String>,
+    /// The reduced body turned in 3D while the tile is hovered (None until generated).
+    pub spin_url: Option<String>,
     pub resolved_metadata: Option<ConfigFieldsDto>,
     /// `field -> rule YAML` for each field a rule computed.
     pub rule_configs: Option<StringMap>,

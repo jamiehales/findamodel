@@ -8,6 +8,7 @@
 pub mod camera;
 pub mod cpu;
 pub mod gpu;
+pub mod spin;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

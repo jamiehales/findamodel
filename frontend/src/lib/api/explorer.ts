@@ -26,6 +26,8 @@ export interface ExplorerModel {
   fileSize: number | null;
   hasPreview: boolean;
   previewUrl: string | null;
+  /** The reduced body turned in 3D while the tile is hovered; null until generated. */
+  spinUrl: string | null;
   resolvedMetadata: MetadataFields | null;
   /** `field -> rule YAML` for each field a rule computed. */
   ruleConfigs: Record<string, string> | null;
@@ -54,6 +56,7 @@ function mapExplorerModelUrls(model: ExplorerModel): ExplorerModel {
   return {
     ...model,
     previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+    spinUrl: model.spinUrl ? apiUrl(model.spinUrl) : null,
   };
 }
 

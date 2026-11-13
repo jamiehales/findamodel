@@ -15,6 +15,7 @@ pub mod query;
 pub mod repaired_meshes;
 pub mod scan;
 pub mod scan_config;
+pub mod spin_meshes;
 pub mod stats;
 pub mod store;
 pub mod support_exports;

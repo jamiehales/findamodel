@@ -9,6 +9,7 @@ import { withPreviewSupports } from '../lib/http';
 import FilterPill from './FilterPill';
 import QuantityStepper from './QuantityStepper';
 import { useRenderControls } from './RenderControlsContext';
+import { useSpinPreview } from './SpinPreview/useSpinPreview';
 import styles from './ModelCard.module.css';
 
 function getFileName(relativePath: string): string {
@@ -40,6 +41,7 @@ function ModelCard({ model, href, details, extraActions }: ModelCardProps) {
     () => (model.previewUrl ? withPreviewSupports(model.previewUrl, showSupports) : null),
     [model.previewUrl, showSupports],
   );
+  const spin = useSpinPreview<HTMLDivElement>(model.spinUrl, showSupports);
 
   function filterBy(e: React.MouseEvent, nextSearch: (source: string) => string) {
     e.preventDefault();
@@ -65,8 +67,13 @@ function ModelCard({ model, href, details, extraActions }: ModelCardProps) {
         ];
 
   return (
-    <div className={`mm-card-link ${styles.card}`} data-detailed={details ? '' : undefined}>
-      <div className={`mm-card-image ${styles.image}`}>
+    <div
+      className={`mm-card-link ${styles.card}`}
+      data-detailed={details ? '' : undefined}
+      onPointerEnter={spin.onPointerEnter}
+      onPointerLeave={spin.onPointerLeave}
+    >
+      <div ref={spin.imageRef} className={`mm-card-image ${styles.image}`}>
         {previewUrl ? (
           <img src={previewUrl} alt="" loading="lazy" />
         ) : (

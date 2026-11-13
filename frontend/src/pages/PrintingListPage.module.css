@@ -114,6 +114,7 @@
 }
 
 .thumb {
+  position: relative;
   width: 48px;
   height: 48px;
   flex: none;

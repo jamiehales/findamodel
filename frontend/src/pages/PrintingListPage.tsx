@@ -25,6 +25,7 @@ import {
   type PrintingListArchiveJob,
   type SpawnType,
   type HullMode,
+  type Model,
 } from '../lib/api';
 import {
   useModelsByIds,
@@ -39,6 +40,7 @@ import {
 import QuantityStepper from '../components/QuantityStepper';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useRenderControls } from '../components/RenderControlsContext';
+import { useSpinPreview } from '../components/SpinPreview/useSpinPreview';
 import { withPreviewSupports } from '../lib/http';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingView from '../components/LoadingView';
@@ -576,40 +578,17 @@ function PrintingListPage() {
               <span className={styles.mono}>{totalQuantity} total</span>
             </div>
             <ul className={styles.rows}>
-              {listedModels.map((model) => {
-                const quantity = items[model.id] ?? 0;
-                const preview = model.previewUrl
-                  ? withPreviewSupports(model.previewUrl, showSupports)
-                  : null;
-                const setQuantity = (next: number) =>
-                  list && upsertItem({ listId: list.id, modelId: model.id, quantity: next });
-                return (
-                  <li key={model.id} className={styles.row}>
-                    <span className={styles.thumb}>
-                      {preview ? <img src={preview} alt="" loading="lazy" /> : null}
-                    </span>
-                    <Link to={`/model/${encodeURIComponent(model.id)}`} className={styles.rowName}>
-                      <span className={styles.name}>{model.name}</span>
-                      <span className={styles.file}>{model.relativePath.split('/').pop()}</span>
-                    </Link>
-                    <QuantityStepper
-                      size="sm"
-                      min={1}
-                      value={quantity}
-                      label={model.name}
-                      onChange={setQuantity}
-                    />
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Remove ${model.name}`}
-                      onClick={() => setQuantity(0)}
-                    >
-                      <Trash2 size={16} strokeWidth={1.5} />
-                    </IconButton>
-                  </li>
-                );
-              })}
+              {listedModels.map((model) => (
+                <ListRow
+                  key={model.id}
+                  model={model}
+                  quantity={items[model.id] ?? 0}
+                  showSupports={showSupports}
+                  onQuantityChange={(next) =>
+                    list && upsertItem({ listId: list.id, modelId: model.id, quantity: next })
+                  }
+                />
+              ))}
             </ul>
           </section>
         </div>
@@ -624,6 +603,52 @@ function PrintingListPage() {
         onCancel={() => setClearDialogOpen(false)}
       />
     </PageLayout>
+  );
+}
+
+/** A model on the list: its preview (turning while hovered), name and quantity. */
+function ListRow({
+  model,
+  quantity,
+  showSupports,
+  onQuantityChange,
+}: {
+  model: Model;
+  quantity: number;
+  showSupports: boolean;
+  onQuantityChange: (next: number) => void;
+}) {
+  const spin = useSpinPreview<HTMLSpanElement>(model.spinUrl, showSupports);
+  const preview = model.previewUrl ? withPreviewSupports(model.previewUrl, showSupports) : null;
+  return (
+    <li
+      className={styles.row}
+      onPointerEnter={spin.onPointerEnter}
+      onPointerLeave={spin.onPointerLeave}
+    >
+      <span ref={spin.imageRef} className={styles.thumb}>
+        {preview ? <img src={preview} alt="" loading="lazy" /> : null}
+      </span>
+      <Link to={`/model/${encodeURIComponent(model.id)}`} className={styles.rowName}>
+        <span className={styles.name}>{model.name}</span>
+        <span className={styles.file}>{model.relativePath.split('/').pop()}</span>
+      </Link>
+      <QuantityStepper
+        size="sm"
+        min={1}
+        value={quantity}
+        label={model.name}
+        onChange={onQuantityChange}
+      />
+      <IconButton
+        variant="ghost"
+        size="sm"
+        aria-label={`Remove ${model.name}`}
+        onClick={() => onQuantityChange(0)}
+      >
+        <Trash2 size={16} strokeWidth={1.5} />
+      </IconButton>
+    </li>
   );
 }
 

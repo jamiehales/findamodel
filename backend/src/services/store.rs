@@ -25,6 +25,30 @@ pub fn preview_url(model_id: Uuid, preview_generation_version: Option<i32>, prev
     )
 }
 
+/// Spin mesh URL for a model. The file name holds the preview stem and the spin mesh version,
+/// so the URL changes whenever the file does and the response is cached as immutable.
+pub fn spin_url(model_id: Uuid, spin_mesh_path: &str) -> String {
+    format!("/api/models/{model_id}/spin?key={}", spin_mesh_path.strip_suffix(".bin").unwrap_or(spin_mesh_path))
+}
+
+/// The spin mesh file a model should have, relative to the renders folder: under its preview
+/// stem (checksum, the raft height its geometry was indexed with and its supported metadata) at
+/// the current spin mesh version, whether or not it has been written yet. None for models that
+/// have no preview (previews off, or no geometry).
+pub fn expected_spin_path(m: &ModelRow) -> Option<String> {
+    m.preview_image_path.as_ref()?;
+    if crate::services::models::is_non_geometry_type(&m.file_type) {
+        return None;
+    }
+    let raft_height_mm = m.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+    Some(preview::spin::relative_path(&preview::preview_stem(&m.checksum, raft_height_mm, m.calculated_supported)))
+}
+
+/// The model's spin mesh URL, keyed by the file it should have (built on request when missing).
+fn model_spin_url(m: &ModelRow) -> Option<String> {
+    expected_spin_path(m).map(|p| spin_url(m.id, &p))
+}
+
 pub fn relative_path(directory: &str, file_name: &str) -> String {
     if directory.is_empty() { file_name.to_string() } else { format!("{directory}/{file_name}") }
 }
@@ -45,6 +69,7 @@ pub fn to_model_dto(m: &ModelRow) -> ModelDto {
         file_url: format!("/api/models/{}/file", m.id),
         has_preview: m.preview_image_path.is_some(),
         preview_url: m.preview_image_path.as_deref().map(|p| preview_url(m.id, m.preview_generation_version, p)),
+        spin_url: model_spin_url(m),
         creator: m.calculated_creator.clone(),
         collection: m.calculated_collection.clone(),
         subcollection: m.calculated_subcollection.clone(),
@@ -76,6 +101,7 @@ pub fn to_related_dto(m: &ModelRow) -> RelatedModelDto {
         file_type: m.file_type.clone(),
         file_size: m.file_size,
         preview_url: m.preview_image_path.as_deref().map(|p| preview_url(m.id, m.preview_generation_version, p)),
+        spin_url: model_spin_url(m),
     }
 }
 
@@ -92,7 +118,7 @@ pub fn apply_calculated_metadata(model: &mut ModelRow, metadata: &ComputedMetada
     model.calculated_part_name = metadata.part_name.clone();
 }
 
-const MODEL_COLUMNS: [&str; 38] = [
+const MODEL_COLUMNS: [&str; 40] = [
     "id",
     "checksum",
     "file_name",
@@ -131,6 +157,8 @@ const MODEL_COLUMNS: [&str; 38] = [
     "geometry_calculated_at",
     "support_export_path",
     "support_export_version",
+    "spin_mesh_path",
+    "spin_mesh_version",
 ];
 
 fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'static str>, m: &'q ModelRow) {
@@ -171,7 +199,9 @@ fn bind_model<'q>(q: &mut sqlx::query_builder::Separated<'_, 'q, Sqlite, &'stati
         .push_bind(m.sphere_radius)
         .push_bind(m.geometry_calculated_at)
         .push_bind(&m.support_export_path)
-        .push_bind(m.support_export_version);
+        .push_bind(m.support_export_version)
+        .push_bind(&m.spin_mesh_path)
+        .push_bind(m.spin_mesh_version);
 }
 
 /// Inserts or fully replaces a model row and rewrites its tag index, and its hulls when they

@@ -1,11 +1,13 @@
 import type { CommonMetadataFields } from './metadata';
 import { apiFetch, apiUrl } from '../http';
+import { decodeSpinMesh, type SpinMesh } from '../spinMesh';
 
 function mapModelUrls(model: Model): Model {
   return {
     ...model,
     fileUrl: apiUrl(model.fileUrl),
     previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+    spinUrl: model.spinUrl ? apiUrl(model.spinUrl) : null,
   };
 }
 
@@ -13,6 +15,7 @@ function mapRelatedModelUrls(model: RelatedModel): RelatedModel {
   return {
     ...model,
     previewUrl: model.previewUrl ? apiUrl(model.previewUrl) : null,
+    spinUrl: model.spinUrl ? apiUrl(model.spinUrl) : null,
   };
 }
 
@@ -27,6 +30,8 @@ export interface Model {
   fileUrl: string;
   hasPreview: boolean;
   previewUrl: string | null;
+  /** The reduced body turned in 3D while the tile is hovered; null until generated. */
+  spinUrl: string | null;
   creator: string | null;
   collection: string | null;
   subcollection: string | null;
@@ -205,6 +210,8 @@ export interface RelatedModel {
   fileType: string;
   fileSize: number;
   previewUrl: string | null;
+  /** The reduced body turned in 3D while the tile is hovered; null until generated. */
+  spinUrl: string | null;
 }
 
 export async function fetchGeometry(id: string): Promise<GeometryResponse> {
@@ -400,6 +407,13 @@ export async function fetchRepairedGeometry(id: string): Promise<RepairedGeometr
   const changed = new Uint8Array(faceCount);
   for (let i = 0; i < faceCount; i++) changed[i] = (bits[i >> 3] >> (i & 7)) & 1;
   return { geometry, changed };
+}
+
+/** A model's spin mesh, from the `spinUrl` its model carries (already an API URL). */
+export async function fetchSpinMesh(spinUrl: string): Promise<SpinMesh> {
+  const r = await fetch(spinUrl);
+  if (!r.ok) throw new Error('Failed to fetch spin mesh');
+  return decodeSpinMesh(await r.arrayBuffer());
 }
 
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {

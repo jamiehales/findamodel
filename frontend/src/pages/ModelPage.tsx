@@ -302,6 +302,7 @@ function ModelPage() {
                   fileUrl: '',
                   hasPreview: part.previewUrl != null,
                   previewUrl: part.previewUrl,
+                  spinUrl: part.spinUrl,
                 }}
               />
             ))}

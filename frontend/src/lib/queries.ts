@@ -79,6 +79,7 @@ export const queryKeys = {
   model: (id: string) => ['model', id] as const,
   modelMetadata: (id: string) => ['model', id, 'metadata'] as const,
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
+  spinMesh: (spinUrl: string) => ['spin-mesh', spinUrl] as const,
   geometry: (id: string) => ['geometry', id] as const,
   splitGeometry: (id: string) => ['split-geometry', id] as const,
   resupportedGeometry: (id: string) => ['resupported-geometry', id] as const,

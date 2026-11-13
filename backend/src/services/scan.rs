@@ -24,6 +24,7 @@ use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
 use crate::metadata::model_metadata::{self, ComputedMetadata};
 use crate::metadata::rules;
+use crate::preview::spin::{self, CURRENT_SPIN_MESH_VERSION};
 use crate::preview::{self, CURRENT_PREVIEW_GENERATION_VERSION};
 use crate::services::app_config::normalize_minimum_support_export_version;
 use crate::services::repaired_meshes;
@@ -96,6 +97,13 @@ pub fn needs_preview_regeneration(
 ) -> bool {
     preview_image_path.is_none_or(|p| p.trim().is_empty() || p != expected_path)
         || preview_version_stale(stored_version, minimum_version)
+}
+
+/// A spin mesh is stale when missing, written by another spin mesh version, or stored under a
+/// different path than `expected_path` (the support split inputs changed). Its own version: a
+/// stale spin mesh is written again without redrawing the previews.
+pub fn needs_spin_regeneration(spin_mesh_path: Option<&str>, stored_version: Option<i32>, expected_path: &str) -> bool {
+    spin_mesh_path != Some(expected_path) || stored_version != Some(CURRENT_SPIN_MESH_VERSION)
 }
 
 /// The stored preview was drawn by a renderer older than the minimum version.
@@ -234,6 +242,7 @@ struct FileData {
     dir_config_id: Option<Uuid>,
     geometry: Option<GeometrySummary>,
     export: ExportOutcome,
+    spin_mesh_path: Option<String>,
     stages: StageTimings,
 }
 
@@ -287,6 +296,22 @@ struct GeometryRefresh {
     raft_height_mm: f32,
     supports: SupportDetection,
     export: ExportOutcome,
+    include_spin: bool,
+    spin_mesh_path: Option<String>,
+    stages: StageTimings,
+}
+
+/// What a geometry pass ([`ModelService::process_geometry`]) produced.
+#[derive(Debug, Default)]
+struct ProcessedGeometry {
+    /// None when the geometry could not be loaded.
+    summary: Option<GeometrySummary>,
+    preview_generated: bool,
+    hulls: Option<hull::Hulls>,
+    supports: SupportDetection,
+    export: ExportOutcome,
+    /// The spin mesh's relative path: None when not asked for, Some(None) when there is none.
+    spin: Option<Option<String>>,
     stages: StageTimings,
 }
 
@@ -304,6 +329,8 @@ struct ExistingScanState {
     support_parts_found: Option<bool>,
     support_export_path: Option<String>,
     support_export_version: Option<i32>,
+    spin_mesh_path: Option<String>,
+    spin_mesh_version: Option<i32>,
 }
 
 enum Change {
@@ -385,6 +412,8 @@ struct ScanContext {
     configs: Arc<DirectoryMap>,
     default_raft_height_mm: f32,
     generate_previews: bool,
+    /// Spin meshes are written (previews are enabled and have a cache folder).
+    generate_spin: bool,
     minimum_preview_version: i32,
     /// The oldest export entry version accepted; older entries are written again.
     minimum_export_version: i32,
@@ -404,6 +433,11 @@ impl ScanContext {
 /// The with-supports preview path a model's previews should be stored under.
 fn expected_preview_path(checksum: &str, raft_height_mm: f32, supported: Option<bool>) -> String {
     preview::relative_path(&preview::preview_stem(checksum, raft_height_mm, supported), true)
+}
+
+/// The spin mesh path a model's spin mesh should be stored under.
+fn expected_spin_path(checksum: &str, raft_height_mm: f32, supported: Option<bool>) -> String {
+    spin::relative_path(&preview::preview_stem(checksum, raft_height_mm, supported))
 }
 
 /// Stores hulls and the support detection, which share the scan config checksum.
@@ -448,6 +482,8 @@ fn apply_file_data(model: &mut ModelRow, data: &FileData, stat: &FileStat) {
     model.geometry_calculated_at = g.map(|_| now());
     // New content: the index names the new entry, or none (an unsupported model stores none).
     (model.support_export_path, model.support_export_version) = export_index(&data.export);
+    model.spin_mesh_path = data.spin_mesh_path.clone();
+    model.spin_mesh_version = data.spin_mesh_path.as_ref().map(|_| CURRENT_SPIN_MESH_VERSION);
 }
 
 /// The row's index of an export entry the scan wrote.
@@ -465,12 +501,32 @@ fn apply_geometry_refresh(model: &mut ModelRow, refresh: &GeometryRefresh) {
     if refresh.include_hulls || refresh.export != ExportOutcome::None {
         (model.support_export_path, model.support_export_version) = export_index(&refresh.export);
     }
+    if refresh.include_spin && refresh.geometry_loaded {
+        model.spin_mesh_path = refresh.spin_mesh_path.clone();
+        model.spin_mesh_version = refresh.spin_mesh_path.as_ref().map(|_| CURRENT_SPIN_MESH_VERSION);
+    }
     if !refresh.include_preview || !refresh.geometry_loaded {
         return;
     }
     model.preview_image_path = refresh.preview_image_path.clone();
     model.preview_generated_at = refresh.preview_generated_at;
     model.preview_generation_version = refresh.preview_image_path.as_ref().map(|_| CURRENT_PREVIEW_GENERATION_VERSION);
+}
+
+/// Spin mesh files no model indexes are swept only once they are this old: the scan writes a
+/// file before the model's row names it, and a sweep must not take a file between the two.
+pub const SPIN_SWEEP_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Deletes one spin mesh file in the renders folder.
+fn remove_spin_file(renders: &Path, relative: &str) -> bool {
+    match std::fs::remove_file(renders.join(relative)) {
+        Ok(()) => true,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(err) => {
+            warn!(target: LOG_TARGET, "Failed to delete spin mesh {relative}: {err}");
+            false
+        }
+    }
 }
 
 fn relative_of(root: &Path, file: &Path) -> String {
@@ -538,9 +594,17 @@ impl ModelService {
         (None, None)
     }
 
-    /// Loads geometry, detects supports, renders previews (when requested), computes hulls and
-    /// (when `include_export`) reads a pre-supported model's supports into its export entry.
-    /// Returns (summary, preview generated, hulls, support detection, export entry).
+    /// The spin mesh file for a stem when one is in the renders folder (scans that don't write
+    /// spin meshes still index the ones there).
+    fn resolve_cached_spin(&self, stem: &str) -> Option<String> {
+        let renders = self.preview.as_ref().and_then(|p| p.cache_dir())?;
+        let relative = spin::relative_path(stem);
+        renders.join(&relative).is_file().then_some(relative)
+    }
+
+    /// Loads geometry, detects supports, renders previews (when requested), computes hulls,
+    /// (when `include_export`) reads a pre-supported model's supports into its export entry and
+    /// (when `include_spin`) writes the spin mesh of the supports-removed body.
     #[allow(clippy::too_many_arguments)]
     async fn process_geometry(
         &self,
@@ -550,9 +614,10 @@ impl ModelService {
         preview_refresh: PreviewRefresh,
         include_hulls: bool,
         include_export: bool,
+        include_spin: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
-    ) -> (Option<GeometrySummary>, bool, Option<hull::Hulls>, SupportDetection, ExportOutcome, StageTimings) {
+    ) -> ProcessedGeometry {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
         let stem = preview::preview_stem(checksum, raft_height_mm, supported);
@@ -561,17 +626,20 @@ impl ModelService {
         let exports = self.support_exports.clone().filter(|_| include_export && supported != Some(false));
         // Indexed under the current scan config, the detection counts as checked.
         let export_key = support_exports::key(checksum, raft_height_mm, supported, true);
+        let spin_target = include_spin
+            .then(|| self.preview.as_ref().and_then(|p| p.cache_dir()).map(Path::to_path_buf))
+            .flatten()
+            .map(|dir| (dir, spin::relative_path(&stem)));
         tokio::task::spawn_blocking(move || {
             let mut stages = StageTimings::default();
             let started = Instant::now();
             let geometry = loader::load_model(&path, &file_type);
             stages.load_ms = elapsed_ms(started);
             let Some(geometry) = geometry else {
-                return (None, false, None, SupportDetection::default(), ExportOutcome::None, stages);
+                return ProcessedGeometry { stages, ..Default::default() };
             };
             let started = Instant::now();
-            let classification = support_separation::classify(&geometry.triangles, raft_height_mm)
-                .filter(|c| c.holds_supports(&geometry.triangles, raft_height_mm));
+            let classification = spin::checked_classification(&geometry.triangles, raft_height_mm);
             let detected = SupportDetection::of(classification.as_ref());
             let support_mask = classification.and_then(|c| c.mask_for(supported));
             stages.supports_ms = elapsed_ms(started);
@@ -580,6 +648,13 @@ impl ModelService {
                 let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true, redraw);
                 stages.preview_ms = elapsed_ms(started);
                 result.with_supports.generated || result.without_supports.generated
+            });
+            // The spin mesh: the body the supports-removed preview draws. Timed with the previews.
+            let spin = spin_target.map(|(dir, relative)| {
+                let started = Instant::now();
+                let stored = spin::store_for_model(&dir, &relative, &geometry.triangles, support_mask.as_deref());
+                stages.preview_ms += elapsed_ms(started);
+                stored
             });
             let hulls = include_hulls.then(|| {
                 let started = Instant::now();
@@ -607,17 +682,18 @@ impl ModelService {
                 };
                 stages.export_ms = elapsed_ms(started);
             }
-            (Some(GeometrySummary::of(&geometry)), preview_generated, hulls, detected, export, stages)
+            ProcessedGeometry {
+                summary: Some(GeometrySummary::of(&geometry)),
+                preview_generated,
+                hulls,
+                supports: detected,
+                export,
+                spin,
+                stages,
+            }
         })
         .await
-        .unwrap_or((
-            None,
-            false,
-            None,
-            SupportDetection::default(),
-            ExportOutcome::None,
-            StageTimings::default(),
-        ))
+        .unwrap_or_default()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -654,6 +730,7 @@ impl ModelService {
             dir_config_id: dir_config.map(|d| d.id),
             geometry: None,
             export: ExportOutcome::None,
+            spin_mesh_path: None,
             stages: StageTimings { checksum_ms, ..Default::default() },
         };
 
@@ -661,7 +738,7 @@ impl ModelService {
             return Ok(data);
         }
 
-        let (summary, preview_generated, hulls, detected, export, stages) = self
+        let processed = self
             .process_geometry(
                 file,
                 file_type,
@@ -669,21 +746,25 @@ impl ModelService {
                 if include_preview { PreviewRefresh::Missing } else { PreviewRefresh::Skip },
                 true,
                 true,
+                include_preview && ctx.generate_spin,
                 raft_height_mm,
                 supported,
             )
             .await;
-        data.export = export;
-        data.stages = StageTimings { checksum_ms, ..stages };
-        (data.preview_image_path, data.preview_generated_at) = self.resolve_cached_preview_metadata(
-            &preview::preview_stem(&checksum, raft_height_mm, supported),
-            existing_preview_path,
-        );
-        data.preview_generated = preview_generated;
-        if let Some(summary) = summary {
-            data.hulls = hulls.unwrap_or_default();
+        data.export = processed.export;
+        data.stages = StageTimings { checksum_ms, ..processed.stages };
+        let stem = preview::preview_stem(&checksum, raft_height_mm, supported);
+        (data.preview_image_path, data.preview_generated_at) =
+            self.resolve_cached_preview_metadata(&stem, existing_preview_path);
+        data.spin_mesh_path = match processed.spin {
+            Some(written) => written,
+            None => self.resolve_cached_spin(&stem),
+        };
+        data.preview_generated = processed.preview_generated;
+        if let Some(summary) = processed.summary {
+            data.hulls = processed.hulls.unwrap_or_default();
             data.hull_generated = true;
-            data.supports = detected;
+            data.supports = processed.supports;
             data.geometry = Some(summary);
         }
         Ok(data)
@@ -700,9 +781,10 @@ impl ModelService {
         preview_refresh: PreviewRefresh,
         include_hulls: bool,
         include_export: bool,
+        include_spin: bool,
     ) -> GeometryRefresh {
         let include_preview = preview_refresh.included();
-        let (summary, preview_generated, hulls, detected, export, stages) = self
+        let processed = self
             .process_geometry(
                 file,
                 file_type,
@@ -710,6 +792,7 @@ impl ModelService {
                 preview_refresh,
                 include_hulls,
                 include_export,
+                include_spin,
                 raft_height_mm,
                 supported,
             )
@@ -717,24 +800,26 @@ impl ModelService {
         let mut refresh = GeometryRefresh {
             include_preview,
             include_hulls,
-            geometry_loaded: summary.is_some(),
+            geometry_loaded: processed.summary.is_some(),
             preview_image_path: None,
             preview_generated_at: None,
             preview_generated: false,
-            hulls: hulls.unwrap_or_default(),
+            hulls: processed.hulls.unwrap_or_default(),
             hull_generated: false,
             raft_height_mm,
-            supports: detected,
-            export,
-            stages,
+            supports: processed.supports,
+            export: processed.export,
+            include_spin,
+            spin_mesh_path: processed.spin.flatten(),
+            stages: processed.stages,
         };
-        if summary.is_none() {
+        if processed.summary.is_none() {
             return refresh;
         }
         if include_preview {
             (refresh.preview_image_path, refresh.preview_generated_at) =
                 self.resolve_cached_preview_metadata(&preview::preview_stem(checksum, raft_height_mm, supported), None);
-            refresh.preview_generated = preview_generated;
+            refresh.preview_generated = processed.preview_generated;
         }
         refresh.hull_generated = include_hulls;
         refresh
@@ -792,6 +877,13 @@ impl ModelService {
                 ctx.minimum_preview_version,
                 &expected_preview_path(&checksum, expected_raft, supported),
             );
+        let spin_stale = ctx.generate_spin
+            && geometry_type
+            && needs_spin_regeneration(
+                existing.spin_mesh_path.as_deref(),
+                existing.spin_mesh_version,
+                &expected_spin_path(&checksum, expected_raft, supported),
+            );
 
         // The export entry, from its file, when nothing else rewrites it.
         let export = if checksum == existing.checksum && !hull_mismatch {
@@ -810,7 +902,12 @@ impl ModelService {
         };
         let export_stale = export == ExportState::Stale;
 
-        prepared.change = if checksum == existing.checksum && !hull_mismatch && !preview_stale && !export_stale {
+        prepared.change = if checksum == existing.checksum
+            && !hull_mismatch
+            && !preview_stale
+            && !export_stale
+            && !spin_stale
+        {
             if let ExportState::Current(path, version) = &export
                 && !export_index_matches(
                     &export,
@@ -859,6 +956,7 @@ impl ModelService {
                     ),
                     true,
                     true,
+                    spin_stale,
                 )
                 .await,
             ))
@@ -878,6 +976,12 @@ impl ModelService {
                     ctx.minimum_export_version
                 );
             }
+            if spin_stale {
+                info!(
+                    target: LOG_TARGET,
+                    "Spin mesh missing or not at version {CURRENT_SPIN_MESH_VERSION}, writing it for: {full}"
+                );
+            }
             Some(Change::Geometry(
                 self.compute_geometry_refresh(
                     &file,
@@ -892,6 +996,7 @@ impl ModelService {
                     ),
                     false,
                     export_stale,
+                    spin_stale,
                 )
                 .await,
             ))
@@ -916,6 +1021,8 @@ impl ModelService {
             configs: Arc::new(configs),
             default_raft_height_mm: app_config.default_raft_height_mm,
             generate_previews: app_config.generate_previews_enabled,
+            generate_spin: app_config.generate_previews_enabled
+                && self.preview.as_ref().and_then(|p| p.cache_dir()).is_some(),
             minimum_preview_version: resolve_minimum_preview_generation_version(
                 app_config.minimum_preview_generation_version,
             ),
@@ -929,7 +1036,8 @@ impl ModelService {
     ) -> sqlx::Result<std::collections::HashMap<(String, String), ExistingScanState>> {
         let rows: Vec<ExistingScanState> = sqlx::query_as(
             "SELECT id, directory, file_name, checksum, file_modified_at, scan_config_checksum, preview_generation_version,
-                preview_image_path, detected_supported, support_parts_found, support_export_path, support_export_version
+                preview_image_path, detected_supported, support_parts_found, support_export_path, support_export_version,
+                spin_mesh_path, spin_mesh_version
              FROM models",
         )
         .fetch_all(&self.db)
@@ -1053,6 +1161,7 @@ impl ModelService {
             if let Some(existing_id) = prepared.existing_id {
                 let Some(mut entity) = store::get_model(&self.db, existing_id).await? else { continue };
                 let previous_export = entity.support_export_path.clone();
+                let previous_spin = entity.spin_mesh_path.clone();
                 let (mut generated_preview, mut generated_hull, mut was_updated) = (false, false, false);
                 let mut message = "No cache changes required".to_string();
                 let mut status = "skipped";
@@ -1082,6 +1191,8 @@ impl ModelService {
                             "Regenerated hulls/preview from config or version changes".into()
                         } else if refresh.include_preview {
                             "Regenerated preview from version changes".into()
+                        } else if refresh.include_spin && refresh.export == ExportOutcome::None {
+                            "Wrote the spin mesh".into()
                         } else {
                             "Rebuilt the support export entry".into()
                         };
@@ -1112,6 +1223,7 @@ impl ModelService {
                     store::save_model(&mut conn, &entity).await?;
                     drop(conn);
                     self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
+                    self.release_old_spin(previous_spin.as_deref(), entity.spin_mesh_path.as_deref()).await;
                 }
                 if let Some(r) = reporter {
                     r.on_file_processed(FileResult {
@@ -1229,6 +1341,13 @@ impl ModelService {
                 info!(target: LOG_TARGET, "Removed {removed} repaired mesh files no model uses.");
             }
         }
+        // Spin meshes of changed or removed models, or of an older spin mesh version.
+        if directory_filter.is_none() && limit.is_none() {
+            let removed = self.sweep_spin_meshes(SPIN_SWEEP_GRACE).await;
+            if removed > 0 {
+                info!(target: LOG_TARGET, "Removed {removed} spin mesh files no model uses.");
+            }
+        }
 
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models").fetch_one(&self.db).await?;
         info!(target: LOG_TARGET, "Scan complete: {new_count} new, {updated_count} updated, {total} total in cache.");
@@ -1243,6 +1362,61 @@ impl ModelService {
         {
             exports.release(&self.db, before).await;
         }
+    }
+
+    /// Deletes the spin mesh a model's row named before it was saved, when it names another one
+    /// now and no other model (with the same content) still uses it.
+    pub(crate) async fn release_old_spin(&self, before: Option<&str>, now: Option<&str>) {
+        let Some(renders) = self.preview.as_ref().and_then(|p| p.cache_dir()) else { return };
+        let Some(before) = before.filter(|b| Some(*b) != now) else { return };
+        let used: sqlx::Result<bool> =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM models WHERE spin_mesh_path = ?)")
+                .bind(before)
+                .fetch_one(&self.db)
+                .await;
+        match used {
+            Ok(false) => {
+                remove_spin_file(renders, before);
+            }
+            Ok(true) => {}
+            Err(err) => warn!(target: LOG_TARGET, "Failed to check who uses spin mesh {before}: {err}"),
+        }
+    }
+
+    /// Deletes the spin mesh files in the renders folder that no model indexes, of those last
+    /// written before `grace` ago (a scan writes a file before its row names it). Returns how many
+    /// were deleted. Run at the end of a full scan only, when every row's index is up to date.
+    pub async fn sweep_spin_meshes(&self, grace: std::time::Duration) -> usize {
+        let Some(renders) = self.preview.as_ref().and_then(|p| p.cache_dir()).map(Path::to_path_buf) else {
+            return 0;
+        };
+        let indexed: std::collections::HashSet<String> = match sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT spin_mesh_path FROM models WHERE spin_mesh_path IS NOT NULL",
+        )
+        .fetch_all(&self.db)
+        .await
+        {
+            Ok(paths) => paths.into_iter().collect(),
+            Err(err) => {
+                warn!(target: LOG_TARGET, "Failed to list indexed spin meshes: {err}");
+                return 0;
+            }
+        };
+        tokio::task::spawn_blocking(move || {
+            let cutoff = SystemTime::now().checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
+            let Ok(entries) = std::fs::read_dir(&renders) else { return 0 };
+            let mut removed = 0;
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let old = entry.metadata().and_then(|m| m.modified()).is_ok_and(|m| m < cutoff);
+                if spin::is_spin_file(&name) && old && !indexed.contains(&name) && remove_spin_file(&renders, &name) {
+                    removed += 1;
+                }
+            }
+            removed
+        })
+        .await
+        .unwrap_or(0)
     }
 
     /// Indexes a single model file. Returns false when nothing needed updating.
@@ -1334,6 +1508,15 @@ impl ModelService {
         let hull_stale = existing.as_ref().is_some_and(|e| {
             geometry_type && needs_hull_regeneration(e.scan_config_checksum.as_deref(), expected_raft)
         });
+        let spin_stale = existing.as_ref().is_some_and(|e| {
+            ctx.generate_spin
+                && geometry_type
+                && needs_spin_regeneration(
+                    e.spin_mesh_path.as_deref(),
+                    e.spin_mesh_version,
+                    &expected_spin_path(&checksum, expected_raft, supported),
+                )
+        });
 
         let export = match &existing {
             Some(e) if e.checksum == checksum && !hull_stale => export_state(
@@ -1355,6 +1538,7 @@ impl ModelService {
             && !hull_stale
             && !preview_stale
             && !export_stale
+            && !spin_stale
         {
             let index_matches =
                 export_index_matches(&export, e.support_export_path.as_deref(), e.support_export_version);
@@ -1393,6 +1577,7 @@ impl ModelService {
         }
 
         let previous_export = existing.as_ref().and_then(|e| e.support_export_path.clone());
+        let previous_spin = existing.as_ref().and_then(|e| e.spin_mesh_path.clone());
         let (entity, generated_preview, generated_hull, stages) = match existing {
             None => {
                 info!(target: LOG_TARGET, "Indexing single model file: {full_text}");
@@ -1464,6 +1649,7 @@ impl ModelService {
                         ),
                         true,
                         true,
+                        spin_stale,
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
@@ -1473,7 +1659,7 @@ impl ModelService {
                 (entity, refresh.preview_generated, refresh.hull_generated, refresh.stages)
             }
             Some(mut entity) => {
-                info!(target: LOG_TARGET, "Single-model index refreshing preview or support export: {full_text}");
+                info!(target: LOG_TARGET, "Single-model index refreshing preview, support export or spin mesh: {full_text}");
                 let refresh = self
                     .compute_geometry_refresh(
                         &full_path,
@@ -1488,6 +1674,7 @@ impl ModelService {
                         ),
                         false,
                         export_stale,
+                        spin_stale,
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
@@ -1503,6 +1690,7 @@ impl ModelService {
             store::save_model(&mut conn, &entity).await?;
         }
         self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
+        self.release_old_spin(previous_spin.as_deref(), entity.spin_mesh_path.as_deref()).await;
 
         if let Some(r) = reporter {
             r.on_file_processed(FileResult {
@@ -1743,6 +1931,166 @@ mod tests {
         }
         let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
         assert_eq!(updated.scan_config_checksum, Some(scan_config::compute(hull::DEFAULT_RAFT_HEIGHT_MM)));
+    }
+
+    #[test]
+    fn needs_spin_regeneration_checks_path_and_version() {
+        let expected = expected_spin_path("abc", 0.5, None);
+        assert!(needs_spin_regeneration(None, None, &expected));
+        assert!(needs_spin_regeneration(Some(&expected), None, &expected));
+        assert!(needs_spin_regeneration(Some(&expected), Some(CURRENT_SPIN_MESH_VERSION - 1), &expected));
+        assert!(needs_spin_regeneration(
+            Some(&expected_spin_path("abc", 1.0, None)),
+            Some(CURRENT_SPIN_MESH_VERSION),
+            &expected
+        ));
+        assert!(!needs_spin_regeneration(Some(&expected), Some(CURRENT_SPIN_MESH_VERSION), &expected));
+    }
+
+    fn expected_spin_for(m: &ModelRow) -> String {
+        expected_spin_path(&m.checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None)
+    }
+
+    #[tokio::test]
+    async fn a_missing_spin_mesh_is_written_without_redrawing_previews() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        // Current previews, no spin mesh: an install from before spin meshes.
+        let (m, files) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION).await;
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        let reporter = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&reporter), &CancellationToken::new()).await.unwrap();
+
+        for f in &files {
+            assert_eq!(std::fs::read(f).unwrap(), b"old", "{} not redrawn", f.display());
+        }
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        let expected = expected_spin_for(&m);
+        assert_eq!(updated.spin_mesh_path.as_deref(), Some(expected.as_str()));
+        assert_eq!(updated.spin_mesh_version, Some(CURRENT_SPIN_MESH_VERSION));
+        assert_eq!(updated.preview_generation_version, Some(CURRENT_PREVIEW_GENERATION_VERSION));
+        let raw = spin::decompress(&std::fs::read(cache.path().join(&expected)).unwrap()).unwrap();
+        assert_eq!(spin::decode(&raw).unwrap().indices.len(), 3, "the one-triangle model");
+        let results = reporter.results.lock().clone();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].message, "Wrote the spin mesh");
+
+        // Up to date now: the next scan leaves the model alone.
+        let again = RecordingReporter::default();
+        svc.scan_and_cache(None, None, Some(&again), &CancellationToken::new()).await.unwrap();
+        assert_eq!(again.results.lock()[0].message, "Already up-to-date");
+    }
+
+    #[tokio::test]
+    async fn a_single_model_scan_writes_a_missing_spin_mesh() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (m, files) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION).await;
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        assert!(svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        for f in &files {
+            assert_eq!(std::fs::read(f).unwrap(), b"old", "{} not redrawn", f.display());
+        }
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        assert_eq!(updated.spin_mesh_path, Some(expected_spin_for(&m)));
+        assert!(cache.path().join(expected_spin_for(&m)).is_file());
+        assert!(!svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn an_older_spin_mesh_is_replaced_and_its_file_deleted() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (mut m, _) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION).await;
+        let old = format!("{}_spin_v0.bin", preview::preview_stem(&m.checksum, hull::DEFAULT_RAFT_HEIGHT_MM, None));
+        std::fs::write(cache.path().join(&old), b"old").unwrap();
+        m.spin_mesh_path = Some(old.clone());
+        m.spin_mesh_version = Some(CURRENT_SPIN_MESH_VERSION - 1);
+        t.insert_model(&m).await;
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        assert!(svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        assert_eq!(updated.spin_mesh_path, Some(expected_spin_for(&m)));
+        assert_eq!(updated.spin_mesh_version, Some(CURRENT_SPIN_MESH_VERSION));
+        assert!(!cache.path().join(&old).exists(), "the old version's file is deleted");
+    }
+
+    #[tokio::test]
+    async fn current_spin_meshes_are_kept() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (mut m, _) =
+            model_with_cached_preview(&t, root.path(), cache.path(), CURRENT_PREVIEW_GENERATION_VERSION).await;
+        let current = expected_spin_for(&m);
+        std::fs::write(cache.path().join(&current), b"current").unwrap();
+        m.spin_mesh_path = Some(current.clone());
+        m.spin_mesh_version = Some(CURRENT_SPIN_MESH_VERSION);
+        t.insert_model(&m).await;
+
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        assert!(!svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        assert_eq!(std::fs::read(cache.path().join(&current)).unwrap(), b"current");
+
+        // A preview redraw reuses the spin mesh file already there.
+        sqlx::query("UPDATE models SET spin_mesh_path = NULL, spin_mesh_version = NULL").execute(&t.db).await.unwrap();
+        assert!(svc.scan_and_cache_single("dragon.stl", None, &CancellationToken::new()).await.unwrap());
+        assert_eq!(std::fs::read(cache.path().join(&current)).unwrap(), b"current");
+        let updated = store::get_model(&t.db, m.id).await.unwrap().unwrap();
+        assert_eq!(updated.spin_mesh_path, Some(current));
+    }
+
+    #[tokio::test]
+    async fn no_spin_meshes_are_written_with_previews_disabled() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        write_file(root.path(), "dragon.stl", SIMPLE_ASCII_STL);
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        let paths: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT spin_mesh_path FROM models").fetch_all(&t.db).await.unwrap();
+        assert_eq!(paths, vec![None]);
+        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn new_models_get_a_spin_mesh() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        write_file(root.path(), "dragon.stl", SIMPLE_ASCII_STL);
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap();
+        let (path, version): (Option<String>, Option<i32>) =
+            sqlx::query_as("SELECT spin_mesh_path, spin_mesh_version FROM models").fetch_one(&t.db).await.unwrap();
+        assert!(cache.path().join(path.unwrap()).is_file());
+        assert_eq!(version, Some(CURRENT_SPIN_MESH_VERSION));
+    }
+
+    #[tokio::test]
+    async fn the_sweep_deletes_old_spin_files_no_model_uses() {
+        let t = TestDb::new().await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut m = model("dragon.stl", "");
+        m.spin_mesh_path = Some("used_spin_v1.bin".into());
+        m.spin_mesh_version = Some(CURRENT_SPIN_MESH_VERSION);
+        t.insert_model(&m).await;
+        for name in ["used_spin_v1.bin", "orphan_spin_v1.bin", "orphan.png"] {
+            std::fs::write(cache.path().join(name), b"x").unwrap();
+        }
+        let svc = service_with_previews(&t, root.path(), cache.path());
+
+        // Files younger than the grace period stay (a scan may be about to index them).
+        assert_eq!(svc.sweep_spin_meshes(SPIN_SWEEP_GRACE).await, 0);
+        assert_eq!(svc.sweep_spin_meshes(std::time::Duration::ZERO).await, 1);
+        assert!(cache.path().join("used_spin_v1.bin").exists());
+        assert!(!cache.path().join("orphan_spin_v1.bin").exists());
+        assert!(cache.path().join("orphan.png").exists(), "previews are not swept");
     }
 
     #[tokio::test]

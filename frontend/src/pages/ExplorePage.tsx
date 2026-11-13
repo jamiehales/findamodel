@@ -36,6 +36,7 @@ function toProcessedModel(model: ExplorerModel): Model | null {
     fileUrl: explorerFileUrl(model.relativePath),
     hasPreview: model.hasPreview,
     previewUrl: model.previewUrl,
+    spinUrl: model.spinUrl,
     creator: model.resolvedMetadata?.creator ?? null,
     collection: model.resolvedMetadata?.collection ?? null,
     subcollection: model.resolvedMetadata?.subcollection ?? null,

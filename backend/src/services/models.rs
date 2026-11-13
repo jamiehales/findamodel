@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde_yaml::Value;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ use crate::preview::{self, PreviewService};
 use crate::services::app_config::{AppConfigService, ModelsRoot};
 use crate::services::metadata_config::MetadataConfigService;
 use crate::services::repaired_meshes::RepairedMeshes;
+use crate::services::spin_meshes::SpinBuilds;
 use crate::services::store;
 use crate::services::support_exports::SupportExports;
 
@@ -46,6 +48,8 @@ pub struct ModelService {
     pub(crate) file_scan_threads: usize,
     pub(crate) support_exports: Option<SupportExports>,
     pub(crate) repaired_meshes: Option<RepairedMeshes>,
+    /// On-demand spin mesh builds ([`crate::services::spin_meshes`]).
+    pub(crate) spin_builds: Arc<SpinBuilds>,
 }
 
 /// Preview image candidates in priority order: the requested variant, then the other
@@ -97,6 +101,7 @@ impl ModelService {
             file_scan_threads: file_scan_threads.max(1),
             support_exports,
             repaired_meshes: None,
+            spin_builds: crate::services::spin_meshes::new_builds(),
         }
     }
 

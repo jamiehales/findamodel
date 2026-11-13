@@ -21,6 +21,7 @@ use crate::geometry::support_reader;
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
+use crate::preview::spin;
 use crate::services::repaired_meshes;
 use crate::services::support_exports;
 use crate::services::voxl_cache::VoxlCacheKey;
@@ -34,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/models/{id}/other-parts", get(get_other_parts))
         .route("/api/models/{id}/file", get(get_file))
         .route("/api/models/{id}/preview", get(get_preview))
+        .route("/api/models/{id}/spin", get(get_spin))
         .route("/api/models/{id}/metadata", get(get_metadata).put(update_metadata))
         .route("/api/models/{id}/geometry", get(get_geometry))
         .route("/api/models/{id}/geometry/split", get(get_split_geometry))
@@ -123,6 +125,56 @@ async fn get_preview(
         }
     }
     Err(not_found())
+}
+
+/// Whether the request accepts brotli (`br` listed in Accept-Encoding without `q=0`).
+fn accepts_brotli(headers: &HeaderMap) -> bool {
+    headers.get_all(header::ACCEPT_ENCODING).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(',')).any(
+        |coding| {
+            let mut parts = coding.split(';').map(str::trim);
+            let name = parts.next().unwrap_or_default();
+            let refused =
+                parts.any(|p| p.strip_prefix("q=").and_then(|q| q.parse::<f32>().ok()).is_some_and(|q| q <= 0.0));
+            (name.eq_ignore_ascii_case("br") || name == "*") && !refused
+        },
+    )
+}
+
+/// The model's spin mesh (see [`crate::preview::spin`]), stored brotli-compressed: sent as it is
+/// with `Content-Encoding: br`, or decompressed for clients that don't accept brotli. The URL's
+/// key names the file the model should have, so responses are cached as immutable. A model whose
+/// spin mesh the scan hasn't written yet gets it built now.
+async fn get_spin(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    IdPath(id): IdPath,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let file = state.models.spin_mesh_file(id).await?.ok_or_else(not_found)?;
+    let bytes = match tokio::fs::read(&file).await {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Err(not_found()),
+        Err(err) => return Err(err.into()),
+    };
+    let brotli = accepts_brotli(&headers);
+    let body = if brotli {
+        bytes
+    } else {
+        tokio::task::spawn_blocking(move || spin::decompress(&bytes)).await.map_err(anyhow::Error::from)??
+    };
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, spin::CONTENT_TYPE),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            (header::VARY, "Accept-Encoding"),
+        ],
+        body,
+    )
+        .into_response();
+    if brotli {
+        response.headers_mut().insert(header::CONTENT_ENCODING, header::HeaderValue::from_static("br"));
+    }
+    Ok(response)
 }
 
 async fn get_metadata(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {

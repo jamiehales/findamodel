@@ -261,6 +261,7 @@ pub async fn get_directory_contents(db: &Db, root: &Path, relative_path: &str) -
                 preview_url: cm.and_then(|m| {
                     m.preview_image_path.as_deref().map(|p| store::preview_url(m.id, m.preview_generation_version, p))
                 }),
+                spin_url: cm.and_then(|m| store::expected_spin_path(m).map(|p| store::spin_url(m.id, &p))),
                 resolved_metadata: metadata.resolved,
                 rule_configs: metadata.rule_configs,
                 local_fields: metadata.local_fields,

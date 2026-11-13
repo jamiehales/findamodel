@@ -1231,3 +1231,141 @@ async fn rebuilt_and_repaired_geometry_need_a_signed_in_user() {
         assert_eq!(status, StatusCode::NOT_FOUND, "{view}");
     }
 }
+
+async fn indexed_spin_model(app: &TestApp) -> (String, String) {
+    app.write("dragon.stl", STL);
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let model = &result["models"][0];
+    let id = model["id"].as_str().unwrap().to_string();
+    let spin_url = model["spinUrl"].as_str().expect("the scan writes a spin mesh").to_string();
+    (id, spin_url)
+}
+
+async fn get_spin(
+    app: &TestApp,
+    uri: &str,
+    accept_encoding: Option<&str>,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let mut request = Request::get(uri);
+    if let Some(encoding) = accept_encoding {
+        request = request.header(header::ACCEPT_ENCODING, encoding);
+    }
+    app.send(request.body(Body::empty()).unwrap()).await
+}
+
+#[tokio::test]
+async fn spin_meshes_are_served_brotli_encoded_with_long_caching() {
+    use findamodel::preview::spin;
+    let app = TestApp::new().await;
+    let (id, spin_url) = indexed_spin_model(&app).await;
+    assert!(spin_url.starts_with(&format!("/api/models/{id}/spin?key=")), "{spin_url}");
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["spinUrl"], spin_url.as_str());
+
+    let (status, headers, body) = get_spin(&app, &spin_url, Some("gzip, deflate, br")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_ENCODING], "br");
+    assert_eq!(headers[header::CONTENT_TYPE], spin::CONTENT_TYPE);
+    assert_eq!(headers[header::CACHE_CONTROL], "public, max-age=31536000, immutable");
+    assert_eq!(headers[header::VARY], "Accept-Encoding");
+    let raw = spin::decompress(&body).unwrap();
+    let mesh = spin::decode(&raw).unwrap();
+    assert_eq!(mesh.indices.len(), 6, "both triangles of the model");
+
+    // Clients without brotli get it decompressed.
+    for encoding in [None, Some("gzip"), Some("br;q=0, gzip")] {
+        let (status, headers, body) = get_spin(&app, &spin_url, encoding).await;
+        assert_eq!(status, StatusCode::OK, "{encoding:?}");
+        assert!(headers.get(header::CONTENT_ENCODING).is_none(), "{encoding:?}");
+        assert_eq!(body, raw, "{encoding:?}");
+    }
+}
+
+/// An indexed model as it would be before spin meshes: its spin mesh file deleted and its row not
+/// naming one. Returns (id, spin URL, file path, the scan's file bytes).
+async fn model_without_spin_mesh(app: &TestApp) -> (String, String, std::path::PathBuf, Vec<u8>) {
+    let (id, spin_url) = indexed_spin_model(app).await;
+    let key = spin_url.split("key=").nth(1).unwrap();
+    let file = app.state.settings.renders_path().join(format!("{key}.bin"));
+    let scanned = std::fs::read(&file).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    sqlx::query("UPDATE models SET spin_mesh_path = NULL, spin_mesh_version = NULL")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    // The URL names the file the model should have, written or not.
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["spinUrl"], spin_url.as_str());
+    (id, spin_url, file, scanned)
+}
+
+#[tokio::test]
+async fn a_missing_spin_mesh_is_built_on_request() {
+    let app = TestApp::new().await;
+    let (status, _, _) = get_spin(&app, "/api/models/00000000-0000-0000-0000-000000000001/spin", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown model");
+
+    let (id, spin_url, file, scanned) = model_without_spin_mesh(&app).await;
+    let (status, headers, body) = get_spin(&app, &spin_url, Some("br")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_ENCODING], "br");
+    assert_eq!(std::fs::read(&file).unwrap(), scanned, "the same file the scan writes");
+    assert_eq!(body, scanned);
+    assert_eq!(app.state.models.spin_build_attempts(), 1);
+    let (path, version): (Option<String>, Option<i32>) =
+        sqlx::query_as("SELECT spin_mesh_path, spin_mesh_version FROM models WHERE id = ?")
+            .bind(uuid::Uuid::parse_str(&id).unwrap())
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(path.as_deref(), file.file_name().and_then(|n| n.to_str()));
+    assert_eq!(version, Some(findamodel::preview::spin::CURRENT_SPIN_MESH_VERSION));
+
+    // The next request serves the file.
+    let (status, _, again) = get_spin(&app, &spin_url, Some("br")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again, scanned);
+    assert_eq!(app.state.models.spin_build_attempts(), 1);
+}
+
+#[tokio::test]
+async fn concurrent_requests_for_a_missing_spin_mesh_build_it_once() {
+    let app = TestApp::new().await;
+    let (_, spin_url, _, scanned) = model_without_spin_mesh(&app).await;
+    let responses = futures::future::join_all((0..6).map(|_| get_spin(&app, &spin_url, Some("br")))).await;
+    for (status, _, body) in responses {
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, scanned);
+    }
+    assert_eq!(app.state.models.spin_build_attempts(), 1);
+}
+
+#[tokio::test]
+async fn a_spin_mesh_that_cannot_be_built_is_not_retried_at_once() {
+    let app = TestApp::new().await;
+    let (_, spin_url, file, _) = model_without_spin_mesh(&app).await;
+    // The model file is gone, so its geometry cannot load.
+    let source = app.models.path().join("dragon.stl");
+    std::fs::remove_file(&source).unwrap();
+    assert_eq!(get_spin(&app, &spin_url, Some("br")).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(app.state.models.spin_build_attempts(), 1);
+
+    // Hovering again soon does not load it again, even once it could.
+    std::fs::write(&source, STL).unwrap();
+    assert_eq!(get_spin(&app, &spin_url, Some("br")).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(app.state.models.spin_build_attempts(), 1);
+    assert!(!file.exists());
+}
+
+#[tokio::test]
+async fn spin_meshes_need_a_signed_in_user() {
+    let app = TestApp::with(|s| {
+        s.mode = RuntimeMode::Desktop;
+        s.desktop_token = Some("secret".into());
+    })
+    .await;
+    let uri = "/api/models/00000000-0000-0000-0000-000000000001/spin";
+    assert_eq!(get_spin(&app, uri, Some("br")).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(get_spin(&app, &format!("{uri}?desktopToken=secret"), Some("br")).await.0, StatusCode::NOT_FOUND);
+}

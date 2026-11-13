@@ -107,6 +107,10 @@ pub struct ModelRow {
     /// index for the scan: the entry file itself is the authority. None until one is written.
     pub support_export_path: Option<String>,
     pub support_export_version: Option<i32>,
+    /// The model's spin mesh ([`crate::preview::spin`]) relative to the renders cache folder,
+    /// and the spin mesh version it was written with. None until one is written.
+    pub spin_mesh_path: Option<String>,
+    pub spin_mesh_version: Option<i32>,
 }
 
 /// The index of a model's repaired mesh ([`crate::services::repaired_meshes`]): the key of the

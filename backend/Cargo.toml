@@ -27,6 +27,7 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["query"] }
 manifold-csg = { version = "0.4", default-features = false }
+brotli = "8"
 bytemuck = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 croner = "2"
@@ -38,6 +39,7 @@ hex = "0.4"
 log = "0.4"
 mime = "0.3"
 parking_lot = "0.12"
+meshopt = "0.6"
 png = "0.17"
 pollster = "0.4"
 rayon = "1"
