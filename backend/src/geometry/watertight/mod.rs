@@ -5,6 +5,7 @@
 //! ([`remesh`]) that rebuilds it on a fine grid. [`measure`] compares a repair with its original.
 
 pub mod intersect;
+pub mod local;
 pub mod measure;
 pub mod mesh;
 pub mod remesh;
@@ -17,7 +18,7 @@ use crate::geometry::support_reader::math as support_reader_math;
 use crate::single_flight::SingleFlight;
 
 /// Increment when the repair's output changes, so cached repaired exports are rebuilt.
-pub const CURRENT_REPAIR_VERSION: i32 = 4;
+pub const CURRENT_REPAIR_VERSION: i32 = 5;
 
 /// The repair's remesh grid (mm) and the simplification bound of its remeshed patches.
 pub const REPAIR_CELL_MM: f64 = 0.05;

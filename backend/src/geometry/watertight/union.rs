@@ -47,6 +47,8 @@ pub struct UnionStats {
     pub mend_boxes: usize,
     /// Small solids taken into a larger one's boxes.
     pub small_absorbed: usize,
+    /// Spots of shells crossing themselves mended in place, before any box ([`super::local`]).
+    pub local: super::local::LocalStats,
     /// What was repaired where (kind, place), for showing the repairs.
     #[serde(skip)]
     pub spots: Vec<(&'static str, P)>,
@@ -190,9 +192,29 @@ pub fn union(tris: &[[P; 3]]) -> (Indexed, UnionStats) {
 
 /// The self-union, with solids a boolean cannot take (crossing themselves, or left open) first
 /// remeshed on cells `h` mm wide and simplified to `tol` mm: the exact surface everywhere else.
+/// A shell crossing itself is first mended in place where it can be ([`super::local::mend`]):
+/// only the spots that cannot are mended in boxes.
 pub fn hybrid(tris: &[[P; 3]], h: f64, tol: f64) -> (Indexed, UnionStats) {
     let t = std::time::Instant::now();
-    let (mut out, mut st) = union_with(prepare(tris), Some((h, tol)), true, 1.0);
+    let mut prepared = prepare(tris);
+    let mut local = super::local::LocalStats::default();
+    if !prepared.self_crossing.is_empty() {
+        let mut shell_of = vec![usize::MAX; prepared.mesh.faces.len()];
+        for (i, s) in prepared.shells.iter().enumerate() {
+            for &f in &s.faces {
+                shell_of[f as usize] = i;
+            }
+        }
+        // Crossings between shells are the boolean's to join.
+        let own: Vec<(u32, u32)> =
+            prepared.pairs.iter().copied().filter(|&(a, b)| shell_of[a as usize] == shell_of[b as usize]).collect();
+        let (mended, stats) = super::local::mend(&prepared.mesh, &own);
+        local = stats;
+        prepared = prepare_welded(mended, None);
+        super::remesh::trace(&format!("mended in place at {:.2}: {local:?}", t.elapsed().as_secs_f64()));
+    }
+    let (mut out, mut st) = union_with(prepared, Some((h, tol)), true, 1.0);
+    st.local = local;
     super::remesh::trace(&format!("first pass done at {:.2}", t.elapsed().as_secs_f64()));
     // Rounding to single precision (as STL and VOXL store corners) can fold a mended seam over
     // itself: the rounded result is checked and its crossings mended again, a few times.
