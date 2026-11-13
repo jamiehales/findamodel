@@ -16,7 +16,7 @@ use crate::geometry::Triangle;
 use crate::single_flight::SingleFlight;
 
 /// Increment when the repair's output changes, so cached repaired exports are rebuilt.
-pub const CURRENT_REPAIR_VERSION: i32 = 2;
+pub const CURRENT_REPAIR_VERSION: i32 = 3;
 
 /// The repair's remesh grid (mm) and the simplification bound of its remeshed patches.
 pub const REPAIR_CELL_MM: f64 = 0.05;

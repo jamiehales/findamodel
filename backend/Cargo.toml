@@ -15,8 +15,9 @@ name = "findamodel"
 path = "src/main.rs"
 
 [features]
-# Manifold's multi-threaded booleans (builds and links oneTBB as well). Off by default: the mesh
-# repair's booleans take seconds without it.
+default = ["manifold-parallel"]
+# Manifold's multi-threaded booleans (builds and links oneTBB, fetched by Manifold's CMake at build
+# time). About twice as fast on large mesh repairs, with the same output.
 manifold-parallel = ["manifold-csg/parallel"]
 
 [dependencies]

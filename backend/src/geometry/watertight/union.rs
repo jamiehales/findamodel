@@ -185,17 +185,18 @@ fn manifold_of(m: &Indexed, faces: &[u32]) -> Result<Manifold, String> {
 
 /// The self-union of a triangle soup.
 pub fn union(tris: &[[P; 3]]) -> (Indexed, UnionStats) {
-    union_with(prepare(tris), None, true)
+    union_with(prepare(tris), None, true, 1.0)
 }
 
 /// The self-union, with solids a boolean cannot take (crossing themselves, or left open) first
 /// remeshed on cells `h` mm wide and simplified to `tol` mm: the exact surface everywhere else.
 pub fn hybrid(tris: &[[P; 3]], h: f64, tol: f64) -> (Indexed, UnionStats) {
     let t = std::time::Instant::now();
-    let (mut out, mut st) = union_with(prepare(tris), Some((h, tol)), true);
+    let (mut out, mut st) = union_with(prepare(tris), Some((h, tol)), true, 1.0);
     super::remesh::trace(&format!("first pass done at {:.2}", t.elapsed().as_secs_f64()));
     // Rounding to single precision (as STL and VOXL store corners) can fold a mended seam over
     // itself: the rounded result is checked and its crossings mended again, a few times.
+    let (mut found, mut widen) = (usize::MAX, 1.0);
     for _ in 0..FOLLOW_UP_PASSES {
         let (rounded, _) = super::mesh::finish(&out);
         super::remesh::trace(&format!("follow-up: rounded at {:.2}", t.elapsed().as_secs_f64()));
@@ -204,7 +205,14 @@ pub fn hybrid(tris: &[[P; 3]], h: f64, tol: f64) -> (Indexed, UnionStats) {
         if pairs.is_empty() {
             break;
         }
-        let (again, more) = union_with(prepare_known(&rounded, pairs), Some((h, tol)), false);
+        // A pass that leaves more crossings than it found has folded the seams of its own boxes
+        // (they lie on the sides of those boxes): boxes of the same size round them would cut
+        // along those seams again, so from then on the boxes reach further.
+        if pairs.len() > found {
+            widen += 1.0;
+        }
+        found = pairs.len();
+        let (again, more) = union_with(prepare_known(&rounded, pairs), Some((h, tol)), false, widen);
         if more.mended_groups == 0 {
             break;
         }
@@ -255,11 +263,12 @@ pub fn fill_sealed(m: &Indexed) -> (Indexed, usize, f64) {
 }
 
 /// Mending passes after the first, on the rounded result.
-const FOLLOW_UP_PASSES: usize = 3;
+const FOLLOW_UP_PASSES: usize = 5;
 
 /// `first`: the first pass also absorbs small solids and remeshes whole any solid it cannot mend;
-/// a follow-up pass only mends crossings.
-fn union_with(p: Prepared, remesh_bad: Option<(f64, f64)>, first: bool) -> (Indexed, UnionStats) {
+/// a follow-up pass only mends crossings. `widen` scales how far a mending box reaches past the
+/// crossings in it.
+fn union_with(p: Prepared, remesh_bad: Option<(f64, f64)>, first: bool, widen: f64) -> (Indexed, UnionStats) {
     let t0 = std::time::Instant::now();
     let mut st = UnionStats {
         faces_flipped_to_agree: p.flipped,
@@ -334,7 +343,7 @@ fn union_with(p: Prepared, remesh_bad: Option<(f64, f64)>, first: bool) -> (Inde
         }
         let mut boxes_of: Vec<Vec<(P, P)>> = vec![Vec::new(); groups.len()];
         let mut crossings_of = vec![0usize; groups.len()];
-        let margin = (6.0 * h).max(0.3);
+        let margin = widen * (6.0 * h).max(0.3);
         for &(a, b) in &p.pairs {
             let (sa, sb) = (shell_of[a as usize], shell_of[b as usize]);
             if sa != sb {
@@ -821,6 +830,45 @@ mod tests {
         assert!(c.watertight(), "{c:?} {st:?}");
         assert_eq!(st.mended_groups + st.remeshed_groups, 1, "{st:?}");
         assert!(c.shells >= 2, "{c:?}");
+    }
+
+    #[test]
+    fn widened_mending_boxes_reach_further_past_a_crossing() {
+        // A finely split ball with its top pole pulled down through its bottom: the crossing is
+        // small, so the mending box round it is set by its margin.
+        let (r, n) = (5.0, 48);
+        let at = |i: usize, j: usize| -> P {
+            if i == 0 {
+                return [0.3, 0.2, -r - 1.0];
+            }
+            if i == n {
+                return [0.0, 0.0, -r];
+            }
+            let (t, q) =
+                (std::f64::consts::PI * i as f64 / n as f64, std::f64::consts::TAU * (j % n) as f64 / n as f64);
+            [r * t.sin() * q.cos(), r * t.sin() * q.sin(), r * t.cos()]
+        };
+        let mut t: Vec<[P; 3]> = Vec::new();
+        for i in 0..n {
+            for j in 0..n {
+                let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+                if i > 0 {
+                    t.push([a, b, d]);
+                }
+                if i + 1 < n {
+                    t.push([b, c, d]);
+                }
+            }
+        }
+        let input: rustc_hash::FxHashSet<[u64; 3]> = t.iter().flatten().map(|v| v.map(f64::to_bits)).collect();
+        let kept = |widen: f64| {
+            let (out, st) = union_with(prepare(&t), Some((0.05, 0.002)), false, widen);
+            let c = mesh::check(&out, false);
+            assert!(c.boundary_edges + c.non_manifold_edges == 0 && st.mended_groups == 1, "{c:?} {st:?}");
+            out.tris().iter().filter(|f| f.iter().all(|v| input.contains(&v.map(f64::to_bits)))).count()
+        };
+        let (normal, wide) = (kept(1.0), kept(2.0));
+        assert!(wide < normal, "a wider box keeps fewer of the original faces: {wide} against {normal}");
     }
 
     #[test]
