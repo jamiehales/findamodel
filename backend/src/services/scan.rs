@@ -544,28 +544,115 @@ fn extension_of(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
-/// Recursively finds model files under `dir`, sorted by path. Ignored files and folders
-/// ([`is_ignored_entry`]) are skipped and never descended into.
-pub fn discover_model_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
+/// The model files a walk found, and the directories it could not fully read.
+#[derive(Debug, Default)]
+pub struct Discovery {
+    /// Model files, sorted by path.
+    pub files: Vec<PathBuf>,
+    /// Directories whose listing (or one of whose entries) failed to read, sorted.
+    pub unreadable: Vec<PathBuf>,
+}
+
+/// Recursively finds model files under `dir`. Ignored files and folders ([`is_ignored_entry`])
+/// are skipped and never descended into.
+pub fn discover_model_files(dir: &Path) -> Discovery {
+    discover_with(dir, &|path| std::fs::read_dir(path))
+}
+
+fn discover_with(dir: &Path, read_dir: &dyn Fn(&Path) -> std::io::Result<std::fs::ReadDir>) -> Discovery {
+    let mut out = Discovery::default();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&current) else { continue };
-        for entry in entries.flatten() {
+        let entries = match read_dir(&current) {
+            Ok(entries) => entries,
+            Err(err) => {
+                warn!(target: LOG_TARGET, "Failed to read directory {}: {err}", current.display());
+                out.unreadable.push(current);
+                continue;
+            }
+        };
+        let mut failed = false;
+        for entry in entries {
+            let Ok(entry) = entry else {
+                failed = true;
+                continue;
+            };
             if is_ignored_entry(&entry.file_name().to_string_lossy()) {
                 continue;
             }
-            let Ok(file_type) = entry.file_type() else { continue };
+            let Ok(file_type) = entry.file_type() else {
+                failed = true;
+                continue;
+            };
             let path = entry.path();
             if file_type.is_dir() {
                 stack.push(path);
             } else if file_type.is_file() && is_model_extension(&extension_of(&path)) {
-                out.push(path);
+                out.files.push(path);
             }
         }
+        if failed {
+            warn!(target: LOG_TARGET, "Failed to read some entries of directory {}", current.display());
+            out.unreadable.push(current);
+        }
     }
-    out.sort();
+    out.files.sort();
+    out.unreadable.sort();
     out
+}
+
+fn is_ignored_model(row: &ExistingScanState) -> bool {
+    is_ignored_entry(&row.file_name) || is_ignored_path(&row.directory)
+}
+
+/// A scan removes no models whose files are gone when they are more than this share of the
+/// models it covers: more likely a share that is briefly unavailable than a mass deletion.
+pub const MAX_REMOVED_SHARE: f64 = 0.5;
+
+/// Whether a model directory is `scope` or below it (the root scope `""` covers everything).
+fn is_within(directory: &str, scope: &str) -> bool {
+    scope.is_empty() || directory == scope || directory.strip_prefix(scope).is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The models a scan of `scope` should remove because their files are gone, from the rows it
+/// did not find on disk (`leftovers`, already without ignored paths) and the number of
+/// (non-ignored) models in scope. Rows outside the scope or under a directory the walk could
+/// not read are kept; nothing is removed when that would be more than [`MAX_REMOVED_SHARE`] of
+/// the models in scope (`Err` with the reason).
+fn plan_missing_removals<T>(
+    leftovers: Vec<T>,
+    directory_of: impl Fn(&T) -> &str,
+    scope: &str,
+    unreadable: &[String],
+    in_scope: usize,
+) -> Result<Vec<T>, String> {
+    let missing: Vec<T> = leftovers
+        .into_iter()
+        .filter(|row| {
+            let dir = directory_of(row);
+            is_within(dir, scope) && !unreadable.iter().any(|u| is_within(dir, u))
+        })
+        .collect();
+    if missing.len() as f64 > in_scope as f64 * MAX_REMOVED_SHARE {
+        return Err(format!(
+            "Not removing {} of {in_scope} models whose files are gone: more than {:.0}% of the scanned models, so the models folder may be unavailable",
+            missing.len(),
+            MAX_REMOVED_SHARE * 100.0
+        ));
+    }
+    Ok(missing)
+}
+
+/// Why a scan must not remove models whose files are gone at all, judged from the models root:
+/// it can't be read or has no entries (a share that isn't mounted).
+fn root_unavailable(root: &Path) -> Option<String> {
+    match std::fs::read_dir(root) {
+        Err(err) => Some(format!("Not removing models whose files are gone: the models folder can't be read ({err})")),
+        Ok(mut entries) => entries
+            .next()
+            .is_none()
+            .then(|| "Not removing models whose files are gone: the models folder is empty".to_string()),
+    }
 }
 
 impl ModelService {
@@ -1079,8 +1166,12 @@ impl ModelService {
             return Ok(0);
         }
 
-        let walk = search_root.clone();
-        let files = tokio::task::spawn_blocking(move || discover_model_files(&walk)).await?;
+        let walk = (root.clone(), search_root.clone());
+        let (Discovery { files, unreadable }, root_problem) =
+            tokio::task::spawn_blocking(move || (discover_model_files(&walk.1), root_unavailable(&walk.0))).await?;
+        let scope = relative_of(&root, &search_root).trim_matches('/').to_string();
+        let unreadable: Vec<String> =
+            unreadable.iter().map(|d| relative_of(&root, d).trim_matches('/').to_string()).collect();
         let relative_paths: Vec<String> = files.iter().map(|f| relative_of(&root, f)).collect();
 
         if let Some(r) = reporter {
@@ -1102,6 +1193,8 @@ impl ModelService {
 
         let ctx = self.scan_context(&root, &relative_dirs).await?;
         let mut existing = self.load_existing_states().await?;
+        let in_scope =
+            existing.values().filter(|row| is_within(&row.directory, &scope) && !is_ignored_model(row)).count();
 
         info!(target: LOG_TARGET, "Scanning {} model files with up to {} concurrent workers.", files.len(), self.file_scan_threads);
 
@@ -1328,13 +1421,43 @@ impl ModelService {
             }
         }
 
-        // Models indexed before their names were ignored are never discovered, so they are among
-        // the rows left over; dropping them here also lets the sweeps below take their files.
-        let ignored: Vec<ExistingScanState> = existing
-            .into_values()
-            .filter(|row| is_ignored_entry(&row.file_name) || is_ignored_path(&row.directory))
-            .collect();
-        self.remove_ignored_models(&ignored).await?;
+        // The rows left over were not found on disk. Models indexed before their names were
+        // ignored are removed wherever they are; models whose files are gone only within the
+        // scanned directory, and only when the models folder looks available. Dropping them here
+        // also lets the sweeps below take their files.
+        let (ignored, leftovers): (Vec<ExistingScanState>, Vec<ExistingScanState>) =
+            existing.into_values().partition(is_ignored_model);
+        self.remove_models(&ignored, "Removed ignored model", reporter).await?;
+        let missing = match root_problem {
+            Some(reason) => Err(reason),
+            None => plan_missing_removals(leftovers, |row| row.directory.as_str(), &scope, &unreadable, in_scope),
+        };
+        match missing {
+            Ok(missing) => {
+                self.remove_models(&missing, "Removed model whose file is gone", reporter).await?;
+                if !missing.is_empty() {
+                    let message = format!("Removed {} models whose files are gone", missing.len());
+                    info!(target: LOG_TARGET, "{message}.");
+                    if let Some(r) = reporter {
+                        r.on_log("info", &message, None).await;
+                    }
+                }
+            }
+            Err(reason) => {
+                warn!(target: LOG_TARGET, "{reason}");
+                if let Some(r) = reporter {
+                    r.on_log("warn", &reason, None).await;
+                }
+            }
+        }
+        if !unreadable.is_empty() {
+            let names: Vec<&str> = unreadable.iter().map(|d| if d.is_empty() { "/" } else { d.as_str() }).collect();
+            let message = format!("Kept the models under directories that failed to read: {}", names.join(", "));
+            warn!(target: LOG_TARGET, "{message}");
+            if let Some(r) = reporter {
+                r.on_log("warn", &message, None).await;
+            }
+        }
 
         // A full scan has brought every row's index up to date: entry files no row names are left
         // over from changed or removed models (or from exports of a detection since rechecked).
@@ -1370,11 +1493,16 @@ impl ModelService {
         Ok(new_count)
     }
 
-    /// Drops the rows of models whose path is ignored ([`is_ignored_entry`]), indexed before such
-    /// names were skipped: their hulls, tags and repaired mesh index go with the row, their
-    /// printing list entries are removed, and their preview, spin mesh and export files are
-    /// deleted unless another model (with the same content) still uses them.
-    async fn remove_ignored_models(&self, rows: &[ExistingScanState]) -> anyhow::Result<()> {
+    /// Drops the rows of models no longer indexed (files gone, or paths now ignored): their
+    /// hulls, tags and repaired mesh index go with the row, their printing list entries are
+    /// removed, and their preview, spin mesh and export files are deleted unless another model
+    /// (with the same content) still uses them. Each removal is logged as `message`.
+    async fn remove_models(
+        &self,
+        rows: &[ExistingScanState],
+        message: &str,
+        reporter: Option<&dyn ProgressReporter>,
+    ) -> anyhow::Result<()> {
         for row in rows {
             let mut tx = self.db.begin().await?;
             sqlx::query("DELETE FROM printing_list_items WHERE model_id = ?").bind(row.id).execute(&mut *tx).await?;
@@ -1388,7 +1516,10 @@ impl ModelService {
             } else {
                 format!("{}/{}", row.directory, row.file_name)
             };
-            info!(target: LOG_TARGET, "Removed ignored model from the index: {relative}");
+            info!(target: LOG_TARGET, "{message}: {relative}");
+            if let Some(r) = reporter {
+                r.on_log("info", message, Some(&relative)).await;
+            }
         }
         Ok(())
     }
@@ -2544,7 +2675,8 @@ mod tests {
 
         // Indexed before such names were skipped: an AppleDouble file with a preview and a spin
         // mesh, a model in a dot folder sharing a preview with a model that stays, and a model
-        // missing from disk under a normal name (kept, as deleted files are).
+        // missing from disk under a normal name (kept: it is the only model indexed in scope, so
+        // removing it would exceed MAX_REMOVED_SHARE; ignored models are removed regardless).
         let mut apple_double = model("._d100.stl", "Dice Set");
         apple_double.preview_image_path = Some("ad_r2.00a.png".into());
         apple_double.spin_mesh_path = Some("ad_r2.00a_spin_v1.bin".into());
@@ -2602,9 +2734,191 @@ mod tests {
         }
     }
 
+    async fn scan_all(svc: &ModelService, filter: Option<&str>, reporter: Option<&dyn ProgressReporter>) {
+        svc.scan_and_cache(None, filter, reporter, &CancellationToken::new()).await.unwrap();
+    }
+
+    fn file_names(paths: Vec<(String, String)>) -> Vec<String> {
+        paths.into_iter().map(|(d, f)| if d.is_empty() { f } else { format!("{d}/{f}") }).collect()
+    }
+
+    #[tokio::test]
+    async fn a_deleted_file_is_removed_with_its_list_entries_and_files() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let (root, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        for f in ["Kit/a.stl", "Kit/b.stl", "Kit/gone.stl"] {
+            write_file(root.path(), f, SIMPLE_ASCII_STL);
+        }
+        let svc = service_with_previews(&t, root.path(), cache.path());
+        scan_all(&svc, None, None).await;
+        let gone: Uuid =
+            sqlx::query_scalar("SELECT id FROM models WHERE file_name = 'gone.stl'").fetch_one(&t.db).await.unwrap();
+        sqlx::query(
+            "UPDATE models SET preview_image_path = 'g_r2.00a.png', spin_mesh_path = 'g_spin.bin' WHERE id = ?",
+        )
+        .bind(gone)
+        .execute(&t.db)
+        .await
+        .unwrap();
+        let renders = ["g_r2.00a.png", "g_r2.00a_supportsremoved.png", "g_spin.bin"];
+        for f in renders {
+            std::fs::write(cache.path().join(f), b"x").unwrap();
+        }
+        let user = t.add_user("owner", false).await;
+        let list = crate::services::printing_lists::create_list(&t.db, user, "Kit").await.unwrap();
+        sqlx::query("INSERT INTO printing_list_items (id, printing_list_id, model_id, quantity) VALUES (?, ?, ?, 1)")
+            .bind(Uuid::new_v4())
+            .bind(list.id)
+            .bind(gone)
+            .execute(&t.db)
+            .await
+            .unwrap();
+        std::fs::remove_file(root.path().join("Kit/gone.stl")).unwrap();
+
+        scan_all(&svc, None, None).await;
+        assert_eq!(file_names(indexed_paths(&t).await), vec!["Kit/a.stl", "Kit/b.stl"]);
+        let items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM printing_list_items").fetch_one(&t.db).await.unwrap();
+        assert_eq!(items, 0);
+        for f in renders {
+            assert!(!cache.path().join(f).exists(), "{f} deleted");
+        }
+
+        // Back on disk, it is indexed again as a new model.
+        write_file(root.path(), "Kit/gone.stl", SIMPLE_ASCII_STL);
+        assert_eq!(svc.scan_and_cache(None, None, None, &CancellationToken::new()).await.unwrap(), 1);
+        assert_eq!(indexed_paths(&t).await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_directory_scan_removes_only_inside_its_directory() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        for f in ["A/a1.stl", "A/a2.stl", "A/a3.stl", "AB/x1.stl", "AB/x2.stl", "AB/x3.stl", "A/sub/s1.stl"] {
+            write_file(root.path(), f, SIMPLE_ASCII_STL);
+        }
+        let svc = service(&t, root.path());
+        scan_all(&svc, None, None).await;
+        for f in ["A/a1.stl", "A/sub/s1.stl", "AB/x1.stl"] {
+            std::fs::remove_file(root.path().join(f)).unwrap();
+        }
+
+        scan_all(&svc, Some("A"), None).await;
+        assert_eq!(
+            file_names(indexed_paths(&t).await),
+            vec!["A/a2.stl", "A/a3.stl", "AB/x1.stl", "AB/x2.stl", "AB/x3.stl"]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_missing_models_folder_removes_nothing() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("models");
+        for f in ["a.stl", "Kit/b.stl"] {
+            write_file(&root, f, SIMPLE_ASCII_STL);
+        }
+        let svc = service(&t, &root);
+        scan_all(&svc, None, None).await;
+
+        // An unmounted share: the mount point is there but empty.
+        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let reporter = RecordingReporter::default();
+        scan_all(&svc, None, Some(&reporter)).await;
+        assert_eq!(indexed_paths(&t).await.len(), 2);
+        assert!(reporter.logs.lock().iter().any(|(level, m)| level == "warn" && m.contains("empty")));
+
+        std::fs::remove_dir(&root).unwrap();
+        scan_all(&svc, None, None).await;
+        assert_eq!(indexed_paths(&t).await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn removing_more_than_half_the_models_in_scope_removes_none() {
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        for f in ["a.stl", "b.stl", "c.stl", "d.stl"] {
+            write_file(root.path(), f, SIMPLE_ASCII_STL);
+        }
+        let svc = service(&t, root.path());
+        scan_all(&svc, None, None).await;
+        for f in ["a.stl", "b.stl", "c.stl"] {
+            std::fs::remove_file(root.path().join(f)).unwrap();
+        }
+        let reporter = RecordingReporter::default();
+        scan_all(&svc, None, Some(&reporter)).await;
+        assert_eq!(indexed_paths(&t).await.len(), 4);
+        assert!(reporter.logs.lock().iter().any(|(level, m)| level == "warn" && m.contains("Not removing 3 of 4")));
+
+        // Half is not more than half.
+        write_file(root.path(), "a.stl", SIMPLE_ASCII_STL);
+        scan_all(&svc, None, None).await;
+        assert_eq!(file_names(indexed_paths(&t).await), vec!["a.stl", "d.stl"]);
+    }
+
+    #[test]
+    fn removal_plan_keeps_rows_out_of_scope_or_under_unreadable_directories() {
+        let rows = vec!["A", "A/sub", "A/bad", "A/bad/deeper", "A/badly", "B", ""];
+        let planned = plan_missing_removals(rows.clone(), |d| d, "A", &["A/bad".to_string()], 20).unwrap();
+        assert_eq!(planned, vec!["A", "A/sub", "A/badly"]);
+        // An unreadable scope root keeps everything.
+        assert!(plan_missing_removals(rows.clone(), |d| d, "", &[String::new()], 20).unwrap().is_empty());
+        assert_eq!(plan_missing_removals(rows.clone(), |d| d, "", &[], 20).unwrap().len(), 7);
+        assert!(plan_missing_removals(rows, |d| d, "", &[], 13).is_err());
+    }
+
+    #[test]
+    fn the_walk_records_directories_it_cannot_read_and_carries_on() {
+        let root = tempfile::tempdir().unwrap();
+        for f in ["ok/a.stl", "bad/b.stl", "bad/inner/c.stl", "d.stl"] {
+            write_file(root.path(), f, SIMPLE_ASCII_STL);
+        }
+        let bad = root.path().join("bad");
+        let found = discover_with(root.path(), &|p| {
+            if p == bad {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                std::fs::read_dir(p)
+            }
+        });
+        assert_eq!(found.files, vec![root.path().join("d.stl"), root.path().join("ok/a.stl")]);
+        assert_eq!(found.unreadable, vec![bad]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_directory_keeps_its_models() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TestDb::new().await;
+        disable_previews(&t).await;
+        let root = tempfile::tempdir().unwrap();
+        for f in ["a.stl", "b.stl", "c.stl", "locked/x.stl", "locked/y.stl"] {
+            write_file(root.path(), f, SIMPLE_ASCII_STL);
+        }
+        let svc = service(&t, root.path());
+        scan_all(&svc, None, None).await;
+        let locked = root.path().join("locked");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = std::fs::read_dir(&locked).is_ok();
+        if !readable {
+            scan_all(&svc, None, None).await;
+        }
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if readable {
+            // Permissions don't stop this user (root); the walk test above covers the failure.
+            eprintln!("skipping: directory permissions are not enforced for this user");
+            return;
+        }
+        assert_eq!(indexed_paths(&t).await.len(), 5);
+    }
+
     #[derive(Default)]
     struct RecordingReporter {
         results: parking_lot::Mutex<Vec<FileResult>>,
+        logs: parking_lot::Mutex<Vec<(String, String)>>,
     }
 
     #[async_trait]
@@ -2614,7 +2928,9 @@ mod tests {
         async fn on_file_processed(&self, result: FileResult) {
             self.results.lock().push(result);
         }
-        async fn on_log(&self, _: &str, _: &str, _: Option<&str>) {}
+        async fn on_log(&self, level: &str, message: &str, _: Option<&str>) {
+            self.logs.lock().push((level.to_string(), message.to_string()));
+        }
     }
 
     #[tokio::test]
