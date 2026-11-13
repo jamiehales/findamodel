@@ -1,5 +1,6 @@
-//! On-disk cache of generated model VOXLs (`GET /api/models/{id}/voxl`), so a model's
-//! supports are split off and rebuilt once rather than on every download.
+//! On-disk cache of generated resupported and remeshed model VOXLs (`GET /api/models/{id}/voxl`;
+//! the original VOXL is not cached), so a model's supports are split off and rebuilt once rather
+//! than on every download.
 //!
 //! Entries are files named by a hash of their [`VoxlCacheKey`]: a change to the model file,
 //! its raft height, the support detection or the support reader gives a new key, and the old

@@ -605,7 +605,8 @@ mod tests {
 
     #[test]
     fn a_plate_job_reports_reading_supports() {
-        let job = Job::new(None, "plate.voxl".into(), "voxl".into(), PathBuf::from("unused"), 3);
+        let job =
+            Job::new(None, "plate-resupported.voxl".into(), "voxl-resupported".into(), PathBuf::from("unused"), 3);
         assert_eq!((job.plate_dto().supports_total, job.plate_dto().supports_read), (0, 0));
         job.start_reading_supports(3);
         job.mark_reading_supports("knight.stl");
@@ -622,7 +623,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_voxl_plate_job_counts_the_presupported_models_it_reads() {
+    async fn a_resupported_voxl_plate_job_counts_the_presupported_models_it_reads() {
         let t = TestDb::new().await;
         let root = tempfile::tempdir().unwrap();
         write_file(root.path(), "supported.stl", SIMPLE_ASCII_STL);
@@ -633,15 +634,29 @@ mod tests {
         t.insert_model(&plain).await;
 
         let sut = PlateJobService::new(service(&t, root.path()));
-        let request = GeneratePlateRequest {
-            placements: vec![placement(supported.id, 0.0), placement(plain.id, 20.0)],
-            format: Some("voxl".into()),
-            ..Default::default()
+        let run = |format: &str| {
+            let request = GeneratePlateRequest {
+                placements: vec![placement(supported.id, 0.0), placement(plain.id, 20.0)],
+                format: Some(format.into()),
+                ..Default::default()
+            };
+            let sut = &sut;
+            async move {
+                let started = sut.create_job(request).await.unwrap();
+                let done = wait_for_plate(sut, started.job_id).await;
+                assert_eq!(done.status, "completed", "{:?}", done.error_message);
+                done
+            }
         };
-        let started = sut.create_job(request).await.unwrap();
-        let done = wait_for_plate(&sut, started.job_id).await;
-        assert_eq!(done.status, "completed", "{:?}", done.error_message);
+        let done = run("voxl-resupported").await;
+        assert_eq!(done.file_name, "plate-resupported.voxl");
         assert_eq!((done.supports_total, done.supports_read), (1, 1));
+
+        // The original VOXL reads no supports and repairs nothing: only the models load.
+        let done = run("voxl").await;
+        assert_eq!(done.file_name, "plate.voxl");
+        assert_eq!((done.completed_entries, done.progress_percent), (2, 100));
+        assert_eq!((done.supports_total, done.repairs_total), (0, 0));
     }
 
     #[tokio::test]

@@ -1284,6 +1284,32 @@ mod tests {
     }
 
     #[test]
+    fn an_original_mesh_voxl_holds_the_whole_mesh_and_no_support_entities() {
+        // A model with its supports still in the mesh: every triangle is written as model mesh.
+        let model = [
+            tri([0.0, 0.0, 5.0], [10.0, 0.0, 5.0], [0.0, 10.0, 8.0]),
+            tri([1.0, 1.0, 0.0], [1.5, 1.0, 0.0], [1.0, 1.5, 5.0]),
+            tri([4.0, 4.0, 0.0], [4.5, 4.0, 0.0], [4.0, 4.5, 5.0]),
+        ];
+        let meshes = [VoxlMesh { name: "knight.stl", triangles: &model, supports: None }];
+        let (_, chunks) = read_voxl(&write(&meshes, &[placement(0, 0.0)], None));
+
+        let mesh_chunks: Vec<_> = chunks.iter().filter(|(t, _, _)| t == b"MESH").collect();
+        assert_eq!(mesh_chunks.len(), 1);
+        assert_eq!(u32::from_le_bytes(mesh_chunks[0].2[80..84].try_into().unwrap()), 3);
+        let models = json_chunk(&chunks, b"MODL");
+        assert_eq!(models.as_array().unwrap().len(), 1);
+        assert_eq!((models[0]["name"].clone(), models[0]["polygonCount"].clone()), (json!("knight.stl"), json!(3)));
+
+        // DragonFruit still gets its support document, with no entities in it.
+        let supp = json_chunk(&chunks, b"SUPP");
+        assert_eq!(supp["version"], 1);
+        for kind in ["roots", "trunks", "branches", "leaves", "twigs", "sticks", "braces", "knots", "kickstands"] {
+            assert_eq!(supp[kind], json!([]), "no {kind}");
+        }
+    }
+
+    #[test]
     fn unique_meshes_keep_version_two() {
         let a = [tri([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])];
         let meshes = [

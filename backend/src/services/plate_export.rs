@@ -32,13 +32,13 @@ const MAX_CONCURRENT_MODEL_LOADS: usize = 2;
 pub trait PlateProgress: Send + Sync {
     fn mark_current_entry(&self, entry_name: &str);
     fn mark_entry_completed(&self);
-    /// A VOXL plate starts reading the supports of `total` pre-supported models.
+    /// A resupported VOXL plate starts reading the supports of `total` pre-supported models.
     fn start_reading_supports(&self, total: usize);
     /// Reading the supports of one of them starts.
     fn mark_reading_supports(&self, entry_name: &str);
     /// The supports of one of them are read (or came from the cache).
     fn mark_supports_read(&self, entry_name: &str);
-    /// A remeshed VOXL plate starts repairing `total` model meshes.
+    /// A remeshed, resupported VOXL plate starts repairing `total` model meshes.
     fn start_repairing(&self, total: usize);
     /// Repairing one of them starts.
     fn mark_repairing(&self, entry_name: &str);
@@ -55,25 +55,32 @@ pub struct PlateExportResult {
 }
 
 pub fn normalize_format(format: Option<&str>) -> AppResult<String> {
-    let normalized = format.unwrap_or("voxl").to_ascii_lowercase();
-    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | "voxl" | REMESHED_VOXL) {
+    let normalized = format.unwrap_or(ORIGINAL_VOXL).to_ascii_lowercase();
+    if !matches!(normalized.as_str(), "3mf" | "stl" | "glb" | ORIGINAL_VOXL | RESUPPORTED_VOXL | REMESHED_VOXL) {
         return Err(bad_request(format!(
-            "Unsupported format '{}'. Supported: 3mf, stl, glb, voxl, voxl-remeshed",
+            "Unsupported format '{}'. Supported: 3mf, stl, glb, {ORIGINAL_VOXL}, {RESUPPORTED_VOXL}, {REMESHED_VOXL}",
             format.unwrap_or_default()
         )));
     }
     Ok(normalized)
 }
 
-/// A VOXL plate whose model meshes are made watertight ([`watertight::repair_model`]); the
-/// supports are the same DragonFruit supports.
+/// A VOXL plate of the model meshes exactly as their files hold them (any supports in them stay
+/// part of the mesh), with no DragonFruit supports.
+pub const ORIGINAL_VOXL: &str = "voxl";
+/// A VOXL plate whose pre-supported models go in without their supports, rebuilt as DragonFruit
+/// supports.
+pub const RESUPPORTED_VOXL: &str = "voxl-resupported";
+/// A resupported VOXL plate whose model meshes are made watertight ([`watertight::repair_model`]);
+/// the supports are the same DragonFruit supports.
 pub const REMESHED_VOXL: &str = "voxl-remeshed";
 
 pub fn file_name(format: &str) -> &'static str {
     match format {
         "stl" => "plate.stl",
         "glb" => "plate.glb",
-        "voxl" => "plate.voxl",
+        ORIGINAL_VOXL => "plate.voxl",
+        RESUPPORTED_VOXL => "plate-resupported.voxl",
         REMESHED_VOXL => "plate-remeshed.voxl",
         _ => "plate.3mf",
     }
@@ -83,7 +90,7 @@ pub fn content_type(format: &str) -> &'static str {
     match format {
         "stl" => "model/stl",
         "glb" => "model/gltf-binary",
-        "voxl" | REMESHED_VOXL => "application/vnd.dragonfruit.voxl",
+        ORIGINAL_VOXL | RESUPPORTED_VOXL | REMESHED_VOXL => "application/vnd.dragonfruit.voxl",
         _ => "application/vnd.ms-3mf",
     }
 }
@@ -142,7 +149,7 @@ fn rotate_y(n: Vec3, sin: f32, cos: f32) -> Vec3 {
     Vec3::new(n.x * cos - n.z * sin, n.y, n.x * sin + n.z * cos)
 }
 
-/// The body (Z-up) and rebuilt supports of a pre-supported model, as the model's own VOXL has
+/// The body (Z-up) and rebuilt supports of a pre-supported model, as the model's resupported VOXL has
 /// them. None when the model is not supported or holds nothing that reads as supports. A
 /// detection stored under the current scan config saves looking when it found no supports.
 /// The split and the rebuilt supports come from the model's export entry when it is current, and
@@ -306,9 +313,27 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     .collect();
                 out = saver::write_3mf(out, &objects, &items)?;
             }
-            "voxl" | REMESHED_VOXL => {
+            ORIGINAL_VOXL => {
+                // Every model mesh as its file holds it, supports and all.
+                let z_up: Vec<Vec<Triangle>> =
+                    geometry_ids.iter().map(|id| to_z_up(&geometries[id].triangles)).collect();
+                let meshes: Vec<VoxlMesh<'_>> = geometry_ids
+                    .iter()
+                    .zip(&z_up)
+                    .map(|(id, triangles)| VoxlMesh { name: &names[id], triangles, supports: None })
+                    .collect();
+                let items: Vec<VoxlPlacement> = placements
+                    .iter()
+                    .map(|p| {
+                        let mesh = object_ids[&p.model_id] as usize - 1;
+                        voxl_placement(mesh, p.angle_rad, p.x_mm, p.y_mm, bed_width_mm, bed_depth_mm)
+                    })
+                    .collect();
+                out = voxl::write_voxl(out, &meshes, &items, plate_name.as_deref())?;
+            }
+            RESUPPORTED_VOXL | REMESHED_VOXL => {
                 // A pre-supported model goes in without its supports, rebuilt as DragonFruit
-                // supports, as the model's own VOXL does; every other model as it is.
+                // supports, as the model's resupported VOXL does; every other model as it is.
                 let reading = geometry_ids.iter().filter(|id| infos[*id].supported() == Some(true)).count();
                 if let Some(p) = &progress {
                     p.start_reading_supports(reading);
@@ -563,6 +588,11 @@ mod tests {
         assert_eq!(normalize_format(Some("VOXL")).unwrap(), "voxl");
         assert_eq!(file_name("voxl"), "plate.voxl");
         assert_eq!(content_type("voxl"), "application/vnd.dragonfruit.voxl");
+        assert_eq!(normalize_format(Some("voxl-resupported")).unwrap(), RESUPPORTED_VOXL);
+        assert_eq!(file_name(RESUPPORTED_VOXL), "plate-resupported.voxl");
+        assert_eq!(file_name(REMESHED_VOXL), "plate-remeshed.voxl");
+        assert_eq!(content_type(RESUPPORTED_VOXL), "application/vnd.dragonfruit.voxl");
+        assert_eq!(content_type(REMESHED_VOXL), "application/vnd.dragonfruit.voxl");
         assert_eq!(content_type("3mf"), "application/vnd.ms-3mf");
     }
 

@@ -21,6 +21,7 @@ use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
 use crate::preview::spin;
+use crate::services::models::is_non_geometry_type;
 use crate::services::repaired_meshes;
 use crate::services::support_exports;
 use crate::services::voxl_cache::VoxlCacheKey;
@@ -317,45 +318,86 @@ async fn get_split_geometry(
     Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE_SPLIT)], envelope).into_response())
 }
 
-#[derive(Deserialize, Default)]
-struct VoxlQuery {
-    /// The remeshed variant: the model mesh made watertight ([`crate::geometry::watertight::repair_model`]); the
-    /// supports are the same DragonFruit supports.
-    #[serde(default)]
-    remeshed: bool,
+/// Which VOXL of a model `GET /api/models/{id}/voxl` serves.
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+enum VoxlVariant {
+    /// The model's mesh exactly as its file holds it (any supports in it stay part of the mesh).
+    #[default]
+    Original,
+    /// The model without its supports, with them rebuilt as DragonFruit supports.
+    Resupported,
+    /// The resupported VOXL with the model mesh made watertight
+    /// ([`crate::geometry::watertight::repair_model`]); the supports are the same DragonFruit supports.
+    Remeshed,
 }
 
-/// The model stripped of its supports, with the supports read from their mesh
-/// ([`support_reader`]) and rebuilt as DragonFruit supports, as a VOXL scene. 404 when the supports cannot be split off. Served from the VOXL cache
-/// when the model, its raft height and the support layout are unchanged since it was written.
+#[derive(Deserialize, Default)]
+struct VoxlQuery {
+    #[serde(default)]
+    variant: VoxlVariant,
+}
+
+/// A model as a VOXL scene. The original variant is the model's mesh as its file holds it,
+/// written each time (it is only the mesh, so it is not cached). The resupported and remeshed
+/// variants are the model stripped of its supports, with the supports read from their mesh
+/// ([`support_reader`]) and rebuilt as DragonFruit supports; 404 when the supports cannot be
+/// split off. Those are served from the VOXL cache when the model, its raft height and the
+/// support layout are unchanged since it was written.
 ///
-/// A VOXL is built once at a time: a download of one (by its cache key) already being built
-/// waits, without holding a thread, for that build and gets the same bytes.
+/// A resupported VOXL is built once at a time: a download of one (by its cache key) already being
+/// built waits, without holding a thread, for that build and gets the same bytes.
 async fn get_voxl(
     State(state): State<AppState>,
     _user: CurrentUser,
     IdPath(id): IdPath,
     Query(q): Query<VoxlQuery>,
 ) -> AppResult<Response> {
+    if q.variant == VoxlVariant::Original {
+        return original_voxl(&state, id).await;
+    }
+    let remeshed = q.variant == VoxlVariant::Remeshed;
     let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
     let stem = store::file_stem(&model.file_name);
-    let download_name = if q.remeshed { format!("{stem}-remeshed.voxl") } else { format!("{stem}.voxl") };
+    let download_name = if remeshed { format!("{stem}-remeshed.voxl") } else { format!("{stem}-resupported.voxl") };
     let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
     let key = (model.supported() == Some(true))
         .then(|| {
-            if q.remeshed {
+            if remeshed {
                 VoxlCacheKey::for_remeshed_model(&model, raft_height_mm)
             } else {
                 VoxlCacheKey::for_model(&model, raft_height_mm)
             }
         })
         .flatten();
-    let flight = key.as_ref().map_or_else(|| format!("{id}|remeshed:{}", q.remeshed), VoxlCacheKey::id);
-    let built = state.voxl_builds.run_async(flight, || build_voxl(&state, id, key, q.remeshed)).await;
+    let flight = key.as_ref().map_or_else(|| format!("{id}|remeshed:{remeshed}"), VoxlCacheKey::id);
+    let built = state.voxl_builds.run_async(flight, || build_voxl(&state, id, key, remeshed)).await;
     match built.as_ref() {
         Ok(bytes) => Ok(voxl_response(&download_name, bytes.clone())),
         Err(err) => Err(shared_error(err)),
     }
+}
+
+/// The original VOXL: the model's mesh (Z-up) as its file holds it, supports and all, with no
+/// DragonFruit supports. 422 for a model without a mesh (LYS/LYT/CTB).
+async fn original_voxl(state: &AppState, id: uuid::Uuid) -> AppResult<Response> {
+    let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+    if is_non_geometry_type(&model.file_type) {
+        return Err(AppError::Unprocessable(format!("{} has no mesh to export", model.file_name)));
+    }
+    let (model, geometry) = load_geometry(state, id).await?;
+    let geometry = geometry.ok_or_else(|| AppError::Internal(anyhow::anyhow!("Failed to load model geometry")))?;
+    let name = model.file_name.clone();
+    let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        let triangles = to_z_up(&geometry.triangles);
+        let mesh = VoxlMesh { name: &name, triangles: &triangles, supports: None };
+        let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
+        Ok(voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner())
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
+    let download_name = format!("{}.voxl", store::file_stem(&model.file_name));
+    Ok(voxl_response(&download_name, bytes.into()))
 }
 
 /// An error a VOXL build ended with, for each download that waited for it.
@@ -476,7 +518,7 @@ async fn read_export(
 }
 
 /// The supports of a pre-supported model as findamodel rebuilds them for its VOXL, meshed from
-/// the VOXL's support document ([`support_mesh`], at the slicer's default tip offset), in the
+/// the resupported VOXL's support document ([`support_mesh`], at the slicer's default tip offset), in the
 /// viewer's frame (Y-up, centred like the model's geometry): one FMSH mesh. 204 when the model
 /// has no supports to rebuild.
 async fn get_resupported_geometry(
@@ -538,7 +580,10 @@ async fn get_repaired_geometry(
 fn voxl_response(download_name: &str, bytes: Bytes) -> Response {
     (
         [
-            (header::CONTENT_TYPE, plate_export::content_type("voxl").parse().expect("valid header")),
+            (
+                header::CONTENT_TYPE,
+                plate_export::content_type(plate_export::ORIGINAL_VOXL).parse().expect("valid header"),
+            ),
             (header::CONTENT_DISPOSITION, content_disposition(download_name)),
         ],
         bytes,

@@ -345,6 +345,10 @@ async fn index_query_preview_geometry_and_plate_export() {
     assert_eq!(&voxl[0..4], b"VOXL");
     // Two placements of one model share a MESH chunk, which raises the container version.
     assert_eq!(u16::from_le_bytes(voxl[4..6].try_into().unwrap()), 3);
+    // A file without a mesh has no VOXL of its own.
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{ctb_id}/voxl")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
     let (status, message) = app
         .json("POST", "/api/plate/generate", json!({ "placements": [{ "modelId": "nope", "xMm": 0, "yMm": 0 }] }))
@@ -544,11 +548,12 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
     let (_, detail) = app.get(&format!("/api/models/{knight}")).await;
     assert_eq!(detail["supportSplit"], true);
 
-    let (status, headers, bytes) =
-        app.send(Request::get(format!("/api/models/{knight}/voxl")).body(Body::empty()).unwrap()).await;
+    let (status, headers, bytes) = app
+        .send(Request::get(format!("/api/models/{knight}/voxl?variant=resupported")).body(Body::empty()).unwrap())
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
-    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("knight.voxl"));
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("knight-resupported.voxl"));
     assert_eq!(&bytes[..4], b"VOXL");
     let supports = voxl_chunk(&bytes, b"SUPP");
     assert_eq!(supports["roots"].as_array().unwrap().len(), 4);
@@ -561,7 +566,9 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
         assert!((contact["z"].as_f64().unwrap() - 10.0).abs() < 0.1, "{contact}");
     }
 
-    let (status, _, _) = app.send(Request::get(format!("/api/models/{plain}/voxl")).body(Body::empty()).unwrap()).await;
+    let (status, _, _) = app
+        .send(Request::get(format!("/api/models/{plain}/voxl?variant=resupported")).body(Body::empty()).unwrap())
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, detail) = app.get(&format!("/api/models/{plain}")).await;
     assert_eq!(detail["supportSplit"], false);
@@ -573,6 +580,132 @@ async fn presupported_model_downloads_as_voxl_with_its_supports() {
     assert_eq!(status, StatusCode::OK);
     let (_, detail) = app.get(&format!("/api/models/{knight}")).await;
     assert_eq!(detail["supportSplit"], true);
+}
+
+/// Every DragonFruit support entity a VOXL's `SUPP` chunk holds, of every kind.
+fn support_entity_count(voxl: &[u8]) -> usize {
+    let supports = voxl_chunk(voxl, b"SUPP");
+    ["roots", "trunks", "branches", "leaves", "twigs", "sticks", "braces", "knots", "kickstands"]
+        .iter()
+        .map(|kind| supports[*kind].as_array().unwrap().len())
+        .sum()
+}
+
+#[tokio::test]
+async fn the_original_voxl_holds_the_model_mesh_as_its_file_does() {
+    let app = TestApp::new().await;
+    let knight = presupported_knight();
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&knight, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.write("Mini/plain.stl", STL);
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id_of = |name: &str| {
+        result["models"].as_array().unwrap().iter().find(|m| m["name"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // A pre-supported model and one without supports: each mesh whole (supports and all), as
+    // plain mesh with no DragonFruit supports.
+    for (name, faces, extent) in [("knight", knight.len(), [10.0, 10.0, 15.0]), ("plain", 2, [10.0, 10.0, 10.0])] {
+        let id = id_of(name);
+        let (status, headers, bytes) =
+            app.send(Request::get(format!("/api/models/{id}/voxl")).body(Body::empty()).unwrap()).await;
+        assert_eq!(status, StatusCode::OK, "{name}");
+        assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
+        let disposition = headers[header::CONTENT_DISPOSITION].to_str().unwrap();
+        assert!(disposition.contains(&format!("\"{name}.voxl\"")), "{disposition}");
+        assert_eq!(&bytes[..4], b"VOXL");
+        let models = voxl_chunk(&bytes, b"MODL");
+        assert_eq!(models.as_array().unwrap().len(), 1);
+        assert_eq!(models[0]["polygonCount"], faces, "{name}: the whole mesh");
+        let mesh = voxl_mesh_triangles(&bytes);
+        assert_eq!(mesh.len(), faces);
+        let (lo, hi) = bounds(&mesh);
+        assert!((0..3).all(|k| (hi[k] - lo[k] - extent[k]).abs() < 1e-3), "{name}: {lo:?} {hi:?}");
+        assert_eq!(support_entity_count(&bytes), 0, "{name}: no support entities");
+    }
+    // Written each time, never cached.
+    let cached = std::fs::read_dir(app.state.settings.voxl_cache_path()).map(|d| d.count()).unwrap_or(0);
+    assert_eq!(cached, 0);
+}
+
+#[tokio::test]
+async fn an_original_plate_voxl_holds_every_model_mesh_as_its_file_does() {
+    let app = TestApp::new().await;
+    let knight = presupported_knight();
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&knight, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.write("Mini/plain.stl", STL);
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id_of = |name: &str| {
+        result["models"].as_array().unwrap().iter().find(|m| m["name"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let placements = json!([
+        { "modelId": id_of("knight"), "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 },
+        { "modelId": id_of("knight"), "instanceIndex": 1, "xMm": 40, "yMm": 10, "angleRad": 1.2 },
+        { "modelId": id_of("plain"), "instanceIndex": 0, "xMm": -40, "yMm": 0, "angleRad": 0 }
+    ]);
+    let generate = |format: &str| {
+        let body = json!({ "placements": placements, "format": format, "bedWidthMm": 200, "bedDepthMm": 120 });
+        Request::post("/api/plate/generate")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let (status, headers, voxl) = app.send(generate("voxl")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("\"plate.voxl\""));
+    let models = voxl_chunk(&voxl, b"MODL");
+    let counts: Vec<u64> = models.as_array().unwrap().iter().map(|m| m["polygonCount"].as_u64().unwrap()).collect();
+    let knight_faces = knight.len() as u64;
+    assert_eq!(counts, vec![knight_faces, knight_faces, 2], "every model whole, supports and all");
+    assert_eq!(support_entity_count(&voxl), 0, "no support entities");
+
+    // Placed where the resupported plate places the same models.
+    let (status, headers, resupported) = app.send(generate("voxl-resupported")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("\"plate-resupported.voxl\""));
+    let others = voxl_chunk(&resupported, b"MODL");
+    for (a, b) in models.as_array().unwrap().iter().zip(others.as_array().unwrap()) {
+        assert_eq!(a["transform"]["rotation"], b["transform"]["rotation"]);
+        for k in ["x", "y"] {
+            let (pa, pb) =
+                (a["transform"]["position"][k].as_f64().unwrap(), b["transform"]["position"][k].as_f64().unwrap());
+            // The knight's body is centred over its supports, so its centre is where the whole
+            // knight's is in plan.
+            assert!((pa - pb).abs() < 1e-3, "{k}: {pa} vs {pb}");
+        }
+    }
+    assert!(support_entity_count(&resupported) > 0);
+
+    // The same plate as a job: only the models load, no supports are read or meshes repaired.
+    let body = json!({ "placements": placements, "format": "voxl", "bedWidthMm": 200, "bedDepthMm": 120 });
+    let (status, job) = app.json("POST", "/api/plate/jobs", body).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{job}");
+    let job_id = job["jobId"].as_str().unwrap().to_string();
+    let done = loop {
+        let (_, job) = app.get(&format!("/api/plate/jobs/{job_id}")).await;
+        if job["status"] == "completed" || job["status"] == "failed" {
+            break job;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert_eq!(done["status"], "completed", "{done}");
+    assert_eq!((done["fileName"].clone(), done["format"].clone()), (json!("plate.voxl"), json!("voxl")));
+    assert_eq!((done["supportsTotal"].clone(), done["repairsTotal"].clone()), (json!(0), json!(0)));
+    let (status, headers, file) =
+        app.send(Request::get(format!("/api/plate/jobs/{job_id}/file")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.dragonfruit.voxl");
+    assert_eq!(support_entity_count(&file), 0);
 }
 
 #[tokio::test]
@@ -593,7 +726,7 @@ async fn a_plate_voxl_rebuilds_the_supports_of_presupported_models() {
         { "modelId": id_of("knight"), "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 },
         { "modelId": id_of("knight"), "instanceIndex": 1, "xMm": 40, "yMm": 0, "angleRad": 0 },
         { "modelId": id_of("plain"), "instanceIndex": 0, "xMm": -40, "yMm": 0, "angleRad": 0 }
-    ], "format": "voxl", "bedWidthMm": 200, "bedDepthMm": 120 });
+    ], "format": "voxl-resupported", "bedWidthMm": 200, "bedDepthMm": 120 });
     let request = Request::post("/api/plate/generate")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(plate.to_string()))
@@ -624,7 +757,7 @@ async fn indexed_knight(app: &TestApp) -> String {
 async fn plate_voxl(app: &TestApp, id: &str) -> Vec<u8> {
     let plate = json!({ "placements": [
         { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
-    ], "format": "voxl", "bedWidthMm": 200, "bedDepthMm": 120 });
+    ], "format": "voxl-resupported", "bedWidthMm": 200, "bedDepthMm": 120 });
     let request = Request::post("/api/plate/generate")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(plate.to_string()))
@@ -774,7 +907,7 @@ async fn model_voxls_are_not_cached_when_the_cache_size_is_zero() {
 
 async fn download_voxl(app: &TestApp, id: &str) -> Vec<u8> {
     let (status, _, bytes) =
-        app.send(Request::get(format!("/api/models/{id}/voxl")).body(Body::empty()).unwrap()).await;
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=resupported")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(&bytes[..4], b"VOXL");
     bytes
@@ -797,7 +930,8 @@ async fn model_parts_classed_as_supports_are_not_split_off() {
     let (_, detail) = app.get(&format!("/api/models/{id}")).await;
     assert_eq!(detail["supported"], true);
     assert_eq!(detail["supportSplit"], false);
-    let (status, _, _) = app.send(Request::get(format!("/api/models/{id}/voxl")).body(Body::empty()).unwrap()).await;
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=resupported")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _, _) =
         app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
@@ -903,7 +1037,7 @@ async fn the_remeshed_voxl_holds_the_watertight_model_and_the_same_supports() {
 
     let normal = download_voxl(&app, &id).await;
     let (status, headers, remeshed) =
-        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains("knight-remeshed.voxl"));
 
@@ -946,7 +1080,7 @@ async fn a_remeshed_plate_voxl_repairs_each_model_and_keeps_the_supports() {
         ], "format": format, "bedWidthMm": 200, "bedDepthMm": 120 })
     };
     let mut voxls = Vec::new();
-    for format in ["voxl", "voxl-remeshed"] {
+    for format in ["voxl-resupported", "voxl-remeshed"] {
         let request = Request::post("/api/plate/generate")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(plate(format).to_string()))
@@ -967,7 +1101,8 @@ async fn a_download_and_a_plate_asking_for_one_model_at_once_share_its_repair() 
     let id = indexed_knight_of_its_own(&app, 1.01).await;
     let plate = remeshed_plate(&id);
     let shared_before = findamodel::geometry::watertight::repairs_shared();
-    let download = app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap());
+    let download =
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap());
     let plate = app.send(
         Request::post("/api/plate/generate")
             .header(header::CONTENT_TYPE, "application/json")
@@ -1015,7 +1150,7 @@ fn corner_bits(triangles: &[Triangle]) -> Vec<u32> {
 async fn two_remeshed_downloads_of_one_model_at_once_build_it_once() {
     let app = TestApp::new().await;
     let id = indexed_knight_of_its_own(&app, 1.02).await;
-    let uri = format!("/api/models/{id}/voxl?remeshed=true");
+    let uri = format!("/api/models/{id}/voxl?variant=remeshed");
     let ((s1, _, a), (s2, _, b)) = tokio::join!(
         app.send(Request::get(&uri).body(Body::empty()).unwrap()),
         app.send(Request::get(&uri).body(Body::empty()).unwrap())
@@ -1038,7 +1173,7 @@ async fn a_remeshed_plate_after_a_download_uses_the_kept_repair() {
     let app = TestApp::new().await;
     let id = indexed_knight_of_its_own(&app, 1.03).await;
     let (status, _, single) =
-        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     let repaired = app.state.models.repaired_meshes().unwrap().clone();
     assert_eq!((repaired.writes(), repaired.hits()), (1, 0), "the download repaired and kept it");
@@ -1061,7 +1196,7 @@ async fn a_remeshed_plate_after_a_download_uses_the_kept_repair() {
     // A download after the VOXL cache is cleared reads it too, and writes the same mesh.
     std::fs::remove_dir_all(app.state.settings.voxl_cache_path()).unwrap();
     let (status, _, again) =
-        app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap()).await;
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!((repaired.writes(), repaired.hits()), (1, 2));
     assert_eq!(corner_bits(&voxl_mesh_triangles(&again)), corner_bits(&a));

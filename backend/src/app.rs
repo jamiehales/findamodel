@@ -39,7 +39,7 @@ pub struct AppState {
     pub metadata_config: MetadataConfigService,
     pub models: ModelService,
     pub preview: PreviewService,
-    /// Generated model VOXLs (`/api/models/{id}/voxl`).
+    /// Generated resupported and remeshed model VOXLs (`/api/models/{id}/voxl`).
     pub voxl_cache: VoxlCache,
     /// Model VOXLs being built, by [`crate::services::voxl_cache::VoxlCacheKey::id`]: one
     /// build per VOXL at a time.

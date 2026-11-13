@@ -474,11 +474,11 @@ pub struct PlateGenerationJobDto {
     pub error_message: Option<String>,
     pub warning: Option<String>,
     pub skipped_models: Vec<String>,
-    /// Pre-supported models whose supports a VOXL plate reads (0 until the plate reaches them).
+    /// Pre-supported models whose supports a resupported VOXL plate reads (0 until the plate reaches them).
     pub supports_total: i64,
     /// How many of those have been read (or taken from the cache).
     pub supports_read: i64,
-    /// Model meshes a remeshed VOXL plate repairs (0 until the plate reaches them).
+    /// Model meshes a remeshed, resupported VOXL plate repairs (0 until the plate reaches them).
     pub repairs_total: i64,
     /// How many of those are repaired.
     pub repairs_done: i64,

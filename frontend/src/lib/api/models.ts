@@ -361,7 +361,12 @@ export interface PlateGenerationResult {
   skippedModels: string[];
 }
 
-export type PlateFormat = '3mf' | 'stl' | 'glb' | 'voxl' | 'voxl-remeshed';
+/**
+ * `voxl`: the model meshes as their files hold them. `voxl-resupported`: pre-supported models
+ * without their supports, rebuilt as DragonFruit supports. `voxl-remeshed`: the resupported plate
+ * with the model meshes made watertight.
+ */
+export type PlateFormat = '3mf' | 'stl' | 'glb' | 'voxl' | 'voxl-resupported' | 'voxl-remeshed';
 
 /** Plate context for formats that carry it (VOXL centres on the bed and names the plate). */
 export interface PlateOptions {
@@ -382,10 +387,10 @@ export interface PlateGenerationJob {
   errorMessage: string | null;
   warning: string | null;
   skippedModels: string[];
-  /** Pre-supported models whose supports a VOXL plate reads (0 until it reaches them). */
+  /** Pre-supported models whose supports a resupported VOXL plate reads (0 until it reaches them). */
   supportsTotal: number;
   supportsRead: number;
-  /** Model meshes a remeshed VOXL plate repairs (0 until it reaches them). */
+  /** Model meshes a remeshed, resupported VOXL plate repairs (0 until it reaches them). */
   repairsTotal: number;
   repairsDone: number;
 }
@@ -446,11 +451,14 @@ export async function fetchPlateGenerationJob(jobId: string): Promise<PlateGener
 }
 
 /**
- * The model without its supports, with their layout as DragonFruit supports. `remeshed`: the
+ * `original`: the model's mesh as its file holds it. `resupported`: the model without its
+ * supports, with their layout as DragonFruit supports. `remeshed`: the resupported VOXL with the
  * model mesh made watertight (the supports are the same).
  */
-export function getModelVoxlUrl(id: string, remeshed = false): string {
-  return apiUrl(`/api/models/${id}/voxl${remeshed ? '?remeshed=true' : ''}`);
+export type ModelVoxlVariant = 'original' | 'resupported' | 'remeshed';
+
+export function getModelVoxlUrl(id: string, variant: ModelVoxlVariant = 'original'): string {
+  return apiUrl(`/api/models/${id}/voxl${variant === 'original' ? '' : `?variant=${variant}`}`);
 }
 
 export function getPlateGenerationDownloadUrl(jobId: string): string {

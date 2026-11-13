@@ -283,7 +283,7 @@ function PrintingListPage() {
     updatePrinter({ id: list.id, printerConfigId: printerId });
   }
 
-  async function handleSavePlate(format: PlateFormat = 'voxl') {
+  async function handleSavePlate(format: PlateFormat = 'voxl-resupported') {
     setPlateWarning(null);
     setPlateError(null);
     setPlateJob(null);
@@ -368,13 +368,13 @@ function PrintingListPage() {
           ? 'Zip ready, downloading'
           : null;
   const plateCurrentFile = plateJob?.currentEntryName?.split('/').pop() ?? null;
-  // A VOXL plate reads the supports of its pre-supported models once every model is loaded.
+  // A resupported VOXL plate reads the supports of its pre-supported models once every model is loaded.
   const plateSupportsPhase =
     plateJob?.status === 'running' &&
     plateJob.supportsTotal > 0 &&
     plateJob.completedEntries >= plateJob.totalEntries;
   const plateSupportsDone = plateSupportsPhase && plateJob.supportsRead >= plateJob.supportsTotal;
-  // A remeshed VOXL plate then repairs each model mesh.
+  // A remeshed, resupported VOXL plate then repairs each model mesh.
   const plateRepairPhase =
     plateJob?.status === 'running' &&
     plateJob.repairsTotal > 0 &&
@@ -485,8 +485,11 @@ function PrintingListPage() {
                   </MenuTrigger>
                   <MenuContent align="end">
                     <MenuItem onSelect={() => handleSavePlate('voxl')}>Export as VOXL</MenuItem>
+                    <MenuItem onSelect={() => handleSavePlate('voxl-resupported')}>
+                      Export as VOXL (resupported)
+                    </MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('voxl-remeshed')}>
-                      Export as VOXL (remeshed)
+                      Export as VOXL (remeshed, resupported)
                     </MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('3mf')}>Export as 3MF</MenuItem>
                     <MenuItem onSelect={() => handleSavePlate('stl')}>Export as STL</MenuItem>

@@ -36,6 +36,9 @@ import QuantityStepper from '../components/QuantityStepper';
 import styles from './ModelPage.module.css';
 import { formatBytes } from '../lib/utils';
 
+/** Sliced files that hold no mesh, so have no VOXL. */
+const NON_MESH_FILE_TYPES = ['lys', 'lyt', 'ctb'];
+
 function filterHref(key: string, value: string): string {
   return `/?${new URLSearchParams({ [key]: value }).toString()}`;
 }
@@ -143,7 +146,10 @@ function ModelPage() {
 
   const hasHulls = !!(model.convexHull || model.concaveHull || model.convexSansRaftHull);
   const originalName = `${model.name}.${model.fileType}`;
-  const canDownloadVoxl = model.supportSplit ?? splitGeometry?.supports != null;
+  // Every model with a mesh has its original VOXL; a pre-supported one also has the resupported
+  // and remeshed VOXLs when its supports can be split off.
+  const canDownloadVoxl = !NON_MESH_FILE_TYPES.includes(model.fileType.toLowerCase());
+  const canDownloadResupportedVoxl = model.supportSplit ?? splitGeometry?.supports != null;
 
   return (
     <PageLayout>
@@ -212,14 +218,26 @@ function ModelPage() {
                       DragonFruit .voxl
                     </a>
                   </MenuItem>
-                  <MenuItem asChild>
-                    <a
-                      href={getModelVoxlUrl(model.id, true)}
-                      download={`${model.name}-remeshed.voxl`}
-                    >
-                      DragonFruit .voxl (remeshed)
-                    </a>
-                  </MenuItem>
+                  {canDownloadResupportedVoxl && (
+                    <>
+                      <MenuItem asChild>
+                        <a
+                          href={getModelVoxlUrl(model.id, 'resupported')}
+                          download={`${model.name}-resupported.voxl`}
+                        >
+                          DragonFruit .voxl (resupported)
+                        </a>
+                      </MenuItem>
+                      <MenuItem asChild>
+                        <a
+                          href={getModelVoxlUrl(model.id, 'remeshed')}
+                          download={`${model.name}-remeshed.voxl`}
+                        >
+                          DragonFruit .voxl (remeshed, resupported)
+                        </a>
+                      </MenuItem>
+                    </>
+                  )}
                 </MenuContent>
               </Menu>
             ) : (
