@@ -12,7 +12,10 @@
 //!    not counted as parts in the steps below.
 //! 2. A component that stays below the raft height is raft.
 //! 3. The seed is the largest component above the raft. Components with at least
-//!    1/[`MODEL_SEED_DIVISOR`] of its triangles are model parts.
+//!    1/[`MODEL_SEED_DIVISOR`] of its triangles are model parts, unless they are large
+//!    ([`LATTICE_MIN_TRIANGLES`]), thin, far sparser than the seed and nearly all repeated
+//!    triangles: a support lattice joined into one component (see
+//!    [`LATTICE_MIN_REPEATED_FRACTION`]), weighed in step 5 instead.
 //! 4. Smaller components with at least [`MODEL_MIN_TRIANGLES`] triangles and at least
 //!    1/[`MODEL_DENSITY_DIVISOR`] of the seed's triangles per mm² of surface are sculpted
 //!    model details (kitbashed parts, buttons, pouches). Support primitives keep a fixed
@@ -68,7 +71,7 @@ use super::support_layout::closest_on_triangle;
 use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 6;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 7;
 
 /// Components with at least 1/N of the seed's triangles are model parts. Styles: all, and the
 /// unsupported group (multi-part kits). Sweep: fragile: 6 or 11 each change one corpus model's
@@ -90,6 +93,23 @@ const MODEL_DENSITY_DIVISOR: f64 = 4.0;
 /// balls and ball-and-strut shells, which are dense like a sculpt). Styles: all. Sweep: no effect
 /// on the round trip; 0.67 changes which fakes are classified (none kept).
 const PRIMITIVE_MIN_REPEATED_FRACTION: f64 = 0.5;
+
+/// Components large enough to be model parts by their triangle count (step 3 of the module docs)
+/// but under 1/[`MODEL_DENSITY_DIVISOR`] of the seed's density, with at least this fraction of
+/// repeated triangles, and either open or closed and no thicker than a support
+/// ([`MAX_SUPPORT_THICKNESS_MM`]), are support lattices: rods and braces meeting edge to edge make
+/// one component, which can outgrow 1/[`MODEL_SEED_DIVISOR`] of the seed. They are weighed like
+/// the smaller components (step 5). A thick coarse part (a kit's panel) stays a model part. Styles: lattice supports (Aradia Miniatures' 24d8c4f8 base: one
+/// 170k-triangle lattice, 18 times sparser than the seed and all of it repeated, beside a seed with
+/// 36% repeated). Sweep: not run.
+const LATTICE_MIN_REPEATED_FRACTION: f64 = 0.9;
+
+/// Fewest triangles for a component to be weighed as a support lattice
+/// ([`LATTICE_MIN_REPEATED_FRACTION`]). Low-poly kits have seeds of under 1,200 triangles, so their
+/// thin repeated plates and rim strips (320 to 1,840 triangles) are large by the seed's count but
+/// are model parts. Styles: lattice supports (24d8c4f8's lattice has 170k triangles) and Engin3d's
+/// hard-surface kits (2e794398, f93786f7 and 785e5e53 have such plates). Sweep: not run.
+const LATTICE_MIN_TRIANGLES: u32 = 5_000;
 
 /// Fewest congruent copies for a triangle to count as repeated. Styles: all. Sweep: no effect on
 /// the round trip; 5 changes which fakes are classified (none kept).
@@ -365,8 +385,21 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
     let (_, seed) = parts().filter(|(_, s)| s.top > raft_height_mm).max_by_key(|(_, s)| s.triangles)?;
     let model_min_triangles = (seed.triangles / MODEL_SEED_DIVISOR).max(MODEL_MIN_TRIANGLES);
     let model_min_density = seed.density() / MODEL_DENSITY_DIVISOR;
-    let model_top =
-        parts().filter(|(_, s)| s.triangles >= model_min_triangles).map(|(_, s)| s.top).fold(seed.top, f32::max);
+    // Parts large enough for step 3 but far sparser than the seed: a support lattice joined into
+    // one component is one of them (see [`LATTICE_MIN_REPEATED_FRACTION`]).
+    let sparse_large: Vec<bool> = stats
+        .iter()
+        .zip(&scrap)
+        .map(|(s, &scrap)| {
+            !scrap
+                && !is_inner_shell(s)
+                && s.top > raft_height_mm
+                && s.triangles >= model_min_triangles.max(LATTICE_MIN_TRIANGLES)
+                && s.density() < model_min_density
+                // A closed part thicker than a support is a coarse model part (a kit's panel).
+                && !(s.closed && s.thickness() > MAX_SUPPORT_THICKNESS_MM)
+        })
+        .collect();
 
     let dense_detail: Vec<bool> = stats
         .iter()
@@ -392,11 +425,18 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
                 && (MODEL_MIN_TRIANGLES..model_min_triangles).contains(&s.triangles)
         })
         .collect();
-    let either: Vec<bool> = dense_detail.iter().zip(&solid_part).map(|(a, b)| *a || *b).collect();
+    let either: Vec<bool> =
+        dense_detail.iter().zip(&solid_part).zip(&sparse_large).map(|((a, b), c)| *a || *b || *c).collect();
     let fractions = repeated_fractions(triangles, &component_of, &either);
     let primitive: Vec<bool> = fractions.iter().map(|&f| f >= PRIMITIVE_MIN_REPEATED_FRACTION).collect();
     let sculpted: Vec<bool> =
         fractions.iter().zip(&solid_part).map(|(&f, &solid)| solid && f < SCULPTED_MAX_REPEATED_FRACTION).collect();
+    let lattice: Vec<bool> =
+        fractions.iter().zip(&sparse_large).map(|(&f, &large)| large && f >= LATTICE_MIN_REPEATED_FRACTION).collect();
+    let model_top = parts()
+        .filter(|(c, s)| s.triangles >= model_min_triangles && !lattice[*c])
+        .map(|(_, s)| s.top)
+        .fold(seed.top, f32::max);
 
     let mut component_is_support: Vec<bool> = stats
         .iter()
@@ -406,7 +446,10 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
                 false
             } else if s.top <= raft_height_mm {
                 true
-            } else if s.triangles >= model_min_triangles || (dense_detail[c] && !primitive[c]) || sculpted[c] {
+            } else if (s.triangles >= model_min_triangles && !lattice[c])
+                || (dense_detail[c] && !primitive[c])
+                || sculpted[c]
+            {
                 false
             } else {
                 s.top < model_top - TOP_MODEL_BAND_MM
@@ -947,6 +990,65 @@ pub(crate) mod tests {
         let (model, supports) = separate(&body(), RAFT, Some(true));
         assert_eq!(model.len(), 10_800);
         assert!(supports.is_none());
+    }
+
+    /// An open wall of 1 mm squares (5,280 triangles, 2 per mm²) beside the body, from the bed to
+    /// 12 mm: one component as large as a model part by its count and as a lattice. `jitter` moves its inner
+    /// corners so its triangles are all different.
+    fn wall(jitter: f32) -> Vec<Triangle> {
+        let at = |i: usize, j: usize| {
+            let inner = i > 0 && i < 220 && j > 0 && j < 12;
+            let k = ((i as u32).wrapping_mul(73_856_093) ^ (j as u32).wrapping_mul(19_349_663)) % 1000;
+            let d = if inner { jitter * (k as f32 / 1000.0 - 0.5) } else { 0.0 };
+            Vec3::new(-221.0 + i as f32 + d, j as f32 + d * 0.7, -2.0)
+        };
+        let mut out = Vec::new();
+        for i in 0..220 {
+            for j in 0..12 {
+                out.push(Triangle::new(at(i, j), at(i + 1, j), at(i + 1, j + 1), Vec3::UP));
+                out.push(Triangle::new(at(i, j), at(i + 1, j + 1), at(i, j + 1), Vec3::UP));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_large_sparse_lattice_of_repeated_triangles_is_support() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let start = mesh.len();
+        mesh.extend(wall(0.0));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.confident);
+        assert!(c.is_support[start..].iter().all(|s| *s), "the lattice goes with the supports");
+        assert!(c.is_support[..10_800].iter().all(|s| !*s), "the body stays");
+    }
+
+    #[test]
+    fn a_large_sparse_part_of_distinct_triangles_stays_with_the_model() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let start = mesh.len();
+        mesh.extend(wall(0.4));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[start..].iter().all(|s| !*s), "a coarse part, not a lattice");
+        assert_eq!(support_count(&c), 50 * 48);
+    }
+
+    /// A closed 0.5 mm plate of 1,728 triangles beside the body, all repeated and a sixth of the
+    /// body's density, with its top under the body's: a low-poly kit's plate (Engin3d), large by
+    /// the seed's count but too small to be a lattice.
+    #[test]
+    fn a_small_thin_repeated_plate_stays_with_the_model() {
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let start = mesh.len();
+        let plate = cuboid(Vec3::new(12.0, 4.5, 0.0), Vec3::new(12.5, 13.5, 30.0), 12);
+        assert_eq!(plate.len(), 1_728);
+        mesh.extend(plate);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[start..].iter().all(|s| !*s), "a kit plate, not a lattice");
+        assert_eq!(support_count(&c), 50 * 48);
     }
 
     #[test]
