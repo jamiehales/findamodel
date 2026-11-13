@@ -6,6 +6,7 @@ pub mod loader;
 pub mod mesh_transfer;
 pub mod saver;
 pub mod support_layout;
+pub mod support_mesh;
 pub mod support_reader;
 pub mod support_separation;
 pub mod voxl;

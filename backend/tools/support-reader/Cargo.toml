@@ -9,6 +9,7 @@ description = "Runs the backend's support reader on STL files, for the DragonFru
 findamodel = { path = "../.." }
 serde_json = "1"
 rayon = "1"
+flate2 = "1"
 
 [profile.release]
 opt-level = 3

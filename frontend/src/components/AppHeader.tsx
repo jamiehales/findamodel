@@ -17,6 +17,8 @@ export default function AppHeader() {
   const printingListMatch = useMatch('/printing-list/*');
   const printingListsMatch = useMatch('/printing-lists');
   const settingsMatch = useMatch('/settings/*');
+  // The model page's viewer has its own support controls.
+  const modelMatch = useMatch('/model/:id');
   const printingActive = !!(printingListMatch || printingListsMatch);
 
   return (
@@ -43,9 +45,11 @@ export default function AppHeader() {
       </nav>
       <div className={styles.spacer} />
       <IndexerStatus />
-      <Switch checked={showSupports} onCheckedChange={(checked) => setShowSupports(checked)}>
-        Supports
-      </Switch>
+      {!modelMatch && (
+        <Switch checked={showSupports} onCheckedChange={(checked) => setShowSupports(checked)}>
+          Supports
+        </Switch>
+      )}
       <Button
         asChild
         variant="ghost"

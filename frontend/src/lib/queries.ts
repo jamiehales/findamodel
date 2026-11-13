@@ -13,6 +13,8 @@ import {
   updateModelMetadata,
   fetchGeometry,
   fetchSplitGeometry,
+  fetchResupportedGeometry,
+  fetchRepairedGeometry,
   fetchOtherParts,
   fetchExplorer,
   fetchDirectoryConfig,
@@ -79,6 +81,8 @@ export const queryKeys = {
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
   geometry: (id: string) => ['geometry', id] as const,
   splitGeometry: (id: string) => ['split-geometry', id] as const,
+  resupportedGeometry: (id: string) => ['resupported-geometry', id] as const,
+  repairedGeometry: (id: string) => ['repaired-geometry', id] as const,
   explorerDir: (path: string) => ['explorer', 'dir', path] as const,
   explorerConfig: (path: string) => ['explorer', 'config', path] as const,
   explorerFileText: (path: string) => ['explorer', 'file-text', path] as const,
@@ -194,6 +198,29 @@ export function useSplitGeometry(id: string, enabled: boolean = true) {
     queryKey: queryKeys.splitGeometry(id),
     queryFn: () => fetchSplitGeometry(id),
     enabled: !!id && enabled,
+  });
+}
+
+/** The supports as the VOXL export rebuilds them; null when the model has none. */
+export function useResupportedGeometry(id: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: queryKeys.resupportedGeometry(id),
+    queryFn: () => fetchResupportedGeometry(id),
+    enabled: !!id && enabled,
+    staleTime: Infinity,
+  });
+}
+
+/** The watertight repair of the model body. A repair can take a minute, so it is fetched only
+ * when asked for, kept, and not retried. */
+export function useRepairedGeometry(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.repairedGeometry(id),
+    queryFn: () => fetchRepairedGeometry(id),
+    enabled: !!id && enabled,
+    staleTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 

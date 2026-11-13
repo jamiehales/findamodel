@@ -9,10 +9,12 @@
 
 use rustc_hash::FxHashMap;
 
-use super::LoadedGeometry;
+use super::{LoadedGeometry, Triangle, Vec3};
 
 pub const CONTENT_TYPE: &str = "application/vnd.findamodel.mesh";
 pub const CONTENT_TYPE_SPLIT: &str = "application/vnd.findamodel.mesh-split";
+/// A mesh with a flag per face ([`encode_flagged`]).
+pub const CONTENT_TYPE_REPAIRED: &str = "application/vnd.findamodel.mesh-repaired";
 
 const MAGIC: u32 = 0x4853_4D46; // "FMSH" little-endian
 const VERSION: u8 = 1;
@@ -100,6 +102,41 @@ pub fn encode_split_envelope(body: &[u8], supports: &[u8]) -> Vec<u8> {
     envelope.extend_from_slice(&(supports.len() as u32).to_le_bytes());
     envelope.extend_from_slice(supports);
     envelope
+}
+
+/// Wraps an encoded mesh with one flag per triangle (in the mesh's triangle order):
+/// `[meshLength:u32][mesh][faceCount:u32][flags]`, the flags packed eight to a byte, the first
+/// triangle's in the lowest bit.
+pub fn encode_flagged(mesh: &[u8], flags: &[bool]) -> Vec<u8> {
+    let mut envelope = Vec::with_capacity(8 + mesh.len() + flags.len().div_ceil(8));
+    envelope.extend_from_slice(&(mesh.len() as u32).to_le_bytes());
+    envelope.extend_from_slice(mesh);
+    envelope.extend_from_slice(&(flags.len() as u32).to_le_bytes());
+    for chunk in flags.chunks(8) {
+        envelope.push(chunk.iter().enumerate().fold(0u8, |byte, (i, &f)| byte | (u8::from(f) << i)));
+    }
+    envelope
+}
+
+/// Triangles already in the frontend frame (Y-up, X/Z centred on the model, the plate at Y = 0)
+/// with bounds that cover them all, for [`encode`]: a mesh built in the model's frame (rebuilt
+/// supports, a repaired body) need not span the model's own box.
+pub fn covering(triangles: Vec<Triangle>) -> LoadedGeometry {
+    let (mut x, mut y, mut z) = (0.0f32, 0.0f32, 0.0f32);
+    for v in triangles.iter().flat_map(|t| [t.v0, t.v1, t.v2]) {
+        x = x.max(v.x.abs());
+        y = y.max(v.y);
+        z = z.max(v.z.abs());
+    }
+    let centre = Vec3::new(0.0, y / 2.0, 0.0);
+    LoadedGeometry {
+        triangles,
+        sphere_centre: centre,
+        sphere_radius: Vec3::new(x, y / 2.0, z).length(),
+        dimension_x_mm: 2.0 * x,
+        dimension_y_mm: y,
+        dimension_z_mm: 2.0 * z,
+    }
 }
 
 fn quantize(value: f32, min: f32, range: f32) -> u16 {
@@ -233,6 +270,33 @@ mod tests {
         assert_eq!(support_len, supports.len());
         assert_eq!(read_u32(&envelope, support_offset + 4), MAGIC);
         assert_eq!(read_u32(&envelope, support_offset + 4 + 12) as usize, support_triangles.len());
+    }
+
+    #[test]
+    fn flagged_envelope_packs_one_bit_per_triangle() {
+        let triangles: Vec<Triangle> = (0..5).flat_map(|i| square(i as f32, 0.0)).collect();
+        let mesh = encode(&geometry_for(triangles));
+        let flags: Vec<bool> = (0..10).map(|i| i == 0 || i == 9 || i == 3).collect();
+        let envelope = encode_flagged(&mesh, &flags);
+        assert_eq!(read_u32(&envelope, 0) as usize, mesh.len());
+        assert_eq!(read_u32(&envelope, 4), MAGIC);
+        let at = 4 + mesh.len();
+        assert_eq!(read_u32(&envelope, at), 10);
+        assert_eq!(&envelope[at + 4..], &[0b0000_1001, 0b0000_0010]);
+    }
+
+    #[test]
+    fn covering_bounds_span_every_vertex() {
+        let tri =
+            Triangle::new(Vec3::new(-3.0, 0.0, 1.0), Vec3::new(1.0, 7.0, 0.0), Vec3::new(0.0, 2.0, -5.0), Vec3::UP);
+        let g = covering(vec![tri]);
+        assert_eq!((g.dimension_x_mm, g.dimension_y_mm, g.dimension_z_mm), (6.0, 7.0, 10.0));
+        // Every vertex quantises inside the box: none is clamped.
+        let bytes = encode(&g);
+        let q = |i: usize, k: usize| {
+            u16::from_le_bytes([bytes[HEADER_SIZE + i * 6 + k * 2], bytes[HEADER_SIZE + i * 6 + k * 2 + 1]])
+        };
+        assert_eq!((q(0, 0), q(1, 1), q(2, 2)), (0, u16::MAX, 0));
     }
 
     #[test]

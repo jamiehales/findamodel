@@ -16,6 +16,7 @@ use crate::entities::ModelRow;
 use crate::error::{AppError, AppResult, bad_request, not_found};
 use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::support_layout;
+use crate::geometry::support_mesh;
 use crate::geometry::support_reader;
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
@@ -36,6 +37,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/models/{id}/metadata", get(get_metadata).put(update_metadata))
         .route("/api/models/{id}/geometry", get(get_geometry))
         .route("/api/models/{id}/geometry/split", get(get_split_geometry))
+        .route("/api/models/{id}/geometry/resupported", get(get_resupported_geometry))
+        .route("/api/models/{id}/geometry/repaired", get(get_repaired_geometry))
         .route("/api/models/{id}/voxl", get(get_voxl))
         .route("/api/query", get(query_models))
         .route("/api/query/options", get(query_options))
@@ -376,11 +379,47 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
         }
     }
 
+    let (row, body, layout) = read_export(state, id).await?.ok_or_else(not_found)?;
+    let name = row.file_name.clone();
+    let cache = state.voxl_cache.clone();
+    let repaired_store = state.models.repaired_meshes().cloned();
+    let repair_threads = state.app_config.repair_threads();
+    let (bytes, repaired) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        // Only the model mesh is repaired; the supports stay DragonFruit supports.
+        let (body, repaired) = if remeshed {
+            let repair = repaired_meshes::repair(&body, repaired_store.as_ref(), repair_threads);
+            (repair.triangles, Some(repair.key))
+        } else {
+            (body, None)
+        };
+        let mesh = VoxlMesh { name: &name, triangles: &body, supports: Some(&layout) };
+        let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
+        let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();
+        if let Some(key) = key {
+            cache.put(&key, &bytes);
+        }
+        Ok((bytes, repaired))
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
+    if let (Some(key), Some(store)) = (repaired, state.models.repaired_meshes()) {
+        store.index_or_warn(&state.db, &row, &key).await;
+    }
+    Ok(bytes.into())
+}
+
+/// A pre-supported model's export: its row, its body (Z-up, the supports split off) and its
+/// supports read from their mesh ([`support_reader`]). From the model's export entry when it is
+/// current; otherwise split (recording what was found) and read, and the entry written. None
+/// when the model is not supported, cannot be loaded or has no supports to rebuild.
+async fn read_export(
+    state: &AppState,
+    id: uuid::Uuid,
+) -> AppResult<Option<(ModelRow, Vec<Triangle>, support_layout::SupportLayout)>> {
     let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id).await? else {
-        return Err(not_found());
+        return Ok(None);
     };
     let row = model.clone();
-    let name = model.file_name.clone();
     // The model's export entry, shared with plate exports: used when it is current.
     let exports = state.models.support_exports().cloned();
     let export_key = support_exports::key_for(&model, raft_height_mm, checked);
@@ -427,35 +466,71 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
                     exports.release(&state.db, &previous).await;
                 }
             }
-            let (_, body, layout) = export.ok_or_else(not_found)?;
+            let Some((_, body, layout)) = export else { return Ok(None) };
             (body, layout)
         }
     };
-    let cache = state.voxl_cache.clone();
-    let repaired_store = state.models.repaired_meshes().cloned();
-    let repair_threads = state.app_config.repair_threads();
-    let (bytes, repaired) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
-        // Only the model mesh is repaired; the supports stay DragonFruit supports.
-        let (body, repaired) = if remeshed {
-            let repair = repaired_meshes::repair(&body, repaired_store.as_ref(), repair_threads);
-            (repair.triangles, Some(repair.key))
-        } else {
-            (body, None)
-        };
-        let mesh = VoxlMesh { name: &name, triangles: &body, supports: Some(&layout) };
-        let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
-        let bytes = voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None)?.into_inner();
-        if let Some(key) = key {
-            cache.put(&key, &bytes);
-        }
-        Ok((bytes, repaired))
+    Ok(Some((row, body, layout)))
+}
+
+/// The supports of a pre-supported model as findamodel rebuilds them for its VOXL, meshed from
+/// the VOXL's support document ([`support_mesh`], at the slicer's default tip offset), in the
+/// viewer's frame (Y-up, centred like the model's geometry): one FMSH mesh. 204 when the model
+/// has no supports to rebuild.
+async fn get_resupported_geometry(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    IdPath(id): IdPath,
+) -> AppResult<Response> {
+    let Some((_, _, layout)) = read_export(&state, id).await? else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
+    let payload = tokio::task::spawn_blocking(move || {
+        let document = voxl::supports_document(&layout, voxl::SPHERE_TIPS_ENABLED);
+        let built = support_mesh::build_triangles(&document, f64::from(voxl::NOMINAL_TIP_OFFSET_MM));
+        (!built.is_empty()).then(|| mesh_transfer::encode(&mesh_transfer::covering(to_z_up(&built))))
     })
     .await
-    .map_err(anyhow::Error::from)??;
-    if let (Some(key), Some(store)) = (repaired, state.models.repaired_meshes()) {
+    .map_err(anyhow::Error::from)?;
+    match payload {
+        Some(payload) => Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE)], payload).into_response()),
+        None => Ok(StatusCode::NO_CONTENT.into_response()),
+    }
+}
+
+/// The model's body made watertight ([`crate::geometry::watertight::repair_model`], the repair
+/// the remeshed VOXL holds, from the repaired-mesh store when it was repaired before) in the
+/// viewer's frame, with a flag for each face the repair added (not one of the body's own): the
+/// mended spots and filled voids. A pre-supported model's body is its model without the supports;
+/// any other model is repaired whole. `[meshLength:u32][FMSH][faceCount:u32][flag bits]`.
+async fn get_repaired_geometry(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    IdPath(id): IdPath,
+) -> AppResult<Response> {
+    let (row, body) = match read_export(&state, id).await? {
+        Some((row, body, _)) => (row, body),
+        None => {
+            let (row, geometry) = load_geometry(&state, id).await?;
+            let geometry =
+                geometry.ok_or_else(|| AppError::Internal(anyhow::anyhow!("Failed to load model geometry")))?;
+            (row, to_z_up(&geometry.triangles))
+        }
+    };
+    let store = state.models.repaired_meshes().cloned();
+    let threads = state.app_config.repair_threads();
+    let (payload, key) = tokio::task::spawn_blocking(move || {
+        let repair = repaired_meshes::repair(&body, store.as_ref(), threads);
+        let changed = crate::geometry::watertight::changed_faces(&body, &repair.triangles);
+        let geometry = mesh_transfer::covering(to_z_up(&repair.triangles));
+        (mesh_transfer::encode_flagged(&mesh_transfer::encode(&geometry), &changed), repair.key)
+    })
+    .await
+    .map_err(anyhow::Error::from)?;
+    if let Some(store) = state.models.repaired_meshes() {
         store.index_or_warn(&state.db, &row, &key).await;
     }
-    Ok(bytes.into())
+    Ok(([(header::CONTENT_TYPE, mesh_transfer::CONTENT_TYPE_REPAIRED)], payload).into_response())
 }
 
 fn voxl_response(download_name: &str, bytes: Bytes) -> Response {

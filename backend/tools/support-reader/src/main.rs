@@ -11,6 +11,7 @@
 //! support-reader export MODEL.stl SUPPORT.stl [RAFT_MM]     a plate export's per-model work, read
 //!                                                           and from the cache
 //! See README.md for every command's arguments and output.
+//! support-reader build IN.voxl OUT.stl [TIP_OFFSET_MM]   the VOXL's supports as support_mesh meshes them
 //! support-reader pieces MODEL.stl SUPPORT.stl CONTACTS.json OUT.json
 //!                                                           pieces, contacts taken from a JSON
 //!                                                           file with {"contacts": [{at, d}]}
@@ -23,6 +24,24 @@ use std::path::Path;
 
 mod overlap;
 mod touch;
+
+/// The data of a VOXL's first chunk tagged `tag`, inflated.
+fn voxl_chunk(path: &Path, tag: [u8; 4]) -> Vec<u8> {
+    use std::io::Read;
+    let b = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let u32_at = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+    let count = u32_at(8);
+    for i in 0..count {
+        let e = 16 + i * 20;
+        if b[e..e + 4] == tag {
+            let (offset, size) = (u32_at(e + 8), u32_at(e + 12));
+            let mut out = Vec::new();
+            flate2::read::ZlibDecoder::new(&b[offset..offset + size]).read_to_end(&mut out).unwrap();
+            return out;
+        }
+    }
+    panic!("{}: no {} chunk", path.display(), String::from_utf8_lossy(&tag));
+}
 
 fn load_stl(path: &Path) -> Vec<Triangle> {
     let b = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -177,6 +196,30 @@ fn main() {
                         "entry_bytes": entry_bytes, "same": same,
                         "supports": export.as_ref().map(|e| e.2.supports.len()) })
             );
+        }
+        "build" => {
+            // build IN.voxl OUT.stl [TIP_OFFSET_MM]: the supports of a VOXL as the backend meshes its
+            // support document (geometry::support_mesh), Z-up, for comparing
+            // with df_build.ts's .df_support.stl. One JSON line.
+            let supp = voxl_chunk(Path::new(&args[1]), *b"SUPP");
+            let document: Value = serde_json::from_slice(&supp).unwrap();
+            let offset: f64 = args.get(3).map(|x| x.parse().unwrap()).unwrap_or(0.05);
+            let t = std::time::Instant::now();
+            let tris = findamodel::geometry::support_mesh::build(&document, offset);
+            let build_s = t.elapsed().as_secs_f64();
+            let mut stl = vec![0u8; 80];
+            stl.extend_from_slice(&(tris.len() as u32).to_le_bytes());
+            for t in &tris {
+                stl.extend_from_slice(&[0u8; 12]);
+                for p in t {
+                    for c in p {
+                        stl.extend_from_slice(&c.to_le_bytes());
+                    }
+                }
+                stl.extend_from_slice(&[0u8; 2]);
+            }
+            std::fs::write(&args[2], stl).unwrap();
+            println!("{}", json!({ "triangles": tris.len(), "build_s": build_s }));
         }
         other => panic!("unknown command {other}"),
     }

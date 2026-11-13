@@ -1,0 +1,42 @@
+.controls {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-4));
+}
+
+/* A panel behind the label so it reads over the scene. */
+.repaired {
+  padding: var(--space-1) var(--space-2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.error {
+  position: absolute;
+  top: calc(var(--space-4) + 40px);
+  left: var(--space-4);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--destructive-text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+  pointer-events: none;
+}

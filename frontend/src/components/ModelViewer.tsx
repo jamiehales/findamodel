@@ -1,10 +1,22 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGeometry, useModel, useSplitGeometry } from '../lib/queries';
+import {
+  Checkbox,
+  SegmentedControl,
+  SegmentedControlItem,
+  Spinner,
+} from '@jamiehales/ui-kit/mostlymaking';
+import {
+  useGeometry,
+  useModel,
+  useRepairedGeometry,
+  useResupportedGeometry,
+  useSplitGeometry,
+} from '../lib/queries';
 import { createPreviewMaterial } from '../lib/previewShading';
-import { useRenderControls } from './RenderControlsContext';
+import styles from './ModelViewer.module.css';
 
 const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(1, 0.8, -1).normalize();
 const FRAMING_PADDING = 1.15;
@@ -17,6 +29,17 @@ const CONVEX_HULL_COLOR = '#b892c0';
 const CONCAVE_HULL_COLOR = '#8fb894';
 const SANS_RAFT_HULL_COLOR = '#94a7cc';
 const SCENE_BACKGROUND = '#18171a';
+
+/** The `--slate` design token (accent for the faces a repair made), read once from the page. */
+function repairedFaceColor(): string {
+  const token =
+    typeof document === 'undefined'
+      ? ''
+      : getComputedStyle(document.documentElement).getPropertyValue('--slate').trim();
+  return /^#[0-9a-f]{6}$/i.test(token) ? token : SANS_RAFT_HULL_COLOR;
+}
+
+type SupportMode = 'supported' | 'resupported' | 'unsupported';
 
 function SceneBg({ color }: { color: string }) {
   return <color attach="background" args={[color]} />;
@@ -145,6 +168,8 @@ function calculateCameraDistanceForBox(
 
 interface GeometryModelProps {
   geometry: import('../lib/api').GeometryResponse;
+  /** One flag per triangle: drawn in the repaired-face accent when set. */
+  changed?: Uint8Array | null;
   color: string;
   convexHull: string | null;
   concaveHull: string | null;
@@ -159,21 +184,60 @@ function usePreviewMaterial(color: string, opacity?: number): THREE.ShaderMateri
   return material;
 }
 
+/** The mesh's triangles, those flagged in `changed` last and in a second draw group. */
+function buildBodyGeometry(
+  data: import('../lib/api').GeometryResponse,
+  changed: Uint8Array | null | undefined,
+): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+  if (!changed) {
+    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    return geo;
+  }
+  const source = data.indices;
+  const sorted = new (source.constructor as Uint16ArrayConstructor | Uint32ArrayConstructor)(
+    source.length,
+  );
+  let changedCount = 0;
+  for (let t = 0; t < data.triangleCount; t++) changedCount += changed[t];
+  const kept = (data.triangleCount - changedCount) * 3;
+  let keptAt = 0;
+  let changedAt = kept;
+  for (let t = 0; t < data.triangleCount; t++) {
+    const triangle = source.subarray(t * 3, t * 3 + 3);
+    if (changed[t]) {
+      sorted.set(triangle, changedAt);
+      changedAt += 3;
+    } else {
+      sorted.set(triangle, keptAt);
+      keptAt += 3;
+    }
+  }
+  geo.setIndex(new THREE.BufferAttribute(sorted, 1));
+  geo.addGroup(0, kept, 0);
+  geo.addGroup(kept, sorted.length - kept, 1);
+  return geo;
+}
+
 function GeometryModel({
   geometry: data,
+  changed,
   color,
   convexHull,
   concaveHull,
   convexSansRaftHull,
   raftHeightMm,
 }: GeometryModelProps) {
-  const bufferGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
-    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    return geo;
-  }, [data]);
-  const material = usePreviewMaterial(color);
+  const bufferGeometry = useMemo(() => buildBodyGeometry(data, changed), [data, changed]);
+  useEffect(() => () => bufferGeometry.dispose(), [bufferGeometry]);
+  const bodyMaterial = usePreviewMaterial(color);
+  const changedColor = useMemo(repairedFaceColor, []);
+  const changedMaterial = usePreviewMaterial(changedColor);
+  const material = useMemo(
+    () => (changed ? [bodyMaterial, changedMaterial] : bodyMaterial),
+    [changed, bodyMaterial, changedMaterial],
+  );
 
   const hullCoords = useMemo((): Array<[number, number]> | null => {
     if (!convexHull) return null;
@@ -242,6 +306,7 @@ function SupportGeometryMesh({ geometry: data, visible }: SupportGeometryMeshPro
     geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
     return geo;
   }, [data]);
+  useEffect(() => () => bufferGeometry?.dispose(), [bufferGeometry]);
   const material = usePreviewMaterial(SUPPORT_COLOR, 0.5);
 
   if (!data || !bufferGeometry) return null;
@@ -282,7 +347,6 @@ export default function ModelViewer({
   supported,
 }: ModelViewerProps) {
   const { data: model, isPending, isError } = useModel(modelId);
-  const { showSupports, setSupportsToggleAvailable } = useRenderControls();
   const isSupportModel = supported === true;
   const { data: splitData, isPending: isSplitPending } = useSplitGeometry(modelId, isSupportModel);
   const shouldFetchFullGeometry = !isSupportModel || splitData === null;
@@ -290,8 +354,29 @@ export default function ModelViewer({
     modelId,
     shouldFetchFullGeometry,
   );
+  const hasSupportMesh = isSupportModel && splitData?.supports != null;
+  // Rebuilt from the original supports, so only asked for when there are some.
+  const { data: resupported } = useResupportedGeometry(modelId, hasSupportMesh);
+  const [chosenMode, setChosenMode] = useState<SupportMode | null>(null);
+  const [showRepaired, setShowRepaired] = useState(false);
+  const repaired = useRepairedGeometry(modelId, showRepaired);
+
+  const modes: SupportMode[] = [
+    ...(hasSupportMesh ? (['supported'] as const) : []),
+    ...(resupported ? (['resupported'] as const) : []),
+    'unsupported',
+  ];
+  const mode: SupportMode =
+    chosenMode && modes.includes(chosenMode)
+      ? chosenMode
+      : hasSupportMesh
+        ? 'supported'
+        : 'unsupported';
+
   const color = MODEL_COLOR;
-  const geometryData = isSupportModel && splitData != null ? splitData.body : fullData;
+  const loadedBody = isSupportModel && splitData != null ? splitData.body : fullData;
+  const repairedData = showRepaired ? repaired.data : undefined;
+  const geometryData = repairedData?.geometry ?? loadedBody;
   const orbitTarget = useMemo<[number, number, number]>(
     () => [model?.sphereCentreX ?? 0, model?.sphereCentreY ?? 0, model?.sphereCentreZ ?? 0],
     [model?.sphereCentreX, model?.sphereCentreY, model?.sphereCentreZ],
@@ -305,13 +390,6 @@ export default function ModelViewer({
       ),
     [model?.dimensionXMm, model?.dimensionYMm, model?.dimensionZMm],
   );
-
-  const hasSupportMesh = isSupportModel && splitData?.supports != null;
-
-  useEffect(() => {
-    setSupportsToggleAvailable(hasSupportMesh);
-    return () => setSupportsToggleAvailable(false);
-  }, [hasSupportMesh, setSupportsToggleAvailable]);
 
   const isGeometryPending = isSupportModel
     ? isSplitPending || (splitData === null && isFullGeometryPending)
@@ -351,6 +429,8 @@ export default function ModelViewer({
     );
   }
 
+  const repairing = showRepaired && repaired.isPending;
+
   return (
     <ViewerErrorBoundary fallback={errorFallback}>
       <div style={wrapperStyle}>
@@ -364,14 +444,21 @@ export default function ModelViewer({
           <Grid />
           <GeometryModel
             geometry={geometryData}
+            changed={repairedData?.changed ?? null}
             color={color}
             convexHull={convexHull ?? null}
             concaveHull={concaveHull ?? null}
             convexSansRaftHull={convexSansRaftHull ?? null}
             raftHeightMm={model.raftHeightMm}
           />
-          {isSupportModel && (
-            <SupportGeometryMesh geometry={splitData?.supports ?? null} visible={showSupports} />
+          {hasSupportMesh && (
+            <SupportGeometryMesh
+              geometry={splitData?.supports ?? null}
+              visible={mode === 'supported'}
+            />
+          )}
+          {resupported && (
+            <SupportGeometryMesh geometry={resupported} visible={mode === 'resupported'} />
           )}
           <OrbitControls
             target={orbitTarget}
@@ -386,10 +473,50 @@ export default function ModelViewer({
             }}
           />
         </Canvas>
+        <div className={styles.controls}>
+          {modes.length > 1 && (
+            <SegmentedControl
+              size="sm"
+              aria-label="Supports"
+              value={mode}
+              onValueChange={(value) => setChosenMode(value as SupportMode)}
+            >
+              {modes.map((m) => (
+                <SegmentedControlItem key={m} value={m}>
+                  {MODE_LABELS[m]}
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+          )}
+          <Checkbox
+            className={styles.repaired}
+            checked={showRepaired}
+            onCheckedChange={(checked) => setShowRepaired(checked === true)}
+          >
+            Repaired
+          </Checkbox>
+        </div>
+        {showRepaired && repaired.isError && (
+          <p className={`mm-type-small ${styles.error}`} role="alert">
+            Couldn't repair the mesh.
+          </p>
+        )}
+        {repairing && (
+          <div className={styles.busy} role="status">
+            <Spinner />
+            <span className="mm-type-small">Repairing mesh</span>
+          </div>
+        )}
       </div>
     </ViewerErrorBoundary>
   );
 }
+
+const MODE_LABELS: Record<SupportMode, string> = {
+  supported: 'Supported',
+  resupported: 'Resupported',
+  unsupported: 'Unsupported',
+};
 
 const wrapperStyle: React.CSSProperties = {
   position: 'relative',

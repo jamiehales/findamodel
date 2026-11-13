@@ -152,6 +152,7 @@ function ModelPage() {
       <div className={styles.top}>
         <section className={styles.stage} aria-label="3D preview">
           <ModelViewer
+            key={model.id}
             modelId={model.id}
             convexHull={model.convexHull}
             concaveHull={model.concaveHull}

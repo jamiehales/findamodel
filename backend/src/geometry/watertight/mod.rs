@@ -48,6 +48,21 @@ pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>, thr
     Repair { triangles, key }
 }
 
+/// Which faces of `repaired` (a repair of `original`) the repair made: those whose corners are not
+/// the corners of one of the original's faces (by exact position, in any order or winding). The
+/// repair keeps the exact surface outside the mended spots, so the rest match bit for bit.
+pub fn changed_faces(original: &[Triangle], repaired: &[Triangle]) -> Vec<bool> {
+    use rayon::prelude::*;
+    // `+ 0.0` makes -0 and +0 one corner.
+    let key = |t: &Triangle| {
+        let mut corners = [t.v0, t.v1, t.v2].map(|v| [v.x + 0.0, v.y + 0.0, v.z + 0.0].map(f32::to_bits));
+        corners.sort_unstable();
+        corners
+    };
+    let faces: rustc_hash::FxHashSet<[[u32; 3]; 3]> = original.par_iter().map(key).collect();
+    repaired.par_iter().map(|t| !faces.contains(&key(t))).collect()
+}
+
 /// A mesh's content key ([`mesh_key`]): a SHA-256 of its corners.
 pub type MeshKey = [u8; 32];
 
@@ -268,6 +283,38 @@ mod tests {
         }
         repair_model(&original, None, 0);
         assert_eq!(REPAIR_THREADS.lock().get(&mesh_key(&original)), Some(&1), "at least one");
+    }
+
+    #[test]
+    fn changed_faces_are_those_not_in_the_original_by_their_corners() {
+        let (a, b, c, d) =
+            (Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 0.0, -0.0));
+        let original = [Triangle::new(a, b, c, Vec3::UP), Triangle::new(a, c, Vec3::new(0.0, 0.0, 1.0), Vec3::UP)];
+        let repaired = [
+            // Its corners in another order, and wound the other way: the same face.
+            Triangle::new(b, c, d, Vec3::default()),
+            Triangle::new(Vec3::new(0.0, 0.0, 1.0), c, a, Vec3::default()),
+            // Moved by one bit: made by the repair.
+            Triangle::new(a, b, Vec3::new(0.0, f32::from_bits(1.0f32.to_bits() + 1), 0.0), Vec3::default()),
+        ];
+        assert_eq!(changed_faces(&original, &repaired), vec![false, false, true]);
+    }
+
+    #[test]
+    fn a_closed_mesh_repairs_with_no_changed_faces_and_a_crossing_one_with_some() {
+        let ball = sphere(6.5, 24);
+        let repaired = repair_model(&ball, None, 2).triangles;
+        assert!(changed_faces(&ball, &repaired).iter().all(|c| !c));
+        // Two balls crossing: the union cuts both along the crossing, and keeps the rest.
+        let mut crossing = sphere(5.5, 24);
+        crossing.extend(sphere(5.5, 24).into_iter().map(|t| {
+            let m = |v: Vec3| Vec3::new(v.x + 4.03, v.y + 0.01, v.z + 0.02);
+            Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
+        }));
+        let repaired = repair_model(&crossing, None, 2).triangles;
+        let changed = changed_faces(&crossing, &repaired);
+        let count = changed.iter().filter(|&&c| c).count();
+        assert!(count > 0 && count < changed.len() / 2, "{count} of {}", changed.len());
     }
 
     #[test]

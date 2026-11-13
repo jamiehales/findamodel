@@ -1119,3 +1119,115 @@ fn assert_close(a: &Value, b: &Value, what: &str) {
         panic!("{what}: {d}");
     }
 }
+
+/// An FMSH payload's triangle count and dimensions (x, y, z).
+fn fmsh_header(mesh: &[u8]) -> (usize, [f32; 3]) {
+    assert_eq!(&mesh[..4], b"FMSH");
+    let f = |at: usize| f32::from_le_bytes(mesh[at..at + 4].try_into().unwrap());
+    (u32::from_le_bytes(mesh[12..16].try_into().unwrap()) as usize, [f(16), f(20), f(24)])
+}
+
+/// A repaired-geometry envelope: the mesh payload and its per-face flags.
+fn repaired_parts(bytes: &[u8]) -> (&[u8], Vec<bool>) {
+    let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    let mesh_len = u32_at(0);
+    let mesh = &bytes[4..4 + mesh_len];
+    let faces = u32_at(4 + mesh_len);
+    let bits = &bytes[8 + mesh_len..];
+    assert_eq!(bits.len(), faces.div_ceil(8));
+    (mesh, (0..faces).map(|i| (bits[i / 8] >> (i % 8)) & 1 == 1).collect())
+}
+
+#[tokio::test]
+async fn a_presupported_model_has_rebuilt_supports_and_a_repaired_body_with_its_mended_faces() {
+    let app = TestApp::new().await;
+    let id = indexed_knight_of_its_own(&app, 1.04).await;
+
+    let (status, headers, mesh) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/resupported")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.findamodel.mesh");
+    // The supports of the model's VOXL, meshed from its support document: the same solids, wherever
+    // the download places the model.
+    let voxl = download_voxl(&app, &id).await;
+    let built = findamodel::geometry::support_mesh::build(&voxl_chunk(&voxl, b"SUPP"), 0.05);
+    let (triangles, dims) = fmsh_header(&mesh);
+    let [_, height, _] = dims;
+    assert_eq!(triangles, built.len());
+    assert!(triangles > 0);
+    let (lo, hi) = built.iter().flatten().fold(([f32::MAX; 3], [f32::MIN; 3]), |(lo, hi), p| {
+        ([0, 1, 2].map(|k| lo[k].min(p[k])), [0, 1, 2].map(|k| hi[k].max(p[k])))
+    });
+    // The same height (Z-up against the Y-up mesh's), and as wide as the mesh's box (centred on the
+    // model, so at least the supports' own extent).
+    assert!(lo[2].abs() < 1e-3 && (hi[2] - height).abs() < 1e-3, "{} vs {height}", hi[2]);
+    for (k, d) in [(0, dims[0]), (1, dims[2])] {
+        assert!(hi[k] - lo[k] <= d + 1e-3, "{k}: {} vs {d}", hi[k] - lo[k]);
+    }
+    // From the plate up to the model's underside (the tips sink 0.05 mm into it).
+    assert!(height > 10.0 && height < 10.5, "{height}");
+
+    let (status, headers, bytes) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/repaired")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/vnd.findamodel.mesh-repaired");
+    let (mesh, changed) = repaired_parts(&bytes);
+    let (triangles, [_, height, _]) = fmsh_header(mesh);
+    assert_eq!(changed.len(), triangles);
+    let made = changed.iter().filter(|&&c| c).count();
+    // The crossing block is cut where it meets the body; the rest of the surface is kept.
+    assert!(made > 0 && made < triangles / 2, "{made} of {triangles}");
+    // The body alone (up to 17.05 mm), without the supports.
+    assert!((height - 17.05).abs() < 1e-2, "{height}");
+
+    // Kept: a second fetch reads the same repair back.
+    let (status, _, again) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/repaired")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again, bytes);
+}
+
+#[tokio::test]
+async fn a_model_without_supports_has_no_rebuilt_supports_and_repairs_whole() {
+    let app = TestApp::new().await;
+    let block = cuboid([0.0, 0.0, 0.0], [6.0, 4.0, 3.0], 3);
+    app.write("Kit/block.stl", findamodel::geometry::saver::save_stl(&block, None));
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+
+    let (status, _, body) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/resupported")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_empty());
+
+    let (status, _, bytes) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/repaired")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let (mesh, changed) = repaired_parts(&bytes);
+    let (triangles, dims) = fmsh_header(mesh);
+    // A closed block comes through as it is: nothing mended.
+    assert_eq!(triangles, changed.len());
+    assert!(changed.iter().all(|c| !c));
+    assert!((dims[0] - 6.0).abs() < 1e-3 && (dims[1] - 3.0).abs() < 1e-3 && (dims[2] - 4.0).abs() < 1e-3, "{dims:?}");
+
+    let missing = "/api/models/00000000-0000-0000-0000-000000000000/geometry/repaired";
+    let (status, _, _) = app.send(Request::get(missing).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn rebuilt_and_repaired_geometry_need_a_signed_in_user() {
+    let app = TestApp::with(|s| {
+        s.mode = RuntimeMode::Desktop;
+        s.desktop_token = Some("secret".into());
+    })
+    .await;
+    let id = "00000000-0000-0000-0000-000000000001";
+    for view in ["resupported", "repaired"] {
+        let (status, _) = app.get(&format!("/api/models/{id}/geometry/{view}")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{view}");
+        let (status, _) = app.get(&format!("/api/models/{id}/geometry/{view}?desktopToken=secret")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{view}");
+    }
+}

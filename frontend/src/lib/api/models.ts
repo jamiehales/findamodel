@@ -366,6 +366,42 @@ export async function fetchSplitGeometry(id: string): Promise<SplitGeometryRespo
   return { body, supports };
 }
 
+/** The supports as findamodel rebuilds them for the VOXL export; null when it has none. */
+export async function fetchResupportedGeometry(id: string): Promise<GeometryResponse | null> {
+  const r = await apiFetch(`/api/models/${id}/geometry/resupported`, {
+    headers: { Accept: 'application/vnd.findamodel.mesh' },
+  });
+  if (r.status === 204) return null;
+  if (!r.ok) throw new Error('Failed to fetch rebuilt supports');
+  return decodeBinaryGeometry(await r.arrayBuffer());
+}
+
+export interface RepairedGeometryResponse {
+  geometry: GeometryResponse;
+  /** One flag per triangle: the repair made it (a mended spot or a filled void). */
+  changed: Uint8Array;
+}
+
+/** The model body made watertight, with the faces the repair made flagged. */
+export async function fetchRepairedGeometry(id: string): Promise<RepairedGeometryResponse> {
+  const r = await apiFetch(`/api/models/${id}/geometry/repaired`, {
+    headers: { Accept: 'application/vnd.findamodel.mesh-repaired' },
+  });
+  if (!r.ok) throw new Error('Failed to fetch repaired geometry');
+
+  const buf = await r.arrayBuffer();
+  const view = new DataView(buf);
+  const meshLength = view.getUint32(0, true);
+  const geometry = decodeBinaryGeometry(buf.slice(4, 4 + meshLength));
+  const flagOffset = 4 + meshLength;
+  const faceCount = view.getUint32(flagOffset, true);
+  if (faceCount !== geometry.triangleCount) throw new Error('Corrupt repaired mesh flags');
+  const bits = new Uint8Array(buf, flagOffset + 4, Math.ceil(faceCount / 8));
+  const changed = new Uint8Array(faceCount);
+  for (let i = 0; i < faceCount; i++) changed[i] = (bits[i >> 3] >> (i & 7)) & 1;
+  return { geometry, changed };
+}
+
 export async function fetchOtherParts(id: string): Promise<RelatedModel[]> {
   const r = await apiFetch(`/api/models/${id}/other-parts`);
   if (!r.ok) throw new Error('Failed to fetch other parts');

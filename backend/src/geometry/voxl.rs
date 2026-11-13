@@ -38,7 +38,7 @@ const MODEL_COLOR: &str = "#a3a3a3";
 const JOINT_DIAMETER_OFFSET_MM: f32 = 0.1;
 /// The tip offset the slicer applies by default: one layer of 0.05 mm with no 3D anti-aliasing
 /// (`resolveEffectiveAaSettings`). The value stored as `penetrationMm` plays no part in slicing.
-const NOMINAL_TIP_OFFSET_MM: f32 = 0.05;
+pub const NOMINAL_TIP_OFFSET_MM: f32 = 0.05;
 /// Narrowest contact DragonFruit accepts (`contactDiameterMm`).
 const MIN_WRITTEN_CONTACT_MM: f32 = 0.05;
 /// Contact tip defaults DragonFruit's own tips use.
@@ -224,19 +224,7 @@ pub fn write_voxl_with<W: Write + Seek>(
             supports.add(layout, model_id, placement);
         }
     }
-    let supports = json!({
-        "version": 1,
-        "meta": { "source": "findamodel", "objectCenter": { "x": 0, "y": 0, "z": 0 } },
-        "roots": supports.roots,
-        "trunks": supports.trunks,
-        "branches": supports.branches,
-        "leaves": [],
-        "twigs": supports.twigs,
-        "sticks": supports.sticks,
-        "braces": supports.braces,
-        "knots": supports.knots,
-        "kickstands": supports.kickstands,
-    });
+    let supports = supports.into_json();
 
     for (tag, value) in [(*b"META", meta), (*b"SCNE", scene), (*b"MODL", Value::Array(models)), (*b"SUPP", supports)] {
         entries.push(write_chunk(&mut out, tag, 0, &serde_json::to_vec(&value)?)?);
@@ -281,6 +269,17 @@ struct SupportDocument {
     sphere_tips: bool,
 }
 
+/// The `SUPP` chunk a VOXL holds for one model with `layout`'s supports, placed where it stands
+/// (no rotation or translation), with ball tips written as sphere tips when `sphere_tips` (the
+/// writer uses [`SPHERE_TIPS_ENABLED`]): the supports as DragonFruit reads them from the model's
+/// VOXL, for [`super::support_mesh`] to build.
+pub fn supports_document(layout: &SupportLayout, sphere_tips: bool) -> Value {
+    let mut supports = SupportDocument { sphere_tips, ..SupportDocument::default() };
+    let placement = VoxlPlacement { mesh: 0, rotation_z: 0.0, translation: [0.0; 3] };
+    supports.add(layout, &Uuid::new_v4().to_string(), &placement);
+    supports.into_json()
+}
+
 /// A shaft segment's id and its plate-coordinate ends.
 struct Span {
     id: String,
@@ -291,6 +290,23 @@ struct Span {
 }
 
 impl SupportDocument {
+    /// The document as the `SUPP` chunk's JSON.
+    fn into_json(self) -> Value {
+        json!({
+            "version": 1,
+            "meta": { "source": "findamodel", "objectCenter": { "x": 0, "y": 0, "z": 0 } },
+            "roots": self.roots,
+            "trunks": self.trunks,
+            "branches": self.branches,
+            "leaves": [],
+            "twigs": self.twigs,
+            "sticks": self.sticks,
+            "braces": self.braces,
+            "knots": self.knots,
+            "kickstands": self.kickstands,
+        })
+    }
+
     fn add(&mut self, layout: &SupportLayout, model_id: &str, placement: &VoxlPlacement) {
         let (s, c) = placement.rotation_z.sin_cos();
         let turn = |v: Vec3| {
