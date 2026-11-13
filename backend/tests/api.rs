@@ -126,13 +126,15 @@ async fn settings_config_round_trip_and_validation() {
         "generatePreviewsEnabled": false,
         "minimumPreviewGenerationVersion": 1,
         "minimumSupportExportVersion": 0,
-        "repairedMeshCacheSizeMb": 2048
+        "repairedMeshCacheSizeMb": 2048,
+        "repairThreads": 8
     });
     let (status, updated) = app.json("PUT", "/api/settings/config", update.clone()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(updated.get("theme").is_none());
     assert_eq!(updated["generatePreviewsEnabled"], false);
     assert_eq!(updated["repairedMeshCacheSizeMb"], 2048);
+    assert_eq!(updated["repairThreads"], 8);
     assert_eq!(updated["minimumSupportExportVersion"], 0);
     let (_, stats) = app.get("/api/settings/stats").await;
     let current = findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
@@ -147,6 +149,12 @@ async fn settings_config_round_trip_and_validation() {
     no_cache["repairedMeshCacheSizeMb"] = json!(0);
     let (status, _) = app.json("PUT", "/api/settings/config", no_cache).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    for threads in [0, 257] {
+        let mut bad_threads = update.clone();
+        bad_threads["repairThreads"] = json!(threads);
+        let (status, _) = app.json("PUT", "/api/settings/config", bad_threads).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{threads} threads");
+    }
 
     update["defaultRaftHeightMm"] = json!(-1);
     let (status, _) = app.json("PUT", "/api/settings/config", update).await;

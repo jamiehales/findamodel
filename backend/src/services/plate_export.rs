@@ -281,6 +281,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
     let written: Arc<parking_lot::Mutex<Vec<(Uuid, String)>>> = Arc::default();
     let written_by_export = written.clone();
     let repaired_store = models.repaired_meshes().cloned();
+    let repair_threads = models.app_config.repair_threads();
     let repairs: Arc<parking_lot::Mutex<Vec<(Uuid, watertight::MeshKey)>>> = Arc::default();
     let repairs_by_export = repairs.clone();
     let rows = infos.clone();
@@ -344,7 +345,8 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     let next = std::sync::atomic::AtomicUsize::new(0);
                     let repaired: Vec<parking_lot::Mutex<Option<Vec<Triangle>>>> =
                         prepared.iter().map(|_| parking_lot::Mutex::new(None)).collect();
-                    let workers = prepared.len().min(rayon::current_num_threads().max(1));
+                    // The repairs share their pool of `repair_threads` threads.
+                    let workers = prepared.len().min(repair_threads.max(1));
                     std::thread::scope(|s| {
                         for _ in 0..workers {
                             s.spawn(|| {
@@ -355,7 +357,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                                     if let Some(p) = &progress {
                                         p.mark_repairing(name);
                                     }
-                                    let repair = repaired_meshes::repair(body, repaired_store.as_ref());
+                                    let repair = repaired_meshes::repair(body, repaired_store.as_ref(), repair_threads);
                                     repairs_by_export.lock().push((geometry_ids[i], repair.key));
                                     *repaired[i].lock() = Some(repair.triangles);
                                     if let Some(p) = &progress {

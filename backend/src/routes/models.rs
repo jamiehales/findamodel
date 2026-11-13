@@ -433,10 +433,11 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
     };
     let cache = state.voxl_cache.clone();
     let repaired_store = state.models.repaired_meshes().cloned();
+    let repair_threads = state.app_config.repair_threads();
     let (bytes, repaired) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         // Only the model mesh is repaired; the supports stay DragonFruit supports.
         let (body, repaired) = if remeshed {
-            let repair = repaired_meshes::repair(&body, repaired_store.as_ref());
+            let repair = repaired_meshes::repair(&body, repaired_store.as_ref(), repair_threads);
             (repair.triangles, Some(repair.key))
         } else {
             (body, None)

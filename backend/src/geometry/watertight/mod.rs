@@ -26,17 +26,22 @@ pub const REPAIR_TOLERANCE_MM: f64 = 0.01;
 /// manifold and consistently oriented, the exact surface kept outside the mended spots, sealed
 /// voids filled and drained cavities kept. Supports are never passed in.
 ///
+/// The repair runs on a pool of `threads` threads of its own ([`repair_pool`]): how its work is
+/// split, and so the exact output, depends on the count, which is part of the repair's key.
+///
 /// A mesh is repaired once: a repair kept in `store` is used when there is one, a call for a mesh
-/// (by its corners) already being repaired, by a model download or a plate export, waits for that
-/// repair and gets its result, and a new repair is kept in `store`. Call it from a thread outside
-/// rayon's pool (a blocking task, or a thread of its own): a pool thread kept waiting could hold
-/// work the running repair needs.
-pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>) -> Repair {
-    let key = mesh_key(triangles);
+/// (by its corners, on as many threads) already being repaired, by a model download or a plate
+/// export, waits for that repair and gets its result, and a new repair is kept in `store`. Call
+/// it from a thread outside rayon's pools (a blocking task, or a thread of its own): waiting
+/// happens on the calling thread, and a pool thread kept waiting could hold work the running
+/// repair needs.
+pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>, threads: usize) -> Repair {
+    let threads = threads.clamp(1, MAX_REPAIR_THREADS);
+    let key = repair_key(triangles, threads);
     if let Some(stored) = store.and_then(|s| s.load(&key)) {
         return Repair { triangles: stored, key };
     }
-    let shared = repair_shared(triangles, key, store);
+    let shared = repair_shared(triangles, key, threads, store);
     // The only holder once the waiters have taken theirs: no copy then.
     let triangles = std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| shared.as_ref().clone());
     Repair { triangles, key }
@@ -54,7 +59,7 @@ pub trait RepairStore: Sync {
     fn save(&self, key: &MeshKey, repaired: &[Triangle]);
 }
 
-/// A repaired mesh and the key of the mesh it was repaired from.
+/// A repaired mesh and its key ([`repair_key`]).
 pub struct Repair {
     pub triangles: Vec<Triangle>,
     pub key: MeshKey,
@@ -69,6 +74,7 @@ pub fn repairs_shared() -> usize {
 fn repair_shared(
     triangles: &[Triangle],
     key: MeshKey,
+    threads: usize,
     store: Option<&dyn RepairStore>,
 ) -> std::sync::Arc<Vec<Triangle>> {
     REPAIRS.run(key, || {
@@ -76,7 +82,14 @@ fn repair_shared(
         if let Some(stored) = store.and_then(|s| s.load(&key)) {
             return stored;
         }
-        let repaired = repair_now(triangles);
+        let repaired = match repair_pool(threads) {
+            Some(pool) => pool.install(|| {
+                #[cfg(test)]
+                tests::REPAIR_THREADS.lock().insert(key, rayon::current_num_threads());
+                repair_now(triangles)
+            }),
+            None => repair_now(triangles),
+        };
         if let Some(s) = store {
             s.save(&key, &repaired);
         }
@@ -84,7 +97,7 @@ fn repair_shared(
     })
 }
 
-/// The repairs under way, by [`mesh_key`].
+/// The repairs under way, by [`repair_key`].
 static REPAIRS: std::sync::LazyLock<SingleFlight<MeshKey, Vec<Triangle>>> =
     std::sync::LazyLock::new(SingleFlight::default);
 
@@ -112,6 +125,55 @@ pub fn mesh_key(triangles: &[Triangle]) -> MeshKey {
         h.update(c);
     }
     h.finalize().into()
+}
+
+/// The key of a repair of `triangles` on `threads` threads: their [`mesh_key`] and the count.
+pub fn repair_key(triangles: &[Triangle], threads: usize) -> MeshKey {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(mesh_key(triangles));
+    h.update(format!("|threads:{threads}").as_bytes());
+    h.finalize().into()
+}
+
+/// The most threads a repair runs on.
+pub const MAX_REPAIR_THREADS: usize = 256;
+/// The threads a repair runs on until the settings say otherwise.
+pub const DEFAULT_REPAIR_THREADS: usize = 20;
+
+/// The repairs' thread pool, of `threads` threads: built once and kept while repairs ask for that
+/// many, rebuilt when they ask for another count (a repair already running keeps the pool it
+/// started on). None when the pool cannot be built (the repair then runs on rayon's global pool).
+pub fn repair_pool(threads: usize) -> Option<std::sync::Arc<rayon::ThreadPool>> {
+    static POOL: PoolCache = PoolCache::new();
+    POOL.get(threads)
+}
+
+/// A thread pool kept for one thread count at a time ([`repair_pool`]).
+struct PoolCache(parking_lot::Mutex<Option<std::sync::Arc<rayon::ThreadPool>>>);
+
+impl PoolCache {
+    const fn new() -> Self {
+        PoolCache(parking_lot::Mutex::new(None))
+    }
+
+    fn get(&self, threads: usize) -> Option<std::sync::Arc<rayon::ThreadPool>> {
+        let mut pool = self.0.lock();
+        if let Some(p) = pool.as_ref().filter(|p| p.current_num_threads() == threads) {
+            return Some(p.clone());
+        }
+        match rayon::ThreadPoolBuilder::new().num_threads(threads).thread_name(|i| format!("mesh-repair-{i}")).build() {
+            Ok(built) => {
+                let built = std::sync::Arc::new(built);
+                *pool = Some(built.clone());
+                Some(built)
+            }
+            Err(err) => {
+                tracing::warn!("Failed to build the mesh repair's pool of {threads} threads: {err}");
+                None
+            }
+        }
+    }
 }
 
 /// [`repair_model`] without waiting for or sharing with other calls.
@@ -199,6 +261,36 @@ mod tests {
         voxl::write_voxl(std::io::Cursor::new(Vec::new()), &[mesh], &[placement], None).unwrap().into_inner().len()
     }
 
+    /// The thread count each repair in the tests ran with, by key.
+    pub(super) static REPAIR_THREADS: std::sync::LazyLock<
+        parking_lot::Mutex<std::collections::HashMap<MeshKey, usize>>,
+    > = std::sync::LazyLock::new(Default::default);
+
+    #[test]
+    fn a_repair_runs_on_a_pool_of_the_threads_asked_for() {
+        let original = sphere(6.0, 24);
+        for threads in [1, 3] {
+            let repair = repair_model(&original, None, threads);
+            assert_eq!(repair.key, repair_key(&original, threads));
+            assert_eq!(REPAIR_THREADS.lock().get(&repair.key), Some(&threads));
+        }
+        assert_ne!(repair_key(&original, 1), repair_key(&original, 3), "the count is part of the key");
+        assert_eq!(repair_model(&original, None, 0).key, repair_key(&original, 1), "at least one");
+    }
+
+    #[test]
+    fn the_pool_is_kept_for_one_count_and_rebuilt_for_another() {
+        let cache = PoolCache::new();
+        let a = cache.get(3).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&a, &cache.get(3).unwrap()), "kept");
+        assert_eq!(a.install(rayon::current_num_threads), 3);
+        let b = cache.get(5).unwrap();
+        assert_eq!(b.install(rayon::current_num_threads), 5);
+        assert!(!std::sync::Arc::ptr_eq(&a, &cache.get(3).unwrap()), "rebuilt for the new count");
+        // A pool handed out before the change still works for the repair holding it.
+        assert_eq!(b.install(rayon::current_num_threads), 5);
+    }
+
     /// A store in memory, counting what it keeps.
     #[derive(Default)]
     struct Memory {
@@ -224,11 +316,11 @@ mod tests {
         let (a, b) = std::thread::scope(|s| {
             let a = s.spawn(|| {
                 gate.wait();
-                repair_shared(&original, key, None)
+                repair_shared(&original, key, 2, None)
             });
             let b = s.spawn(|| {
                 gate.wait();
-                repair_shared(&original, key, None)
+                repair_shared(&original, key, 2, None)
             });
             (a.join().unwrap(), b.join().unwrap())
         });
@@ -241,22 +333,22 @@ mod tests {
         use std::sync::atomic::Ordering;
         let original = sphere(8.0, 30);
         let store = Memory::default();
-        let first = repair_model(&original, Some(&store));
-        assert_eq!(first.key, mesh_key(&original));
+        let first = repair_model(&original, Some(&store), 2);
+        assert_eq!(first.key, repair_key(&original, 2));
         assert_eq!(store.saves.load(Ordering::SeqCst), 1, "a new repair is kept");
-        let second = repair_model(&original, Some(&store));
+        let second = repair_model(&original, Some(&store), 2);
         assert_eq!(store.saves.load(Ordering::SeqCst), 1, "the kept one is used");
         assert_eq!(second.triangles, first.triangles);
         // Another mesh is repaired for itself.
         let other = sphere(8.5, 30);
-        assert_ne!(repair_model(&other, Some(&store)).key, first.key);
+        assert_ne!(repair_model(&other, Some(&store), 2).key, first.key);
         assert_eq!(store.saves.load(Ordering::SeqCst), 2);
     }
 
     #[test]
     fn a_repaired_mesh_is_written_about_as_compactly_as_the_original() {
         let original = sphere(10.0, 60);
-        let repaired = repair_model(&original, None).triangles;
+        let repaired = repair_model(&original, None, 4).triangles;
         assert_eq!(repaired.len(), original.len(), "a closed sphere comes through as it is");
         assert!(repaired.iter().all(|t| t.normal == Vec3::default()), "no stored normals");
         let (before, after) = (voxl_size(&original), voxl_size(&repaired));

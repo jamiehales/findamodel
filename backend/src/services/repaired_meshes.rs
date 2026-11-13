@@ -1,8 +1,8 @@
 //! Repaired model meshes ([`crate::geometry::watertight::repair_model`]) kept between repairs, so
 //! a mesh is repaired once rather than on every remeshed download or plate export.
 //!
-//! Entries are files (like support exports), named by the key of the mesh they were repaired
-//! from ([`watertight::mesh_key`]) and the repair version, so a new repair version misses every
+//! Entries are files (like support exports), named by the key of the repair
+//! ([`watertight::repair_key`]: the mesh repaired and the threads it ran on) and the repair version, so a new repair version misses every
 //! entry. The file is the authority: its header holds the version and the key, and an entry is
 //! used only when both are current and it reads back whole; anything else is repaired again and
 //! rewritten. The `model_repaired_meshes` table indexes which mesh each model's repair was made
@@ -385,9 +385,9 @@ fn parse_key(hex_key: &str) -> Option<MeshKey> {
     hex::decode(hex_key).ok()?.try_into().ok()
 }
 
-/// [`watertight::repair_model`] with `store` (when there is one) as its store.
-pub fn repair(triangles: &[Triangle], store: Option<&RepairedMeshes>) -> watertight::Repair {
-    watertight::repair_model(triangles, store.map(|s| s as &dyn RepairStore))
+/// [`watertight::repair_model`] on `threads` threads with `store` (when there is one) as its store.
+pub fn repair(triangles: &[Triangle], store: Option<&RepairedMeshes>, threads: usize) -> watertight::Repair {
+    watertight::repair_model(triangles, store.map(|s| s as &dyn RepairStore), threads)
 }
 
 #[cfg(test)]
@@ -472,14 +472,14 @@ mod tests {
 
         // A repair over a damaged entry repairs, and rewrites it.
         let cube = cube(41.0);
-        let k = watertight::mesh_key(&cube);
+        let k = watertight::repair_key(&cube, 2);
         let at = dir.path().join(relative_path(&k));
         fs::create_dir_all(at.parent().unwrap()).unwrap();
         fs::write(&at, b"damaged").unwrap();
-        let fresh = repair(&cube, Some(&store));
+        let fresh = repair(&cube, Some(&store), 2);
         assert_eq!(fresh.triangles.len(), 12);
         assert_eq!((store.hits(), store.writes()), (0, 1));
-        let again = repair(&cube, Some(&store));
+        let again = repair(&cube, Some(&store), 2);
         assert_eq!((store.hits(), store.writes()), (1, 1));
         assert_eq!(again.triangles, fresh.triangles);
     }

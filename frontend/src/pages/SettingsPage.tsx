@@ -41,6 +41,8 @@ import styles from './SettingsPage.module.css';
 
 /** The largest repaired mesh cache the backend accepts (1 TB). */
 const MAX_REPAIRED_MESH_CACHE_SIZE_MB = 1024 * 1024;
+/** The most threads the backend runs a mesh repair on. */
+const MAX_REPAIR_THREADS = 256;
 
 type FieldKey = 'category' | 'type' | 'material' | 'tags';
 
@@ -271,6 +273,7 @@ export default function SettingsPage() {
   const [minimumPreviewGenerationVersion, setMinimumPreviewGenerationVersion] = useState('0');
   const [minimumSupportExportVersion, setMinimumSupportExportVersion] = useState('0');
   const [repairedMeshCacheSizeMb, setRepairedMeshCacheSizeMb] = useState('5120');
+  const [repairThreads, setRepairThreads] = useState('20');
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterWidthMm, setNewPrinterWidthMm] = useState('228');
   const [newPrinterDepthMm, setNewPrinterDepthMm] = useState('128');
@@ -301,6 +304,7 @@ export default function SettingsPage() {
       setMinimumPreviewGenerationVersion(String(appConfig.minimumPreviewGenerationVersion));
       setMinimumSupportExportVersion(String(appConfig.minimumSupportExportVersion));
       setRepairedMeshCacheSizeMb(String(appConfig.repairedMeshCacheSizeMb));
+      setRepairThreads(String(appConfig.repairThreads));
     }
   }, [appConfig]);
 
@@ -328,6 +332,11 @@ export default function SettingsPage() {
     !Number.isInteger(repairedMeshCacheSizeMbValue) ||
     repairedMeshCacheSizeMbValue < 1 ||
     repairedMeshCacheSizeMbValue > MAX_REPAIRED_MESH_CACHE_SIZE_MB;
+  const repairThreadsValue = Number(repairThreads);
+  const repairThreadsInvalid =
+    !Number.isInteger(repairThreadsValue) ||
+    repairThreadsValue < 1 ||
+    repairThreadsValue > MAX_REPAIR_THREADS;
 
   const appConfigValid =
     defaultRaftHeightMm.trim().length > 0 &&
@@ -341,7 +350,8 @@ export default function SettingsPage() {
     minimumSupportExportVersionValue >= 0 &&
     (supportExportVersionLimit === undefined ||
       minimumSupportExportVersionValue <= supportExportVersionLimit) &&
-    !repairedMeshCacheSizeInvalid;
+    !repairedMeshCacheSizeInvalid &&
+    !repairThreadsInvalid;
 
   const currentSection: SettingsSectionKey = useMemo(() => {
     if (location.pathname.startsWith('/settings/printers')) return 'printers';
@@ -372,6 +382,7 @@ export default function SettingsPage() {
       minimumPreviewGenerationVersion: minimumPreviewGenerationVersionValue,
       minimumSupportExportVersion: minimumSupportExportVersionValue,
       repairedMeshCacheSizeMb: repairedMeshCacheSizeMbValue,
+      repairThreads: repairThreadsValue,
     });
 
   if (isPending || appConfigPending) return <LoadingView />;
@@ -532,6 +543,34 @@ export default function SettingsPage() {
                 {repairedMeshCacheSizeInvalid && (
                   <p role="alert" className={styles.error}>
                     Use a whole number from 1 to {MAX_REPAIRED_MESH_CACHE_SIZE_MB}.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowLabelInline}>
+                <Label htmlFor="repair-threads" className={styles.rowTitle}>
+                  Mesh repair threads
+                </Label>
+                <HelpTooltip
+                  aria-label="About mesh repair threads"
+                  content="Threads used to repair models for remeshed exports. Changing it repairs models again."
+                />
+              </div>
+              <div className={styles.versionField}>
+                <Input
+                  id="repair-threads"
+                  type="number"
+                  min={1}
+                  max={MAX_REPAIR_THREADS}
+                  step={1}
+                  value={repairThreads}
+                  aria-invalid={repairThreadsInvalid || undefined}
+                  onChange={(e) => setRepairThreads(e.target.value)}
+                />
+                {repairThreadsInvalid && (
+                  <p role="alert" className={styles.error}>
+                    Use a whole number from 1 to {MAX_REPAIR_THREADS}.
                   </p>
                 )}
               </div>

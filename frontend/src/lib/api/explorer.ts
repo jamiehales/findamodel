@@ -103,6 +103,7 @@ export interface AppConfig {
   minimumPreviewGenerationVersion: number;
   minimumSupportExportVersion: number;
   repairedMeshCacheSizeMb: number;
+  repairThreads: number;
   setupCompleted: boolean;
   modelsDirectoryPath: string | null;
 }
@@ -124,6 +125,7 @@ export interface UpdateAppConfigRequest {
   minimumPreviewGenerationVersion: number;
   minimumSupportExportVersion: number;
   repairedMeshCacheSizeMb: number;
+  repairThreads: number;
 }
 
 export interface InitialSetupRequest {

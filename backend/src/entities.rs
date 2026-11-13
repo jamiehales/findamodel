@@ -165,6 +165,8 @@ pub struct AppConfigRow {
     pub minimum_support_export_version: i32,
     /// The most disk space kept repaired model meshes may take up, in MB.
     pub repaired_mesh_cache_size_mb: i64,
+    /// The threads a mesh repair runs on.
+    pub repair_threads: i64,
     pub setup_completed: bool,
     pub models_directory_path: Option<String>,
     pub updated_at: DateTime<Utc>,

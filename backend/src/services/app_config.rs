@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use parking_lot::RwLock;
 
@@ -12,6 +12,7 @@ use crate::dto::{AppConfigDto, InitialSetupDefaultsDto, InitialSetupRequest, Set
 use crate::entities::AppConfigRow;
 use crate::error::{AppResult, bad_request};
 use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
+use crate::geometry::watertight::{DEFAULT_REPAIR_THREADS, MAX_REPAIR_THREADS};
 use crate::preview::CURRENT_PREVIEW_GENERATION_VERSION;
 
 pub const DATABASE_DEFAULT_RAFT_HEIGHT_MM: f32 = 2.0;
@@ -35,6 +36,8 @@ pub struct AppConfigService {
     /// The repaired mesh store's size limit in bytes, as last read from the settings: shared with
     /// the store, which reads it each time it evicts.
     repaired_mesh_cache_bytes: Arc<AtomicU64>,
+    /// The threads a mesh repair runs on, as last read from the settings.
+    repair_threads: Arc<AtomicUsize>,
 }
 
 /// Resolves a configured models directory to an absolute path. On macOS, `smb://` URLs
@@ -154,7 +157,13 @@ impl AppConfigService {
             repaired_mesh_cache_bytes: Arc::new(AtomicU64::new(
                 DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB as u64 * BYTES_PER_MB,
             )),
+            repair_threads: Arc::new(AtomicUsize::new(DEFAULT_REPAIR_THREADS)),
         }
+    }
+
+    /// The threads a mesh repair runs on, kept up to date with the settings.
+    pub fn repair_threads(&self) -> usize {
+        self.repair_threads.load(Ordering::Relaxed)
     }
 
     /// The repaired mesh store's size limit in bytes, kept up to date with the settings (see
@@ -189,6 +198,7 @@ impl AppConfigService {
                 self.defaults.minimum_support_export_version.unwrap_or(CURRENT_SUPPORT_READER_VERSION),
             ),
             repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
+            repair_threads: DEFAULT_REPAIR_THREADS as i64,
             setup_completed: configured.is_some(),
             models_directory_path: configured,
             updated_at: now(),
@@ -214,6 +224,8 @@ impl AppConfigService {
     fn to_dto(&self, row: &AppConfigRow) -> AppConfigDto {
         let size_mb = row.repaired_mesh_cache_size_mb.clamp(1, MAX_REPAIRED_MESH_CACHE_SIZE_MB);
         self.repaired_mesh_cache_bytes.store(size_mb as u64 * BYTES_PER_MB, Ordering::Relaxed);
+        let repair_threads = row.repair_threads.clamp(1, MAX_REPAIR_THREADS as i64);
+        self.repair_threads.store(repair_threads as usize, Ordering::Relaxed);
         AppConfigDto {
             default_raft_height_mm: row.default_raft_height_mm,
             generate_previews_enabled: row.generate_previews_enabled,
@@ -224,6 +236,7 @@ impl AppConfigService {
                 row.minimum_support_export_version,
             ),
             repaired_mesh_cache_size_mb: size_mb,
+            repair_threads,
             setup_completed: row.setup_completed,
             models_directory_path: row.models_directory_path.clone(),
         }
@@ -257,11 +270,14 @@ impl AppConfigService {
                 "Repaired mesh cache size must be between 1 and {MAX_REPAIRED_MESH_CACHE_SIZE_MB} MB."
             )));
         }
+        if !(1..=MAX_REPAIR_THREADS as i64).contains(&req.repair_threads) {
+            return Err(bad_request(format!("Mesh repair threads must be between 1 and {MAX_REPAIR_THREADS}.")));
+        }
         self.ensure_config().await?;
         sqlx::query(
             "UPDATE app_config SET default_raft_height_mm = ?, generate_previews_enabled = ?,
                 minimum_preview_generation_version = ?, minimum_support_export_version = ?,
-                repaired_mesh_cache_size_mb = ?, updated_at = ?
+                repaired_mesh_cache_size_mb = ?, repair_threads = ?, updated_at = ?
                 WHERE id = 1",
         )
         .bind(req.default_raft_height_mm)
@@ -269,6 +285,7 @@ impl AppConfigService {
         .bind(req.minimum_preview_generation_version)
         .bind(req.minimum_support_export_version)
         .bind(req.repaired_mesh_cache_size_mb)
+        .bind(req.repair_threads)
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -382,6 +399,7 @@ mod tests {
             minimum_preview_generation_version: version,
             minimum_support_export_version: 0,
             repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
+            repair_threads: 20,
         };
         assert_eq!(sut.update(&request(5)).await.unwrap().minimum_preview_generation_version, 5);
         assert!(sut.update(&request(-1)).await.is_err());
@@ -400,6 +418,7 @@ mod tests {
             minimum_preview_generation_version: 0,
             minimum_support_export_version: version,
             repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
+            repair_threads: 20,
         };
         let current = CURRENT_SUPPORT_READER_VERSION;
         assert_eq!(sut.update(&request(current)).await.unwrap().minimum_support_export_version, current);
@@ -432,6 +451,7 @@ mod tests {
             minimum_preview_generation_version: 0,
             minimum_support_export_version: 0,
             repaired_mesh_cache_size_mb: mb,
+            repair_threads: 20,
         };
         assert_eq!(sut.update(&request(300)).await.unwrap().repaired_mesh_cache_size_mb, 300);
         assert_eq!(limit.load(Ordering::Relaxed), 300 * BYTES_PER_MB, "the store sees it at once");
@@ -439,6 +459,29 @@ mod tests {
             assert!(sut.update(&request(bad)).await.is_err(), "{bad}");
         }
         assert_eq!(sut.get().await.unwrap().repaired_mesh_cache_size_mb, 300);
+    }
+
+    #[tokio::test]
+    async fn the_repair_threads_default_to_20_are_validated_and_read_at_once() {
+        let t = TestDb::new().await;
+        let sut = service(&t, None);
+        assert_eq!(sut.get().await.unwrap().repair_threads, 20);
+        assert_eq!(sut.repair_threads(), 20);
+        let request = |threads: i64| UpdateAppConfigRequest {
+            default_raft_height_mm: 3.0,
+            generate_previews_enabled: true,
+            minimum_preview_generation_version: 0,
+            minimum_support_export_version: 0,
+            repaired_mesh_cache_size_mb: DEFAULT_REPAIRED_MESH_CACHE_SIZE_MB,
+            repair_threads: threads,
+        };
+        assert_eq!(sut.update(&request(6)).await.unwrap().repair_threads, 6);
+        assert_eq!(sut.repair_threads(), 6, "the next repair uses it");
+        for bad in [0, -3, MAX_REPAIR_THREADS as i64 + 1] {
+            assert!(sut.update(&request(bad)).await.is_err(), "{bad}");
+        }
+        assert_eq!(sut.repair_threads(), 6);
+        assert_eq!(sut.update(&request(MAX_REPAIR_THREADS as i64)).await.unwrap().repair_threads, 256);
     }
 
     #[tokio::test]
