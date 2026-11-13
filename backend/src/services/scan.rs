@@ -605,10 +605,6 @@ fn is_ignored_model(row: &ExistingScanState) -> bool {
     is_ignored_entry(&row.file_name) || is_ignored_path(&row.directory)
 }
 
-/// A scan removes no models whose files are gone when they are more than this share of the
-/// models it covers: more likely a share that is briefly unavailable than a mass deletion.
-pub const MAX_REMOVED_SHARE: f64 = 0.5;
-
 /// Whether a model directory is `scope` or below it (the root scope `""` covers everything).
 fn is_within(directory: &str, scope: &str) -> bool {
     scope.is_empty() || directory == scope || directory.strip_prefix(scope).is_some_and(|rest| rest.starts_with('/'))
@@ -617,30 +613,21 @@ fn is_within(directory: &str, scope: &str) -> bool {
 /// The models a scan of `scope` should remove because their files are gone, from the rows it
 /// did not find on disk (`leftovers`, already without ignored paths) and the number of
 /// (non-ignored) models in scope. Rows outside the scope or under a directory the walk could
-/// not read are kept; nothing is removed when that would be more than [`MAX_REMOVED_SHARE`] of
-/// the models in scope (`Err` with the reason).
+/// not read are kept. How many models that removes plays no part: whether the models folder is
+/// available is judged from the folder itself ([`root_unavailable`]).
 fn plan_missing_removals<T>(
     leftovers: Vec<T>,
     directory_of: impl Fn(&T) -> &str,
     scope: &str,
     unreadable: &[String],
-    in_scope: usize,
-) -> Result<Vec<T>, String> {
-    let missing: Vec<T> = leftovers
+) -> Vec<T> {
+    leftovers
         .into_iter()
         .filter(|row| {
             let dir = directory_of(row);
             is_within(dir, scope) && !unreadable.iter().any(|u| is_within(dir, u))
         })
-        .collect();
-    if missing.len() as f64 > in_scope as f64 * MAX_REMOVED_SHARE {
-        return Err(format!(
-            "Not removing {} of {in_scope} models whose files are gone: more than {:.0}% of the scanned models, so the models folder may be unavailable",
-            missing.len(),
-            MAX_REMOVED_SHARE * 100.0
-        ));
-    }
-    Ok(missing)
+        .collect()
 }
 
 /// Why a scan must not remove models whose files are gone at all, judged from the models root:
@@ -1193,8 +1180,6 @@ impl ModelService {
 
         let ctx = self.scan_context(&root, &relative_dirs).await?;
         let mut existing = self.load_existing_states().await?;
-        let in_scope =
-            existing.values().filter(|row| is_within(&row.directory, &scope) && !is_ignored_model(row)).count();
 
         info!(target: LOG_TARGET, "Scanning {} model files with up to {} concurrent workers.", files.len(), self.file_scan_threads);
 
@@ -1430,7 +1415,7 @@ impl ModelService {
         self.remove_models(&ignored, "Removed ignored model", reporter).await?;
         let missing = match root_problem {
             Some(reason) => Err(reason),
-            None => plan_missing_removals(leftovers, |row| row.directory.as_str(), &scope, &unreadable, in_scope),
+            None => Ok(plan_missing_removals(leftovers, |row| row.directory.as_str(), &scope, &unreadable)),
         };
         match missing {
             Ok(missing) => {
@@ -2672,11 +2657,10 @@ mod tests {
         write_file(root.path(), "Dice Set/d100.stl", SIMPLE_ASCII_STL);
         write_file(root.path(), "Dice Set/._d100.stl", [0u8; 4096]);
         write_file(root.path(), ".hidden/inside.stl", SIMPLE_ASCII_STL);
+        write_file(root.path(), "Dice Set/gone.stl", SIMPLE_ASCII_STL);
 
         // Indexed before such names were skipped: an AppleDouble file with a preview and a spin
-        // mesh, a model in a dot folder sharing a preview with a model that stays, and a model
-        // missing from disk under a normal name (kept: it is the only model indexed in scope, so
-        // removing it would exceed MAX_REMOVED_SHARE; ignored models are removed regardless).
+        // mesh, and a model in a dot folder sharing a preview with a model that stays.
         let mut apple_double = model("._d100.stl", "Dice Set");
         apple_double.preview_image_path = Some("ad_r2.00a.png".into());
         apple_double.spin_mesh_path = Some("ad_r2.00a_spin_v1.bin".into());
@@ -2837,38 +2821,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_more_than_half_the_models_in_scope_removes_none() {
+    async fn a_scan_removes_missing_models_however_many_while_the_folder_is_available() {
         let t = TestDb::new().await;
         disable_previews(&t).await;
         let root = tempfile::tempdir().unwrap();
-        for f in ["a.stl", "b.stl", "c.stl", "d.stl"] {
+        write_file(root.path(), "Only/a.stl", SIMPLE_ASCII_STL);
+        for f in ["b.stl", "c.stl", "d.stl", "e.stl"] {
             write_file(root.path(), f, SIMPLE_ASCII_STL);
         }
         let svc = service(&t, root.path());
         scan_all(&svc, None, None).await;
-        for f in ["a.stl", "b.stl", "c.stl"] {
+        // The only model in a folder goes on a scan of that folder.
+        std::fs::remove_file(root.path().join("Only/a.stl")).unwrap();
+        scan_all(&svc, Some("Only"), None).await;
+        assert_eq!(indexed_paths(&t).await.len(), 4);
+        // Most of the catalogue going is still removed while the folder can be read.
+        for f in ["b.stl", "c.stl", "d.stl"] {
             std::fs::remove_file(root.path().join(f)).unwrap();
         }
-        let reporter = RecordingReporter::default();
-        scan_all(&svc, None, Some(&reporter)).await;
-        assert_eq!(indexed_paths(&t).await.len(), 4);
-        assert!(reporter.logs.lock().iter().any(|(level, m)| level == "warn" && m.contains("Not removing 3 of 4")));
-
-        // Half is not more than half.
-        write_file(root.path(), "a.stl", SIMPLE_ASCII_STL);
         scan_all(&svc, None, None).await;
-        assert_eq!(file_names(indexed_paths(&t).await), vec!["a.stl", "d.stl"]);
+        assert_eq!(file_names(indexed_paths(&t).await), vec!["e.stl"]);
     }
 
     #[test]
     fn removal_plan_keeps_rows_out_of_scope_or_under_unreadable_directories() {
         let rows = vec!["A", "A/sub", "A/bad", "A/bad/deeper", "A/badly", "B", ""];
-        let planned = plan_missing_removals(rows.clone(), |d| d, "A", &["A/bad".to_string()], 20).unwrap();
+        let planned = plan_missing_removals(rows.clone(), |d| d, "A", &["A/bad".to_string()]);
         assert_eq!(planned, vec!["A", "A/sub", "A/badly"]);
         // An unreadable scope root keeps everything.
-        assert!(plan_missing_removals(rows.clone(), |d| d, "", &[String::new()], 20).unwrap().is_empty());
-        assert_eq!(plan_missing_removals(rows.clone(), |d| d, "", &[], 20).unwrap().len(), 7);
-        assert!(plan_missing_removals(rows, |d| d, "", &[], 13).is_err());
+        assert!(plan_missing_removals(rows.clone(), |d| d, "", &[String::new()]).is_empty());
+        // Every missing row goes, however many.
+        assert_eq!(plan_missing_removals(rows, |d| d, "", &[]).len(), 7);
     }
 
     #[test]
