@@ -18,20 +18,36 @@ impl Indexed {
     /// Welds corners at the same position (bit for bit, as STL writers repeat them) and drops
     /// faces with a repeated corner.
     pub fn weld(tris: &[[P; 3]]) -> Self {
-        let mut at: FxHashMap<[u64; 3], u32> = FxHashMap::default();
-        let mut verts = Vec::new();
-        let mut faces = Vec::with_capacity(tris.len());
-        for t in tris {
-            let f = t.map(|v| {
-                *at.entry(v.map(|x| (x + 0.0).to_bits())).or_insert_with(|| {
-                    verts.push(v);
-                    verts.len() as u32 - 1
-                })
-            });
-            if f[0] != f[1] && f[1] != f[2] && f[2] != f[0] {
-                faces.push(f);
+        // Corners grouped by position with a parallel sort; each position numbered by its first
+        // corner, so the result is the one a serial walk would give.
+        let mut keyed: Vec<([u64; 3], u32)> = tris
+            .par_iter()
+            .enumerate()
+            .flat_map_iter(|(i, t)| (0..3).map(move |k| (t[k].map(|x| (x + 0.0).to_bits()), (3 * i + k) as u32)))
+            .collect();
+        keyed.par_sort_unstable();
+        let mut starts: Vec<u32> = (0..keyed.len() as u32)
+            .into_par_iter()
+            .filter(|&i| i == 0 || keyed[i as usize].0 != keyed[i as usize - 1].0)
+            .collect();
+        // Groups in order of their first corner.
+        starts.par_sort_unstable_by_key(|&s| keyed[s as usize].1);
+        let mut corner = vec![0u32; keyed.len()];
+        let mut verts = Vec::with_capacity(starts.len());
+        for (id, &s) in starts.iter().enumerate() {
+            let first = keyed[s as usize].1 as usize;
+            verts.push(tris[first / 3][first % 3]);
+            let mut j = s as usize;
+            while j < keyed.len() && keyed[j].0 == keyed[s as usize].0 {
+                corner[keyed[j].1 as usize] = id as u32;
+                j += 1;
             }
         }
+        let faces = corner
+            .par_chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .filter(|f| f[0] != f[1] && f[1] != f[2] && f[2] != f[0])
+            .collect();
         Indexed { verts, faces }
     }
 
@@ -160,6 +176,15 @@ pub fn shells(m: &Indexed, e: &Edges) -> Vec<Vec<u32>> {
 /// number of shells that are not orientable.
 pub fn orient(m: &mut Indexed) -> (usize, usize) {
     let e = edges(m);
+    orient_with(m, &e)
+}
+
+/// [`orient`] with the mesh's edges already found.
+pub fn orient_with(m: &mut Indexed, e: &Edges) -> (usize, usize) {
+    if e.misoriented.is_empty() {
+        // Every face already agrees with its neighbours: the walk would turn nothing.
+        return (0, 0);
+    }
     let mut adj: Vec<Vec<(u32, bool)>> = vec![Vec::new(); m.faces.len()];
     for &(a, b, agree) in &e.pairs {
         adj[a as usize].push((b, agree));
@@ -309,8 +334,20 @@ pub struct Closing {
 /// edges come out, then every boundary loop is filled with a fan round its centre (a triangle for
 /// a loop of three).
 pub fn close_holes(m: &mut Indexed) -> Closing {
-    let mut c = Closing { corners_split: split_non_manifold(m), ..Default::default() };
-    let e = edges(m);
+    close_holes_edges(m).0
+}
+
+/// [`close_holes`], with the closed mesh's edges.
+pub fn close_holes_edges(m: &mut Indexed) -> (Closing, Edges) {
+    let mut e = edges(m);
+    if e.non_manifold.is_empty() && e.boundary.is_empty() {
+        return (Closing::default(), e);
+    }
+    let mut c = Closing::default();
+    if !e.non_manifold.is_empty() {
+        c.corners_split = split_non_manifold(m);
+        e = edges(m);
+    }
     if !e.non_manifold.is_empty() {
         let nm: rustc_hash::FxHashSet<[u32; 2]> = e.non_manifold.iter().copied().collect();
         let before = m.faces.len();
@@ -321,25 +358,25 @@ pub fn close_holes(m: &mut Indexed) -> Closing {
             })
         });
         c.non_manifold_faces_removed = before - m.faces.len();
+        e = edges(m);
     }
-    // Boundary half-edges, each walked the opposite way to its face.
-    let mut count: FxHashMap<(u32, u32), i32> = FxHashMap::default();
-    for t in &m.faces {
-        for k in 0..3 {
-            let (a, b) = (t[k], t[(k + 1) % 3]);
-            *count.entry((a.min(b), a.max(b))).or_default() += 1;
-        }
+    if e.boundary.is_empty() {
+        return (c, e);
     }
+    // Boundary half-edges (on edges with one face), each walked the opposite way to its face.
+    let on_boundary: rustc_hash::FxHashSet<[u32; 2]> = e.boundary.iter().copied().collect();
+    let half: Vec<(u32, u32)> = m
+        .faces
+        .par_iter()
+        .flat_map_iter(|t| {
+            (0..3).map(move |k| (t[k], t[(k + 1) % 3])).filter(|&(a, b)| on_boundary.contains(&[a.min(b), a.max(b)]))
+        })
+        .collect();
     let mut next: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
     let mut left = 0;
-    for t in &m.faces {
-        for k in 0..3 {
-            let (a, b) = (t[k], t[(k + 1) % 3]);
-            if count[&(a.min(b), a.max(b))] == 1 {
-                next.entry(b).or_default().push(a);
-                left += 1;
-            }
-        }
+    for &(a, b) in &half {
+        next.entry(b).or_default().push(a);
+        left += 1;
     }
     let mut starts: Vec<u32> = next.keys().copied().collect();
     starts.sort_unstable();
@@ -381,7 +418,8 @@ pub fn close_holes(m: &mut Indexed) -> Closing {
         }
     }
     c.boundary_left = left;
-    c
+    let e = edges(m);
+    (c, e)
 }
 
 /// A shell's summary.
@@ -560,7 +598,7 @@ pub fn finish(m: &Indexed) -> (Indexed, Finish) {
     type Keyed = ([u32; 3], bool, u32);
     let mut keyed: Vec<Keyed> = w
         .faces
-        .iter()
+        .par_iter()
         .enumerate()
         .map(|(i, f)| {
             let mut k = *f;
@@ -571,7 +609,7 @@ pub fn finish(m: &Indexed) -> (Indexed, Finish) {
             (k, even, i as u32)
         })
         .collect();
-    keyed.sort_unstable();
+    keyed.par_sort_unstable();
     let mut drop = vec![false; w.faces.len()];
     let mut i = 0;
     while i < keyed.len() {
@@ -650,45 +688,90 @@ pub const CAP_HEIGHT_MM: f64 = 1e-4;
 /// winding and the new side is not an edge already. Returns the number flipped.
 pub fn flip_caps(m: &mut Indexed, height: f64) -> usize {
     use crate::geometry::support_reader::math::len;
-    let mut across: FxHashMap<(u32, u32), u32> = FxHashMap::default();
-    for (f, t) in m.faces.iter().enumerate() {
-        for k in 0..3 {
-            across.insert((t[k], t[(k + 1) % 3]), f as u32);
-        }
-    }
     let area2 = |m: &Indexed, t: [u32; 3]| {
         let [a, b, c] = t.map(|v| m.verts[v as usize]);
         cross(sub(b, a), sub(c, a))
     };
-    let mut around: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
-    for (f, t) in m.faces.iter().enumerate() {
-        for &v in t {
-            around[v as usize].push(f as u32);
+    // A face's long side, if it is a cap. A face is looked at only while untouched, so the caps
+    // can all be found first.
+    let cap = |m: &Indexed, t: [u32; 3]| -> Option<usize> {
+        let p = t.map(|v| m.verts[v as usize]);
+        let sides: Vec<f64> = (0..3).map(|k| len(sub(p[(k + 1) % 3], p[k]))).collect();
+        let k = (0..3).max_by(|&x, &y| sides[x].total_cmp(&sides[y])).expect("three sides");
+        (sides[k] > 0.0 && len(area2(m, t)) / sides[k] < height).then_some(k)
+    };
+    let caps: Vec<(u32, usize)> =
+        m.faces.par_iter().enumerate().filter_map(|(f, &t)| cap(m, t).map(|k| (f as u32, k))).collect();
+    if caps.is_empty() {
+        return 0;
+    }
+    // Each directed side's face (the last face to have it, as a map filled in face order would
+    // keep), sorted for lookup, with the changes the flips make on top.
+    let mut sides: Vec<((u32, u32), u32)> = m
+        .faces
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(f, t)| (0..3).map(move |k| ((t[k], t[(k + 1) % 3]), f as u32)))
+        .collect();
+    sides.par_sort_unstable();
+    let mut added: FxHashMap<(u32, u32), u32> = FxHashMap::default();
+    let mut removed: rustc_hash::FxHashSet<(u32, u32)> = rustc_hash::FxHashSet::default();
+    let across = |added: &FxHashMap<(u32, u32), u32>, removed: &rustc_hash::FxHashSet<(u32, u32)>, e: (u32, u32)| {
+        if let Some(&f) = added.get(&e) {
+            return Some(f);
         }
+        if removed.contains(&e) {
+            return None;
+        }
+        let end = sides.partition_point(|x| x.0 <= e);
+        (end > 0 && sides[end - 1].0 == e).then(|| sides[end - 1].1)
+    };
+    // The faces round every corner a flip can touch: those of the caps and of the faces across
+    // their long sides (a face across that has changed since is skipped anyway).
+    let mut touched = vec![false; m.verts.len()];
+    for &(f, k) in &caps {
+        let t = m.faces[f as usize];
+        for v in t {
+            touched[v as usize] = true;
+        }
+        if let Some(g) = across(&added, &removed, (t[(k + 1) % 3], t[k])) {
+            for v in m.faces[g as usize] {
+                touched[v as usize] = true;
+            }
+        }
+    }
+    let mut at: Vec<(u32, u32)> = m
+        .faces
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(f, t)| {
+            let touched = &touched;
+            t.iter().filter(move |&&v| touched[v as usize]).map(move |&v| (v, f as u32))
+        })
+        .collect();
+    at.par_sort_unstable();
+    let mut around: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
+    for (v, f) in at {
+        around.entry(v).or_default().push(f);
     }
     let mut done = vec![false; m.faces.len()];
     let mut flipped = 0;
-    for f in 0..m.faces.len() {
+    for (f, k) in caps {
+        let f = f as usize;
         if done[f] {
             continue;
         }
         let t = m.faces[f];
-        let p = t.map(|v| m.verts[v as usize]);
-        let sides: Vec<f64> = (0..3).map(|k| len(sub(p[(k + 1) % 3], p[k]))).collect();
-        let k = (0..3).max_by(|&x, &y| sides[x].total_cmp(&sides[y])).expect("three sides");
-        if sides[k] <= 0.0 || len(area2(m, t)) / sides[k] >= height {
-            continue;
-        }
         // Long side a-b, apex c; the face across has b-a with apex d.
         let (a, b, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
-        let Some(&g) = across.get(&(b, a)) else { continue };
+        let Some(g) = across(&added, &removed, (b, a)) else { continue };
         let g = g as usize;
         if done[g] {
             continue;
         }
         let u = m.faces[g];
         let Some(d) = u.iter().copied().find(|&v| v != a && v != b) else { continue };
-        if c == d || across.contains_key(&(c, d)) || across.contains_key(&(d, c)) {
+        if c == d || across(&added, &removed, (c, d)).is_some() || across(&added, &removed, (d, c)).is_some() {
             continue;
         }
         let (n1, n2) = ([c, a, d], [d, b, c]);
@@ -702,7 +785,7 @@ pub fn flip_caps(m: &mut Indexed, height: f64) -> usize {
         let corners = [a, b, c, d];
         let crosses_near = [n1, n2].iter().any(|n| {
             let tn = n.map(|v| m.verts[v as usize]);
-            corners.iter().flat_map(|&v| around[v as usize].iter()).any(|&h| {
+            corners.iter().flat_map(|v| around[v].iter()).any(|&h| {
                 let h = h as usize;
                 if h == f || h == g {
                     return false;
@@ -719,19 +802,20 @@ pub fn flip_caps(m: &mut Indexed, height: f64) -> usize {
         if crosses_near {
             continue;
         }
-        for (x, y) in [(a, b), (b, c), (c, a)].into_iter().chain([(u[0], u[1]), (u[1], u[2]), (u[2], u[0])]) {
-            across.remove(&(x, y));
+        for e in [(a, b), (b, c), (c, a)].into_iter().chain([(u[0], u[1]), (u[1], u[2]), (u[2], u[0])]) {
+            added.remove(&e);
+            removed.insert(e);
         }
         // c joins the face across, d the cap; a and b each lose one of the two.
-        around[c as usize].push(g as u32);
-        around[d as usize].push(f as u32);
-        around[a as usize].retain(|&h| h as usize != g);
-        around[b as usize].retain(|&h| h as usize != f);
+        around.get_mut(&c).expect("a touched corner").push(g as u32);
+        around.get_mut(&d).expect("a touched corner").push(f as u32);
+        around.get_mut(&a).expect("a touched corner").retain(|&h| h as usize != g);
+        around.get_mut(&b).expect("a touched corner").retain(|&h| h as usize != f);
         m.faces[f] = n1;
         m.faces[g] = n2;
         for (tri, idx) in [(n1, f), (n2, g)] {
             for q in 0..3 {
-                across.insert((tri[q], tri[(q + 1) % 3]), idx as u32);
+                added.insert((tri[q], tri[(q + 1) % 3]), idx as u32);
             }
         }
         done[f] = true;
@@ -746,15 +830,46 @@ pub fn flip_caps(m: &mut Indexed, height: f64) -> usize {
 pub fn collapse_short_edges(m: &mut Indexed, eps: f64) -> usize {
     let mut total = 0;
     for _ in 0..8 {
-        let mut around: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
-        for (f, t) in m.faces.iter().enumerate() {
-            for &v in t {
-                around[v as usize].push(f as u32);
-            }
+        // The short edges, in face order. A corner moves only once it is marked touched, and a
+        // touched corner is never looked at again in a pass, so the lengths at the start hold.
+        let short: Vec<(u32, u32)> = m
+            .faces
+            .par_iter()
+            .flat_map_iter(|t| {
+                let verts = &m.verts;
+                (0..3).map(move |k| (t[k], t[(k + 1) % 3])).filter(move |&(a, b)| {
+                    crate::geometry::support_reader::math::dist(verts[a as usize], verts[b as usize]) < eps
+                })
+            })
+            .collect();
+        if short.is_empty() {
+            break;
         }
+        // The faces round each end of a short edge.
+        let mut ends: Vec<u32> = short.iter().flat_map(|&(a, b)| [a, b]).collect();
+        ends.sort_unstable();
+        ends.dedup();
+        let mut is_end = vec![false; m.verts.len()];
+        for &v in &ends {
+            is_end[v as usize] = true;
+        }
+        let mut pairs: Vec<(u32, u32)> = m
+            .faces
+            .par_iter()
+            .enumerate()
+            .flat_map_iter(|(f, t)| {
+                let is_end = &is_end;
+                t.iter().filter(move |&&v| is_end[v as usize]).map(move |&v| (v, f as u32))
+            })
+            .collect();
+        pairs.par_sort_unstable();
+        let around = |v: u32| {
+            let s = pairs.partition_point(|p| p.0 < v);
+            let e = pairs.partition_point(|p| p.0 <= v);
+            &pairs[s..e]
+        };
         let ring = |v: u32, faces: &[[u32; 3]]| -> Vec<u32> {
-            let mut r: Vec<u32> =
-                around[v as usize].iter().flat_map(|&f| faces[f as usize]).filter(|&w| w != v).collect();
+            let mut r: Vec<u32> = around(v).iter().flat_map(|&(_, f)| faces[f as usize]).filter(|&w| w != v).collect();
             r.sort_unstable();
             r.dedup();
             r
@@ -762,38 +877,29 @@ pub fn collapse_short_edges(m: &mut Indexed, eps: f64) -> usize {
         let mut touched = vec![false; m.verts.len()];
         let mut into: Vec<u32> = (0..m.verts.len() as u32).collect();
         let mut done = 0;
-        for f in 0..m.faces.len() {
-            for k in 0..3 {
-                let (a, b) = (m.faces[f][k], m.faces[f][(k + 1) % 3]);
-                if touched[a as usize] || touched[b as usize] {
-                    continue;
-                }
-                let d = crate::geometry::support_reader::math::dist(m.verts[a as usize], m.verts[b as usize]);
-                if d >= eps {
-                    continue;
-                }
-                let (ra, rb) = (ring(a, &m.faces), ring(b, &m.faces));
-                let common = ra.iter().filter(|v| rb.binary_search(v).is_ok()).count();
-                if common != 2 || (ra.len() <= 3 && rb.len() <= 3) {
-                    continue;
-                }
-                // Neither end nor any neighbour moves again this pass.
-                for &w in ra.iter().chain(&rb).chain([a, b].iter()) {
-                    touched[w as usize] = true;
-                }
-                let mid = mul(add(m.verts[a as usize], m.verts[b as usize]), 0.5);
-                m.verts[a as usize] = mid;
-                into[b as usize] = a;
-                done += 1;
+        for &(a, b) in &short {
+            if touched[a as usize] || touched[b as usize] {
+                continue;
             }
+            let (ra, rb) = (ring(a, &m.faces), ring(b, &m.faces));
+            let common = ra.iter().filter(|v| rb.binary_search(v).is_ok()).count();
+            if common != 2 || (ra.len() <= 3 && rb.len() <= 3) {
+                continue;
+            }
+            // Neither end nor any neighbour moves again this pass.
+            for &w in ra.iter().chain(&rb).chain([a, b].iter()) {
+                touched[w as usize] = true;
+            }
+            let mid = mul(add(m.verts[a as usize], m.verts[b as usize]), 0.5);
+            m.verts[a as usize] = mid;
+            into[b as usize] = a;
+            done += 1;
         }
         if done == 0 {
             break;
         }
         total += done;
-        for t in &mut m.faces {
-            *t = t.map(|v| into[v as usize]);
-        }
+        m.faces.par_iter_mut().for_each(|t| *t = t.map(|v| into[v as usize]));
         m.faces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
     }
     total
@@ -842,6 +948,144 @@ pub(crate) mod tests {
 
     pub(crate) fn cube(lo: P, hi: P) -> Vec<[P; 3]> {
         box_tris(lo, hi)
+    }
+
+    /// A soup of small triangles on a coarse lattice (so many corners repeat), with some
+    /// repeated-corner faces, signed zeros and large faces: for checking the fast paths against
+    /// plain ones.
+    pub(crate) fn soup(n: usize, seed: u64) -> Vec<[P; 3]> {
+        let mut x = seed;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut pt = |scale: f64| [0, 1, 2].map(|_| ((next() % 41) as f64 - 20.0) * scale);
+        (0..n)
+            .map(|i| {
+                let a = pt(0.05);
+                let mut t = [a, a, a];
+                for c in &mut t[1..] {
+                    let d = pt(if i % 50 == 0 { 0.5 } else { 0.01 });
+                    *c = [a[0] + d[0], a[1] + d[1], a[2] + d[2]];
+                }
+                if i % 37 == 0 {
+                    t[2] = t[0];
+                }
+                if i % 11 == 0 {
+                    t[0] = t[0].map(|v| if v == 0.0 { -0.0 } else { v });
+                }
+                t
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_parallel_weld_numbers_corners_as_a_serial_walk_would() {
+        let tris = soup(5000, 7);
+        let mut at: FxHashMap<[u64; 3], u32> = FxHashMap::default();
+        let mut verts = Vec::new();
+        let mut faces = Vec::new();
+        for t in &tris {
+            let f = t.map(|v| {
+                *at.entry(v.map(|x| (x + 0.0).to_bits())).or_insert_with(|| {
+                    verts.push(v);
+                    verts.len() as u32 - 1
+                })
+            });
+            if f[0] != f[1] && f[1] != f[2] && f[2] != f[0] {
+                faces.push(f);
+            }
+        }
+        let w = Indexed::weld(&tris);
+        assert_eq!(w.faces, faces);
+        assert_eq!(
+            w.verts.iter().map(|v| v.map(|x| (x + 0.0).to_bits())).collect::<Vec<_>>(),
+            verts.iter().map(|v: &P| v.map(|x| (x + 0.0).to_bits())).collect::<Vec<_>>()
+        );
+    }
+
+    /// The collapse as it was first written (every face, every pass), for comparison.
+    fn collapse_reference(m: &mut Indexed, eps: f64) -> usize {
+        let mut total = 0;
+        for _ in 0..8 {
+            let mut around: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
+            for (f, t) in m.faces.iter().enumerate() {
+                for &v in t {
+                    around[v as usize].push(f as u32);
+                }
+            }
+            let ring = |v: u32, faces: &[[u32; 3]]| -> Vec<u32> {
+                let mut r: Vec<u32> =
+                    around[v as usize].iter().flat_map(|&f| faces[f as usize]).filter(|&w| w != v).collect();
+                r.sort_unstable();
+                r.dedup();
+                r
+            };
+            let mut touched = vec![false; m.verts.len()];
+            let mut into: Vec<u32> = (0..m.verts.len() as u32).collect();
+            let mut done = 0;
+            for f in 0..m.faces.len() {
+                for k in 0..3 {
+                    let (a, b) = (m.faces[f][k], m.faces[f][(k + 1) % 3]);
+                    if touched[a as usize] || touched[b as usize] {
+                        continue;
+                    }
+                    let d = crate::geometry::support_reader::math::dist(m.verts[a as usize], m.verts[b as usize]);
+                    if d >= eps {
+                        continue;
+                    }
+                    let (ra, rb) = (ring(a, &m.faces), ring(b, &m.faces));
+                    let common = ra.iter().filter(|v| rb.binary_search(v).is_ok()).count();
+                    if common != 2 || (ra.len() <= 3 && rb.len() <= 3) {
+                        continue;
+                    }
+                    for &w in ra.iter().chain(&rb).chain([a, b].iter()) {
+                        touched[w as usize] = true;
+                    }
+                    m.verts[a as usize] = mul(add(m.verts[a as usize], m.verts[b as usize]), 0.5);
+                    into[b as usize] = a;
+                    done += 1;
+                }
+            }
+            if done == 0 {
+                break;
+            }
+            total += done;
+            for t in &mut m.faces {
+                *t = t.map(|v| into[v as usize]);
+            }
+            m.faces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
+        }
+        total
+    }
+
+    #[test]
+    fn collapsing_only_the_short_edges_matches_the_full_walk() {
+        let (mut m, _) = super::super::remesh::remesh(&cube([0.0; 3], [1.0; 3]), 0.05);
+        // Pull every seventh corner almost onto a neighbour, chains of them included.
+        for f in (0..m.faces.len()).step_by(7) {
+            let [a, b, _] = m.faces[f];
+            let p = m.verts[b as usize];
+            m.verts[a as usize] = [p[0] + 3e-5, p[1], p[2]];
+        }
+        let mut r = m.clone();
+        let n = collapse_short_edges(&mut m, 1e-4);
+        assert!(n > 10, "{n}");
+        assert_eq!(n, collapse_reference(&mut r, 1e-4));
+        assert_eq!(m.faces, r.faces);
+        assert_eq!(m.verts, r.verts);
+    }
+
+    #[test]
+    fn a_closed_mesh_passes_through_closing_and_orienting_untouched() {
+        let mut m = Indexed::weld(&cube([0.0; 3], [1.0; 3]));
+        let before = m.clone();
+        let (c, e) = close_holes_edges(&mut m);
+        assert_eq!((c.holes_filled, c.corners_split, c.non_manifold_faces_removed), (0, 0, 0));
+        assert_eq!(orient_with(&mut m, &e), (0, 0));
+        assert_eq!(m.faces, before.faces);
     }
 
     #[test]
@@ -914,6 +1158,117 @@ pub(crate) mod tests {
         assert_eq!((c.corners_split, c.non_manifold_faces_removed, c.holes_filled), (2, 0, 0));
         let k = check(&m, false);
         assert!(k.watertight() && k.shells == 2 && (k.volume - 2.0).abs() < 1e-12, "{k:?}");
+    }
+
+    /// The cap flip as it was first written (every face, maps of the whole mesh), for comparison.
+    fn flip_caps_reference(m: &mut Indexed, height: f64) -> usize {
+        use crate::geometry::support_reader::math::len;
+        let mut across: FxHashMap<(u32, u32), u32> = FxHashMap::default();
+        for (f, t) in m.faces.iter().enumerate() {
+            for k in 0..3 {
+                across.insert((t[k], t[(k + 1) % 3]), f as u32);
+            }
+        }
+        let area2 = |m: &Indexed, t: [u32; 3]| {
+            let [a, b, c] = t.map(|v| m.verts[v as usize]);
+            cross(sub(b, a), sub(c, a))
+        };
+        let mut around: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
+        for (f, t) in m.faces.iter().enumerate() {
+            for &v in t {
+                around[v as usize].push(f as u32);
+            }
+        }
+        let mut done = vec![false; m.faces.len()];
+        let mut flipped = 0;
+        for f in 0..m.faces.len() {
+            if done[f] {
+                continue;
+            }
+            let t = m.faces[f];
+            let p = t.map(|v| m.verts[v as usize]);
+            let sides: Vec<f64> = (0..3).map(|k| len(sub(p[(k + 1) % 3], p[k]))).collect();
+            let k = (0..3).max_by(|&x, &y| sides[x].total_cmp(&sides[y])).expect("three sides");
+            if sides[k] <= 0.0 || len(area2(m, t)) / sides[k] >= height {
+                continue;
+            }
+            // Long side a-b, apex c; the face across has b-a with apex d.
+            let (a, b, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+            let Some(&g) = across.get(&(b, a)) else { continue };
+            let g = g as usize;
+            if done[g] {
+                continue;
+            }
+            let u = m.faces[g];
+            let Some(d) = u.iter().copied().find(|&v| v != a && v != b) else { continue };
+            if c == d || across.contains_key(&(c, d)) || across.contains_key(&(d, c)) {
+                continue;
+            }
+            let (n1, n2) = ([c, a, d], [d, b, c]);
+            let (old1, old2) = (area2(m, t), area2(m, u));
+            let (new1, new2) = (area2(m, n1), area2(m, n2));
+            let reference = add(old1, old2);
+            if dot(new1, reference) <= 0.0 || dot(new2, reference) <= 0.0 {
+                continue;
+            }
+            // Neither new face may cross a face round the four corners.
+            let corners = [a, b, c, d];
+            let crosses_near = [n1, n2].iter().any(|n| {
+                let tn = n.map(|v| m.verts[v as usize]);
+                corners.iter().flat_map(|&v| around[v as usize].iter()).any(|&h| {
+                    let h = h as usize;
+                    if h == f || h == g {
+                        return false;
+                    }
+                    let u = m.faces[h];
+                    let to = u.map(|v| m.verts[v as usize]);
+                    match n.iter().filter(|v| u.contains(v)).count() {
+                        0 => super::super::intersect::crosses(&tn, &to),
+                        1 => super::super::intersect::crosses_at_corner(n, &tn, &u, &to),
+                        _ => false,
+                    }
+                })
+            });
+            if crosses_near {
+                continue;
+            }
+            for (x, y) in [(a, b), (b, c), (c, a)].into_iter().chain([(u[0], u[1]), (u[1], u[2]), (u[2], u[0])]) {
+                across.remove(&(x, y));
+            }
+            // c joins the face across, d the cap; a and b each lose one of the two.
+            around[c as usize].push(g as u32);
+            around[d as usize].push(f as u32);
+            around[a as usize].retain(|&h| h as usize != g);
+            around[b as usize].retain(|&h| h as usize != f);
+            m.faces[f] = n1;
+            m.faces[g] = n2;
+            for (tri, idx) in [(n1, f), (n2, g)] {
+                for q in 0..3 {
+                    across.insert((tri[q], tri[(q + 1) % 3]), idx as u32);
+                }
+            }
+            done[f] = true;
+            done[g] = true;
+            flipped += 1;
+        }
+        flipped
+    }
+
+    #[test]
+    fn flipping_only_the_caps_found_first_matches_the_full_walk() {
+        let (mut m, _) = super::super::remesh::remesh(&cube([0.0; 3], [1.0; 3]), 0.05);
+        // Squash every fifth face's apex onto its long side, chains of caps included.
+        for f in (0..m.faces.len()).step_by(5) {
+            let [a, b, c] = m.faces[f].map(|v| m.verts[v as usize]);
+            let mid = [0, 1, 2].map(|k| (a[k] + b[k]) / 2.0 + (c[k] - (a[k] + b[k]) / 2.0) * 1e-5);
+            let v = m.faces[f][2];
+            m.verts[v as usize] = mid;
+        }
+        let mut r = m.clone();
+        let n = flip_caps(&mut m, 1e-4);
+        assert!(n > 10, "{n}");
+        assert_eq!(n, flip_caps_reference(&mut r, 1e-4));
+        assert_eq!(m.faces, r.faces);
     }
 
     #[test]

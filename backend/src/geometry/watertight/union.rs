@@ -69,25 +69,53 @@ pub struct Prepared {
 }
 
 pub fn prepare(tris: &[[P; 3]]) -> Prepared {
-    let mut m = Indexed::weld(tris);
-    let mut closing = mesh::close_holes(&mut m);
+    prepare_welded(Indexed::weld(tris), None)
+}
+
+/// [`prepare`] of an indexed mesh whose crossing face pairs are known already (`pairs`). They are
+/// used when welding its faces gives the same mesh (corners at distinct positions, every face kept)
+/// and closing it changes nothing.
+fn prepare_known(m: &Indexed, pairs: Vec<(u32, u32)>) -> Prepared {
+    let tris = m.tris();
+    let w = Indexed::weld(&tris);
+    let mut used = vec![false; m.verts.len()];
+    for f in &m.faces {
+        for &v in f {
+            used[v as usize] = true;
+        }
+    }
+    let same = w.faces.len() == m.faces.len() && w.verts.len() == used.iter().filter(|&&u| u).count();
+    prepare_welded(w, same.then_some(pairs))
+}
+
+/// [`prepare`] of a welded mesh, with its crossing face pairs when they are known already.
+fn prepare_welded(mut m: Indexed, known_pairs: Option<Vec<(u32, u32)>>) -> Prepared {
+    let (mut closing, mut e) = mesh::close_holes_edges(&mut m);
+    let mut changed = closing.corners_split + closing.non_manifold_faces_removed + closing.holes_filled > 0;
     // Filling a hole beside a pinched corner can make a new non-manifold edge: close again.
     for _ in 0..4 {
-        let e = mesh::edges(&m);
         if e.non_manifold.is_empty() && e.boundary.is_empty() {
             break;
         }
-        let more = mesh::close_holes(&mut m);
+        let (more, e2) = mesh::close_holes_edges(&mut m);
+        e = e2;
+        changed |= more.corners_split + more.non_manifold_faces_removed + more.holes_filled > 0;
         closing.non_manifold_faces_removed += more.non_manifold_faces_removed;
         closing.holes_filled += more.holes_filled;
         closing.longest_hole = closing.longest_hole.max(more.longest_hole);
         closing.boundary_left = more.boundary_left;
         closing.hole_centres.extend(more.hole_centres);
     }
-    let (flipped, _) = mesh::orient(&mut m);
-    let e = mesh::edges(&m);
+    let (flipped, _) = mesh::orient_with(&mut m, &e);
+    if flipped > 0 {
+        e = mesh::edges(&m);
+    }
     let shells = mesh::shell_summaries(&m, &e);
-    let pairs = super::intersect::pairs(&m);
+    // Pairs found on the input hold while closing changed nothing (the faces are the same).
+    let pairs = match known_pairs {
+        Some(p) if !changed => p,
+        _ => super::intersect::pairs(&m),
+    };
     let crossing = shells::crossing_shells(&m, &shells, &pairs);
     let self_crossing = shells::self_crossing_shells(&m, &shells, &pairs);
     let nests = shells::nest(&m, &shells, &crossing);
@@ -157,31 +185,38 @@ fn manifold_of(m: &Indexed, faces: &[u32]) -> Result<Manifold, String> {
 
 /// The self-union of a triangle soup.
 pub fn union(tris: &[[P; 3]]) -> (Indexed, UnionStats) {
-    union_with(tris, None, true)
+    union_with(prepare(tris), None, true)
 }
 
 /// The self-union, with solids a boolean cannot take (crossing themselves, or left open) first
 /// remeshed on cells `h` mm wide and simplified to `tol` mm: the exact surface everywhere else.
 pub fn hybrid(tris: &[[P; 3]], h: f64, tol: f64) -> (Indexed, UnionStats) {
-    let (mut out, mut st) = union_with(tris, Some((h, tol)), true);
+    let t = std::time::Instant::now();
+    let (mut out, mut st) = union_with(prepare(tris), Some((h, tol)), true);
+    super::remesh::trace(&format!("first pass done at {:.2}", t.elapsed().as_secs_f64()));
     // Rounding to single precision (as STL and VOXL store corners) can fold a mended seam over
     // itself: the rounded result is checked and its crossings mended again, a few times.
     for _ in 0..FOLLOW_UP_PASSES {
         let (rounded, _) = super::mesh::finish(&out);
-        if super::intersect::pairs(&rounded).is_empty() {
+        super::remesh::trace(&format!("follow-up: rounded at {:.2}", t.elapsed().as_secs_f64()));
+        let pairs = super::intersect::pairs(&rounded);
+        super::remesh::trace(&format!("follow-up: {} crossings at {:.2}", pairs.len(), t.elapsed().as_secs_f64()));
+        if pairs.is_empty() {
             break;
         }
-        let (again, more) = union_with(&rounded.tris(), Some((h, tol)), false);
+        let (again, more) = union_with(prepare_known(&rounded, pairs), Some((h, tol)), false);
         if more.mended_groups == 0 {
             break;
         }
         st.follow_up_boxes += more.mend_boxes;
         out = again;
+        super::remesh::trace(&format!("follow-up pass done at {:.2}", t.elapsed().as_secs_f64()));
     }
     // Pockets closed off where parts overlapped show as inner shells only now: fill those too.
     let (filled, n, volume) = fill_sealed(&out);
     st.sealed_voids += n;
     st.voids_filled_mm3 += volume;
+    super::remesh::trace(&format!("sealed voids filled at {:.2}", t.elapsed().as_secs_f64()));
     (filled, st)
 }
 
@@ -193,7 +228,15 @@ pub fn fill_sealed(m: &Indexed) -> (Indexed, usize, f64) {
     if shells.len() < 2 {
         return (m.clone(), 0, 0.0);
     }
-    let pairs = super::intersect::pairs(m);
+    // Only crossings between shells matter here: the largest shell's own are not looked for.
+    let mut group = vec![0usize; m.faces.len()];
+    for (i, s) in shells.iter().enumerate() {
+        for &f in &s.faces {
+            group[f as usize] = i;
+        }
+    }
+    let largest = (0..shells.len()).max_by_key(|&i| shells[i].faces.len()).unwrap_or(0);
+    let pairs = super::intersect::pairs_across(m, &group, largest);
     let crossing = shells::crossing_shells(m, &shells, &pairs);
     let nests = shells::nest(m, &shells, &crossing);
     let mut keep = vec![true; m.faces.len()];
@@ -216,8 +259,8 @@ const FOLLOW_UP_PASSES: usize = 3;
 
 /// `first`: the first pass also absorbs small solids and remeshes whole any solid it cannot mend;
 /// a follow-up pass only mends crossings.
-fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (Indexed, UnionStats) {
-    let p = prepare(tris);
+fn union_with(p: Prepared, remesh_bad: Option<(f64, f64)>, first: bool) -> (Indexed, UnionStats) {
+    let t0 = std::time::Instant::now();
     let mut st = UnionStats {
         faces_flipped_to_agree: p.flipped,
         closing: p.closing.clone(),
@@ -353,8 +396,11 @@ fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (
                 st.spots.push(("small piece merged", [0, 1, 2].map(|k| (lo[k] + hi[k]) / 2.0)));
             }
         }
+        // One solid at a time (each mend runs in parallel inside): every Manifold made takes the
+        // next id of a counter Manifold keeps for the whole process, and the order the ids go
+        // out in steers how its booleans triangulate. Made in a fixed order, the result is the
+        // same on every run, whatever else is running.
         let mended: Vec<(usize, Result<Manifold, String>, usize)> = (0..groups.len())
-            .into_par_iter()
             .filter(|&g| bad_group[g] && !boxes_of[g].is_empty())
             .map(|g| {
                 let boxes = merge_boxes(boxes_of[g].clone(), 2.0 * h);
@@ -370,8 +416,12 @@ fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (
                     // first pass then remeshes whole; a large one keeps the mend for the follow-up
                     // passes (remeshing it whole costs minutes).
                     let mended = mend(&p.mesh, &groups[g], &extra, &boxes, h, tol).and_then(|m| {
+                        if groups[g].len() > WHOLE_REMESH_MAX_FACES {
+                            // Kept whatever is left: no need to count.
+                            return Ok(m);
+                        }
                         let left = super::intersect::pairs(&indexed_of(&m)).len();
-                        if left > 0 && left >= crossings_of[g] && groups[g].len() <= WHOLE_REMESH_MAX_FACES {
+                        if left > 0 && left >= crossings_of[g] {
                             Err(format!("{left} crossings left of {}", crossings_of[g]))
                         } else {
                             Ok(m)
@@ -381,6 +431,7 @@ fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (
                 }
             })
             .collect();
+        super::remesh::trace(&format!("mended in {:.2}", t0.elapsed().as_secs_f64()));
         super::remesh::trace(&format!(
             "mended {:?}",
             mended.iter().map(|m| (m.2, m.1.as_ref().map(tri_count).map_err(|e| e.clone()))).collect::<Vec<_>>()
@@ -428,8 +479,9 @@ fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (
             }
         }
     }
+    // In order, for the same ids on every run (see the mends above).
     let built: Vec<(usize, Result<Manifold, String>)> = groups
-        .par_iter()
+        .iter()
         .enumerate()
         .filter(|(g, _)| !bad_group[*g] && !done_group[*g])
         .map(|(g, faces)| (g, manifold_of(&p.mesh, faces)))
@@ -507,6 +559,7 @@ fn union_with(tris: &[[P; 3]], remesh_bad: Option<(f64, f64)>, first: bool) -> (
         })
         .collect();
     st.booleans_failed = failed.load(Ordering::Relaxed);
+    super::remesh::trace(&format!("booleans done in {:.2}", t0.elapsed().as_secs_f64()));
     let mut out = Indexed::default();
     for r in results.into_iter().flatten() {
         let base = out.verts.len() as u32;
@@ -556,32 +609,58 @@ fn merge_boxes(mut boxes: Vec<(P, P)>, gap: f64) -> Vec<(P, P)> {
 /// (and the small solids `extra` it takes in) inside it, all joined. The step that failed, if one does.
 fn mend(m: &Indexed, faces: &[u32], extra: &[u32], boxes: &[(P, P)], h: f64, tol: f64) -> Result<Manifold, String> {
     // The fills see the solid and the small solids it has taken in.
-    let tris: Vec<[P; 3]> = faces.iter().chain(extra).map(|&f| m.tri(f as usize)).collect();
+    let all_faces: Vec<u32> = faces.iter().chain(extra).copied().collect();
+    let tris: Vec<[P; 3]> = all_faces.par_iter().map(|&f| m.tri(f as usize)).collect();
     // Each fill reaches past its box, so the fill and the cut solid overlap rather than touch:
     // solids that only touch keep both faces of the contact a hair apart, and single precision
     // then folds those faces through each other.
     let reach = FILL_OVERLAP_CELLS * h;
-    let fills: Vec<(Indexed, (P, P))> = boxes
-        .par_iter()
-        .map(|&(lo, hi)| super::remesh::remesh_in_box(&tris, lo.map(|x| x - reach), hi.map(|x| x + reach), h, tol))
-        .collect();
-    // The boxes as one mesh (they are apart).
-    let mut cutter: Vec<[P; 3]> = Vec::new();
-    for &(lo, hi) in boxes {
-        cutter.extend(super::mesh::box_tris(lo, hi));
-    }
-    let cut_m = Indexed::weld(&cutter);
+    let t = std::time::Instant::now();
+    let fill_boxes: Vec<(P, P)> =
+        boxes.iter().map(|&(lo, hi)| (lo.map(|x| x - reach), hi.map(|x| x + reach))).collect();
     let all = |n: usize| (0..n as u32).collect::<Vec<u32>>();
-    let solid = manifold_of(m, faces).map_err(|e| format!("solid: {e}"))?;
-    let cutter = manifold_of(&cut_m, &all(cut_m.faces.len())).map_err(|e| format!("boxes: {e}"))?;
-    let cut = checked(solid.difference(&cutter), "cut")?;
+    let failed = AtomicUsize::new(0);
+    // The fills, and the solid cut by the boxes (which does not wait for them), side by side. The
+    // fills become Manifolds only after the solid and the boxes, one by one in order: each
+    // Manifold made takes the next id, and the ids steer how a boolean triangulates.
+    let (fills, cut) = rayon::join(
+        || -> Vec<Indexed> {
+            // Each fill sees only the faces over or under its box (and near it), in their order.
+            let seen = faces_over_boxes(&tris, &fill_boxes, super::remesh::BOX_PAD_CELLS * h + h);
+            let fills: Vec<Indexed> = fill_boxes
+                .par_iter()
+                .zip(&seen)
+                .map(|(&(lo, hi), seen)| {
+                    let local: Vec<[P; 3]> = seen.iter().map(|&i| tris[i as usize]).collect();
+                    super::remesh::remesh_in_box(&local, lo, hi, h, tol).0
+                })
+                .filter(|f| !f.faces.is_empty())
+                .collect();
+            super::remesh::trace(&format!("{} fills in {:.2}", boxes.len(), t.elapsed().as_secs_f64()));
+            fills
+        },
+        || -> Result<Manifold, String> {
+            // The boxes as one mesh (they are apart).
+            let mut cutter: Vec<[P; 3]> = Vec::new();
+            for &(lo, hi) in boxes {
+                cutter.extend(super::mesh::box_tris(lo, hi));
+            }
+            let cut_m = Indexed::weld(&cutter);
+            let solid = manifold_of(m, faces).map_err(|e| format!("solid: {e}"))?;
+            let cutter = manifold_of(&cut_m, &all(cut_m.faces.len())).map_err(|e| format!("boxes: {e}"))?;
+            super::remesh::trace(&format!("solid and boxes built in {:.2}", t.elapsed().as_secs_f64()));
+            let cut = checked(solid.difference(&cutter), "cut");
+            super::remesh::trace(&format!("solid cut in {:.2}", t.elapsed().as_secs_f64()));
+            cut
+        },
+    );
+    let cut = cut?;
     let parts: Vec<Manifold> = fills
         .iter()
-        .filter(|(f, _)| !f.faces.is_empty())
-        .map(|(f, _)| manifold_of(f, &all(f.faces.len())).map_err(|e| format!("fill: {e}")))
+        .map(|f| manifold_of(f, &all(f.faces.len())).map_err(|e| format!("fill: {e}")))
         .collect::<Result<_, _>>()?;
-    let failed = AtomicUsize::new(0);
     let fill = union_all(parts, &failed);
+    super::remesh::trace(&format!("fills joined in {:.2}", t.elapsed().as_secs_f64()));
     if failed.load(Ordering::Relaxed) > 0 {
         return Err("fill union".into());
     }
@@ -589,6 +668,81 @@ fn mend(m: &Indexed, faces: &[u32], extra: &[u32], boxes: &[(P, P)], h: f64, tol
         Some(f) => checked(cut.union(&f), "join"),
         None => Ok(cut),
     }
+}
+
+/// For each box, the faces whose plan (x, y) extent comes within `pad` of the box's, ascending.
+fn faces_over_boxes(tris: &[[P; 3]], boxes: &[(P, P)], pad: f64) -> Vec<Vec<u32>> {
+    if boxes.is_empty() {
+        return Vec::new();
+    }
+    let grown: Vec<(P, P)> = boxes.iter().map(|&(lo, hi)| (lo.map(|x| x - pad), hi.map(|x| x + pad))).collect();
+    // The boxes on a coarse plan grid, for the faces to look up.
+    let mut lo = [f64::MAX; 2];
+    let mut hi = [f64::MIN; 2];
+    let mut extent = 0.0f64;
+    for (a, b) in &grown {
+        for k in 0..2 {
+            lo[k] = lo[k].min(a[k]);
+            hi[k] = hi[k].max(b[k]);
+            extent = extent.max(b[k] - a[k]);
+        }
+    }
+    let cell = extent.max(1e-3);
+    let dims = [0, 1].map(|k| (((hi[k] - lo[k]) / cell).floor() as usize + 1).min(4096));
+    let cell_of = |x: f64, k: usize| (((x - lo[k]) / cell).floor().max(0.0) as usize).min(dims[k] - 1);
+    let mut grid: Vec<Vec<u32>> = vec![Vec::new(); dims[0] * dims[1]];
+    for (b, (a, c)) in grown.iter().enumerate() {
+        for x in cell_of(a[0], 0)..=cell_of(c[0], 0) {
+            for y in cell_of(a[1], 1)..=cell_of(c[1], 1) {
+                grid[y * dims[0] + x].push(b as u32);
+            }
+        }
+    }
+    let mut hits: Vec<(u32, u32)> = tris
+        .par_iter()
+        .enumerate()
+        .fold(
+            || (Vec::new(), Vec::new()),
+            |(mut acc, mut near): (Vec<(u32, u32)>, Vec<u32>), (i, t)| {
+                let tlo = [0, 1].map(|k| t[0][k].min(t[1][k]).min(t[2][k]));
+                let thi = [0, 1].map(|k| t[0][k].max(t[1][k]).max(t[2][k]));
+                if (0..2).any(|k| thi[k] < lo[k] || tlo[k] > hi[k]) {
+                    return (acc, near);
+                }
+                near.clear();
+                let (x0, x1, y0, y1) = (cell_of(tlo[0], 0), cell_of(thi[0], 0), cell_of(tlo[1], 1), cell_of(thi[1], 1));
+                if (x1 - x0 + 1) * (y1 - y0 + 1) > 64 {
+                    // A face over many cells: every box is tried.
+                    near.extend(0..grown.len() as u32);
+                } else {
+                    for x in x0..=x1 {
+                        for y in y0..=y1 {
+                            near.extend_from_slice(&grid[y * dims[0] + x]);
+                        }
+                    }
+                    near.sort_unstable();
+                    near.dedup();
+                }
+                for &b in &near {
+                    let (a, c) = grown[b as usize];
+                    if (0..2).all(|k| thi[k] >= a[k] && tlo[k] <= c[k]) {
+                        acc.push((b, i as u32));
+                    }
+                }
+                (acc, near)
+            },
+        )
+        .map(|(acc, _)| acc)
+        .reduce(Vec::new, |mut a, b| {
+            a.extend(b);
+            a
+        });
+    hits.par_sort_unstable();
+    let mut out = vec![Vec::new(); boxes.len()];
+    for (b, i) in hits {
+        out[b as usize].push(i);
+    }
+    out
 }
 
 /// Unions in a balanced tree, halves in parallel. A failing boolean keeps its larger operand and
@@ -619,6 +773,27 @@ fn add(a: Manifold, b: Manifold, failed: &AtomicUsize) -> Manifold {
 mod tests {
     use super::super::mesh::tests::cube;
     use super::*;
+
+    #[test]
+    fn each_box_sees_the_faces_over_or_under_it() {
+        let tris = super::super::mesh::tests::soup(3000, 5);
+        let boxes =
+            vec![([-0.5, -0.5, -0.5], [0.0, 0.2, 0.1]), ([0.3, 0.3, -1.0], [0.6, 0.9, 1.0]), ([5.0; 3], [6.0; 3])];
+        let pad = 0.05;
+        let seen = faces_over_boxes(&tris, &boxes, pad);
+        for (b, (lo, hi)) in boxes.iter().enumerate() {
+            let want: Vec<u32> = (0..tris.len() as u32)
+                .filter(|&i| {
+                    let t = &tris[i as usize];
+                    (0..2).all(|k| {
+                        let (a, c) = (t[0][k].min(t[1][k]).min(t[2][k]), t[0][k].max(t[1][k]).max(t[2][k]));
+                        c >= lo[k] - pad && a <= hi[k] + pad
+                    })
+                })
+                .collect();
+            assert_eq!(seen[b], want, "box {b}");
+        }
+    }
 
     #[test]
     fn two_overlapping_cubes_union_to_one_watertight_shell() {

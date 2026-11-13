@@ -116,7 +116,9 @@ pub struct BoxIndex {
     /// Each triangle's (min, max) corner.
     pub bounds: Vec<(P, P)>,
     cell: f64,
-    grid: rustc_hash::FxHashMap<[i32; 3], Vec<u32>>,
+    /// Each occupied cell's run in `items`.
+    grid: rustc_hash::FxHashMap<[i32; 3], (u32, u32)>,
+    items: Vec<u32>,
     /// Triangles spanning more than [`BoxIndex::MAX_CELLS`] cells, checked on every query.
     big: Vec<u32>,
 }
@@ -126,8 +128,9 @@ impl BoxIndex {
 
     /// Indexes `tris` in cells `cell` mm wide.
     pub fn new(tris: &[[P; 3]], cell: f64) -> Self {
+        use rayon::prelude::*;
         let bounds: Vec<(P, P)> = tris
-            .iter()
+            .par_iter()
             .map(|t| {
                 (
                     [0, 1, 2].map(|k| t[0][k].min(t[1][k]).min(t[2][k])),
@@ -135,24 +138,54 @@ impl BoxIndex {
                 )
             })
             .collect();
-        let mut grid: rustc_hash::FxHashMap<[i32; 3], Vec<u32>> = rustc_hash::FxHashMap::default();
-        let mut big = Vec::new();
-        for (i, (lo, hi)) in bounds.iter().enumerate() {
-            let (a, b) = (Self::key(*lo, cell), Self::key(*hi, cell));
+        // Each triangle's cells (or the big list), gathered in parallel and grouped by a sort:
+        // the lists come out in index order, as a serial build would make them.
+        let span = |i: usize| {
+            let (lo, hi) = bounds[i];
+            let (a, b) = (Self::key(lo, cell), Self::key(hi, cell));
             let cells: i64 = (0..3).map(|k| i64::from(b[k]) - i64::from(a[k]) + 1).product();
-            if cells > Self::MAX_CELLS || cells <= 0 {
-                big.push(i as u32);
-                continue;
-            }
-            for x in a[0]..=b[0] {
-                for y in a[1]..=b[1] {
-                    for z in a[2]..=b[2] {
-                        grid.entry([x, y, z]).or_default().push(i as u32);
+            (a, b, cells)
+        };
+        let big: Vec<u32> = (0..bounds.len())
+            .into_par_iter()
+            .filter(|&i| {
+                let (_, _, cells) = span(i);
+                cells > Self::MAX_CELLS || cells <= 0
+            })
+            .map(|i| i as u32)
+            .collect();
+        let mut entries: Vec<([i32; 3], u32)> = (0..bounds.len())
+            .into_par_iter()
+            .flat_map_iter(|i| {
+                let (a, b, cells) = span(i);
+                let ok = cells <= Self::MAX_CELLS && cells > 0;
+                let n = if ok { cells as usize } else { 0 };
+                let mut out = Vec::with_capacity(n);
+                if ok {
+                    for x in a[0]..=b[0] {
+                        for y in a[1]..=b[1] {
+                            for z in a[2]..=b[2] {
+                                out.push(([x, y, z], i as u32));
+                            }
+                        }
                     }
                 }
-            }
+                out
+            })
+            .collect();
+        entries.par_sort_unstable();
+        let starts: Vec<u32> = (0..entries.len() as u32)
+            .into_par_iter()
+            .filter(|&i| i == 0 || entries[i as usize].0 != entries[i as usize - 1].0)
+            .collect();
+        let mut grid: rustc_hash::FxHashMap<[i32; 3], (u32, u32)> = rustc_hash::FxHashMap::default();
+        grid.reserve(starts.len());
+        for (k, &s) in starts.iter().enumerate() {
+            let e = starts.get(k + 1).copied().unwrap_or(entries.len() as u32);
+            grid.insert(entries[s as usize].0, (s, e));
         }
-        BoxIndex { bounds, cell, grid, big }
+        let items = entries.par_iter().map(|e| e.1).collect();
+        BoxIndex { bounds, cell, grid, items, big }
     }
 
     fn key(p: P, cell: f64) -> [i32; 3] {
@@ -181,7 +214,8 @@ impl BoxIndex {
         for x in a[0]..=b[0] {
             for y in a[1]..=b[1] {
                 for z in a[2]..=b[2] {
-                    if let Some(list) = self.grid.get(&[x, y, z]) {
+                    if let Some(&(s, e)) = self.grid.get(&[x, y, z]) {
+                        let list = &self.items[s as usize..e as usize];
                         out.extend(list.iter().copied().filter(|&i| self.meets(i, lo, hi)));
                     }
                 }

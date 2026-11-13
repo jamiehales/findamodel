@@ -264,7 +264,7 @@ pub fn remesh_in_box(tris: &[[P; 3]], lo: P, hi: P, h: f64, tol: f64) -> (Indexe
     let g = Grid { o: lo.map(|x| x - 2.5 * h), h };
     let reach = 2.0 * h;
     // Faces near the box for distances; faces over or under it for the winding up its columns.
-    let pad = 3.0 * h;
+    let pad = BOX_PAD_CELLS * h;
     let near_box = |t: &[P; 3], zall: bool| {
         (0..3).all(|k| {
             let (a, b) = (t[0][k].min(t[1][k]).min(t[2][k]), t[0][k].max(t[1][k]).max(t[2][k]));
@@ -324,6 +324,10 @@ pub fn remesh_in_box(tris: &[[P; 3]], lo: P, hi: P, h: f64, tol: f64) -> (Indexe
     let locked: Vec<bool> = m.verts.iter().map(on_box).collect();
     (super::simplify::simplify_locked(&m, &locked, tol), (lo, hi))
 }
+
+/// How far (in cells) past its box [`remesh_in_box`] looks at faces: the faces whose plan extent
+/// comes this close to the box's (its far side rounded up by under a cell) are all it uses.
+pub const BOX_PAD_CELLS: f64 = 3.0;
 
 /// Cells per block side for [`remesh_simplified`].
 const BLOCK: i64 = 48;

@@ -333,19 +333,34 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                     if let Some(p) = &progress {
                         p.start_repairing(prepared.len());
                     }
-                    geometry_ids
-                        .par_iter()
-                        .zip(prepared.into_par_iter())
-                        .map(|(id, (body, layout))| {
-                            if let Some(p) = &progress {
-                                p.mark_repairing(&infos[id].file_name);
-                            }
-                            let body = watertight::repair_model(&body);
-                            if let Some(p) = &progress {
-                                p.mark_repaired(&infos[id].file_name);
-                            }
-                            (body, layout)
-                        })
+                    // On threads of their own, not rayon's: a repair of a mesh already being
+                    // repaired (by a download, or another plate) waits for it.
+                    let next = std::sync::atomic::AtomicUsize::new(0);
+                    let repaired: Vec<parking_lot::Mutex<Option<Vec<Triangle>>>> =
+                        prepared.iter().map(|_| parking_lot::Mutex::new(None)).collect();
+                    let workers = prepared.len().min(rayon::current_num_threads().max(1));
+                    std::thread::scope(|s| {
+                        for _ in 0..workers {
+                            s.spawn(|| {
+                                loop {
+                                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    let Some((body, _)) = prepared.get(i) else { break };
+                                    let name = &infos[&geometry_ids[i]].file_name;
+                                    if let Some(p) = &progress {
+                                        p.mark_repairing(name);
+                                    }
+                                    *repaired[i].lock() = Some(watertight::repair_model(body));
+                                    if let Some(p) = &progress {
+                                        p.mark_repaired(name);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    prepared
+                        .into_iter()
+                        .zip(repaired)
+                        .map(|((_, layout), body)| (body.into_inner().expect("every model repaired"), layout))
                         .collect()
                 } else {
                     prepared

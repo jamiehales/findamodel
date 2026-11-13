@@ -953,6 +953,42 @@ async fn a_remeshed_plate_voxl_repairs_each_model_and_keeps_the_supports() {
     assert_close(&support_entities(&voxls[1]), &support_entities(&voxls[0]), "the same DragonFruit supports");
 }
 
+#[tokio::test]
+async fn a_download_and_a_plate_asking_for_one_model_at_once_share_its_repair() {
+    let app = TestApp::new().await;
+    // A knight of its own (moved off the others' place), so no other test repairs this mesh.
+    let knight: Vec<Triangle> = crossed_knight()
+        .into_iter()
+        .map(|t| {
+            let m = |v: findamodel::geometry::Vec3| findamodel::geometry::Vec3::new(v.x + 37.0, v.y, v.z);
+            Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
+        })
+        .collect();
+    app.write("Mini/knight.stl", findamodel::geometry::saver::save_stl(&knight, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let plate = json!({ "placements": [
+        { "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }
+    ], "format": "voxl-remeshed", "bedWidthMm": 200, "bedDepthMm": 120 });
+    let shared_before = findamodel::geometry::watertight::repairs_shared();
+    let download = app.send(Request::get(format!("/api/models/{id}/voxl?remeshed=true")).body(Body::empty()).unwrap());
+    let plate = app.send(
+        Request::post("/api/plate/generate")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(plate.to_string()))
+            .unwrap(),
+    );
+    let ((s1, _, single), (s2, _, plated)) = tokio::join!(download, plate);
+    assert_eq!((s1, s2), (StatusCode::OK, StatusCode::OK));
+    // One repair, waited for by the other request: the same model mesh in both.
+    assert!(findamodel::geometry::watertight::repairs_shared() > shared_before, "the second request repaired again");
+    let (a, b) = (voxl_mesh_triangles(&single), voxl_mesh_triangles(&plated));
+    assert_eq!(a.len(), b.len());
+    assert!(a.iter().zip(&b).all(|(x, y)| [x.v0, x.v1, x.v2] == [y.v0, y.v1, y.v2]), "the same repaired faces");
+}
+
 fn bounds(triangles: &[Triangle]) -> ([f32; 3], [f32; 3]) {
     let mut lo = [f32::MAX; 3];
     let mut hi = [f32::MIN; 3];

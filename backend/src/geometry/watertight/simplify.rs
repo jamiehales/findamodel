@@ -366,19 +366,23 @@ fn collapse_block(run: &[(u64, u32)], faces: &[[u32; 3]], verts: &[P], quad: &[Q
         };
     // Cost, the edge's ends, and their stamps when it was costed.
     type Entry = Reverse<(Cost, u32, u32, u32, u32)>;
-    let mut heap: BinaryHeap<Entry> = BinaryHeap::new();
-    for f in &lf {
-        for k in 0..3 {
-            let (a, b) = (f[k], f[(k + 1) % 3]);
-            if a < b
-                && free[a as usize]
-                && free[b as usize]
-                && let Some((c, _)) = consider(a, b, &pos, &q, &vf, &lf)
-            {
-                heap.push(Reverse((Cost(c), a, b, 0, 0)));
-            }
-        }
-    }
+    // Every edge costed at the start, in parallel (nothing has moved yet); the heap pops them in
+    // cost order whatever order they go in.
+    let first: Vec<Entry> = lf
+        .par_iter()
+        .flat_map_iter(|f| {
+            let (pos, q, vf, lf, free) = (&pos, &q, &vf, &lf, &free);
+            (0..3).filter_map(move |k| {
+                let (a, b) = (f[k], f[(k + 1) % 3]);
+                if a < b && free[a as usize] && free[b as usize] {
+                    consider(a, b, pos, q, vf, lf).map(|(c, _)| Reverse((Cost(c), a, b, 0, 0)))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    let mut heap: BinaryHeap<Entry> = BinaryHeap::from(first);
     while let Some(Reverse((_, a, b, sa, sb))) = heap.pop() {
         if dead_v[a as usize] || dead_v[b as usize] || stamp[a as usize] != sa || stamp[b as usize] != sb {
             continue;
@@ -429,6 +433,21 @@ fn collapse_block(run: &[(u64, u32)], faces: &[[u32; 3]], verts: &[P], quad: &[Q
 mod tests {
     use super::super::mesh::{self, tests::cube};
     use super::*;
+
+    #[test]
+    fn simplifying_with_its_vertices_held_gives_the_same_on_any_number_of_threads() {
+        let mut solid = cube([0.0; 3], [1.0; 3]);
+        solid.extend(cube([0.5, 0.5, 0.7], [0.9, 0.7, 1.3]));
+        let (m, _) = super::super::remesh::remesh(&solid, 0.1);
+        let locked: Vec<bool> = (0..m.verts.len()).map(|v| v % 13 == 0).collect();
+        let on = |n: usize| {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(n).build().unwrap();
+            pool.install(|| simplify_locked(&m, &locked, 0.005))
+        };
+        let (one, four) = (on(1), on(4));
+        assert!(one.faces.len() < m.faces.len());
+        assert_eq!((one.faces, one.verts), (four.faces, four.verts));
+    }
 
     #[test]
     fn a_remeshed_cube_simplifies_to_a_few_faces_and_stays_watertight() {
