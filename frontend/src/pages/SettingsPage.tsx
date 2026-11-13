@@ -554,7 +554,7 @@ export default function SettingsPage() {
                 </Label>
                 <HelpTooltip
                   aria-label="About mesh repair threads"
-                  content="Threads used to repair models for remeshed exports. Changing it repairs models again."
+                  content="Threads used to repair models for remeshed exports."
                 />
               </div>
               <div className={styles.versionField}>

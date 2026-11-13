@@ -2,8 +2,8 @@
 //! a mesh is repaired once rather than on every remeshed download or plate export.
 //!
 //! Entries are files (like support exports), named by the key of the repair
-//! ([`watertight::repair_key`]: the mesh repaired and the threads it ran on) and the repair version, so a new repair version misses every
-//! entry. The file is the authority: its header holds the version and the key, and an entry is
+//! ([`watertight::mesh_key`], whatever thread count it was repaired on) and the repair version, so
+//! a new repair version misses every entry. The file is the authority: its header holds the version and the key, and an entry is
 //! used only when both are current and it reads back whole; anything else is repaired again and
 //! rewritten. The `model_repaired_meshes` table indexes which mesh each model's repair was made
 //! from (and what the mesh was made from) for the scan to find entries no model uses any more.
@@ -472,7 +472,7 @@ mod tests {
 
         // A repair over a damaged entry repairs, and rewrites it.
         let cube = cube(41.0);
-        let k = watertight::repair_key(&cube, 2);
+        let k = watertight::mesh_key(&cube);
         let at = dir.path().join(relative_path(&k));
         fs::create_dir_all(at.parent().unwrap()).unwrap();
         fs::write(&at, b"damaged").unwrap();

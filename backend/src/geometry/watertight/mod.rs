@@ -26,18 +26,19 @@ pub const REPAIR_TOLERANCE_MM: f64 = 0.01;
 /// manifold and consistently oriented, the exact surface kept outside the mended spots, sealed
 /// voids filled and drained cavities kept. Supports are never passed in.
 ///
-/// The repair runs on a pool of `threads` threads of its own ([`repair_pool`]): how its work is
-/// split, and so the exact output, depends on the count, which is part of the repair's key.
+/// The repair runs on a pool of `threads` threads of its own ([`repair_pool`]). How its work is
+/// split, and so the exact output, depends on the count, but every count gives a watertight and
+/// valid mesh, so the count is not part of the key: a repair made on other threads is used as it is.
 ///
 /// A mesh is repaired once: a repair kept in `store` is used when there is one, a call for a mesh
-/// (by its corners, on as many threads) already being repaired, by a model download or a plate
+/// (by its corners) already being repaired, by a model download or a plate
 /// export, waits for that repair and gets its result, and a new repair is kept in `store`. Call
 /// it from a thread outside rayon's pools (a blocking task, or a thread of its own): waiting
 /// happens on the calling thread, and a pool thread kept waiting could hold work the running
 /// repair needs.
 pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>, threads: usize) -> Repair {
     let threads = threads.clamp(1, MAX_REPAIR_THREADS);
-    let key = repair_key(triangles, threads);
+    let key = mesh_key(triangles);
     if let Some(stored) = store.and_then(|s| s.load(&key)) {
         return Repair { triangles: stored, key };
     }
@@ -59,7 +60,7 @@ pub trait RepairStore: Sync {
     fn save(&self, key: &MeshKey, repaired: &[Triangle]);
 }
 
-/// A repaired mesh and its key ([`repair_key`]).
+/// A repaired mesh and its key ([`mesh_key`]).
 pub struct Repair {
     pub triangles: Vec<Triangle>,
     pub key: MeshKey,
@@ -97,7 +98,7 @@ fn repair_shared(
     })
 }
 
-/// The repairs under way, by [`repair_key`].
+/// The repairs under way, by [`mesh_key`].
 static REPAIRS: std::sync::LazyLock<SingleFlight<MeshKey, Vec<Triangle>>> =
     std::sync::LazyLock::new(SingleFlight::default);
 
@@ -124,15 +125,6 @@ pub fn mesh_key(triangles: &[Triangle]) -> MeshKey {
     for c in &chunks {
         h.update(c);
     }
-    h.finalize().into()
-}
-
-/// The key of a repair of `triangles` on `threads` threads: their [`mesh_key`] and the count.
-pub fn repair_key(triangles: &[Triangle], threads: usize) -> MeshKey {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(mesh_key(triangles));
-    h.update(format!("|threads:{threads}").as_bytes());
     h.finalize().into()
 }
 
@@ -271,11 +263,11 @@ mod tests {
         let original = sphere(6.0, 24);
         for threads in [1, 3] {
             let repair = repair_model(&original, None, threads);
-            assert_eq!(repair.key, repair_key(&original, threads));
+            assert_eq!(repair.key, mesh_key(&original), "the count is not part of the key");
             assert_eq!(REPAIR_THREADS.lock().get(&repair.key), Some(&threads));
         }
-        assert_ne!(repair_key(&original, 1), repair_key(&original, 3), "the count is part of the key");
-        assert_eq!(repair_model(&original, None, 0).key, repair_key(&original, 1), "at least one");
+        repair_model(&original, None, 0);
+        assert_eq!(REPAIR_THREADS.lock().get(&mesh_key(&original)), Some(&1), "at least one");
     }
 
     #[test]
@@ -334,7 +326,7 @@ mod tests {
         let original = sphere(8.0, 30);
         let store = Memory::default();
         let first = repair_model(&original, Some(&store), 2);
-        assert_eq!(first.key, repair_key(&original, 2));
+        assert_eq!(first.key, mesh_key(&original));
         assert_eq!(store.saves.load(Ordering::SeqCst), 1, "a new repair is kept");
         let second = repair_model(&original, Some(&store), 2);
         assert_eq!(store.saves.load(Ordering::SeqCst), 1, "the kept one is used");
