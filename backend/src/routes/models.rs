@@ -544,8 +544,8 @@ async fn get_resupported_geometry(
 
 /// The model's body made watertight ([`crate::geometry::watertight::repair_model`], the repair
 /// the remeshed VOXL holds, from the repaired-mesh store when it was repaired before) in the
-/// viewer's frame, with a flag for each face the repair added (not one of the body's own): the
-/// mended spots and filled voids. A pre-supported model's body is its model without the supports;
+/// viewer's frame, with a flag for each face the repair moved off the body's surface (see
+/// [`crate::geometry::watertight::changed_faces`]): the mended spots. A pre-supported model's body is its model without the supports;
 /// any other model is repaired whole. `[meshLength:u32][FMSH][faceCount:u32][flag bits]`.
 async fn get_repaired_geometry(
     State(state): State<AppState>,

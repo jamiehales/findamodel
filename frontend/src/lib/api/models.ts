@@ -255,12 +255,12 @@ export async function fetchResupportedGeometry(id: string): Promise<GeometryResp
 
 export interface RepairedGeometryResponse {
   geometry: GeometryResponse;
-  /** One flag per triangle: the repair made it (a mended spot or a filled void). */
+  /** One flag per triangle: the repair moved it off the original surface (a mended spot). */
   changed: Uint8Array;
 }
 
 /**
- * The model body made watertight, with the faces the repair made flagged (sent after the
+ * The model body made watertight, with the faces the repair moved flagged (sent after the
  * others).
  */
 export async function fetchRepairedGeometry(id: string): Promise<RepairedGeometryResponse> {

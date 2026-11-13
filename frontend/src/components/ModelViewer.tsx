@@ -33,7 +33,7 @@ const CONCAVE_HULL_COLOR = '#8fb894';
 const SANS_RAFT_HULL_COLOR = '#94a7cc';
 const SCENE_BACKGROUND = '#18171a';
 
-/** The `--slate` design token (accent for the faces a repair made), read once from the page. */
+/** The `--slate` design token (accent for the faces a repair moved), read once from the page. */
 function repairedFaceColor(): string {
   const token =
     typeof document === 'undefined'

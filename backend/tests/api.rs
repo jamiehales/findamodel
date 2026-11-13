@@ -1267,7 +1267,7 @@ fn repaired_parts(bytes: &[u8]) -> (&[u8], Vec<bool>) {
 }
 
 #[tokio::test]
-async fn a_presupported_model_has_rebuilt_supports_and_a_repaired_body_with_its_mended_faces() {
+async fn a_presupported_model_has_rebuilt_supports_and_a_repaired_body_flagging_only_moved_faces() {
     let app = TestApp::new().await;
     let id = indexed_knight_of_its_own(&app, 1.04).await;
 
@@ -1303,8 +1303,9 @@ async fn a_presupported_model_has_rebuilt_supports_and_a_repaired_body_with_its_
     let (triangles, [_, height, _]) = fmsh_header(mesh);
     assert_eq!(changed.len(), triangles);
     let made = changed.iter().filter(|&&c| c).count();
-    // The crossing block is cut where it meets the body; the rest of the surface is kept.
-    assert!(made > 0 && made < triangles / 2, "{made} of {triangles}");
+    // The crossing block is cut where it meets the body, but the union moves no face off the
+    // surface: nothing is flagged.
+    assert_eq!(made, 0, "{made} of {triangles}");
     // The body alone (up to 17.05 mm), without the supports.
     assert!((height - 17.05).abs() < 1e-2, "{height}");
 

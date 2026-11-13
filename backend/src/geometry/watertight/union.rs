@@ -262,8 +262,11 @@ pub fn fill_sealed(m: &Indexed) -> (Indexed, usize, f64) {
     (mesh::compact(&Indexed { verts: m.verts.clone(), faces }), n, volume)
 }
 
-/// Mending passes after the first, on the rounded result.
-const FOLLOW_UP_PASSES: usize = 5;
+/// Mending passes after the first, on the rounded result. Passes stop once none is left, so more
+/// only cost time on a mesh that needs them: b49b6bca needs 8 (its count goes 9, 8, 9, 31, 11,
+/// 2, 2, 0 with the fills overlapping the cut solid by a cell, and 5 left 2 crossings); the rest
+/// of the repair test set needs 5 or fewer.
+const FOLLOW_UP_PASSES: usize = 8;
 
 /// `first`: the first pass also absorbs small solids and remeshes whole any solid it cannot mend;
 /// a follow-up pass only mends crossings. `widen` scales how far a mending box reaches past the
@@ -582,8 +585,12 @@ fn union_with(p: Prepared, remesh_bad: Option<(f64, f64)>, first: bool, widen: f
 /// Solids under this volume (mm3) touching a larger one are taken into it by mending.
 const SMALL_MM3: f64 = 1.0;
 
-/// How far (in grid cells) a mending fill reaches past the box cut out for it.
-const FILL_OVERLAP_CELLS: f64 = 0.0;
+/// How far (in grid cells) a mending fill reaches past the box cut out for it. At 0 the fill only
+/// touches the cut solid: the boolean keeps both walls of the contact, a slit along every box
+/// side that opens at the surface as a crack round each mend (16 mm2 of internal walls and dents
+/// up to 0.75 mm on Aradia's 24d8c4f8 base); one cell leaves none and mends faster. Two cells
+/// leave crossings the follow-up passes cannot mend on that base.
+const FILL_OVERLAP_CELLS: f64 = 1.0;
 
 /// A solid a mend cannot help is remeshed whole only up to this many faces.
 const WHOLE_REMESH_MAX_FACES: usize = 100_000;
@@ -834,8 +841,48 @@ mod tests {
 
     #[test]
     fn widened_mending_boxes_reach_further_past_a_crossing() {
-        // A finely split ball with its top pole pulled down through its bottom: the crossing is
-        // small, so the mending box round it is set by its margin.
+        // The crossing is small, so the mending box round it is set by its margin.
+        let t = pulled_ball();
+        let input: rustc_hash::FxHashSet<[u64; 3]> = t.iter().flatten().map(|v| v.map(f64::to_bits)).collect();
+        let kept = |widen: f64| {
+            let (out, st) = union_with(prepare(&t), Some((0.05, 0.002)), false, widen);
+            let c = mesh::check(&out, false);
+            assert!(c.boundary_edges + c.non_manifold_edges == 0 && st.mended_groups == 1, "{c:?} {st:?}");
+            out.tris().iter().filter(|f| f.iter().all(|v| input.contains(&v.map(f64::to_bits)))).count()
+        };
+        let (normal, wide) = (kept(1.0), kept(2.0));
+        assert!(wide < normal, "a wider box keeps fewer of the original faces: {wide} against {normal}");
+    }
+
+    #[test]
+    fn a_mend_leaves_no_walls_inside_the_solid() {
+        // Where the fill only touched the cut solid, the boolean kept both walls of the contact:
+        // a slit along every side of the box, opening as a crack where it meets the surface.
+        let t = pulled_ball();
+        let (out, st) = union_with(prepare(&t), Some((0.05, 0.002)), false, 1.0);
+        assert_eq!(st.mended_groups, 1, "{st:?}");
+        let tris = out.tris();
+        let wind = crate::geometry::support_reader::contacts::Wind::new(tris.clone());
+        let inside: f64 = tris
+            .iter()
+            .filter_map(|f| {
+                let n = crate::geometry::support_reader::math::cross(
+                    crate::geometry::support_reader::math::sub(f[1], f[0]),
+                    crate::geometry::support_reader::math::sub(f[2], f[0]),
+                );
+                let l = crate::geometry::support_reader::math::len(n);
+                (l > 1e-12).then(|| {
+                    let c = [0, 1, 2].map(|k| (f[0][k] + f[1][k] + f[2][k]) / 3.0);
+                    let at = |s: f64| [0, 1, 2].map(|k| c[k] + s * 0.01 * n[k] / l);
+                    (wind.w(at(1.0)) > 0.5 && wind.w(at(-1.0)) > 0.5).then_some(l / 2.0)
+                })?
+            })
+            .sum();
+        assert!(inside < 1e-3, "{inside} mm2 of faces with the solid on both sides");
+    }
+
+    /// A finely split ball with its top pole pulled down through its bottom: a small crossing.
+    fn pulled_ball() -> Vec<[P; 3]> {
         let (r, n) = (5.0, 48);
         let at = |i: usize, j: usize| -> P {
             if i == 0 {
@@ -860,15 +907,7 @@ mod tests {
                 }
             }
         }
-        let input: rustc_hash::FxHashSet<[u64; 3]> = t.iter().flatten().map(|v| v.map(f64::to_bits)).collect();
-        let kept = |widen: f64| {
-            let (out, st) = union_with(prepare(&t), Some((0.05, 0.002)), false, widen);
-            let c = mesh::check(&out, false);
-            assert!(c.boundary_edges + c.non_manifold_edges == 0 && st.mended_groups == 1, "{c:?} {st:?}");
-            out.tris().iter().filter(|f| f.iter().all(|v| input.contains(&v.map(f64::to_bits)))).count()
-        };
-        let (normal, wide) = (kept(1.0), kept(2.0));
-        assert!(wide < normal, "a wider box keeps fewer of the original faces: {wide} against {normal}");
+        t
     }
 
     #[test]

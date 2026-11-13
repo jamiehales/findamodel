@@ -13,10 +13,11 @@ pub mod simplify;
 pub mod union;
 
 use crate::geometry::Triangle;
+use crate::geometry::support_reader::math as support_reader_math;
 use crate::single_flight::SingleFlight;
 
 /// Increment when the repair's output changes, so cached repaired exports are rebuilt.
-pub const CURRENT_REPAIR_VERSION: i32 = 3;
+pub const CURRENT_REPAIR_VERSION: i32 = 4;
 
 /// The repair's remesh grid (mm) and the simplification bound of its remeshed patches.
 pub const REPAIR_CELL_MM: f64 = 0.05;
@@ -48,20 +49,67 @@ pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>, thr
     Repair { triangles, key }
 }
 
-/// Which faces of `repaired` (a repair of `original`) the repair made: those whose corners are not
-/// the corners of one of the original's faces (by exact position, in any order or winding). The
-/// repair keeps the exact surface outside the mended spots, so the rest match bit for bit.
+/// Which faces of `repaired` (a repair of `original`) the repair moved off the original surface:
+/// those with a corner, or their centre, more than [`CHANGED_OFF_SURFACE_MM`] from it. A face
+/// that is one of the original's (its corners at the same exact positions, in any order or
+/// winding) is not changed; nor is one the repair only cut up where it mended nearby (its corners
+/// new, but on the surface), so the flags show where the shape changed rather than the outline of
+/// each mending box. The centre catches a face whose corners lie on the surface but which cuts
+/// across a crease.
 pub fn changed_faces(original: &[Triangle], repaired: &[Triangle]) -> Vec<bool> {
     use rayon::prelude::*;
     // `+ 0.0` makes -0 and +0 one corner.
+    let bits = |v: crate::geometry::Vec3| [v.x + 0.0, v.y + 0.0, v.z + 0.0].map(f32::to_bits);
     let key = |t: &Triangle| {
-        let mut corners = [t.v0, t.v1, t.v2].map(|v| [v.x + 0.0, v.y + 0.0, v.z + 0.0].map(f32::to_bits));
+        let mut corners = [t.v0, t.v1, t.v2].map(bits);
         corners.sort_unstable();
         corners
     };
     let faces: rustc_hash::FxHashSet<[[u32; 3]; 3]> = original.par_iter().map(key).collect();
-    repaired.par_iter().map(|t| !faces.contains(&key(t))).collect()
+    let new: Vec<usize> =
+        (0..repaired.len()).into_par_iter().filter(|&i| !faces.contains(&key(&repaired[i]))).collect();
+    if new.is_empty() {
+        return vec![false; repaired.len()];
+    }
+    // Each new face's corners and centre, measured against the original surface.
+    let corners: rustc_hash::FxHashSet<[u32; 3]> =
+        original.par_iter().flat_map_iter(|t| [t.v0, t.v1, t.v2].map(bits)).collect();
+    let probes: Vec<support_reader_math::P> = new
+        .par_iter()
+        .flat_map_iter(|&i| {
+            let t = &repaired[i];
+            let p = [t.v0, t.v1, t.v2].map(|v| [f64::from(v.x), f64::from(v.y), f64::from(v.z)]);
+            let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+            [p[0], p[1], p[2], c]
+        })
+        .collect();
+    // Corners of the original are on it; only the rest are measured.
+    let on: Vec<bool> = new
+        .par_iter()
+        .flat_map_iter(|&i| {
+            let t = &repaired[i];
+            [corners.contains(&bits(t.v0)), corners.contains(&bits(t.v1)), corners.contains(&bits(t.v2)), false]
+        })
+        .collect();
+    let todo: Vec<usize> = (0..probes.len()).filter(|&k| !on[k]).collect();
+    let points: Vec<support_reader_math::P> = todo.iter().map(|&k| probes[k]).collect();
+    let tris = support_reader_math::points_of(original);
+    let d = measure::distances(&points, &tris);
+    let mut off = vec![false; probes.len()];
+    for (&k, &d) in todo.iter().zip(&d) {
+        off[k] = d > CHANGED_OFF_SURFACE_MM;
+    }
+    let mut changed = vec![false; repaired.len()];
+    for (j, &i) in new.iter().enumerate() {
+        changed[i] = off[4 * j..4 * j + 4].iter().any(|&o| o);
+    }
+    changed
 }
+
+/// A repaired face's corner or centre this far (mm) from the original surface marks it changed
+/// ([`changed_faces`]): above single-precision rounding of the corners (under 0.1 µm at 100 mm),
+/// below anything a printer shows.
+pub const CHANGED_OFF_SURFACE_MM: f64 = 0.001;
 
 /// A mesh's content key ([`mesh_key`]): a SHA-256 of its corners.
 pub type MeshKey = [u8; 32];
@@ -286,35 +334,61 @@ mod tests {
     }
 
     #[test]
-    fn changed_faces_are_those_not_in_the_original_by_their_corners() {
+    fn changed_faces_are_those_moved_off_the_original_surface() {
         let (a, b, c, d) =
             (Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 0.0, -0.0));
-        let original = [Triangle::new(a, b, c, Vec3::UP), Triangle::new(a, c, Vec3::new(0.0, 0.0, 1.0), Vec3::UP)];
+        let top = Vec3::new(0.0, 0.0, 1.0);
+        let original = [Triangle::new(a, b, c, Vec3::UP), Triangle::new(a, c, top, Vec3::UP)];
+        let mid = Vec3::new(0.5, 0.0, 0.0);
         let repaired = [
             // Its corners in another order, and wound the other way: the same face.
             Triangle::new(b, c, d, Vec3::default()),
-            Triangle::new(Vec3::new(0.0, 0.0, 1.0), c, a, Vec3::default()),
-            // Moved by one bit: made by the repair.
+            Triangle::new(top, c, a, Vec3::default()),
+            // Cut in two on its own plane: new corners, but nothing moved.
+            Triangle::new(a, mid, c, Vec3::default()),
+            Triangle::new(mid, b, c, Vec3::default()),
+            // Moved by one bit: rounding, not a change.
             Triangle::new(a, b, Vec3::new(0.0, f32::from_bits(1.0f32.to_bits() + 1), 0.0), Vec3::default()),
+            // A corner 0.01 mm off the surface: changed.
+            Triangle::new(a, b, Vec3::new(0.2, 0.2, 0.01), Vec3::default()),
+            // Corners on the surface either side of the edge at the y axis, cutting across it.
+            Triangle::new(
+                Vec3::new(0.0, 0.2, 0.3),
+                Vec3::new(0.3, 0.2, 0.0),
+                Vec3::new(0.0, 0.6, 0.3),
+                Vec3::default(),
+            ),
         ];
-        assert_eq!(changed_faces(&original, &repaired), vec![false, false, true]);
+        assert_eq!(changed_faces(&original, &repaired), vec![false, false, false, false, false, true, true]);
     }
 
     #[test]
-    fn a_closed_mesh_repairs_with_no_changed_faces_and_a_crossing_one_with_some() {
+    fn a_closed_or_crossing_mesh_repairs_with_no_changed_faces_and_a_mended_one_with_some() {
         let ball = sphere(6.5, 24);
         let repaired = repair_model(&ball, None, 2).triangles;
         assert!(changed_faces(&ball, &repaired).iter().all(|c| !c));
-        // Two balls crossing: the union cuts both along the crossing, and keeps the rest.
+        // Two balls crossing: the union only cuts both along the crossing, moving nothing.
         let mut crossing = sphere(5.5, 24);
         crossing.extend(sphere(5.5, 24).into_iter().map(|t| {
             let m = |v: Vec3| Vec3::new(v.x + 4.03, v.y + 0.01, v.z + 0.02);
             Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
         }));
         let repaired = repair_model(&crossing, None, 2).triangles;
-        let changed = changed_faces(&crossing, &repaired);
+        assert!(repaired.len() != crossing.len(), "the union cut the balls");
+        assert!(changed_faces(&crossing, &repaired).iter().all(|c| !c));
+        // A ball with its top pole pulled through its bottom: mended in a box, which reshapes it.
+        let pole = Vec3::new(0.0, 0.0, 6.0);
+        let pulled: Vec<Triangle> = sphere(6.0, 48)
+            .into_iter()
+            .map(|t| {
+                let m = |v: Vec3| if v == pole { Vec3::new(0.3, 0.2, -7.0) } else { v };
+                Triangle::new(m(t.v0), m(t.v1), m(t.v2), t.normal)
+            })
+            .collect();
+        let repaired = repair_model(&pulled, None, 2).triangles;
+        let changed = changed_faces(&pulled, &repaired);
         let count = changed.iter().filter(|&&c| c).count();
-        assert!(count > 0 && count < changed.len() / 2, "{count} of {}", changed.len());
+        assert!(count > 0 && count < changed.len() / 4, "{count} of {}", changed.len());
     }
 
     #[test]
