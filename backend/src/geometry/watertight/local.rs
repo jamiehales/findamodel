@@ -54,11 +54,14 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
     let mut pending: Vec<u32> = pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
     pending.sort_unstable();
     pending.dedup();
+    // Built once and kept up to date as regions go and patches come (a rebuild over the whole
+    // mesh each round costs more than the mending on a large one).
+    let mut adj = if pending.is_empty() { None } else { Some(Adjacency::new(&cur, &removed)) };
     for (round, &rings) in RINGS.iter().enumerate() {
         if pending.is_empty() {
             break;
         }
-        let adj = Adjacency::new(&cur, &removed);
+        let adj = adj.as_mut().expect("built when anything is pending");
         let grown = adj.fill_in(adj.grow(&pending, rings, &removed));
         let pending_set: FxHashSet<u32> = pending.iter().copied().collect();
         let mut failed: Vec<u32> = Vec::new();
@@ -71,8 +74,7 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
         let found: Vec<Option<Vec<[u32; 3]>>> = regions
             .par_iter()
             .map(|region| {
-                patch_for(&cur, &adj, region, &removed)
-                    .filter(|patch| !crosses_near(&cur, &adj, region, patch, &removed))
+                patch_for(&cur, adj, region, &removed).filter(|patch| !crosses_near(&cur, adj, region, patch, &removed))
             })
             .collect();
         for (region, patch) in regions.into_iter().zip(found) {
@@ -86,9 +88,11 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
                 None => failed.extend(region.iter().copied().filter(|f| pending_set.contains(f))),
             }
         }
-        for f in gone {
+        for &f in &gone {
             removed[f as usize] = true;
         }
+        adj.remove(&gone);
+        adj.add(&patches);
         cur.faces.extend(&patches);
         removed.resize(cur.faces.len(), false);
         pending = failed;
@@ -101,24 +105,179 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
 
 /// Faces by edge, and each face's neighbours across its edges.
 struct Adjacency {
-    by_edge: FxHashMap<(u32, u32), Vec<u32>>,
+    by_edge: FxHashMap<(u32, u32), EdgeFaces>,
     /// The live faces round each corner.
-    by_vertex: Vec<Vec<u32>>,
+    by_vertex: VertexFaces,
     faces: Vec<[u32; 3]>,
+}
+
+/// The faces on one edge, ascending: two (as on most edges) are held in place, more in a list.
+/// Reads as a slice.
+#[derive(Debug, Default, Clone)]
+struct EdgeFaces {
+    two: [u32; 2],
+    len: u32,
+    /// Every face, when there are more than two (empty otherwise).
+    more: Vec<u32>,
+}
+
+impl EdgeFaces {
+    fn push(&mut self, f: u32) {
+        if !self.more.is_empty() {
+            self.more.push(f);
+        } else if self.len < 2 {
+            self.two[self.len as usize] = f;
+            self.len += 1;
+        } else {
+            self.more = [self.two[0], self.two[1], f].to_vec();
+        }
+    }
+
+    /// Takes `f` out wherever it is.
+    fn remove(&mut self, f: u32) {
+        if !self.contains(&f) {
+            return;
+        }
+        let rest: Vec<u32> = self.iter().copied().filter(|&g| g != f).collect();
+        *self = EdgeFaces::default();
+        for g in rest {
+            self.push(g);
+        }
+    }
+}
+
+impl std::ops::Deref for EdgeFaces {
+    type Target = [u32];
+    fn deref(&self) -> &[u32] {
+        if self.more.is_empty() { &self.two[..self.len as usize] } else { &self.more }
+    }
+}
+
+/// The faces round each corner, each corner's in order: in one array, each corner's run with
+/// room for as many faces as it had at first, and a corner that comes to have more moved to a
+/// list of its own. Indexed by corner, it reads as a slice.
+#[derive(Debug, Default)]
+struct VertexFaces {
+    /// Where each corner's run starts (and the end of the last).
+    start: Vec<u32>,
+    /// How many of each run's places hold faces.
+    len: Vec<u32>,
+    items: Vec<u32>,
+    moved: FxHashMap<u32, Vec<u32>>,
+}
+
+impl VertexFaces {
+    /// `faces` round each of `verts` corners: face `f` once for each place a corner has in it.
+    fn new<'a>(verts: usize, faces: impl Iterator<Item = (u32, &'a [u32; 3])> + Clone) -> Self {
+        let mut start = vec![0u32; verts + 1];
+        for (_, t) in faces.clone() {
+            for &v in t {
+                start[v as usize + 1] += 1;
+            }
+        }
+        for v in 0..verts {
+            start[v + 1] += start[v];
+        }
+        let mut len = vec![0u32; verts];
+        let mut items = vec![0u32; start[verts] as usize];
+        for (f, t) in faces {
+            for &v in t {
+                items[(start[v as usize] + len[v as usize]) as usize] = f;
+                len[v as usize] += 1;
+            }
+        }
+        VertexFaces { start, len, items, moved: FxHashMap::default() }
+    }
+
+    fn push(&mut self, v: u32, f: u32) {
+        let vi = v as usize;
+        if let Some(list) = self.moved.get_mut(&v) {
+            list.push(f);
+        } else if self.start[vi] + self.len[vi] < self.start[vi + 1] {
+            self.items[(self.start[vi] + self.len[vi]) as usize] = f;
+            self.len[vi] += 1;
+        } else {
+            let mut list = self[vi].to_vec();
+            list.push(f);
+            self.moved.insert(v, list);
+        }
+    }
+
+    /// Takes `f` out of corner `v`'s faces wherever it is.
+    fn remove(&mut self, v: u32, f: u32) {
+        let vi = v as usize;
+        if let Some(list) = self.moved.get_mut(&v) {
+            list.retain(|&g| g != f);
+            return;
+        }
+        let (s, n) = (self.start[vi] as usize, self.len[vi] as usize);
+        let run = &mut self.items[s..s + n];
+        let mut kept = 0;
+        for i in 0..n {
+            if run[i] != f {
+                run[kept] = run[i];
+                kept += 1;
+            }
+        }
+        self.len[vi] = kept as u32;
+    }
+}
+
+impl std::ops::Index<usize> for VertexFaces {
+    type Output = [u32];
+    fn index(&self, v: usize) -> &[u32] {
+        if !self.moved.is_empty()
+            && let Some(list) = self.moved.get(&(v as u32))
+        {
+            return list;
+        }
+        let (s, n) = (self.start[v] as usize, self.len[v] as usize);
+        &self.items[s..s + n]
+    }
 }
 
 impl Adjacency {
     fn new(m: &Indexed, removed: &[bool]) -> Self {
-        let mut by_edge: FxHashMap<(u32, u32), Vec<u32>> = FxHashMap::default();
-        let mut by_vertex: Vec<Vec<u32>> = vec![Vec::new(); m.verts.len()];
-        for (fi, f) in m.faces.iter().enumerate().filter(|(fi, _)| !removed[*fi]) {
+        let live = m.faces.iter().enumerate().filter(|(fi, _)| !removed[*fi]).map(|(fi, f)| (fi as u32, f));
+        // Sized for an edge per side and a half, as a closed mesh has.
+        let mut by_edge: FxHashMap<(u32, u32), EdgeFaces> =
+            FxHashMap::with_capacity_and_hasher(m.faces.len() * 3 / 2 + 16, Default::default());
+        for (fi, f) in live.clone() {
             for k in 0..3 {
                 let (a, b) = (f[k], f[(k + 1) % 3]);
-                by_edge.entry((a.min(b), a.max(b))).or_default().push(fi as u32);
-                by_vertex[a as usize].push(fi as u32);
+                by_edge.entry((a.min(b), a.max(b))).or_default().push(fi);
             }
         }
+        let by_vertex = VertexFaces::new(m.verts.len(), live);
         Adjacency { by_edge, by_vertex, faces: m.faces.clone() }
+    }
+
+    /// Takes `gone` out, as a rebuild without them would (the lists keep their order).
+    fn remove(&mut self, gone: &[u32]) {
+        for &f in gone {
+            let t = self.faces[f as usize];
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                if let Some(list) = self.by_edge.get_mut(&(a.min(b), a.max(b))) {
+                    list.remove(f);
+                }
+                self.by_vertex.remove(a, f);
+            }
+        }
+    }
+
+    /// Adds `faces` after the faces there are, as a rebuild with them would (each new face's index
+    /// is above every list's, so the lists stay ascending).
+    fn add(&mut self, faces: &[[u32; 3]]) {
+        for t in faces {
+            let fi = self.faces.len() as u32;
+            self.faces.push(*t);
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                self.by_edge.entry((a.min(b), a.max(b))).or_default().push(fi);
+                self.by_vertex.push(a, fi);
+            }
+        }
     }
 
     fn neighbours(&self, f: u32) -> impl Iterator<Item = u32> + '_ {
@@ -184,20 +343,24 @@ impl Adjacency {
     }
 
     /// Adds to `set` the faces with two or more neighbours in it, until none has.
+    /// Each pass tries only the faces next to those the last pass added (a face's count of
+    /// neighbours in the set grows only when one of them is added), which adds what trying every
+    /// face next to the set would.
     fn fill_concave(&self, set: &mut FxHashSet<u32>) {
+        let mut tried: Vec<u32> = set.iter().flat_map(|&f| self.neighbours(f)).filter(|g| !set.contains(g)).collect();
         loop {
-            let mut add: Vec<u32> = set
+            tried.sort_unstable();
+            tried.dedup();
+            let add: Vec<u32> = tried
                 .iter()
-                .flat_map(|&f| self.neighbours(f))
-                .filter(|g| !set.contains(g))
+                .copied()
                 .filter(|&g| self.neighbours(g).filter(|h| set.contains(h)).count() >= 2)
                 .collect();
-            add.sort_unstable();
-            add.dedup();
             if add.is_empty() {
                 break;
             }
-            set.extend(add);
+            set.extend(add.iter().copied());
+            tried = add.iter().flat_map(|&f| self.neighbours(f)).filter(|g| !set.contains(g)).collect();
         }
     }
 
@@ -295,28 +458,79 @@ fn patch_for(m: &Indexed, adj: &Adjacency, region: &[u32], removed: &[bool]) -> 
     // Distances looked up in an index, as far as the rim's longest side reaches (every probe of a
     // patch face lies within that of a rim corner, which is on the surface).
     let reach = (0..n).map(|i| dist(p(i), p((i + 1) % n))).fold(0.0, f64::max).max(1e-6);
-    let index = (!surface.is_empty()).then(|| BoxIndex::new(&surface, reach));
+    let index = (!surface.is_empty()).then(|| {
+        let cell = surface_cell(&surface).min(reach);
+        (BoxIndex::new(&surface, cell), cell)
+    });
     let near = std::cell::RefCell::new(Vec::new());
+    // The distance to the surface, capped at `reach`: looked up in boxes doubling from one cell
+    // wide, until the nearest face found lies well inside the box (no face outside it can then be
+    // nearer); the last box is the whole reach, where the cap applies.
     let off = |q: P| {
-        let Some(index) = &index else { return 0.0 };
+        let Some((index, cell)) = &index else { return 0.0 };
         let mut near = near.borrow_mut();
-        index.query_into(sub(q, [reach; 3]), [q[0] + reach, q[1] + reach, q[2] + reach], &mut near);
-        near.iter().map(|&t| dist(q, closest_on_tri(q, &surface[t as usize]))).fold(reach, f64::min)
+        let mut r = *cell;
+        loop {
+            let last = r >= reach;
+            if last {
+                r = reach;
+            }
+            index.query_into(sub(q, [r; 3]), [q[0] + r, q[1] + r, q[2] + r], &mut near);
+            // A face whose box lies clearly further off than the nearest found so far cannot be
+            // nearer (the margin is far above the rounding in either distance).
+            let mut best = f64::INFINITY;
+            for &t in near.iter() {
+                let (lo, hi) = index.bounds[t as usize];
+                let gap2: f64 = (0..3).map(|k| (lo[k] - q[k]).max(q[k] - hi[k]).max(0.0).powi(2)).sum();
+                let bar = best * (1.0 + 1e-6) + 1e-9;
+                if gap2 > bar * bar {
+                    continue;
+                }
+                best = best.min(dist(q, closest_on_tri(q, &surface[t as usize])));
+            }
+            if last {
+                return best.min(reach);
+            }
+            if best <= r * 0.999 {
+                return best;
+            }
+            r *= 2.0;
+        }
     };
-    let area = |i: usize, j: usize, k: usize| {
+    // A side's midpoint is a probe of every patch face on that side: its distance is kept.
+    let side_off: Vec<std::cell::Cell<f64>> =
+        if index.is_some() { (0..n * n).map(|_| std::cell::Cell::new(-1.0)).collect() } else { Vec::new() };
+    let mid_off = |i: usize, j: usize| {
+        let (i, j) = (i.min(j), i.max(j));
+        let kept = side_off[i * n + j].get();
+        if kept >= 0.0 {
+            return kept;
+        }
+        let (x, y) = (p(i), p(j));
+        let d = off([0, 1, 2].map(|q| (x[q] + y[q]) / 2.0));
+        side_off[i * n + j].set(d);
+        d
+    };
+    // Face (i, j, k)'s weight added to `base`, or None when that is sure not to come below `bar`
+    // (a sum of terms none of which is below zero cannot come below the sum of some of them, in
+    // rounded sums too, so the centroid's distance is only looked up when it can matter).
+    let weighed = |i: usize, j: usize, k: usize, base: f64, bar: f64| -> Option<f64> {
         let a = 0.5 * len(cross(sub(p(j), p(i)), sub(p(k), p(i))));
         if surface.is_empty() {
-            return a;
+            return Some(base + a);
+        }
+        let weight = |probes: [f64; 4]| {
+            let d2: f64 = probes.iter().map(|&d| d.powi(2)).sum::<f64>() / 4.0;
+            base + a * (AREA_WEIGHT_MM2 + d2)
+        };
+        let sides = [mid_off(i, j), mid_off(j, k), mid_off(k, i)];
+        if weight([0.0, sides[0], sides[1], sides[2]]) >= bar {
+            return None;
         }
         let (x, y, z) = (p(i), p(j), p(k));
-        let probes = [
-            [0, 1, 2].map(|q| (x[q] + y[q] + z[q]) / 3.0),
-            [0, 1, 2].map(|q| (x[q] + y[q]) / 2.0),
-            [0, 1, 2].map(|q| (y[q] + z[q]) / 2.0),
-            [0, 1, 2].map(|q| (z[q] + x[q]) / 2.0),
-        ];
-        let d2: f64 = probes.iter().map(|&q| off(q).powi(2)).sum::<f64>() / 4.0;
-        a * (AREA_WEIGHT_MM2 + d2)
+        // The centroid and the three side midpoints (a midpoint is the same point whichever way
+        // round its side is taken).
+        Some(weight([off([0, 1, 2].map(|q| (x[q] + y[q] + z[q]) / 3.0)), sides[0], sides[1], sides[2]]))
     };
     let blocked = |i: usize, k: usize| {
         let (a, b) = (rim[i], rim[k]);
@@ -335,7 +549,12 @@ fn patch_for(m: &Indexed, adj: &Adjacency, region: &[u32], removed: &[bool]) -> 
                 continue;
             }
             for j in i + 1..k {
-                let c = cost[i * n + j] + cost[j * n + k] + area(i, j, k);
+                // Only a split that could come below the best so far is weighed in full.
+                let base = cost[i * n + j] + cost[j * n + k];
+                if base >= cost[i * n + k] {
+                    continue;
+                }
+                let Some(c) = weighed(i, j, k, base, cost[i * n + k]) else { continue };
                 if c < cost[i * n + k] {
                     cost[i * n + k] = c;
                     pick[i * n + k] = j;
@@ -358,6 +577,14 @@ fn patch_for(m: &Indexed, adj: &Adjacency, region: &[u32], removed: &[bool]) -> 
         stack.push((j, k));
     }
     Some(out)
+}
+
+/// A cell for indexing `surface` for nearest-face lookups: twice its median side.
+fn surface_cell(surface: &[[P; 3]]) -> f64 {
+    let mut side: Vec<f64> = surface.iter().map(|t| dist(t[0], t[1])).collect();
+    let k = side.len() / 2;
+    side.select_nth_unstable_by(k, f64::total_cmp);
+    (side[k] * 2.0).max(1e-6)
 }
 
 /// Whether the patch crosses itself or any kept face near the region (within a few rings).
@@ -440,5 +667,104 @@ mod tests {
         let (out, st) = mend(&m, &[]);
         assert_eq!(out.faces, m.faces);
         assert_eq!(st.mended + st.left, 0);
+    }
+
+    #[test]
+    fn edge_faces_hold_two_in_place_and_more_in_a_list() {
+        let mut e = EdgeFaces::default();
+        assert!(e.is_empty());
+        e.push(4);
+        e.push(7);
+        assert_eq!((&e[..], e.more.is_empty()), (&[4, 7][..], true));
+        e.push(9);
+        assert_eq!(&e[..], &[4, 7, 9]);
+        e.remove(7);
+        assert_eq!((&e[..], e.more.is_empty()), (&[4, 9][..], true));
+        e.remove(5);
+        e.remove(4);
+        assert_eq!(&e[..], &[9]);
+    }
+
+    #[test]
+    fn vertex_faces_move_a_corner_that_outgrows_its_run() {
+        let faces = [[0, 1, 2], [0, 2, 3]];
+        let mut v = VertexFaces::new(4, faces.iter().enumerate().map(|(f, t)| (f as u32, t)));
+        assert_eq!((&v[0], &v[1], &v[3]), (&[0, 1][..], &[0][..], &[1][..]));
+        v.remove(0, 0);
+        v.push(0, 5);
+        assert_eq!(&v[0], &[1, 5]);
+        assert!(v.moved.is_empty());
+        v.push(0, 6);
+        assert_eq!((&v[0], &v[2]), (&[1, 5, 6][..], &[0, 1][..]));
+        v.remove(0, 5);
+        assert_eq!(&v[0], &[1, 6]);
+    }
+
+    /// Every list of `a` against those of `b`, leaving out edges no face has any more.
+    fn same_adjacency(a: &Adjacency, b: &Adjacency, verts: usize) {
+        let lists = |x: &Adjacency| {
+            let mut l: Vec<((u32, u32), Vec<u32>)> =
+                x.by_edge.iter().filter(|(_, f)| !f.is_empty()).map(|(k, f)| (*k, f.to_vec())).collect();
+            l.sort_unstable();
+            l
+        };
+        assert_eq!(lists(a), lists(b));
+        for v in 0..verts {
+            assert_eq!(&a.by_vertex[v], &b.by_vertex[v], "corner {v}");
+        }
+        assert_eq!(a.faces, b.faces);
+    }
+
+    #[test]
+    fn adjacency_kept_up_to_date_is_what_a_rebuild_makes() {
+        let mut m = ball();
+        let mut removed = vec![false; m.faces.len()];
+        let mut adj = Adjacency::new(&m, &removed);
+        // A band of faces taken out, and faces round one corner added (more than its run holds).
+        let gone: Vec<u32> = (300..340).collect();
+        let hub = m.faces[320][0];
+        let ring: Vec<u32> = m.faces[300..340].iter().flatten().copied().filter(|&v| v != hub).collect();
+        let added: Vec<[u32; 3]> = ring.windows(2).map(|w| [hub, w[0], w[1]]).filter(|t| t[1] != t[2]).collect();
+        for &f in &gone {
+            removed[f as usize] = true;
+        }
+        adj.remove(&gone);
+        adj.add(&added);
+        m.faces.extend(&added);
+        removed.resize(m.faces.len(), false);
+        assert!(!adj.by_vertex.moved.is_empty());
+        same_adjacency(&adj, &Adjacency::new(&m, &removed), m.verts.len());
+        // Then some of the added faces taken out again.
+        let again: Vec<u32> = (m.faces.len() as u32 - 5..m.faces.len() as u32).chain([10, 11]).collect();
+        for &f in &again {
+            removed[f as usize] = true;
+        }
+        adj.remove(&again);
+        same_adjacency(&adj, &Adjacency::new(&m, &removed), m.verts.len());
+    }
+
+    #[test]
+    fn filling_in_from_the_faces_last_added_is_filling_in_from_all() {
+        let m = ball();
+        let adj = Adjacency::new(&m, &vec![false; m.faces.len()]);
+        // Scattered faces with gaps between them for the filling to close.
+        let seed: FxHashSet<u32> = (0..m.faces.len() as u32).filter(|f| f % 7 == 0 || f % 11 == 0).collect();
+        let mut quick = seed.clone();
+        adj.fill_concave(&mut quick);
+        let mut every = seed.clone();
+        loop {
+            let add: Vec<u32> = every
+                .iter()
+                .flat_map(|&f| adj.neighbours(f))
+                .filter(|g| !every.contains(g))
+                .filter(|&g| adj.neighbours(g).filter(|h| every.contains(h)).count() >= 2)
+                .collect();
+            if add.is_empty() {
+                break;
+            }
+            every.extend(add);
+        }
+        assert!(quick.len() > seed.len());
+        assert_eq!(quick, every);
     }
 }
