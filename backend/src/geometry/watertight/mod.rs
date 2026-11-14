@@ -18,7 +18,7 @@ use crate::geometry::support_reader::math as support_reader_math;
 use crate::single_flight::SingleFlight;
 
 /// Increment when the repair's output changes, so cached repaired exports are rebuilt.
-pub const CURRENT_REPAIR_VERSION: i32 = 5;
+pub const CURRENT_REPAIR_VERSION: i32 = 6;
 
 /// The repair's remesh grid (mm) and the simplification bound of its remeshed patches.
 pub const REPAIR_CELL_MM: f64 = 0.05;
