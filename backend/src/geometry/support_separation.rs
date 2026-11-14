@@ -63,6 +63,12 @@
 //! detection, so it is skipped for supports that are clearly generated: many components made
 //! almost entirely of repeated triangles.
 //!
+//! A triangle is repeated when at least [`REPEATED_MIN_COPIES`] triangles of its component have
+//! the same three edge lengths, compared on a grid that scales with the component's mesh (see
+//! [`EDGE_GRID_SIZE_MM`]): generated geometry copies its triangles exactly but for the rounding
+//! of their corners, while a sculpt's triangles only match by chance, and on a fixed grid that
+//! chance grows as the mesh gets finer.
+//!
 //! The constants' notes on styles and data read as in [`super::support_layout`]; here the guard
 //! sets (108 real models, 219 Engin3d models without supports) weigh most.
 
@@ -72,7 +78,7 @@ use super::support_layout::closest_on_triangle;
 use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 8;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 9;
 
 /// Components with at least 1/N of the seed's triangles are model parts. Styles: all, and the
 /// unsupported group (multi-part kits). Sweep: fragile: 6 or 11 each change one corpus model's
@@ -116,8 +122,26 @@ const LATTICE_MIN_TRIANGLES: u32 = 5_000;
 /// the round trip; 5 changes which fakes are classified (none kept).
 const REPEATED_MIN_COPIES: u32 = 4;
 
-/// Edge lengths within this many mm are treated as equal. A numeric tolerance.
+/// Edge lengths are compared on a grid of this many mm (rounded to it), or of
+/// [`EDGE_GRID_MEDIAN_SHARE`] of the component's median edge where that is finer. A fixed grid
+/// makes a finely meshed sculpt look generated: with edges only 50 to 180 steps long, most of its
+/// triangles share their rounded edge lengths with others by chance (83% of the 1.76M-triangle arm
+/// of Aradia Miniatures' Malkhut satyr, 02c1a9f8; 0.3% on its own grid). Styles: all. Sweep: a
+/// tenth of it (scaled or not) splits the copies of real supports' joint balls, which differ by the
+/// rounding of their corners (the satyr's 0.04 mm balls fall from 0.95 to 0.2-0.8 repeated).
 const EDGE_GRID_SIZE_MM: f64 = 0.0001;
+
+/// See [`EDGE_GRID_SIZE_MM`]: the grid is at most this share of the component's median edge, so
+/// sculpted triangles collide as rarely on a fine mesh as on a coarse one, and is unchanged for
+/// edges of 0.1 mm and more. Coarsening the grid for coarse meshes too only merges near-copies
+/// (Engin3d's kit parts gain repeats). Styles: all. Sweep: half of it changes nothing that
+/// matters (the satyr's arm 0.0%, its balls 0.98); twice it leaves 6% of the arm repeated.
+const EDGE_GRID_MEDIAN_SHARE: f64 = 0.001;
+
+/// ... and no finer than this many f32 steps at the component's farthest coordinate from the
+/// origin, which is how far the rounding of their corners can move the edges of copies placed
+/// apart. A numeric tolerance.
+const EDGE_GRID_MIN_STEPS: f64 = 4.0;
 
 /// Small components reaching this close to the model's top are model details. Styles: all. Sweep:
 /// no effect on the round trip; 25% either way changes which fakes are classified (none kept).
@@ -537,11 +561,10 @@ pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_he
 /// thicker than a support ([`MAX_SUPPORT_THICKNESS_MM`]), generated primitives
 /// ([`PRIMITIVE_MIN_REPEATED_FRACTION`]), and either joints, with support surface within
 /// [`JOINT_MIDDLE_SHARE`] of their smallest half-extent of their centre, or tips (see
-/// [`support_tips`]). The model part with the most surface is the body and is never taken: a
-/// finely remeshed sculpt can pass for a primitive, since with edges of only 50 to 180
-/// [`EDGE_GRID_SIZE_MM`] steps most of its triangles share their edge lengths with others (83% of
-/// the 1.76M-triangle arm of Aradia Miniatures' Malkhut satyr, 02c1a9f8), and its centre can lie
-/// near a support tip when it is thin and bent.
+/// [`support_tips`]). The model part with the most surface is the body and is never taken, as a
+/// safety net: its centre can lie near a support tip when it is thin and bent, so it would only
+/// need to pass for a primitive (as a finely meshed sculpt did on a fixed edge grid, see
+/// [`EDGE_GRID_SIZE_MM`]) to be taken whole.
 fn stray_support_parts(
     triangles: &[Triangle],
     component_of: &[u32],
@@ -549,8 +572,7 @@ fn stray_support_parts(
     scrap: &[bool],
     is_support: &[bool],
 ) -> Vec<bool> {
-    // The model part with the most surface is the body, never a joint or tip, whatever its mesh:
-    // a remeshed sculpt with edges of a few hundredths of a mm can repeat most of its triangles
+    // The model part with the most surface is the body, never a joint or tip, whatever its mesh
     // (see [`stray_support_parts`]).
     let body = (0..stats.len())
         .filter(|&c| !is_support[c] && !scrap[c])
@@ -817,13 +839,16 @@ fn primitives(triangles: &[Triangle], component_of: &[u32], candidate: &[bool]) 
 }
 
 /// Per candidate component, the fraction of its triangles congruent to at least
-/// [`REPEATED_MIN_COPIES`] - 1 others (same edge lengths within [`EDGE_GRID_SIZE_MM`]).
+/// [`REPEATED_MIN_COPIES`] - 1 others: the same edge lengths on the component's grid (see
+/// [`EDGE_GRID_SIZE_MM`]).
 fn repeated_fractions(triangles: &[Triangle], component_of: &[u32], candidate: &[bool]) -> Vec<f64> {
-    let edge = |a: Vec3, b: Vec3| (f64::from((a - b).length()) / EDGE_GRID_SIZE_MM).round() as i64;
+    let grids = edge_grids(triangles, component_of, candidate);
     let mut shapes: FxHashMap<(u32, [i64; 3]), u32> = FxHashMap::default();
     let mut totals = vec![0u32; candidate.len()];
     for (tri, &c) in triangles.iter().zip(component_of) {
         if candidate[c as usize] {
+            let grid = grids[c as usize];
+            let edge = |a: Vec3, b: Vec3| (f64::from((a - b).length()) / grid).round() as i64;
             let mut edges = [edge(tri.v0, tri.v1), edge(tri.v1, tri.v2), edge(tri.v2, tri.v0)];
             edges.sort_unstable();
             *shapes.entry((c, edges)).or_default() += 1;
@@ -837,6 +862,36 @@ fn repeated_fractions(triangles: &[Triangle], component_of: &[u32], candidate: &
         }
     }
     repeated.iter().zip(&totals).map(|(&r, &t)| if t > 0 { f64::from(r) / f64::from(t) } else { 0.0 }).collect()
+}
+
+/// Per candidate component, the grid (mm) its edge lengths are compared on: [`EDGE_GRID_SIZE_MM`],
+/// or [`EDGE_GRID_MEDIAN_SHARE`] of its median edge where finer, but at least
+/// [`EDGE_GRID_MIN_STEPS`] f32 steps at its farthest coordinate.
+fn edge_grids(triangles: &[Triangle], component_of: &[u32], candidate: &[bool]) -> Vec<f64> {
+    let mut lengths: Vec<Vec<f32>> = vec![Vec::new(); candidate.len()];
+    let mut reach = vec![0.0f32; candidate.len()];
+    for (tri, &c) in triangles.iter().zip(component_of) {
+        let c = c as usize;
+        if candidate[c] {
+            lengths[c].extend([(tri.v0 - tri.v1).length(), (tri.v1 - tri.v2).length(), (tri.v2 - tri.v0).length()]);
+            for v in [tri.v0, tri.v1, tri.v2] {
+                reach[c] = reach[c].max(v.x.abs()).max(v.y.abs()).max(v.z.abs());
+            }
+        }
+    }
+    lengths
+        .iter_mut()
+        .zip(&reach)
+        .map(|(lengths, &reach)| {
+            if lengths.is_empty() {
+                return EDGE_GRID_SIZE_MM;
+            }
+            let middle = lengths.len() / 2;
+            let (_, &mut median, _) = lengths.select_nth_unstable_by(middle, f32::total_cmp);
+            let float_steps = EDGE_GRID_MIN_STEPS * f64::from(reach) * f64::from(f32::EPSILON);
+            (EDGE_GRID_MEDIAN_SHARE * f64::from(median)).min(EDGE_GRID_SIZE_MM).max(float_steps)
+        })
+        .collect()
 }
 
 struct Components {
@@ -1551,6 +1606,97 @@ pub(crate) mod tests {
         ));
         let c = classify(&mesh, RAFT).expect("classification");
         assert!(c.is_support[mesh.len() - 1]);
+    }
+
+    /// Moves each vertex by up to `amount` mm in each axis, pseudo-randomly by its position, so
+    /// shared vertices stay shared but even neighbouring triangles differ, like a fine sculpt.
+    /// ([`sculpted`] moves neighbouring vertices of a fine mesh almost alike.)
+    fn roughened(triangles: Vec<Triangle>, amount: f32) -> Vec<Triangle> {
+        let jitter = |v: Vec3| {
+            let h = |k: f64| {
+                let x = (f64::from(v.x) * 12.9898 + f64::from(v.y) * 78.233 + f64::from(v.z) * 37.719 + k).sin();
+                ((x * 43_758.545).fract() * f64::from(amount)) as f32
+            };
+            Vec3::new(v.x + h(0.0), v.y + h(1.0), v.z + h(2.0))
+        };
+        triangles.into_iter().map(|t| Triangle::new(jitter(t.v0), jitter(t.v1), jitter(t.v2), t.normal)).collect()
+    }
+
+    /// The repeated fraction of `triangles` taken as one component.
+    fn repeated_fraction(triangles: &[Triangle]) -> f64 {
+        repeated_fractions(triangles, &vec![0; triangles.len()], &[true])[0]
+    }
+
+    /// The repeated fraction on the fixed 0.0001 mm grid used before it scaled with the mesh.
+    fn fixed_grid_repeated_fraction(triangles: &[Triangle]) -> f64 {
+        let edge = |a: Vec3, b: Vec3| (f64::from((a - b).length()) / EDGE_GRID_SIZE_MM).round() as i64;
+        let mut shapes: FxHashMap<[i64; 3], u32> = FxHashMap::default();
+        for t in triangles {
+            let mut edges = [edge(t.v0, t.v1), edge(t.v1, t.v2), edge(t.v2, t.v0)];
+            edges.sort_unstable();
+            *shapes.entry(edges).or_default() += 1;
+        }
+        let repeated: u32 = shapes.values().filter(|&&n| n >= REPEATED_MIN_COPIES).sum();
+        f64::from(repeated) / triangles.len() as f64
+    }
+
+    #[test]
+    fn a_finely_meshed_sculpt_is_not_repeated() {
+        // A 1 mm sculpted block at 40 mm from the origin, meshed with edges of 0.017 to 0.024 mm
+        // (43,200 triangles) and every corner moved by up to 0.0005 mm: on a 0.0001 mm grid most
+        // of its triangles match others by chance, like the remeshed arm of Aradia's satyr.
+        let block = roughened(cuboid(Vec3::new(40.0, 5.0, 40.0), Vec3::new(41.0, 6.0, 41.0), 60), 0.0005);
+        assert!(fixed_grid_repeated_fraction(&block) > 0.5, "{}", fixed_grid_repeated_fraction(&block));
+        let fraction = repeated_fraction(&block);
+        assert!(fraction < SCULPTED_MAX_REPEATED_FRACTION, "{fraction}");
+    }
+
+    #[test]
+    fn a_tiny_instanced_support_primitive_is_repeated() {
+        // Joint balls 0.06 mm across (16 segments, 8 rings, edges of 0.005 to 0.017 mm) copied to
+        // spots 30 to 60 mm from the origin, where the rounding of their corners moves their
+        // edges by up to a few 0.00001 mm.
+        for (k, x) in [30.0f32, 41.3, 52.7, 60.1].into_iter().enumerate() {
+            let ball = sphere(Vec3::new(x, 3.0 + k as f32 * 7.9, -x * 0.6), 0.03, 16, 8);
+            let fraction = repeated_fraction(&ball);
+            assert!(fraction >= PRIMITIVE_MIN_REPEATED_FRACTION, "ball {k}: {fraction}");
+        }
+        // As before, larger ones too.
+        let ball = sphere(Vec3::new(20.0, 8.0, 30.0), 0.5, 16, 8);
+        assert!(repeated_fraction(&ball) >= GENERATED_MIN_REPEATED_FRACTION);
+    }
+
+    #[test]
+    fn a_support_lattice_is_repeated_at_any_scale() {
+        // The 1 mm wall of `a_large_sparse_lattice_of_repeated_triangles_is_support`, and the same
+        // wall at 0.03 mm.
+        let lattice = wall(0.0);
+        assert!(repeated_fraction(&lattice) >= LATTICE_MIN_REPEATED_FRACTION);
+        let small: Vec<Triangle> = lattice
+            .iter()
+            .map(|t| {
+                let s = |v: Vec3| Vec3::new(v.x * 0.03, v.y * 0.03, v.z * 0.03 + 10.0);
+                Triangle::new(s(t.v0), s(t.v1), s(t.v2), t.normal)
+            })
+            .collect();
+        assert!(repeated_fraction(&small) >= LATTICE_MIN_REPEATED_FRACTION, "{}", repeated_fraction(&small));
+        // Not so when jittered like a sculpt.
+        assert!(repeated_fraction(&wall(0.4)) < SCULPTED_MAX_REPEATED_FRACTION);
+    }
+
+    #[test]
+    fn a_finely_meshed_sculpted_detail_is_model() {
+        // A 0.2 mm bead (1,200 triangles, edges of 0.02 mm) sculpted by 0.0001 mm, well below the
+        // body's top: dense like a sculpt, and repeated by chance on a fixed grid (a primitive,
+        // and so weighed by its height like a support), but its triangles are all different.
+        let mut mesh = body();
+        mesh.extend(posts(50));
+        let bead = roughened(cuboid(Vec3::new(20.0, 8.0, 0.0), Vec3::new(20.2, 8.2, 0.2), 10), 0.0001);
+        assert!(fixed_grid_repeated_fraction(&bead) >= PRIMITIVE_MIN_REPEATED_FRACTION);
+        mesh.extend(&bead);
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[mesh.len() - bead.len()..].iter().all(|s| !*s), "the bead stays with the model");
+        assert_eq!(support_count(&c), 50 * 48);
     }
 
     #[test]
