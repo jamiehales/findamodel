@@ -35,8 +35,9 @@
 //!    on an upward-facing model surface without meeting a downward-facing one at its top is a
 //!    piece of the sculpt lying apart from the model (a pebble on the ground): a loose piece,
 //!    kept with the model like a scrap.
-//! 7. A model component that is a generated primitive (see step 4), as thin as a support, with
-//!    support geometry running into its middle is a support joint: Chitubox trees join their rods
+//! 7. A model component other than the body (the model part with the most surface) that is a
+//!    generated primitive (see step 4), as thin as a support, with support geometry running into
+//!    its middle is a support joint: Chitubox trees join their rods
 //!    in balls that can be finer meshed than the sculpt (5,120 triangles each on Cast n Play's
 //!    bases) or the seed itself (on a low-poly part), so step 3 or 5 takes them for model parts,
 //!    and a support tip only meets a model part's surface, never its middle (see
@@ -71,7 +72,7 @@ use super::support_layout::closest_on_triangle;
 use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 7;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 8;
 
 /// Components with at least 1/N of the seed's triangles are model parts. Styles: all, and the
 /// unsupported group (multi-part kits). Sweep: fragile: 6 or 11 each change one corpus model's
@@ -536,7 +537,11 @@ pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_he
 /// thicker than a support ([`MAX_SUPPORT_THICKNESS_MM`]), generated primitives
 /// ([`PRIMITIVE_MIN_REPEATED_FRACTION`]), and either joints, with support surface within
 /// [`JOINT_MIDDLE_SHARE`] of their smallest half-extent of their centre, or tips (see
-/// [`support_tips`]).
+/// [`support_tips`]). The model part with the most surface is the body and is never taken: a
+/// finely remeshed sculpt can pass for a primitive, since with edges of only 50 to 180
+/// [`EDGE_GRID_SIZE_MM`] steps most of its triangles share their edge lengths with others (83% of
+/// the 1.76M-triangle arm of Aradia Miniatures' Malkhut satyr, 02c1a9f8), and its centre can lie
+/// near a support tip when it is thin and bent.
 fn stray_support_parts(
     triangles: &[Triangle],
     component_of: &[u32],
@@ -544,10 +549,16 @@ fn stray_support_parts(
     scrap: &[bool],
     is_support: &[bool],
 ) -> Vec<bool> {
+    // The model part with the most surface is the body, never a joint or tip, whatever its mesh:
+    // a remeshed sculpt with edges of a few hundredths of a mm can repeat most of its triangles
+    // (see [`stray_support_parts`]).
+    let body = (0..stats.len())
+        .filter(|&c| !is_support[c] && !scrap[c])
+        .max_by(|&a, &b| stats[a].area.total_cmp(&stats[b].area));
     let shaped: Vec<bool> = (0..stats.len())
         .map(|c| {
             let s = &stats[c];
-            !is_support[c] && !scrap[c] && s.closed && s.thickness() <= MAX_SUPPORT_THICKNESS_MM
+            Some(c) != body && !is_support[c] && !scrap[c] && s.closed && s.thickness() <= MAX_SUPPORT_THICKNESS_MM
         })
         .collect();
     if !shaped.contains(&true) || !is_support.contains(&true) {
@@ -1402,6 +1413,20 @@ pub(crate) mod tests {
         let c = classify(&mesh, RAFT).expect("classification");
         assert!(c.is_support[rivet].iter().all(|s| !*s), "a tip at its surface does not make a joint");
         assert!(c.is_support[bead].iter().all(|s| !*s), "a sculpted piece is not a generated joint");
+    }
+
+    #[test]
+    fn a_thin_regular_body_with_a_support_at_its_middle_stays_model() {
+        // A thin, evenly meshed body (all repeats, like a finely remeshed sculpt: Aradia
+        // Miniatures' 02c1a9f8) with a support tip sunk to its middle: it passes for a joint, but
+        // the largest model part is the body.
+        let slab = cuboid(Vec3::new(0.0, 5.0, 0.0), Vec3::new(10.0, 15.0, 1.0), 30);
+        let mut mesh = slab.clone();
+        mesh.extend(posts(50));
+        mesh.extend(rod_y(5.0, 0.5, 0.0, 10.0));
+        let c = classify(&mesh, RAFT).expect("classification");
+        assert!(c.is_support[..slab.len()].iter().all(|s| !*s), "the body is model");
+        assert_eq!(support_count(&c), 50 * 48 + 48);
     }
 
     /// A post standing beside the body's side face up to just under the top band, and a needle
