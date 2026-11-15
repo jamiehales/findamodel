@@ -45,7 +45,7 @@ pub async fn open(path: &Path) -> Result<Db> {
         .acquire_timeout(Duration::from_secs(60))
         .connect_with(connect_options(path))
         .await
-        .with_context(|| format!("opening database {}", path.display()))?;
+        .with_context(|| format!("opening database {}. {}", path.display(), access_report(path)))?;
 
     info!(target: "findamodel.Startup", "Starting database migration for {}", path.display());
     let compact = !migration_applied(&pool, HULL_SPLIT_MIGRATION).await;
@@ -132,7 +132,9 @@ fn lock_holder_pids(path: &Path) -> Vec<u32> {
 /// Fails fast when another process holds the database lock. Stale holders (e.g. a
 /// previous instance that did not exit) are terminated first.
 pub async fn ensure_unlocked(path: &Path) -> Result<()> {
-    let Some(initial_error) = is_locked(path).await? else {
+    let checked =
+        is_locked(path).await.with_context(|| format!("checking database {}. {}", path.display(), access_report(path)));
+    let Some(initial_error) = checked? else {
         return Ok(());
     };
 
@@ -175,6 +177,81 @@ pub async fn ensure_unlocked(path: &Path) -> Result<()> {
     }
 }
 
+/// What this process can do with the database, its folder and its WAL files, for startup errors:
+/// SQLite reports a file it can read but whose folder it can't write (to create the `-wal` and
+/// `-shm` files) only as "unable to open database file".
+pub fn access_report(path: &Path) -> String {
+    let mut parts = vec![format!("Process {}", process_ids())];
+    parts.push(format!("database: {}", file_access(path)));
+    match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(dir) => parts.push(format!("folder {}: {}", dir.display(), dir_access(dir))),
+        None => parts.push("folder: current directory".to_string()),
+    }
+    for suffix in ["-wal", "-shm"] {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        let side = std::path::PathBuf::from(name);
+        if side.exists() {
+            parts.push(format!("{suffix}: {}", file_access(&side)));
+        } else {
+            parts.push(format!("{suffix}: missing"));
+        }
+    }
+    parts.join("; ")
+}
+
+fn file_access(path: &Path) -> String {
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(err) => return format!("missing or unreadable ({err})"),
+    };
+    let read = std::fs::File::open(path).map(|_| "readable").unwrap_or("not readable");
+    let write = std::fs::OpenOptions::new().write(true).open(path).map(|_| "writable").unwrap_or("not writable");
+    format!("{read}, {write}{}", owner_and_mode(&meta))
+}
+
+fn dir_access(dir: &Path) -> String {
+    let meta = match std::fs::metadata(dir) {
+        Ok(m) => m,
+        Err(err) => return format!("missing or unreadable ({err})"),
+    };
+    let probe = dir.join(format!(".findamodel-write-test-{}", std::process::id()));
+    let write = match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            "can create files".to_string()
+        }
+        Err(err) => format!("can't create files ({err})"),
+    };
+    format!("{write}{}", owner_and_mode(&meta))
+}
+
+#[cfg(unix)]
+fn owner_and_mode(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+    format!(", owner {}:{}, mode {:o}", meta.uid(), meta.gid(), meta.mode() & 0o7777)
+}
+
+#[cfg(not(unix))]
+fn owner_and_mode(meta: &std::fs::Metadata) -> String {
+    if meta.permissions().readonly() { ", read-only".to_string() } else { String::new() }
+}
+
+/// The process's user and group ids (`uid:gid`), on Linux from /proc; "" elsewhere.
+fn process_ids() -> String {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let id = |key: &str| {
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(key))
+            .and_then(|rest| rest.split_whitespace().next().map(str::to_string))
+    };
+    match (id("Uid:"), id("Gid:")) {
+        (Some(u), Some(g)) => format!("uid {u}, gid {g}"),
+        _ => format!("pid {}", std::process::id()),
+    }
+}
+
 /// Splits values into chunks small enough for SQLite's bound-parameter limit.
 pub fn param_chunks<T>(values: &[T]) -> std::slice::Chunks<'_, T> {
     values.chunks(500)
@@ -192,6 +269,26 @@ mod tests {
 
     // sqlx logs statements from the connection's worker thread, out of reach of a test
     // subscriber, so this checks the settings the pool connects with.
+    #[test]
+    fn access_report_names_the_database_its_folder_and_wal_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("findamodel.db");
+        let missing = access_report(&db);
+        assert!(missing.contains("database: missing"), "{missing}");
+        std::fs::write(&db, b"").unwrap();
+        let report = access_report(&db);
+        assert!(report.contains("database: readable, writable"), "{report}");
+        assert!(report.contains("can create files"), "{report}");
+        assert!(report.contains("-wal: missing") && report.contains("-shm: missing"), "{report}");
+        assert!(
+            !dir.path().read_dir().unwrap().any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".findamodel-write-test"))
+        );
+    }
+
     #[test]
     fn only_slow_statements_are_logged() {
         let options = format!("{:?}", connect_options(Path::new("findamodel.db")));
