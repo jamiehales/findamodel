@@ -48,6 +48,18 @@ const MAX_RIM: usize = 400;
 /// Tries at a region's patch, each taking in the kept faces the last one crossed.
 const TAKE_CROSSED: usize = 6;
 
+/// How far (mm) a patch may stray from the surface it replaces ([`strays`]). A patch has no
+/// corners but the rim's, so over a wide region of curved surface it cuts straight across: on
+/// Alice's cf1ec4b0 a fan of long slivers crossing each other a hair apart took 25 mm2 of smooth
+/// hair out at once, and its patch lay 0.26 mm off it. Such a spot is left for the box mend,
+/// whose remesh keeps to the surface.
+const MAX_PATCH_STRAY_MM: f64 = 0.05;
+
+/// [`MAX_PATCH_STRAY_MM`] holds only where the crossing faces are less than this share of the
+/// area a patch replaces: 1.8% on cf1ec4b0's slivers, but most of it in a crumple or round a
+/// corner pulled through the shell.
+const MAX_STRAY_CROSSING_SHARE: f64 = 0.25;
+
 /// `m` with the self-crossings `pairs` (face pairs of one shell) mended where a patch can do it.
 /// Works in rounds, the ring round the crossing faces widening each round: the crossing faces
 /// still to mend (and the faces round corners where the surface touches itself), grown by the
@@ -93,7 +105,10 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
             }
         }
         let index = BoxIndex::new(&cur.tris(), cell_of(&cur));
-        let found: Vec<Option<Mend>> = (0..regions.len())
+        // Each region's patch, or why it has none: Err(true) when its patch strays from the
+        // surface ([`strays`]), which a wider ring only makes worse, so the spot is left for the
+        // box mend at once.
+        let found: Vec<Result<Mend, bool>> = (0..regions.len())
             .into_par_iter()
             .map(|i| {
                 let me = i as u32;
@@ -101,12 +116,17 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
                 // rim) is tried again with those faces taken out too.
                 let mut region = regions[i].clone();
                 for step in 0..TAKE_CROSSED {
-                    let (taken, rims) = close_off(&cur, adj, &region, me, &owner, &removed)?;
-                    let patch = patch_for(&cur, adj, &taken, &rims, &removed, true)?;
+                    let (taken, rims) = close_off(&cur, adj, &region, me, &owner, &removed).ok_or(false)?;
+                    let patch = patch_for(&cur, adj, &taken, &rims, &removed, true).ok_or(false)?;
                     let inside: FxHashSet<u32> = taken.iter().copied().collect();
                     let (crossed, itself) = crossed_near(&cur, &index, &inside, &patch, &removed);
                     if crossed.is_empty() && !itself {
-                        return Some((taken, patch));
+                        // The flattest patch would stray further still.
+                        return if strays(&cur, adj, &taken, &patch, &removed, &pending_set) {
+                            Err(true)
+                        } else {
+                            Ok((taken, patch))
+                        };
                     }
                     // Grown only while it keeps to faces of no other region.
                     let grown = (!crossed.is_empty() && step + 1 < TAKE_CROSSED)
@@ -118,11 +138,18 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
                     }
                     // A patch keeping close to a crumpled surface can fold with it: the flattest
                     // one (least area) is the last try.
-                    let flat = patch_for(&cur, adj, &taken, &rims, &removed, false)?;
+                    let flat = patch_for(&cur, adj, &taken, &rims, &removed, false).ok_or(false)?;
                     let (more, folds) = crossed_near(&cur, &index, &inside, &flat, &removed);
-                    return (more.is_empty() && !folds).then_some((taken, flat));
+                    if !more.is_empty() || folds {
+                        return Err(false);
+                    }
+                    return if strays(&cur, adj, &taken, &flat, &removed, &pending_set) {
+                        Err(true)
+                    } else {
+                        Ok((taken, flat))
+                    };
                 }
-                None
+                Err(false)
             })
             .collect();
         // A patch stays within the box of the faces it replaces, so two regions whose boxes are
@@ -131,8 +158,9 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
         // mended and the other tried again next round.
         let mut claimed = vec![false; cur.faces.len()];
         let mut done: Vec<((P, P), Patch)> = Vec::new();
-        for (region, patch) in regions.into_iter().zip(found) {
-            let patch = patch.filter(|(taken, patch)| {
+        for (region, found) in regions.into_iter().zip(found) {
+            let strayed = found.as_ref().err() == Some(&true);
+            let patch = found.ok().filter(|(taken, patch)| {
                 let (lo, hi) = bounds_of(&cur, taken);
                 let clear = !taken.iter().any(|&f| claimed[f as usize])
                     && done.iter().all(|((a, b), other)| {
@@ -150,7 +178,7 @@ pub fn mend(m: &Indexed, pairs: &[(u32, u32)]) -> (Indexed, LocalStats) {
                     gone.extend(taken);
                     patches.extend(patch);
                 }
-                None if round + 1 == RINGS.len() => st.left += 1,
+                None if strayed || round + 1 == RINGS.len() => st.left += 1,
                 None => failed.extend(region.iter().copied().filter(|f| pending_set.contains(f))),
             }
         }
@@ -961,6 +989,51 @@ fn span(m: &Indexed, rim: &[u32], kept_edges: &FxHashSet<(u32, u32)>, surface: &
     Some(out)
 }
 
+/// Whether `patch` strays more than [`MAX_PATCH_STRAY_MM`] from sound surface it replaces: from
+/// the faces `region` takes out and the two rings of kept faces round them (as [`patch_for`] weighs
+/// it), where the faces still to mend (`crossing`) are under [`MAX_STRAY_CROSSING_SHARE`] of the
+/// area taken out. Where they are more (a crumple, a corner pulled through the shell) the surface
+/// taken out is the defect, and a patch keeping away from it is the mend. Each patch face is probed
+/// at its centre and side midpoints (its corners are the rim's, on the surface).
+fn strays(
+    m: &Indexed,
+    adj: &Adjacency,
+    region: &[u32],
+    patch: &[[u32; 3]],
+    removed: &[bool],
+    crossing: &FxHashSet<u32>,
+) -> bool {
+    let area = |f: u32| {
+        let t = m.tri(f as usize);
+        0.5 * len(cross(sub(t[1], t[0]), sub(t[2], t[0])))
+    };
+    let total: f64 = region.iter().map(|&f| area(f)).sum();
+    let defect: f64 = region.iter().filter(|f| crossing.contains(f)).map(|&f| area(f)).sum();
+    if defect >= MAX_STRAY_CROSSING_SHARE * total {
+        return false;
+    }
+    let surface: Vec<[P; 3]> = adj.grow(region, 2, removed).iter().map(|&f| m.tri(f as usize)).collect();
+    let probes: Vec<P> = patch
+        .iter()
+        .flat_map(|t| {
+            let [a, b, c] = t.map(|v| m.verts[v as usize]);
+            let mid = |x: P, y: P| [0, 1, 2].map(|k| (x[k] + y[k]) / 2.0);
+            [[0, 1, 2].map(|k| (a[k] + b[k] + c[k]) / 3.0), mid(a, b), mid(b, c), mid(c, a)]
+        })
+        .collect();
+    let off = super::measure::distances(&probes, &surface);
+    let worst = off.iter().copied().fold(0.0, f64::max);
+    let strays = worst > MAX_PATCH_STRAY_MM;
+    if strays {
+        super::remesh::trace(&format!(
+            "local patch of {} faces strays {worst:.3} mm over {total:.2} mm2 ({:.0}% crossing): left for the box mend",
+            region.len(),
+            100.0 * defect / total
+        ));
+    }
+    strays
+}
+
 /// A cell for indexing `surface` for nearest-face lookups: twice its median side.
 fn surface_cell(surface: &[[P; 3]]) -> f64 {
     let mut side: Vec<f64> = surface.iter().map(|t| dist(t[0], t[1])).collect();
@@ -1101,6 +1174,33 @@ mod tests {
         let before: FxHashSet<[u32; 3]> = m.faces.iter().copied().collect();
         let kept = out.faces.iter().filter(|f| before.contains(*f)).count();
         assert!(kept + 60 > m.faces.len() && st.faces_removed < 60, "{kept} of {}, {st:?}", m.faces.len());
+    }
+
+    #[test]
+    fn a_patch_cutting_across_curved_surface_strays_and_a_small_one_does_not() {
+        let m = ball();
+        let removed = vec![false; m.faces.len()];
+        let adj = Adjacency::new(&m, &removed);
+        let patch_of = |region: &[u32]| {
+            let inside: FxHashSet<u32> = region.iter().copied().collect();
+            let rims = rim_loops(&m, &adj, region, &inside, &removed).unwrap();
+            patch_for(&m, &adj, region, &rims, &removed, true).unwrap()
+        };
+        // The cap above z = 4 (3 mm across, 1 mm high) spanned by its rim alone: flat, far below
+        // the cap's top.
+        let cap: Vec<u32> =
+            (0..m.faces.len() as u32).filter(|&f| m.tri(f as usize).iter().all(|v| v[2] > 4.0)).collect();
+        assert!(cap.len() > 50);
+        let none = FxHashSet::default();
+        assert!(strays(&m, &adj, &cap, &patch_of(&cap), &removed, &none));
+        // The same, when the cap is mostly faces that cross: the surface taken out is the defect.
+        let most: FxHashSet<u32> = cap.iter().copied().filter(|f| f % 4 != 0).collect();
+        assert!(!strays(&m, &adj, &cap, &patch_of(&cap), &removed, &most));
+        // Two faces on the equator: the patch only turns their shared side, on the surface.
+        let f = (0..m.faces.len()).find(|&f| m.tri(f).iter().all(|v| v[2].abs() < 0.5)).unwrap() as u32;
+        let next = adj.neighbours(f).next().unwrap();
+        let pair = [f.min(next), f.max(next)];
+        assert!(!strays(&m, &adj, &pair, &patch_of(&pair), &removed, &none));
     }
 
     #[test]
