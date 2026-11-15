@@ -88,7 +88,11 @@ impl TestApp {
     }
 
     async fn index_and_wait(&self, flags: i32) {
-        let (status, request) = self.json("POST", "/api/indexer", json!({ "flags": flags })).await;
+        self.run_index_and_wait(json!({ "flags": flags })).await;
+    }
+
+    async fn run_index_and_wait(&self, body: Value) {
+        let (status, request) = self.json("POST", "/api/indexer", body).await;
         assert_eq!(status, StatusCode::OK);
         let run_id = request["runId"].as_str().unwrap().to_string();
         for _ in 0..400 {
@@ -382,6 +386,92 @@ async fn directory_config_update_and_validation() {
 
     let (status, _) = app.json("PUT", "/api/explorer/config?path=Missing", json!({ "creator": "x" })).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_model_metadata_override_applies_at_once_and_survives_a_rescan() {
+    let app = TestApp::new().await;
+    app.write("findamodel.yaml", "supported:\n  rule: regex\n  source: full_path\n  expression: Supported\n");
+    app.write("Lucy/PRE Supported/stand.stl", STL);
+    app.write("Lucy/PRE Supported/body.stl", STL);
+    app.index_and_wait(3).await;
+
+    let (_, listing) = app.get("/api/explorer?path=Lucy/PRE%20Supported").await;
+    let id_of = |name: &str| {
+        listing["models"].as_array().unwrap().iter().find(|m| m["fileName"] == name).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (stand, body) = (id_of("stand.stl"), id_of("body.stl"));
+    let (_, model) = app.get(&format!("/api/models/{stand}")).await;
+    assert_eq!(model["supported"], true, "the folder rule marks it supported");
+
+    let (_, metadata) = app.get(&format!("/api/models/{stand}/metadata")).await;
+    let mut edit = metadata["localValues"].clone();
+    edit["supported"] = json!(false);
+    let (status, updated) = app.json("PUT", &format!("/api/models/{stand}/metadata"), edit).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["supported"], false, "the response shows the override");
+
+    let check = |when: &'static str| {
+        let app = &app;
+        let (stand, body) = (stand.clone(), body.clone());
+        async move {
+            let (_, model) = app.get(&format!("/api/models/{stand}")).await;
+            assert_eq!(model["supported"], false, "{when}: the model is unsupported");
+            let (_, metadata) = app.get(&format!("/api/models/{stand}/metadata")).await;
+            assert_eq!(metadata["localValues"]["supported"], false, "{when}: the override is local");
+            let (_, sibling) = app.get(&format!("/api/models/{body}")).await;
+            assert_eq!(sibling["supported"], true, "{when}: other models in the folder keep the rule");
+            let (_, listing) = app.get("/api/explorer?path=Lucy/PRE%20Supported").await;
+            let listed = listing["models"].as_array().unwrap().iter().find(|m| m["id"] == stand.as_str()).unwrap();
+            assert_eq!(listed["resolvedMetadata"]["supported"], false, "{when}: the explorer shows it");
+        }
+    };
+    check("straight away").await;
+
+    app.run_index_and_wait(json!({ "flags": 3, "relativeModelPath": "Lucy/PRE Supported/stand.stl" })).await;
+    check("after a single-file run").await;
+    app.run_index_and_wait(json!({ "flags": 3, "directoryFilter": "Lucy/PRE Supported" })).await;
+    check("after a folder run").await;
+    app.index_and_wait(3).await;
+    check("after a full run").await;
+
+    // The other way round: an unsupported folder's model marked supported.
+    app.write("Brazier/findamodel.yaml", "supported: false\n");
+    app.write("Brazier/lit.stl", STL);
+    app.run_index_and_wait(json!({ "flags": 3, "directoryFilter": "Brazier" })).await;
+    let (_, listing) = app.get("/api/explorer?path=Brazier").await;
+    let lit = listing["models"][0]["id"].as_str().unwrap().to_string();
+    let (_, model) = app.get(&format!("/api/models/{lit}")).await;
+    assert_eq!(model["supported"], false);
+    let (status, updated) = app.json("PUT", &format!("/api/models/{lit}/metadata"), json!({ "supported": true })).await;
+    assert_eq!((status, &updated["supported"]), (StatusCode::OK, &json!(true)));
+    let (_, model) = app.get(&format!("/api/models/{lit}")).await;
+    assert_eq!(model["supported"], true);
+    let (_, sibling) = app.get(&format!("/api/models/{stand}")).await;
+    assert_eq!(sibling["supported"], false, "an edit in one folder leaves other folders alone");
+
+    // A run that would do nothing is refused rather than reported as a success.
+    let (status, _) = app.json("POST", "/api/indexer", json!({ "directoryFilter": "Lucy/PRE Supported" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_model_metadata_override_that_cannot_be_written_is_an_error() {
+    let app = TestApp::new().await;
+    app.write("Locked/stand.stl", STL);
+    app.index_and_wait(3).await;
+    let (_, listing) = app.get("/api/explorer?path=Locked").await;
+    let id = listing["models"][0]["id"].as_str().unwrap().to_string();
+
+    // A directory in place of the config file makes the write fail even when running as root.
+    std::fs::create_dir(app.models.path().join("Locked/findamodel.yaml")).unwrap();
+    let (status, _) = app.json("PUT", &format!("/api/models/{id}/metadata"), json!({ "supported": false })).await;
+    assert!(status.is_server_error(), "got {status}");
+    let (_, model) = app.get(&format!("/api/models/{id}")).await;
+    assert_ne!(model["supported"], false);
 }
 
 #[tokio::test]

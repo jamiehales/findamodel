@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use super::{CurrentUser, IdPath};
 use crate::app::AppState;
-use crate::dto::EnqueueIndexRequest;
+use crate::dto::{EnqueueIndexRequest, index_flags};
 use crate::error::{AppResult, bad_request, not_found};
 
 pub fn routes() -> Router<AppState> {
@@ -34,6 +34,9 @@ async fn enqueue(
     let has_model = body.relative_model_path.as_deref().is_some_and(|f| !f.trim().is_empty());
     if has_filter && has_model {
         return Err(bad_request("Specify either directoryFilter or relativeModelPath, not both."));
+    }
+    if body.flags & (index_flags::DIRECTORIES | index_flags::MODELS) == 0 {
+        return Err(bad_request("Specify flags: 1 to sync folder configs, 2 to scan models, 3 for both."));
     }
     let result =
         state.indexer.enqueue(body.directory_filter.as_deref(), body.relative_model_path.as_deref(), body.flags);

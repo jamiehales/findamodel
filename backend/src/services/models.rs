@@ -64,6 +64,16 @@ pub struct ModelService {
     pub(crate) spin_builds: Arc<SpinBuilds>,
 }
 
+/// The result of a per-model metadata edit.
+#[derive(Debug, Clone)]
+pub struct ModelMetadataUpdate {
+    /// The model with its re-resolved metadata.
+    pub model: ModelDto,
+    /// The edit changed something its files are scanned against (the supported flag or the
+    /// raft height), so previews, hulls and support exports need a rescan of the model.
+    pub needs_rescan: bool,
+}
+
 /// Preview image candidates in priority order: the requested variant, then the other
 /// variant of the model's stored preview.
 #[derive(Debug, Clone, PartialEq)]
@@ -199,12 +209,14 @@ impl ModelService {
     }
 
     /// Writes per-model overrides to the `model_metadata` section of the model's directory
-    /// findamodel.yaml. Empty overrides remove the entry; an empty file is deleted.
+    /// findamodel.yaml (empty overrides remove the entry; an empty file is deleted), then
+    /// syncs the directory's record from the file and re-resolves its models' metadata, as a
+    /// folder edit does.
     pub async fn update_model_metadata(
         &self,
         id: Uuid,
         req: &UpdateModelMetadataRequest,
-    ) -> AppResult<Option<ModelDto>> {
+    ) -> AppResult<Option<ModelMetadataUpdate>> {
         let Some(model) = self.get_model(id).await? else {
             return Ok(None);
         };
@@ -236,6 +248,10 @@ impl ModelService {
         };
 
         let file_key = Value::String(model.file_name.clone());
+        let previous_raft = match section.get(&file_key) {
+            Some(Value::Mapping(entry)) => ModelMetadataEntry::from_yaml(entry).and_then(|e| e.raft_height_mm),
+            _ => None,
+        };
         if sanitized.is_empty() {
             section.remove(&file_key);
         } else {
@@ -247,9 +263,20 @@ impl ModelService {
         } else {
             data.insert(Value::String(section_key), Value::Mapping(section));
         }
-        config_reader::write_config_mapping(&config_path, &data).await?;
+        config_reader::write_config_mapping(&config_path, &data)
+            .await
+            .map_err(|e| AppError::Internal(e.context(format!("Could not write {}", config_path.display()))))?;
 
-        self.get_model_dto(id).await
+        // The file's hash no longer matches the record, so this re-reads it and recomputes
+        // the cached metadata of the directory's models (and any below it).
+        self.metadata_config.ensure_directory_configs(&root, std::slice::from_ref(&model.directory)).await?;
+
+        let Some(updated) = self.get_model(id).await? else {
+            return Ok(None);
+        };
+        let needs_rescan =
+            updated.calculated_supported != model.calculated_supported || sanitized.raft_height_mm != previous_raft;
+        Ok(Some(ModelMetadataUpdate { model: store::to_model_dto(&updated), needs_rescan }))
     }
 
     pub async fn get_model_metadata(&self, id: Uuid) -> AppResult<Option<ModelMetadataDetail>> {
@@ -446,13 +473,24 @@ pub(crate) mod tests {
             supported: Some(true),
             raft_height_mm: None,
         };
-        assert!(service(&t, root.path()).update_model_metadata(m.id, &req).await.unwrap().is_some());
+        let update = service(&t, root.path()).update_model_metadata(m.id, &req).await.unwrap().unwrap();
+        assert_eq!(update.model.name, "Fire Dragon", "the edit is resolved into the model at once");
+        assert_eq!(update.model.creator.as_deref(), Some("Alice"));
+        assert_eq!(update.model.supported, Some(true));
+        assert!(update.needs_rescan, "the supported flag changed");
+        let detail = service(&t, root.path()).get_model_metadata(m.id).await.unwrap().unwrap();
+        assert_eq!(detail.local_values.supported, Some(true), "the directory record holds the override");
+
+        let renamed = UpdateModelMetadataRequest { name: Some("Ice Dragon".into()), ..req.clone() };
+        let update = service(&t, root.path()).update_model_metadata(m.id, &renamed).await.unwrap().unwrap();
+        assert_eq!(update.model.name, "Ice Dragon");
+        assert!(!update.needs_rescan, "a rename leaves scanned files alone");
 
         let yaml = std::fs::read_to_string(root.path().join(CONFIG_FILE_NAME)).unwrap();
         for expected in [
             "model_metadata:",
             "dragon.stl:",
-            "name: Fire Dragon",
+            "name: Ice Dragon",
             "part_name: Body",
             "creator: Alice",
             "collection: Fantasy",

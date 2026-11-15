@@ -188,8 +188,12 @@ async fn update_metadata(
     IdPath(id): IdPath,
     Json(body): Json<UpdateModelMetadataRequest>,
 ) -> AppResult<Response> {
-    let model = state.models.update_model_metadata(id, &body).await?.ok_or_else(not_found)?;
-    Ok(Json(model).into_response())
+    let update = state.models.update_model_metadata(id, &body).await?.ok_or_else(not_found)?;
+    if update.needs_rescan {
+        // Previews, hulls and support exports follow the supported flag and raft height.
+        state.indexer.enqueue(None, Some(&update.model.relative_path), crate::dto::index_flags::MODELS);
+    }
+    Ok(Json(update.model).into_response())
 }
 
 async fn load_geometry(
