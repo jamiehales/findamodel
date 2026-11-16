@@ -42,12 +42,13 @@ pub fn repair_model(triangles: &[Triangle], store: Option<&dyn RepairStore>, thr
     let threads = threads.clamp(1, MAX_REPAIR_THREADS);
     let key = mesh_key(triangles);
     if let Some(stored) = store.and_then(|s| s.load(&key)) {
-        return Repair { triangles: stored, key };
+        return Repair { triangles: stored, key, stats: None };
     }
     let shared = repair_shared(triangles, key, threads, store);
     // The only holder once the waiters have taken theirs: no copy then.
-    let triangles = std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| shared.as_ref().clone());
-    Repair { triangles, key }
+    let Repaired { triangles, stats } =
+        std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| shared.as_ref().clone());
+    Repair { triangles, key, stats }
 }
 
 /// Which faces of `repaired` (a repair of `original`) the repair moved off the original surface:
@@ -128,6 +129,34 @@ pub trait RepairStore: Sync {
 pub struct Repair {
     pub triangles: Vec<Triangle>,
     pub key: MeshKey,
+    /// What the repair did, when it ran for this call (or one this call waited for); None when it
+    /// was loaded from the store.
+    pub stats: Option<RepairStats>,
+}
+
+/// What a repair did, cheaply counted while it ran (for the model's processing record).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RepairStats {
+    pub faces_in: usize,
+    pub faces_out: usize,
+    /// Spots of a shell crossing itself mended in place, and those left to the box mend.
+    pub local_mended: usize,
+    pub local_left: usize,
+    /// Boxes mended in the first pass, and in the follow-up passes (and those passes).
+    pub mend_boxes: usize,
+    pub follow_up_boxes: usize,
+    pub follow_up_passes: usize,
+    pub remeshed_groups: usize,
+    pub booleans: usize,
+    pub booleans_failed: usize,
+    pub ms: f64,
+}
+
+/// A repair as the calls waiting for it share it.
+#[derive(Clone)]
+struct Repaired {
+    triangles: Vec<Triangle>,
+    stats: Option<RepairStats>,
 }
 
 /// How many [`repair_model`] calls so far got the result of a repair another call ran.
@@ -141,13 +170,13 @@ fn repair_shared(
     key: MeshKey,
     threads: usize,
     store: Option<&dyn RepairStore>,
-) -> std::sync::Arc<Vec<Triangle>> {
+) -> std::sync::Arc<Repaired> {
     REPAIRS.run(key, || {
         // Kept by a repair that finished after the caller looked.
         if let Some(stored) = store.and_then(|s| s.load(&key)) {
-            return stored;
+            return Repaired { triangles: stored, stats: None };
         }
-        let repaired = match repair_pool(threads) {
+        let (repaired, stats) = match repair_pool(threads) {
             Some(pool) => pool.install(|| {
                 #[cfg(test)]
                 tests::REPAIR_THREADS.lock().insert(key, rayon::current_num_threads());
@@ -158,13 +187,12 @@ fn repair_shared(
         if let Some(s) = store {
             s.save(&key, &repaired);
         }
-        repaired
+        Repaired { triangles: repaired, stats: Some(stats) }
     })
 }
 
 /// The repairs under way, by [`mesh_key`].
-static REPAIRS: std::sync::LazyLock<SingleFlight<MeshKey, Vec<Triangle>>> =
-    std::sync::LazyLock::new(SingleFlight::default);
+static REPAIRS: std::sync::LazyLock<SingleFlight<MeshKey, Repaired>> = std::sync::LazyLock::new(SingleFlight::default);
 
 /// A hash of a mesh's corners (normals play no part in the repair), in chunks hashed in parallel.
 pub fn mesh_key(triangles: &[Triangle]) -> MeshKey {
@@ -233,11 +261,26 @@ impl PoolCache {
 }
 
 /// [`repair_model`] without waiting for or sharing with other calls.
-fn repair_now(triangles: &[Triangle]) -> Vec<Triangle> {
+fn repair_now(triangles: &[Triangle]) -> (Vec<Triangle>, RepairStats) {
+    let started = std::time::Instant::now();
     let pts = crate::geometry::support_reader::math::points_of(triangles);
-    let (repaired, _) = union::hybrid(&pts, REPAIR_CELL_MM, REPAIR_TOLERANCE_MM);
+    let (repaired, st) = union::hybrid(&pts, REPAIR_CELL_MM, REPAIR_TOLERANCE_MM);
     let (finished, _) = mesh::finish(&repaired);
-    in_original_order(triangles, &finished)
+    let out = in_original_order(triangles, &finished);
+    let stats = RepairStats {
+        faces_in: triangles.len(),
+        faces_out: out.len(),
+        local_mended: st.local.mended,
+        local_left: st.local.left,
+        mend_boxes: st.mend_boxes,
+        follow_up_boxes: st.follow_up_boxes,
+        follow_up_passes: st.follow_up_passes,
+        remeshed_groups: st.remeshed_groups,
+        booleans: st.booleans,
+        booleans_failed: st.booleans_failed,
+        ms: started.elapsed().as_secs_f64() * 1000.0,
+    };
+    (out, stats)
 }
 
 /// The repaired faces as triangles for writing: faces kept from the original come first, in the
@@ -439,7 +482,9 @@ mod tests {
             (a.join().unwrap(), b.join().unwrap())
         });
         assert!(std::sync::Arc::ptr_eq(&a, &b), "both callers get the one repair");
-        assert_eq!(a.len(), original.len());
+        assert_eq!(a.triangles.len(), original.len());
+        let stats = a.stats.as_ref().expect("the repair that ran counts what it did");
+        assert_eq!((stats.faces_in, stats.faces_out), (original.len(), a.triangles.len()));
     }
 
     #[test]
@@ -453,6 +498,7 @@ mod tests {
         let second = repair_model(&original, Some(&store), 2);
         assert_eq!(store.saves.load(Ordering::SeqCst), 1, "the kept one is used");
         assert_eq!(second.triangles, first.triangles);
+        assert!(first.stats.is_some() && second.stats.is_none(), "only a repair that ran has stats");
         // Another mesh is repaired for itself.
         let other = sphere(8.5, 30);
         assert_ne!(repair_model(&other, Some(&store), 2).key, first.key);

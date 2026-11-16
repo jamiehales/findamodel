@@ -62,6 +62,14 @@ pub struct ModelService {
     pub(crate) repaired_meshes: Option<RepairedMeshes>,
     /// On-demand spin mesh builds ([`crate::services::spin_meshes`]).
     pub(crate) spin_builds: Arc<SpinBuilds>,
+    /// Supported files the twin lookup has loaded ([`crate::services::twins`]): a re-probe from
+    /// stored probe keys loads one only when a candidate hits.
+    pub(crate) twin_lookup_loads: Arc<std::sync::atomic::AtomicUsize>,
+    /// The twin lookup's sketch index, kept between lookups ([`crate::services::twins`]).
+    pub(crate) sketch_index: Arc<crate::services::twins::SketchIndexCache>,
+    /// Running data updates, one per model ([`crate::services::model_data`]).
+    pub(crate) data_updates:
+        Arc<crate::single_flight::SingleFlight<Uuid, crate::services::model_data::ModelDataUpdate>>,
 }
 
 /// The result of a per-model metadata edit.
@@ -124,6 +132,9 @@ impl ModelService {
             support_exports,
             repaired_meshes: None,
             spin_builds: crate::services::spin_meshes::new_builds(),
+            twin_lookup_loads: Arc::default(),
+            sketch_index: Arc::default(),
+            data_updates: Arc::default(),
         }
     }
 

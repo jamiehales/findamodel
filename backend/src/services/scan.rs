@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::models::{ModelService, is_ignored_entry, is_ignored_path, is_model_extension, is_non_geometry_type};
 use crate::db::now;
 use crate::entities::{DirectoryConfig, ModelHulls, ModelRow};
-use crate::geometry::support_reader::{self, CURRENT_SUPPORT_READER_VERSION};
+use crate::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION;
 use crate::geometry::{LoadedGeometry, hull, loader, support_separation};
 use crate::metadata::config_reader;
 use crate::metadata::inheritance::DirectoryMap;
@@ -27,8 +27,11 @@ use crate::metadata::rules;
 use crate::preview::spin::{self, CURRENT_SPIN_MESH_VERSION};
 use crate::preview::{self, CURRENT_PREVIEW_GENERATION_VERSION};
 use crate::services::app_config::normalize_minimum_support_export_version;
+use crate::services::processing::{self, SplitMethod, SplitRecord};
+use crate::services::remesh_twins;
 use crate::services::repaired_meshes;
 use crate::services::support_exports::{self, SupportExports};
+use crate::services::twins::{self, TwinSet, TwinSource};
 use crate::services::{scan_config, store};
 
 const LOG_TARGET: &str = "findamodel.Models";
@@ -244,6 +247,7 @@ struct FileData {
     export: ExportOutcome,
     spin_mesh_path: Option<String>,
     stages: StageTimings,
+    provenance: Provenance,
 }
 
 /// What became of a model's export entry while its geometry was processed.
@@ -299,6 +303,7 @@ struct GeometryRefresh {
     include_spin: bool,
     spin_mesh_path: Option<String>,
     stages: StageTimings,
+    provenance: Provenance,
 }
 
 /// What a geometry pass ([`ModelService::process_geometry`]) produced.
@@ -313,6 +318,20 @@ struct ProcessedGeometry {
     /// The spin mesh's relative path: None when not asked for, Some(None) when there is none.
     spin: Option<Option<String>>,
     stages: StageTimings,
+    provenance: Provenance,
+}
+
+/// What a geometry pass records for the model once its row is saved: how its supports were split
+/// off and its twin sketch (when its hulls were computed).
+#[derive(Debug, Clone, Default)]
+struct Provenance {
+    split: Option<SplitRecord>,
+    sketch: Option<Vec<u8>>,
+    /// The stored probe keys of a model waiting for a twin: Some(Some) to store, Some(None) to
+    /// delete (it no longer waits), None to leave as they are.
+    probes: Option<Option<Vec<u8>>>,
+    /// The remeshed twin descriptor ([`remesh_twins`]), with the sketch.
+    remesh: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -335,7 +354,7 @@ struct ExistingScanState {
 
 enum Change {
     Content(Box<FileData>),
-    Geometry(GeometryRefresh),
+    Geometry(Box<GeometryRefresh>),
     /// The model's export entry is current but the row's index of it is not.
     ExportIndex(String, i32),
     FileMetadataOnly,
@@ -368,6 +387,7 @@ fn export_state(
     detected_supported: Option<bool>,
     support_parts_found: Option<bool>,
     minimum_version: i32,
+    twins: Option<&TwinSet>,
 ) -> ExportState {
     let Some(exports) = exports else { return ExportState::NotWanted };
     if !geometry_type
@@ -377,7 +397,10 @@ fn export_state(
         return ExportState::NotWanted;
     }
     // The scan indexes under the current scan config, so its entries are for checked detections.
-    let key = support_exports::key(checksum, raft_height_mm, calculated_supported, true);
+    let key = support_exports::twin_key(
+        support_exports::key(checksum, raft_height_mm, calculated_supported, true),
+        twins.map(TwinSet::key_part).as_deref(),
+    );
     match exports.stored_version(&key) {
         Some(version) if version >= minimum_version => {
             ExportState::Current(support_exports::relative_path(&key), version)
@@ -418,6 +441,8 @@ struct ScanContext {
     /// The oldest export entry version accepted; older entries are written again.
     minimum_export_version: i32,
     exports: Option<SupportExports>,
+    /// The current twins of the models with a twin split ([`twins::twin_sets`]).
+    twins: Arc<std::collections::HashMap<Uuid, TwinSet>>,
 }
 
 impl ScanContext {
@@ -427,6 +452,24 @@ impl ScanContext {
         let metadata = model_metadata::compute(&rules::rule_path(directory, &file_name), self.configs.get(directory));
         let raft_height_mm = raft_height_mm_for(&metadata, directory, &self.configs, self.default_raft_height_mm);
         (metadata, raft_height_mm)
+    }
+
+    /// The current twins of a model whose content is unchanged (`checksum`) and supported.
+    fn twins_of(&self, id: Uuid) -> Option<&TwinSet> {
+        self.twins.get(&id)
+    }
+
+    /// Where the twin split of a supported model with twins comes from.
+    fn twin_source(
+        &self,
+        set: Option<&TwinSet>,
+        checksum: &str,
+        raft_height_mm: f32,
+        supported: Option<bool>,
+    ) -> Option<TwinSource> {
+        let set = set.filter(|_| supported != Some(false))?;
+        let base = support_exports::key(checksum, raft_height_mm, supported, true);
+        Some(TwinSource::new(self.exports.clone(), base, set, &self.root))
     }
 }
 
@@ -680,9 +723,10 @@ impl ModelService {
         renders.join(&relative).is_file().then_some(relative)
     }
 
-    /// Loads geometry, detects supports, renders previews (when requested), computes hulls,
-    /// (when `include_export`) reads a pre-supported model's supports into its export entry and
-    /// (when `include_spin`) writes the spin mesh of the supports-removed body.
+    /// Loads geometry, detects supports, renders previews (when requested), computes hulls (and the
+    /// twin sketch), (when `include_export`) reads a pre-supported model's supports into its
+    /// export entry and (when `include_spin`) writes the spin mesh of the supports-removed body. A
+    /// model with a twin split (`twin`) is split by its twins, without the classifier.
     #[allow(clippy::too_many_arguments)]
     async fn process_geometry(
         &self,
@@ -695,6 +739,7 @@ impl ModelService {
         include_spin: bool,
         raft_height_mm: f32,
         supported: Option<bool>,
+        twin: Option<TwinSource>,
     ) -> ProcessedGeometry {
         let path = file.to_path_buf();
         let file_type = file_type.to_string();
@@ -717,10 +762,49 @@ impl ModelService {
                 return ProcessedGeometry { stages, ..Default::default() };
             };
             let started = Instant::now();
-            let classification = spin::checked_classification(&geometry.triangles, raft_height_mm);
-            let detected = SupportDetection::of(classification.as_ref());
-            let support_mask = classification.and_then(|c| c.mask_for(supported));
+            // The twin split first; the classifier (with the welded split by shape) otherwise.
+            let twin_mask = twin.as_ref().and_then(|t| twins::twin_mask(t, &geometry.triangles));
+            let (detected, support_mask, mut split, export_key) = match (twin_mask, twin) {
+                (Some(mask), Some(twin)) => {
+                    let mut split = SplitRecord::new(twin.method(), 0.0);
+                    split.twins = twin.uses;
+                    (SupportDetection { confident: true, found: true }, Some(mask), split, twin.key)
+                }
+                _ => {
+                    let classification = spin::checked_classification(&geometry.triangles, raft_height_mm);
+                    let split = SplitRecord::new(SplitMethod::of(classification.as_ref()), 0.0);
+                    let detected = SupportDetection::of(classification.as_ref());
+                    (detected, classification.and_then(|c| c.mask_for(supported)), split, export_key)
+                }
+            };
+            if support_mask.is_none() {
+                split = SplitRecord::new(SplitMethod::None, 0.0);
+            }
             stages.supports_ms = elapsed_ms(started);
+            split.duration_ms = stages.supports_ms;
+            // The twin sketch, with the hulls (so it follows the scan config). Timed with the supports.
+            // A supported model left unsplit or split by shape waits for a twin: its probe keys are kept so
+            // it is looked up again without loading its file. Timed with the supports too.
+            let waiting = presupported(supported, detected.confident)
+                && matches!(split.method, SplitMethod::None | SplitMethod::Welded);
+            let (sketch, mut probes) = match include_hulls {
+                true => {
+                    let started = Instant::now();
+                    let (sketch, probes) = twins::sketch_and_probes(&geometry.triangles, waiting);
+                    stages.supports_ms += elapsed_ms(started);
+                    (Some(sketch), Some(probes))
+                }
+                false => (None, None),
+            };
+            if !waiting {
+                probes = Some(None);
+            }
+            let remesh = include_hulls.then(|| {
+                let started = Instant::now();
+                let descriptor = remesh_twins::descriptor_bytes(&geometry.triangles);
+                stages.supports_ms += elapsed_ms(started);
+                descriptor
+            });
             let preview_generated = preview.is_some_and(|p| {
                 let started = Instant::now();
                 let result = p.generate_variants(&geometry, &stem, support_mask.as_deref(), true, true, redraw);
@@ -741,19 +825,14 @@ impl ModelService {
                 hulls
             });
             // A pre-supported model with supports found: its export entry, as an export of it
-            // would read it (split by the detection's mask, supports read from the split).
+            // would read it (split by the detection's mask, supports read from the closed split).
             let mut export = ExportOutcome::None;
             if let Some(exports) = exports.filter(|_| detected.found && presupported(supported, detected.confident)) {
                 let started = Instant::now();
                 let read = support_mask.and_then(|mask| {
-                    let (body, supports) = support_separation::split(&geometry.triangles, &mask);
-                    (!supports.is_empty()).then(|| {
-                        let body = crate::geometry::to_z_up(&body);
-                        let supports = crate::geometry::to_z_up(&supports);
-                        let layout = support_reader::read(&body, &supports, raft_height_mm).classification.layout;
-                        (mask, layout)
-                    })
+                    twins::read_split(&geometry.triangles, &mask, raft_height_mm).map(|layout| (mask, layout))
                 });
+                split.read = read.is_some();
                 export = match exports.store(&export_key, read.as_ref().map(|(m, l)| (m.as_slice(), l))) {
                     Some(path) => ExportOutcome::Written(path),
                     None => ExportOutcome::Failed,
@@ -768,6 +847,7 @@ impl ModelService {
                 export,
                 spin,
                 stages,
+                provenance: Provenance { split: Some(split), sketch, probes, remesh },
             }
         })
         .await
@@ -810,6 +890,7 @@ impl ModelService {
             export: ExportOutcome::None,
             spin_mesh_path: None,
             stages: StageTimings { checksum_ms, ..Default::default() },
+            provenance: Provenance::default(),
         };
 
         if is_non_geometry_type(file_type) {
@@ -827,9 +908,11 @@ impl ModelService {
                 include_preview && ctx.generate_spin,
                 raft_height_mm,
                 supported,
+                None,
             )
             .await;
         data.export = processed.export;
+        data.provenance = processed.provenance;
         data.stages = StageTimings { checksum_ms, ..processed.stages };
         let stem = preview::preview_stem(&checksum, raft_height_mm, supported);
         (data.preview_image_path, data.preview_generated_at) =
@@ -860,6 +943,7 @@ impl ModelService {
         include_hulls: bool,
         include_export: bool,
         include_spin: bool,
+        twin: Option<TwinSource>,
     ) -> GeometryRefresh {
         let include_preview = preview_refresh.included();
         let processed = self
@@ -873,6 +957,7 @@ impl ModelService {
                 include_spin,
                 raft_height_mm,
                 supported,
+                twin,
             )
             .await;
         let mut refresh = GeometryRefresh {
@@ -890,6 +975,7 @@ impl ModelService {
             include_spin,
             spin_mesh_path: processed.spin.flatten(),
             stages: processed.stages,
+            provenance: processed.provenance,
         };
         if processed.summary.is_none() {
             return refresh;
@@ -963,6 +1049,9 @@ impl ModelService {
                 &expected_spin_path(&checksum, expected_raft, supported),
             );
 
+        // The model's twins, while its content is unchanged.
+        let twin_set = ctx.twins_of(existing.id).filter(|_| checksum == existing.checksum);
+        let twin = ctx.twin_source(twin_set, &checksum, expected_raft, supported);
         // The export entry, from its file, when nothing else rewrites it.
         let export = if checksum == existing.checksum && !hull_mismatch {
             export_state(
@@ -974,6 +1063,7 @@ impl ModelService {
                 existing.detected_supported,
                 existing.support_parts_found,
                 ctx.minimum_export_version,
+                twin_set,
             )
         } else {
             ExportState::NotWanted
@@ -1020,7 +1110,7 @@ impl ModelService {
                 existing.scan_config_checksum,
                 scan_config::compute(expected_raft)
             );
-            Some(Change::Geometry(
+            Some(Change::Geometry(Box::new(
                 self.compute_geometry_refresh(
                     &file,
                     &file_type,
@@ -1035,9 +1125,10 @@ impl ModelService {
                     true,
                     true,
                     spin_stale,
+                    twin.clone(),
                 )
                 .await,
-            ))
+            )))
         } else {
             if preview_stale {
                 info!(
@@ -1060,7 +1151,7 @@ impl ModelService {
                     "Spin mesh missing or not at version {CURRENT_SPIN_MESH_VERSION}, writing it for: {full}"
                 );
             }
-            Some(Change::Geometry(
+            Some(Change::Geometry(Box::new(
                 self.compute_geometry_refresh(
                     &file,
                     &file_type,
@@ -1075,9 +1166,10 @@ impl ModelService {
                     false,
                     export_stale,
                     spin_stale,
+                    twin,
                 )
                 .await,
-            ))
+            )))
         };
 
         prepared.stages = match &prepared.change {
@@ -1106,6 +1198,7 @@ impl ModelService {
             ),
             minimum_export_version: normalize_minimum_support_export_version(app_config.minimum_support_export_version),
             exports: self.support_exports.clone(),
+            twins: Arc::new(twins::twin_sets(&self.db).await?),
         })
     }
 
@@ -1310,6 +1403,15 @@ impl ModelService {
                     drop(conn);
                     self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
                     self.release_old_spin(previous_spin.as_deref(), entity.spin_mesh_path.as_deref()).await;
+                    match &prepared.change {
+                        Some(Change::Content(data)) => {
+                            self.record_provenance(entity.id, &entity.checksum, &data.provenance).await
+                        }
+                        Some(Change::Geometry(refresh)) => {
+                            self.record_provenance(entity.id, &entity.checksum, &refresh.provenance).await
+                        }
+                        _ => {}
+                    }
                 }
                 if let Some(r) = reporter {
                     r.on_file_processed(FileResult {
@@ -1364,6 +1466,7 @@ impl ModelService {
                 let mut conn = self.db.acquire().await?;
                 store::save_model(&mut conn, &entity).await?;
             }
+            self.record_provenance(entity.id, &entity.checksum, &data.provenance).await;
             if let Some(r) = reporter {
                 r.on_file_processed(FileResult {
                     relative_path: prepared.relative_path.clone(),
@@ -1444,6 +1547,10 @@ impl ModelService {
             }
         }
 
+        // Supported models split by shape or not at all: their twins, now that every sketch is in.
+        // Before the sweeps, which then take the entries the twin splits replace.
+        self.resolve_twins(None, reporter, cancel).await?;
+
         // A full scan has brought every row's index up to date: entry files no row names are left
         // over from changed or removed models (or from exports of a detection since rechecked).
         if directory_filter.is_none()
@@ -1476,6 +1583,32 @@ impl ModelService {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models").fetch_one(&self.db).await?;
         info!(target: LOG_TARGET, "Scan complete: {new_count} new, {updated_count} updated, {total} total in cache.");
         Ok(new_count)
+    }
+
+    /// Records what a geometry pass did once the model's row is saved: its twin sketch and how its
+    /// supports were split off ([`processing::SUPPORT_SPLIT`]).
+    async fn record_provenance(&self, id: Uuid, checksum: &str, provenance: &Provenance) {
+        if let Some(sketch) = &provenance.sketch
+            && let Err(err) = twins::store_sketch(&self.db, id, sketch).await
+        {
+            warn!(target: LOG_TARGET, "Failed to store the twin sketch of model {id}: {err}");
+        }
+        if let Some(descriptor) = &provenance.remesh
+            && let Err(err) = remesh_twins::store_descriptor(&self.db, id, descriptor).await
+        {
+            warn!(target: LOG_TARGET, "Failed to store the remeshed twin descriptor of model {id}: {err}");
+        }
+        if let Some(split) = &provenance.split {
+            processing::record_split(&self.db, id, "scan", checksum, split).await;
+        }
+        let stored = match &provenance.probes {
+            Some(Some(probes)) => twins::store_probes(&self.db, id, checksum, probes).await,
+            Some(None) => twins::delete_probes(&self.db, id).await,
+            None => Ok(()),
+        };
+        if let Err(err) = stored {
+            warn!(target: LOG_TARGET, "Failed to store the twin probe keys of model {id}: {err}");
+        }
     }
 
     /// Drops the rows of models no longer indexed (files gone, or paths now ignored): their
@@ -1532,7 +1665,7 @@ impl ModelService {
 
     /// Deletes the export entry a model's row named before it was saved, when it names another
     /// one now and no other model (with the same content) still uses it.
-    async fn release_old_export(&self, before: Option<&str>, now: Option<&str>) {
+    pub(crate) async fn release_old_export(&self, before: Option<&str>, now: Option<&str>) {
         if let (Some(before), Some(exports)) = (before, &self.support_exports)
             && Some(before) != now
         {
@@ -1698,6 +1831,9 @@ impl ModelService {
                 )
         });
 
+        // The model's twins, while its content is unchanged.
+        let twin_set = existing.as_ref().filter(|e| e.checksum == checksum).and_then(|e| ctx.twins_of(e.id));
+        let twin = ctx.twin_source(twin_set, &checksum, expected_raft, supported);
         let export = match &existing {
             Some(e) if e.checksum == checksum && !hull_stale => export_state(
                 ctx.exports.as_ref(),
@@ -1708,6 +1844,7 @@ impl ModelService {
                 e.detected_supported,
                 e.support_parts_found,
                 ctx.minimum_export_version,
+                twin_set,
             ),
             _ => ExportState::NotWanted,
         };
@@ -1758,7 +1895,7 @@ impl ModelService {
 
         let previous_export = existing.as_ref().and_then(|e| e.support_export_path.clone());
         let previous_spin = existing.as_ref().and_then(|e| e.spin_mesh_path.clone());
-        let (entity, generated_preview, generated_hull, stages) = match existing {
+        let (entity, generated_preview, generated_hull, stages, provenance) = match existing {
             None => {
                 info!(target: LOG_TARGET, "Indexing single model file: {full_text}");
                 let data = self
@@ -1784,7 +1921,7 @@ impl ModelService {
                 if let Some(r) = reporter {
                     r.on_log("info", "Discovered new model", Some(&normalized)).await;
                 }
-                (entity, data.preview_generated, data.hull_generated, data.stages)
+                (entity, data.preview_generated, data.hull_generated, data.stages, data.provenance)
             }
             Some(mut entity) if entity.checksum != checksum => {
                 info!(target: LOG_TARGET, "Model content changed, updating single file: {full_text}");
@@ -1802,7 +1939,7 @@ impl ModelService {
                 entity.file_type = file_type.clone();
                 entity.directory_config_id = data.dir_config_id;
                 apply_file_data(&mut entity, &data, &file_stat);
-                (entity, data.preview_generated, data.hull_generated, data.stages)
+                (entity, data.preview_generated, data.hull_generated, data.stages, data.provenance)
             }
             Some(mut entity) if hull_stale => {
                 info!(
@@ -1830,13 +1967,14 @@ impl ModelService {
                         true,
                         true,
                         spin_stale,
+                        twin.clone(),
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
                 entity.cached_at = now();
                 entity.file_modified_at = file_stat.modified;
                 entity.file_size = file_stat.size;
-                (entity, refresh.preview_generated, refresh.hull_generated, refresh.stages)
+                (entity, refresh.preview_generated, refresh.hull_generated, refresh.stages, refresh.provenance)
             }
             Some(mut entity) => {
                 info!(target: LOG_TARGET, "Single-model index refreshing preview, support export or spin mesh: {full_text}");
@@ -1855,13 +1993,14 @@ impl ModelService {
                         false,
                         export_stale,
                         spin_stale,
+                        twin.clone(),
                     )
                     .await;
                 apply_geometry_refresh(&mut entity, &refresh);
                 entity.cached_at = now();
                 entity.file_modified_at = file_stat.modified;
                 entity.file_size = file_stat.size;
-                (entity, refresh.preview_generated, false, refresh.stages)
+                (entity, refresh.preview_generated, false, refresh.stages, refresh.provenance)
             }
         };
 
@@ -1871,6 +2010,9 @@ impl ModelService {
         }
         self.release_old_export(previous_export.as_deref(), entity.support_export_path.as_deref()).await;
         self.release_old_spin(previous_spin.as_deref(), entity.spin_mesh_path.as_deref()).await;
+        self.record_provenance(entity.id, &entity.checksum, &provenance).await;
+        // Its twins, when it is supported and its scan split it by shape or not at all.
+        self.resolve_twins(Some(entity.id), reporter, cancel).await?;
 
         if let Some(r) = reporter {
             r.on_file_processed(FileResult {

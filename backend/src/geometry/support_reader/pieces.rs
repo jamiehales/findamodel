@@ -16,6 +16,7 @@ use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
+use super::fused::{self, Seed};
 #[cfg(test)]
 use super::math::dist;
 use super::math::{P, add, centroid, cross, dot, eig3, find, len, mul, ray_hits, solve3, sub, unit};
@@ -112,10 +113,20 @@ pub struct Piece {
     /// Why an unread piece is unread.
     pub why: &'static str,
     pub segments: Vec<Segment>,
+    /// Joins between the segments (segment, segment, where) when the reading gives them (the fused
+    /// reader, [`super::fused`]); otherwise the segments join where their centre lines meet.
+    #[serde(skip)]
+    pub segment_links: Vec<(usize, usize, P)>,
+    /// The fused reader's segments and joins for this solid, when it read it too.
+    #[serde(skip)]
+    pub fused_alt: Option<FusedAlt>,
     /// Volume inside the model.
     pub in_model: f64,
     pub in_model_at: Option<P>,
 }
+
+/// A fused reading of a solid: its stretches and their joins (stretch, stretch, where).
+pub type FusedAlt = (Vec<Segment>, Vec<(usize, usize, P)>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -152,6 +163,10 @@ pub struct Pieces {
     pub connections: Vec<Connection>,
     /// Per contact: up to six pieces, those it lies in first, then by distance.
     pub contact_pieces: Vec<Vec<ContactPiece>>,
+    /// The solids the fused reader read too (piece, what it found).
+    pub fused: Vec<(usize, super::fused::Stats)>,
+    /// Whether the fused readings replace the others' ([`Pieces::with_fused`]).
+    pub fused_used: bool,
     /// Per support triangle (as given): its piece, or `u32::MAX` when dropped.
     #[serde(skip)]
     pub tri_piece: Vec<u32>,
@@ -168,6 +183,24 @@ struct Fit {
     sections: Vec<Section>,
     azi_bad: f64,
     why: &'static str,
+}
+
+impl Pieces {
+    /// These pieces with each fused reading in place of the solid's own (None when there is none).
+    pub fn with_fused(&self) -> Option<Pieces> {
+        if !self.pieces.iter().any(|p| p.fused_alt.is_some()) {
+            return None;
+        }
+        let mut out = self.clone();
+        for p in &mut out.pieces {
+            if let Some((segments, links)) = p.fused_alt.take() {
+                p.segments = segments;
+                p.segment_links = links;
+            }
+        }
+        out.fused_used = true;
+        Some(out)
+    }
 }
 
 /// The fit of one solid (`tv`, its triangles' corners), from its open edges, volume and area.
@@ -546,6 +579,9 @@ fn axis_through(fa: &[(P, f64, P)], d: P, cen: P) -> Option<P> {
 }
 
 type Stretch = (P, P, f64, Vec<Section>, Vec<usize>);
+/// A flat face larger than this (mm²) that is no long strip is a plate (a pad, a raft) rather than
+/// a rod's side: [`split_straight`] does not ask its stretches to cover it.
+const PLATE_FACET_MM2: f64 = 1.0;
 
 /// A closed solid that is no single straight solid (a tip bent at a mitre, a leg or tip unioned
 /// onto its shaft, a lattice welded into one shell) split into its straight stretches. The sides
@@ -555,7 +591,8 @@ type Stretch = (P, P, f64, Vec<Section>, Vec<usize>);
 /// Each stretch is then fitted on its own (axis from its faces, profile, rod and cone sections).
 /// Caps, balls and the bits round a junction are left to the stretches they join. Returns the
 /// stretches (with the triangles each was fitted on), or nothing when the solid does not split
-/// into two or more that cover most of its sides.
+/// into two or more that cover at least half of its surface apart from its plates (see
+/// [`PLATE_FACET_MM2`]).
 fn split_straight(tv: &[[P; 3]]) -> Vec<Stretch> {
     let nt = tv.len();
     let mut vid: FxHashMap<[u64; 3], usize> = FxHashMap::default();
@@ -775,7 +812,15 @@ fn split_straight(tv: &[[P; 3]]) -> Vec<Stretch> {
         }
     }
     covered = covered.min(total);
-    if segs.len() < 2 || covered < 0.5 * total {
+    // Large flat faces that are no strip (a pad or raft plate welded under the stretches) have no
+    // stretch to cover them: the stretches need only cover the rest.
+    let plates: f64 = fac
+        .iter()
+        .filter(|(r, _)| !fdir.contains_key(*r))
+        .map(|(_, ks)| ks.iter().map(|&k| fa[k].1).sum::<f64>())
+        .filter(|&a| a > PLATE_FACET_MM2)
+        .sum();
+    if segs.len() < 2 || covered < 0.5 * (total - plates) {
         return Vec::new();
     }
     // A fixed order (lowest end first).
@@ -986,6 +1031,21 @@ fn canon(ids: [u32; 3]) -> [u32; 3] {
 /// Reads the pieces of `support` (Z-up) against `model`, with the contacts (point, width) whose
 /// pieces to find, measuring connections with rays `pitch` apart.
 pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: f64) -> Pieces {
+    // Without their directions every contact is taken as facing down.
+    let seeds: Vec<Seed> = contacts.iter().map(|&(at, d)| Seed { at, d, dir: [0.0, 0.0, -1.0] }).collect();
+    read_seeded(support, model, &seeds, DEFAULT_GROUND_Z, pitch)
+}
+
+/// The raft band [`read`] assumes (the reader's own for a 3 mm raft).
+const DEFAULT_GROUND_Z: f64 = 3.5;
+
+/// [`read`] with each contact's way out of the model (`dir`) and the raft band's top (`ground_z`),
+/// which the fused reader ([`super::fused`]) needs: a closed solid no straight split reads (a
+/// fused support side) holding more than [`super::fused::MIN_TRIANGLES`] triangles or at least
+/// [`super::fused::MIN_CONTACTS`] contacts is read by it instead of by straight stretches.
+pub fn read_seeded(support: &[[P; 3]], model: &[[P; 3]], seeds: &[Seed], ground_z: f64, pitch: f64) -> Pieces {
+    let contacts: Vec<(P, f64)> = seeds.iter().map(|s| (s.at, s.d)).collect();
+    let contacts = contacts.as_slice();
     // Weld, and drop degenerate and repeated triangles.
     let mut vid: FxHashMap<[i64; 3], u32> = FxHashMap::default();
     let mut verts: Vec<P> = Vec::new();
@@ -1161,7 +1221,7 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
     });
     glist.sort_by_key(|g| g[0]);
     let tv = |k: u32| tris[k as usize].map(|v| verts[v as usize]);
-    let mut pieces: Vec<(Vec<u32>, Piece)> = glist
+    let pieces: Vec<(Vec<u32>, Piece, Option<fused::Stats>)> = glist
         .into_par_iter()
         .enumerate()
         .map(|(id, g)| {
@@ -1199,6 +1259,8 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
             let rv = rev_volume(&f.sections);
             let bogus = f.kind == PieceKind::Axi && f.volume > 0.0 && (rv > 3.0 * f.volume || rv < f.volume / 3.0);
             let mut segments = Vec::new();
+            let mut fused_alt = None;
+            let mut fused_stats = None;
             if f.open_edges == 0
                 && f.volume > 0.0
                 && (f.kind == PieceKind::Unread || (f.kind == PieceKind::Bar && g.len() > 64) || bogus)
@@ -1206,7 +1268,22 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
                 // A welded union of regular rods first (rods from their facets' planes), else the
                 // straight stretches.
                 let ids: Vec<[u32; 3]> = g.iter().map(|&k| tris[k as usize]).collect();
-                let rods: Vec<Stretch> = union_split::split_union(&tvs, &ids)
+                // A big or many-tipped solid may be a fused support side: the fused reader reads it
+                // too, and the reader keeps that reading only where this one routes too little
+                // ([`super::read_points`]). A solid that big is never a welded union of regular rods
+                // (the union split takes minutes on it to find none), so it is not tried there.
+                let near = |p: P, m: f64| (0..3).all(|c| p[c] >= lo[c] - m && p[c] <= hi[c] + m);
+                let held: Vec<Seed> = seeds.iter().copied().filter(|s| near(s.at, 0.5 + s.d)).collect();
+                let big = g.len() > fused::MIN_TRIANGLES;
+                let union = if big { None } else { union_split::split_union(&tvs, &ids) };
+                if union.is_none() && (big || held.len() >= fused::MIN_CONTACTS) {
+                    let r = fused::read(&tvs, &held, ground_z);
+                    if !r.segments.is_empty() {
+                        fused_alt = Some((r.segments, r.links));
+                    }
+                    fused_stats = Some(r.stats);
+                }
+                let rods: Vec<Stretch> = union
                     .and_then(|rs| {
                         let mut v = Vec::new();
                         for rod in rs {
@@ -1268,12 +1345,17 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
                 azi_bad: f.azi_bad,
                 why: f.why,
                 segments,
+                segment_links: Vec::new(),
+                fused_alt,
                 in_model: 0.0,
                 in_model_at: None,
             };
-            (g, piece)
+            (g, piece, fused_stats)
         })
         .collect();
+    let fused_read: Vec<(usize, fused::Stats)> =
+        pieces.iter().enumerate().filter_map(|(i, p)| p.2.clone().map(|s| (i, s))).collect();
+    let mut pieces: Vec<(Vec<u32>, Piece)> = pieces.into_iter().map(|(g, p, _)| (g, p)).collect();
     let np = pieces.len();
     let mut tri_piece = vec![u32::MAX; support.len()];
     let mut piece_of = vec![0u32; tris.len()];
@@ -1561,6 +1643,8 @@ pub fn read(support: &[[P; 3]], model: &[[P; 3]], contacts: &[(P, f64)], pitch: 
         pieces: pieces.into_iter().map(|(_, p)| p).collect(),
         connections,
         contact_pieces,
+        fused: fused_read,
+        fused_used: false,
         tri_piece,
     }
 }
@@ -1706,5 +1790,30 @@ mod tests {
         let p = read1(&s, &[]);
         assert_eq!(p.pieces.len(), 1);
         assert_eq!(p.pieces[0].segments.len(), 2, "{:?}", p.pieces[0].why);
+    }
+
+    #[test]
+    fn rods_welded_onto_a_plate_split_into_their_stretches() {
+        // Five 8-sided rods unioned with the pad plate they stand on, one shell: the plate's
+        // faces are most of the surface and no stretch covers them.
+        use manifold_csg::Manifold;
+        let mut m = Manifold::cube(12.0, 12.0, 1.0, false).translate(-6.0, -6.0, 0.0);
+        for (x, y) in [(0.0, 0.0), (3.0, 0.0), (-3.0, 0.0), (0.0, 3.0), (0.0, -3.0)] {
+            m = m.union(&Manifold::cylinder(6.0, 0.4, 0.4, 8, false).translate(x, y, 0.5));
+        }
+        let (vp, np, idx) = m.to_mesh_f64();
+        let v = |i: u64| {
+            let k = i as usize * np;
+            [vp[k], vp[k + 1], vp[k + 2]]
+        };
+        let tv: Vec<[P; 3]> = idx.chunks(3).map(|t| [v(t[0]), v(t[1]), v(t[2])]).collect();
+        let area: f64 = tv.iter().map(|t| 0.5 * len(cross(sub(t[1], t[0]), sub(t[2], t[0])))).sum();
+        assert!(area > 300.0, "the plate is most of the surface: {area}");
+        let segs = split_straight(&tv);
+        assert_eq!(segs.len(), 5, "one stretch per rod");
+        for (a, b, w, _, _) in &segs {
+            assert!((w - 0.8).abs() < 0.1, "a rod's width: {w}");
+            assert!(dot(unit(sub(*b, *a)), [0.0, 0.0, 1.0]).abs() > 0.999, "upright");
+        }
     }
 }

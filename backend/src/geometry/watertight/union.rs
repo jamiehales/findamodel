@@ -22,8 +22,9 @@ pub struct UnionStats {
     pub buried_left_out: usize,
     /// Volume of the sealed voids filled (mm3).
     pub voids_filled_mm3: f64,
-    /// Boxes mended in the passes after the first.
+    /// Boxes mended in the passes after the first, and the passes that mended any.
     pub follow_up_boxes: usize,
+    pub follow_up_passes: usize,
     /// Specks and sheets ([`mesh::negligible`]), left out.
     pub specks_left_out: usize,
     pub open_left_out: usize,
@@ -239,6 +240,7 @@ pub fn hybrid(tris: &[[P; 3]], h: f64, tol: f64) -> (Indexed, UnionStats) {
             break;
         }
         st.follow_up_boxes += more.mend_boxes;
+        st.follow_up_passes += 1;
         out = again;
         super::remesh::trace(&format!("follow-up pass done at {:.2}", t.elapsed().as_secs_f64()));
     }

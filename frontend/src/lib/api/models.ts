@@ -464,3 +464,19 @@ export function getModelVoxlUrl(id: string, variant: ModelVoxlVariant = 'origina
 export function getPlateGenerationDownloadUrl(jobId: string): string {
   return apiUrl(`/api/plate/jobs/${jobId}/file`);
 }
+
+/** What a model's data update did (backend `services::model_data`). */
+export interface ModelDataUpdate {
+  steps: { step: string; outcome: string; ms: number }[];
+  /** The model's split changed, so its geometry and previews are stale. */
+  changed: boolean;
+}
+
+/** Runs the model's data update; resolves once it has finished. */
+export async function updateModelData(id: string): Promise<ModelDataUpdate> {
+  const r = await apiFetch(`/api/models/${encodeURIComponent(id)}/update-data`, {
+    method: 'POST',
+  });
+  if (!r.ok) throw new Error('Failed to update model data');
+  return r.json();
+}

@@ -22,7 +22,7 @@ use crate::error::AppResult;
 use crate::geometry::hull::DEFAULT_RAFT_HEIGHT_MM;
 use crate::geometry::loader;
 use crate::preview::spin::{self, CURRENT_SPIN_MESH_VERSION};
-use crate::services::store;
+use crate::services::{scan_config, store, twins};
 use crate::single_flight::SingleFlight;
 
 const LOG_TARGET: &str = "findamodel.SpinMeshes";
@@ -110,9 +110,15 @@ impl ModelService {
                 model.calculated_supported,
             );
             let (dir, target) = (renders.clone(), relative.clone());
+            // A twin split's mask, as the scan drew the previews with.
+            let checked = model.scan_config_checksum.as_deref() == Some(scan_config::compute(raft_height_mm).as_str());
+            let twin = self.twin_source(&model, raft_height_mm, checked).await;
             let stored = tokio::task::spawn_blocking(move || {
                 let geometry = loader::load_model(&path?, &file_type)?;
-                let mask = spin::support_mask(&geometry.triangles, raft_height_mm, supported);
+                let mask = twin
+                    .as_ref()
+                    .and_then(|t| twins::twin_mask(t, &geometry.triangles))
+                    .or_else(|| spin::support_mask(&geometry.triangles, raft_height_mm, supported));
                 spin::store_for_model(&dir, &target, &geometry.triangles, mask.as_deref())
             })
             .await

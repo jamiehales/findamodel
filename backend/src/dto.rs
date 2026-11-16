@@ -16,6 +16,44 @@ pub fn string_map(pairs: impl IntoIterator<Item = (String, String)>) -> StringMa
 
 // ── Models ───────────────────────────────────────────────────────────────────
 
+/// How a model was processed (`GET /api/models/{id}/processing`), for tracing problems back.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProcessingDto {
+    /// One per kind of processing (support_split, twin_lookup, repair), by kind.
+    pub processing: Vec<ProcessingEntryDto>,
+    /// The twins the model's split was made from.
+    pub twins: Vec<ModelTwinDto>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingEntryDto {
+    pub kind: String,
+    pub method: String,
+    pub source: String,
+    pub source_checksum: String,
+    pub detection_version: Option<i32>,
+    pub reader_version: Option<i32>,
+    pub twin_version: Option<i32>,
+    pub repair_version: Option<i32>,
+    pub duration_ms: Option<f64>,
+    pub detail: Option<serde_json::Value>,
+    pub processed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelTwinDto {
+    pub twin_id: Uuid,
+    pub relative_path: String,
+    /// Supported over twin.
+    pub scale: f64,
+    pub coverage: f64,
+    /// The twin is unchanged since (so the split holds).
+    pub current: bool,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelDto {

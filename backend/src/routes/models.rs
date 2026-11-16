@@ -7,6 +7,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
+use std::time::Instant;
 
 use super::{CurrentUser, IdPath, content_disposition, serve_file};
 use crate::app::AppState;
@@ -22,8 +23,10 @@ use crate::geometry::voxl::{self, VoxlMesh, VoxlPlacement};
 use crate::geometry::{LoadedGeometry, Triangle, loader, mesh_transfer, support_separation, to_z_up};
 use crate::preview::spin;
 use crate::services::models::is_non_geometry_type;
+use crate::services::processing::{self, SplitMethod, SplitRecord};
 use crate::services::repaired_meshes;
 use crate::services::support_exports;
+use crate::services::twins::{self, TwinSource};
 use crate::services::voxl_cache::VoxlCacheKey;
 use crate::services::{plate_export, query, scan_config, store};
 
@@ -37,11 +40,13 @@ pub fn routes() -> Router<AppState> {
         .route("/api/models/{id}/preview", get(get_preview))
         .route("/api/models/{id}/spin", get(get_spin))
         .route("/api/models/{id}/metadata", get(get_metadata).put(update_metadata))
+        .route("/api/models/{id}/processing", get(get_processing))
         .route("/api/models/{id}/geometry", get(get_geometry))
         .route("/api/models/{id}/geometry/split", get(get_split_geometry))
         .route("/api/models/{id}/geometry/resupported", get(get_resupported_geometry))
         .route("/api/models/{id}/geometry/repaired", get(get_repaired_geometry))
         .route("/api/models/{id}/voxl", get(get_voxl))
+        .route("/api/models/{id}/update-data", post(update_data))
         .route("/api/query", get(query_models))
         .route("/api/query/options", get(query_options))
 }
@@ -177,6 +182,24 @@ async fn get_spin(
     Ok(response)
 }
 
+/// How the model was processed (support split, twin lookup, repair) and the twins of its split,
+/// read-only, for tracing problems back.
+/// Runs the model's data update ([`crate::services::model_data`]), as its page asks when it opens.
+/// The update runs on its own task, so it finishes even when the page is closed; the response
+/// (what it did) comes once it has.
+async fn update_data(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
+    state.models.get_model(id).await?.ok_or_else(not_found)?;
+    let models = state.models.clone();
+    let update =
+        tokio::spawn(async move { models.update_model_data(id, None).await.0 }).await.map_err(anyhow::Error::from)?;
+    Ok(Json(update).into_response())
+}
+
+async fn get_processing(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
+    state.models.get_model(id).await?.ok_or_else(not_found)?;
+    Ok(Json(twins::processing_of(&state.db, id).await?).into_response())
+}
+
 async fn get_metadata(State(state): State<AppState>, _user: CurrentUser, IdPath(id): IdPath) -> AppResult<Response> {
     let metadata = state.models.get_model_metadata(id).await?.ok_or_else(not_found)?;
     Ok(Json(metadata).into_response())
@@ -228,23 +251,61 @@ struct SupportSplit {
     mask: Vec<bool>,
     body: Vec<Triangle>,
     supports: Vec<Triangle>,
+    /// How it was split, for the model's processing record.
+    record: SplitRecord,
 }
 
-/// A supported model worth splitting, loaded: its row, geometry, raft height and whether its
-/// detection was checked under the current scan config. None when it is not supported, a
-/// checked detection found no supports, or it cannot be loaded.
-async fn load_supported(state: &AppState, id: uuid::Uuid) -> AppResult<Option<(ModelRow, LoadedGeometry, f32, bool)>> {
-    let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+/// A supported model worth splitting, loaded (or `loaded` when the caller has its geometry), with
+/// its data updated first ([`crate::services::model_data`], so a twin found now splits it): its
+/// row, geometry, raft height and whether its detection was checked under the current scan
+/// config. None when it is not supported, a checked detection found no supports, or it cannot be
+/// loaded.
+async fn load_supported(
+    state: &AppState,
+    id: uuid::Uuid,
+    loaded: Option<LoadedGeometry>,
+) -> AppResult<Option<(ModelRow, LoadedGeometry, f32, bool)>> {
+    let mut model = state.models.get_model(id).await?.ok_or_else(not_found)?;
     if model.supported() != Some(true) {
         return Ok(None);
     }
-    let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
-    let checked = model.scan_config_checksum.as_deref() == Some(scan_config::compute(raft_height_mm).as_str());
+    let checked_of = |model: &ModelRow| {
+        let raft_height_mm = model.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+        let checked = model.scan_config_checksum.as_deref() == Some(scan_config::compute(raft_height_mm).as_str());
+        (raft_height_mm, checked)
+    };
+    let mut loaded = loaded;
+    let mut updated = false;
+    if checked_of(&model).1 && model.support_parts_found == Some(false) {
+        // Nothing to split unless the update finds its twins now: the file is loaded only if the
+        // update needs it.
+        let (update, geometry) = state.models.update_model_data(id, loaded.take()).await;
+        if !update.changed {
+            return Ok(None);
+        }
+        (loaded, updated) = (geometry, true);
+        model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+    }
+    let loaded = match loaded {
+        Some(g) => Some(g),
+        None => load_geometry(state, id).await?.1,
+    };
+    let Some(geometry) = loaded else { return Ok(None) };
+    let geometry = if updated {
+        geometry
+    } else {
+        let (update, geometry) = state.models.update_model_data(id, Some(geometry)).await;
+        // The update may have split the model by its twins.
+        if update.changed {
+            model = state.models.get_model(id).await?.ok_or_else(not_found)?;
+        }
+        geometry.expect("the geometry given is handed back")
+    };
+    let (raft_height_mm, checked) = checked_of(&model);
     if checked && model.support_parts_found == Some(false) {
         return Ok(None);
     }
-    let (_, geometry) = load_geometry(state, id).await?;
-    Ok(geometry.map(|g| (model, g, raft_height_mm, checked)))
+    Ok(Some((model, geometry, raft_height_mm, checked)))
 }
 
 /// Splits the supports off a supported model and records whether support parts were found.
@@ -252,26 +313,41 @@ async fn load_supported(state: &AppState, id: uuid::Uuid) -> AppResult<Option<(M
 /// when its support parts are not supports (see
 /// [`support_separation::Classification::holds_supports`]). A detection stored under the
 /// current scan config was checked when the model was indexed; otherwise the supports are
-/// rebuilt to check them.
+/// rebuilt to check them. A model with a twin split is split by its twins.
 async fn split_supports(state: &AppState, id: uuid::Uuid) -> AppResult<Option<SupportSplit>> {
-    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id).await? else {
+    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id, None).await? else {
         return Ok(None);
     };
-    split_loaded(state, model, geometry, raft_height_mm, checked).await
+    let twin = state.models.twin_source(&model, raft_height_mm, checked).await;
+    split_loaded(state, model, geometry, raft_height_mm, checked, twin).await
 }
 
-/// [`split_supports`] on a model [`load_supported`] loaded.
+/// [`split_supports`] on a model [`load_supported`] loaded, with its twin split's source.
 async fn split_loaded(
     state: &AppState,
     model: ModelRow,
     geometry: LoadedGeometry,
     raft_height_mm: f32,
     checked: bool,
+    twin: Option<TwinSource>,
 ) -> AppResult<Option<SupportSplit>> {
     let id = model.id;
     let metadata_supported = model.calculated_supported;
     let (geometry, split, found) = tokio::task::spawn_blocking(move || {
+        let started = Instant::now();
+        // The twin split first; the classifier (with the welded split by shape) otherwise.
+        if let Some(twin) = &twin
+            && let Some(mask) = twins::twin_mask(twin, &geometry.triangles)
+        {
+            let (body, supports) = support_separation::split(&geometry.triangles, &mask);
+            if !supports.is_empty() {
+                let mut record = SplitRecord::new(twin.method(), elapsed_ms(started));
+                record.twins = twin.uses.clone();
+                return (geometry, Some((mask, body, supports, record)), true);
+            }
+        }
         let classification = support_separation::classify(&geometry.triangles, raft_height_mm);
+        let method = SplitMethod::of(classification.as_ref());
         let mut found = classification.is_some();
         let check = !checked && classification.as_ref().is_some_and(|c| !c.generated);
         let split = classification
@@ -283,11 +359,9 @@ async fn split_loaded(
             .filter(|(_, _, supports)| !supports.is_empty())
             .and_then(|(mask, body, supports)| {
                 if check {
-                    let z_up_supports = to_z_up(&supports);
-                    let layout = support_layout::reconstruct(&to_z_up(&body), &z_up_supports);
-                    found = layout.accounts_for(&z_up_supports, raft_height_mm);
+                    found = support_separation::rebuilds_as_supports(&geometry.triangles, &mask, raft_height_mm);
                 }
-                found.then_some((mask, body, supports))
+                found.then(|| (mask, body, supports, SplitRecord::new(method, elapsed_ms(started))))
             });
         (geometry, split, found)
     })
@@ -297,7 +371,11 @@ async fn split_loaded(
     if model.support_parts_found != Some(found) {
         state.models.set_support_parts_found(id, found).await?;
     }
-    Ok(split.map(|(mask, body, supports)| SupportSplit { geometry, mask, body, supports }))
+    Ok(split.map(|(mask, body, supports, record)| SupportSplit { geometry, mask, body, supports, record }))
+}
+
+fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1000.0
 }
 
 /// Body and support geometry of a pre-supported model in one envelope:
@@ -312,6 +390,9 @@ async fn get_split_geometry(
     let Some(split) = split_supports(&state, id).await? else {
         return Ok(StatusCode::NO_CONTENT.into_response());
     };
+    if let Some(model) = state.models.get_model(id).await? {
+        processing::record_split(&state.db, id, "viewer", &model.checksum, &split.record).await;
+    }
     let envelope = tokio::task::spawn_blocking(move || {
         let body_payload = mesh_transfer::encode(&split.geometry.with_triangles(split.body));
         let support_payload = mesh_transfer::encode(&split.geometry.with_triangles(split.supports));
@@ -361,6 +442,10 @@ async fn get_voxl(
         return original_voxl(&state, id).await;
     }
     let remeshed = q.variant == VoxlVariant::Remeshed;
+    state.models.get_model(id).await?.ok_or_else(not_found)?;
+    // The model's data updated first, so the cache key and the export follow a twin found now. Its
+    // geometry, when the update loaded it, goes on to the build.
+    let (_, loaded) = state.models.update_model_data(id, None).await;
     let model = state.models.get_model(id).await?.ok_or_else(not_found)?;
     let stem = store::file_stem(&model.file_name);
     let download_name = if remeshed { format!("{stem}-remeshed.voxl") } else { format!("{stem}-resupported.voxl") };
@@ -375,7 +460,7 @@ async fn get_voxl(
         })
         .flatten();
     let flight = key.as_ref().map_or_else(|| format!("{id}|remeshed:{remeshed}"), VoxlCacheKey::id);
-    let built = state.voxl_builds.run_async(flight, || build_voxl(&state, id, key, remeshed)).await;
+    let built = state.voxl_builds.run_async(flight, || build_voxl(&state, id, key, remeshed, loaded)).await;
     match built.as_ref() {
         Ok(bytes) => Ok(voxl_response(&download_name, bytes.clone())),
         Err(err) => Err(shared_error(err)),
@@ -418,7 +503,13 @@ fn shared_error(err: &AppError) -> AppError {
 }
 
 /// [`get_voxl`]'s VOXL, from the VOXL cache or built (and cached).
-async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>, remeshed: bool) -> AppResult<Bytes> {
+async fn build_voxl(
+    state: &AppState,
+    id: uuid::Uuid,
+    key: Option<VoxlCacheKey>,
+    remeshed: bool,
+    loaded: Option<LoadedGeometry>,
+) -> AppResult<Bytes> {
     if let Some(key) = key.clone() {
         let cache = state.voxl_cache.clone();
         let cached = tokio::task::spawn_blocking(move || cache.get(&key)).await.map_err(anyhow::Error::from)?;
@@ -427,7 +518,7 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
         }
     }
 
-    let (row, body, layout) = read_export(state, id).await?.ok_or_else(not_found)?;
+    let (row, body, layout) = read_export(state, id, loaded).await?.ok_or_else(not_found)?;
     let name = row.file_name.clone();
     let cache = state.voxl_cache.clone();
     let repaired_store = state.models.repaired_meshes().cloned();
@@ -436,7 +527,7 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
         // Only the model mesh is repaired; the supports stay DragonFruit supports.
         let (body, repaired) = if remeshed {
             let repair = repaired_meshes::repair(&body, repaired_store.as_ref(), repair_threads);
-            (repair.triangles, Some(repair.key))
+            (repair.triangles, Some((repair.key, repair.stats)))
         } else {
             (body, None)
         };
@@ -450,8 +541,11 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
     })
     .await
     .map_err(anyhow::Error::from)??;
-    if let (Some(key), Some(store)) = (repaired, state.models.repaired_meshes()) {
-        store.index_or_warn(&state.db, &row, &key).await;
+    if let Some((key, stats)) = repaired {
+        processing::record_repair(&state.db, &row, stats.as_ref()).await;
+        if let Some(store) = state.models.repaired_meshes() {
+            store.index_or_warn(&state.db, &row, &key).await;
+        }
     }
     Ok(bytes.into())
 }
@@ -463,14 +557,18 @@ async fn build_voxl(state: &AppState, id: uuid::Uuid, key: Option<VoxlCacheKey>,
 async fn read_export(
     state: &AppState,
     id: uuid::Uuid,
+    loaded: Option<LoadedGeometry>,
 ) -> AppResult<Option<(ModelRow, Vec<Triangle>, support_layout::SupportLayout)>> {
-    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id).await? else {
+    let Some((model, geometry, raft_height_mm, checked)) = load_supported(state, id, loaded).await? else {
         return Ok(None);
     };
     let row = model.clone();
     // The model's export entry, shared with plate exports: used when it is current.
     let exports = state.models.support_exports().cloned();
-    let export_key = support_exports::key_for(&model, raft_height_mm, checked);
+    // A twin split's entry is keyed by its twins too.
+    let twin = state.models.twin_source(&model, raft_height_mm, checked).await;
+    let export_key =
+        twin.as_ref().map_or_else(|| support_exports::key_for(&model, raft_height_mm, checked), |t| t.key.clone());
     let (geometry, entry) = {
         let (exports, export_key) = (exports.clone(), export_key.clone());
         tokio::task::spawn_blocking(move || {
@@ -490,17 +588,26 @@ async fn read_export(
         }
         // An entry without supports, or none: split (recording what was found) and read.
         _ => {
-            let split = split_loaded(state, model, geometry, raft_height_mm, checked).await?;
+            let checksum = model.checksum.clone();
+            let split = split_loaded(state, model, geometry, raft_height_mm, checked, twin).await?;
+            // A split the twins no longer make is stored as the split it is.
+            let base_key = support_exports::key_for(&row, raft_height_mm, checked);
             let (writer, export_key) = (exports.clone(), export_key.clone());
             let (export, stored) = tokio::task::spawn_blocking(move || {
                 let export = split.map(|split| {
-                    let body = to_z_up(&split.body);
-                    let reading = support_reader::read(&body, &to_z_up(&split.supports), raft_height_mm);
-                    (split.mask, body, reading.classification.layout)
+                    // The viewer's split is open where a welded split cut it; the reader and the
+                    // repair take the pieces closed.
+                    let (body, supports) =
+                        support_separation::welded::closed_split(&split.geometry.triangles, &split.mask);
+                    let body = to_z_up(&body);
+                    let reading = support_reader::read(&body, &to_z_up(&supports), raft_height_mm);
+                    let record = SplitRecord { read: true, ..split.record };
+                    (split.mask, body, reading.classification.layout, record)
                 });
-                let stored = writer
-                    .as_ref()
-                    .and_then(|e| e.store(&export_key, export.as_ref().map(|(m, _, l)| (m.as_slice(), l))));
+                let twin_split = export.as_ref().is_some_and(|e| e.3.method.is_twin());
+                let key = if twin_split { export_key } else { base_key };
+                let stored =
+                    writer.as_ref().and_then(|e| e.store(&key, export.as_ref().map(|(m, _, l, _)| (m.as_slice(), l))));
                 (export, stored)
             })
             .await
@@ -514,7 +621,8 @@ async fn read_export(
                     exports.release(&state.db, &previous).await;
                 }
             }
-            let Some((_, body, layout)) = export else { return Ok(None) };
+            let Some((_, body, layout, record)) = export else { return Ok(None) };
+            processing::record_split(&state.db, id, "export", &checksum, &record).await;
             (body, layout)
         }
     };
@@ -530,7 +638,7 @@ async fn get_resupported_geometry(
     _user: CurrentUser,
     IdPath(id): IdPath,
 ) -> AppResult<Response> {
-    let Some((_, _, layout)) = read_export(&state, id).await? else {
+    let Some((_, _, layout)) = read_export(&state, id, None).await? else {
         return Ok(StatusCode::NO_CONTENT.into_response());
     };
     let payload = tokio::task::spawn_blocking(move || {
@@ -556,7 +664,7 @@ async fn get_repaired_geometry(
     _user: CurrentUser,
     IdPath(id): IdPath,
 ) -> AppResult<Response> {
-    let (row, body) = match read_export(&state, id).await? {
+    let (row, body) = match read_export(&state, id, None).await? {
         Some((row, body, _)) => (row, body),
         None => {
             let (row, geometry) = load_geometry(&state, id).await?;
@@ -567,14 +675,15 @@ async fn get_repaired_geometry(
     };
     let store = state.models.repaired_meshes().cloned();
     let threads = state.app_config.repair_threads();
-    let (payload, key) = tokio::task::spawn_blocking(move || {
+    let (payload, key, stats) = tokio::task::spawn_blocking(move || {
         let repair = repaired_meshes::repair(&body, store.as_ref(), threads);
         let changed = crate::geometry::watertight::changed_faces(&body, &repair.triangles);
         let geometry = mesh_transfer::covering(to_z_up(&repair.triangles));
-        (mesh_transfer::encode_flagged(&geometry, &changed), repair.key)
+        (mesh_transfer::encode_flagged(&geometry, &changed), repair.key, repair.stats)
     })
     .await
     .map_err(anyhow::Error::from)?;
+    processing::record_repair(&state.db, &row, stats.as_ref()).await;
     if let Some(store) = state.models.repaired_meshes() {
         store.index_or_warn(&state.db, &row, &key).await;
     }

@@ -22,8 +22,10 @@ use crate::geometry::watertight;
 use crate::geometry::{LoadedGeometry, Triangle, Vec3, loader, swap_up_axis, to_z_up};
 use crate::metadata::tags;
 use crate::services::models::{ModelService, is_non_geometry_type};
+use crate::services::processing;
 use crate::services::repaired_meshes;
 use crate::services::support_exports::{self, SupportExports};
+use crate::services::twins::{self, TwinSource};
 use crate::services::{scan_config, store};
 
 const MAX_CONCURRENT_MODEL_LOADS: usize = 2;
@@ -154,10 +156,14 @@ fn rotate_y(n: Vec3, sin: f32, cos: f32) -> Vec3 {
 /// detection stored under the current scan config saves looking when it found no supports.
 /// The split and the rebuilt supports come from the model's export entry when it is current, and
 /// are read and stored as its entry otherwise (the entry's relative path is returned then).
+/// A repair a plate export ran or loaded: the model, its mesh key and what the repair did (when it ran).
+type RepairDone = (Uuid, watertight::MeshKey, Option<watertight::RepairStats>);
+
 fn supported_export(
     exports: Option<&SupportExports>,
     info: &ModelRow,
     triangles: &[Triangle],
+    twin: Option<&TwinSource>,
 ) -> (support_exports::Export, Option<String>) {
     if info.supported() != Some(true) {
         return (None, None);
@@ -167,11 +173,16 @@ fn supported_export(
     if checked && info.support_parts_found == Some(false) {
         return (None, None);
     }
-    let key = support_exports::key_for(info, raft_height_mm, checked);
+    let base_key = support_exports::key_for(info, raft_height_mm, checked);
+    // A twin split's entry is keyed by its twins too.
+    let key = twin.map_or_else(|| base_key.clone(), |t| t.key.clone());
     if let Some(export) = exports.and_then(|e| e.read(&key, triangles)) {
         return (export, None);
     }
-    let export = support_reader::model_export(triangles, raft_height_mm, info.calculated_supported, checked);
+    let (export, key) = match twin.and_then(|t| twins::twin_mask(t, triangles)) {
+        Some(mask) => (support_reader::export_of_mask(triangles, mask, raft_height_mm), key),
+        None => (support_reader::model_export(triangles, raft_height_mm, info.calculated_supported, checked), base_key),
+    };
     let written =
         exports.and_then(|e| e.store(&key, export.as_ref().map(|(mask, _, layout)| (mask.as_slice(), layout))));
     (export.map(|(_, body, layout)| (body, layout)), written)
@@ -249,6 +260,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
             let info = infos[&id].clone();
             let path = crate::metadata::inheritance::build_full_file_path(&root, &info.directory, &info.file_name);
             let progress = progress.clone();
+            let models = models.clone();
             async move {
                 if let Some(p) = &progress {
                     p.mark_current_entry(&info.file_name);
@@ -259,10 +271,14 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                 let geometry = loader::load_model_async(&path, &info.file_type).await.ok_or_else(|| {
                     AppError::Internal(anyhow::anyhow!("Failed to parse geometry for: {}", info.file_name))
                 })?;
+                // Its data updated first ([`crate::services::model_data`]) on the geometry just loaded,
+                // so the export takes a twin split found now.
+                let (update, geometry) = models.update_model_data(info.id, Some(geometry)).await;
+                let geometry = geometry.expect("the geometry given is handed back");
                 if let Some(p) = &progress {
                     p.mark_entry_completed();
                 }
-                Ok((info.id, geometry))
+                Ok((info.id, geometry, update.changed))
             }
         })
         .collect();
@@ -270,10 +286,14 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
         futures::stream::iter(load_futures).buffer_unordered(MAX_CONCURRENT_MODEL_LOADS).collect::<Vec<_>>().await;
 
     let mut geometries: HashMap<Uuid, LoadedGeometry> = HashMap::with_capacity(loads.len());
+    let mut updated = false;
     for load in loads {
-        let (id, geometry) = load?;
+        let (id, geometry, changed) = load?;
         geometries.insert(id, geometry);
+        updated |= changed;
     }
+    // A model the update split by its twins is read with its new row.
+    let infos = if updated { models.get_models_by_id_map(&unique_ids).await? } else { infos };
 
     if placements.is_empty() {
         return Err(AppError::Unprocessable("No geometry-based models were included in the export request.".into()));
@@ -289,7 +309,22 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
     let written_by_export = written.clone();
     let repaired_store = models.repaired_meshes().cloned();
     let repair_threads = models.app_config.repair_threads();
-    let repairs: Arc<parking_lot::Mutex<Vec<(Uuid, watertight::MeshKey)>>> = Arc::default();
+    let repairs: Arc<parking_lot::Mutex<Vec<RepairDone>>> = Arc::default();
+    // The twin splits of the supported models that have one.
+    let twin_sets = twins::twin_sets(&models.db).await?;
+    let twin_sources: HashMap<Uuid, TwinSource> = geometry_ids
+        .iter()
+        .filter_map(|id| {
+            let (info, set) = (&infos[id], twin_sets.get(id)?);
+            (info.supported() == Some(true)).then(|| {
+                let raft_height_mm = info.hull_raft_height_mm.unwrap_or(DEFAULT_RAFT_HEIGHT_MM);
+                let checked =
+                    info.scan_config_checksum.as_deref() == Some(scan_config::compute(raft_height_mm).as_str());
+                let base = support_exports::key_for(info, raft_height_mm, checked);
+                (*id, TwinSource::new(exports.clone(), base, set, &root))
+            })
+        })
+        .collect();
     let repairs_by_export = repairs.clone();
     let rows = infos.clone();
     let result = PlateExportResult {
@@ -346,7 +381,8 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                         if let Some(p) = reports {
                             p.mark_reading_supports(&info.file_name);
                         }
-                        let (export, stored) = supported_export(exports.as_ref(), info, triangles);
+                        let (export, stored) =
+                            supported_export(exports.as_ref(), info, triangles, twin_sources.get(id));
                         if let Some(path) = stored {
                             written_by_export.lock().push((*id, path));
                         }
@@ -383,7 +419,7 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
                                         p.mark_repairing(name);
                                     }
                                     let repair = repaired_meshes::repair(body, repaired_store.as_ref(), repair_threads);
-                                    repairs_by_export.lock().push((geometry_ids[i], repair.key));
+                                    repairs_by_export.lock().push((geometry_ids[i], repair.key, repair.stats));
                                     *repaired[i].lock() = Some(repair.triangles);
                                     if let Some(p) = &progress {
                                         p.mark_repaired(name);
@@ -468,10 +504,11 @@ pub async fn generate_plate<W: Write + Seek + Send + 'static>(
         }
     }
 
-    // The repaired meshes this export used, indexed for the scan.
-    if let Some(store) = models.repaired_meshes() {
-        let repairs = std::mem::take(&mut *repairs.lock());
-        for (id, key) in repairs {
+    // The repaired meshes this export used, indexed for the scan, and the repairs it ran.
+    let repairs = std::mem::take(&mut *repairs.lock());
+    for (id, key, stats) in repairs {
+        processing::record_repair(&models.db, &rows[&id], stats.as_ref()).await;
+        if let Some(store) = models.repaired_meshes() {
             store.index_or_warn(&models.db, &rows[&id], &key).await;
         }
     }
@@ -523,7 +560,7 @@ mod tests {
         let mask = [false, true, false, true];
         exports.write(&key, Some((&mask, &layout))).unwrap();
 
-        let (export, stored) = supported_export(Some(&exports), &info, &triangles);
+        let (export, stored) = supported_export(Some(&exports), &info, &triangles, None);
         assert_eq!(export, Some((to_z_up(&[triangles[0], triangles[2]]), layout.clone())));
         assert_eq!(stored, None, "a current entry is not written again");
 
@@ -536,9 +573,9 @@ mod tests {
         let checked_key = support_exports::key_for(&checked, DEFAULT_RAFT_HEIGHT_MM, true);
         let other = SupportLayout::default();
         exports.write(&checked_key, Some((&mask, &other))).unwrap();
-        assert_eq!(supported_export(Some(&exports), &checked, &triangles).0.map(|(_, l)| l), Some(other));
+        assert_eq!(supported_export(Some(&exports), &checked, &triangles, None).0.map(|(_, l)| l), Some(other));
         // Without an entry store, the supports are read every time.
-        assert_ne!(supported_export(None, &info, &triangles).0.map(|(_, l)| l), Some(layout));
+        assert_ne!(supported_export(None, &info, &triangles, None).0.map(|(_, l)| l), Some(layout));
     }
 
     #[test]
@@ -559,7 +596,7 @@ mod tests {
         std::fs::write(&path, support_exports::codec::encode(&old, Some((&[false, true, false, true], &layout))))
             .unwrap();
 
-        let (export, stored) = supported_export(Some(&exports), &info, &triangles);
+        let (export, stored) = supported_export(Some(&exports), &info, &triangles, None);
         assert_ne!(export.map(|(_, l)| l), Some(layout), "the old entry is not used");
         assert_eq!(stored, Some(support_exports::relative_path(&key)));
         assert_eq!(exports.stored_version(&key), Some(CURRENT_SUPPORT_READER_VERSION));
@@ -571,12 +608,12 @@ mod tests {
         let exports = SupportExports::new(dir.path().to_path_buf());
         let info = supported_model();
         let triangles: Vec<Triangle> = (0..4).map(|i| triangle(i as f32)).collect();
-        assert_eq!(supported_export(Some(&exports), &info, &triangles).0, None);
+        assert_eq!(supported_export(Some(&exports), &info, &triangles, None).0, None);
         let key = support_exports::key_for(&info, DEFAULT_RAFT_HEIGHT_MM, false);
         assert_eq!(exports.read(&key, &triangles), Some(None));
         // An unsupported model stores nothing.
         let unsupported = ModelRow { calculated_supported: Some(false), ..info };
-        assert_eq!(supported_export(Some(&exports), &unsupported, &triangles), (None, None));
+        assert_eq!(supported_export(Some(&exports), &unsupported, &triangles, None), (None, None));
     }
 
     #[test]

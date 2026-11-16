@@ -1156,6 +1156,87 @@ async fn the_remeshed_voxl_holds_the_watertight_model_and_the_same_supports() {
     assert_eq!(entries, 2);
 }
 
+/// A finely meshed ball welded to five rods standing on the plate: one closed shell, as
+/// netfabb-style exports union a model with its supports.
+fn welded_ball() -> Vec<Triangle> {
+    use manifold_csg::Manifold;
+    let mut m = Manifold::sphere(3.0, 160).translate(0.0, 0.0, 10.0);
+    for (x, y) in [(0.0, 0.0), (2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)] {
+        m = m.union(&Manifold::cylinder(8.7, 0.4, 0.2, 8, false).translate(x, y, 0.0));
+    }
+    let (vp, np, idx) = m.to_mesh_f64();
+    let v = |i: u64| {
+        let k = i as usize * np;
+        Vec3::new(vp[k] as f32, vp[k + 1] as f32, vp[k + 2] as f32)
+    };
+    idx.chunks(3)
+        .map(|t| {
+            let (a, b, c) = (v(t[0]), v(t[1]), v(t[2]));
+            Triangle::new(a, b, c, (b - a).cross(c - a).normalized())
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn welded_supports_are_split_open_for_the_viewer_and_closed_for_exports() {
+    let app = TestApp::new().await;
+    let mesh = welded_ball();
+    app.write("Mini/ball.stl", findamodel::geometry::saver::save_stl(&mesh, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let (_, result) = app.get("/api/query?limit=10").await;
+    let id = result["models"][0]["id"].as_str().unwrap().to_string();
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+
+    // The viewer gets the two sides as the mask cuts them: every triangle once, open at the seams.
+    let (status, _, payload) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let u32_at = |o: usize| u32::from_le_bytes(payload[o..o + 4].try_into().unwrap()) as usize;
+    let body_len = u32_at(0);
+    let body = findamodel::geometry::mesh_transfer::decode(&payload[4..4 + body_len]).unwrap();
+    let supports = findamodel::geometry::mesh_transfer::decode(&payload[8 + body_len..]).unwrap();
+    let (body_faces, support_faces) = (body.indices.len() / 3, supports.indices.len() / 3);
+    assert!(support_faces > 0 && body_faces > support_faces, "{body_faces} {support_faces}");
+    assert_eq!(body_faces + support_faces, mesh.len());
+
+    // The resupported VOXL: the body closed with a cap over each of the five contacts, and the
+    // supports read to touch the ball at each.
+    let normal = download_voxl(&app, &id).await;
+    let model = voxl_mesh_triangles(&normal);
+    assert!(model.len() > body_faces, "the body is capped");
+    let check = watertight_check(&model);
+    assert_eq!(check.boundary_edges, 0, "{check:?}");
+    fn contacts(v: &Value, out: &mut Vec<f64>) {
+        match v {
+            Value::Object(m) => {
+                if let Some(z) = m.get("contactCone").and_then(|c| c["pos"]["z"].as_f64()) {
+                    out.push(z);
+                }
+                m.values().for_each(|v| contacts(v, out));
+            }
+            Value::Array(a) => a.iter().for_each(|v| contacts(v, out)),
+            _ => {}
+        }
+    }
+    let mut zs = Vec::new();
+    contacts(&voxl_chunk(&normal, b"SUPP"), &mut zs);
+    assert_eq!(zs.len(), 5, "{zs:?}");
+    // On the ball's underside (its bottom at 7 mm, the outer rods meeting it from 7.76 mm).
+    assert!(zs.iter().all(|z| (6.9..8.3).contains(z)), "{zs:?}");
+
+    // The remeshed VOXL: the closed body made watertight, with the same supports.
+    let (status, _, remeshed) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let after = watertight_check(&voxl_mesh_triangles(&remeshed));
+    assert!(after.watertight() && after.shells == 1, "{after:?}");
+    let ball = 4.0 / 3.0 * std::f64::consts::PI * 27.0;
+    assert!((after.volume - ball).abs() < 0.02 * ball, "{} vs {ball}", after.volume);
+    assert_close(&support_entities(&remeshed), &support_entities(&normal), "the same DragonFruit supports");
+}
+
 #[tokio::test]
 async fn a_remeshed_plate_voxl_repairs_each_model_and_keeps_the_supports() {
     let app = TestApp::new().await;
@@ -1683,4 +1764,458 @@ async fn every_mesh_endpoint_sends_meshopt_meshes_compressed_for_the_client() {
             }
         }
     }
+}
+
+/// A bumpy closed ball (radius about 10 mm) whose triangles all differ in shape, as a sculpt's do:
+/// a UV sphere with an irregular radius from `seed`.
+fn bumpy_ball(seed: u64) -> Vec<Triangle> {
+    let mix = |mut z: u64| {
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    };
+    let (rings, segs) = (40usize, 80usize);
+    let r = |i: usize, j: usize| 10.0 + (mix(seed ^ ((i as u64) << 32) ^ j as u64) % 1000) as f64 * 1e-3;
+    let mut verts = vec![[0.0, 0.0, r(0, 0)]];
+    for i in 1..rings {
+        let th = std::f64::consts::PI * i as f64 / rings as f64;
+        for j in 0..segs {
+            let ph = 2.0 * std::f64::consts::PI * (j as f64 + 0.37 * (i % 3) as f64) / segs as f64;
+            let rr = r(i, j);
+            verts.push([rr * th.sin() * ph.cos(), rr * th.sin() * ph.sin(), rr * th.cos()]);
+        }
+    }
+    verts.push([0.0, 0.0, -r(rings, 0)]);
+    let at = |i: usize, j: usize| 1 + (i - 1) * segs + j % segs;
+    let last = verts.len() - 1;
+    let mut faces = Vec::new();
+    for j in 0..segs {
+        faces.push([0, at(1, j), at(1, j + 1)]);
+        faces.push([last, at(rings - 1, j + 1), at(rings - 1, j)]);
+    }
+    for i in 1..rings - 1 {
+        for j in 0..segs {
+            let (a, b, c, d) = (at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j + 1));
+            faces.push([a, c, b]);
+            faces.push([b, c, d]);
+        }
+    }
+    let v = |p: [f64; 3]| Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32);
+    faces
+        .iter()
+        .map(|f| {
+            let (a, b, c) = (v(verts[f[0]]), v(verts[f[1]]), v(verts[f[2]]));
+            Triangle::new(a, b, c, (b - a).cross(c - a).normalized())
+        })
+        .collect()
+}
+
+/// The ball scaled by `scale` with supports welded into it as a boolean union leaves them: seven of
+/// its lowest triangles (Z up) replaced by spikes down below it, one closed shell. Returns the mesh
+/// and how many of its triangles are the ball's.
+fn welded_spiked(ball: &[Triangle], scale: f32) -> (Vec<Triangle>, usize) {
+    let body: Vec<Triangle> =
+        ball.iter().map(|t| Triangle::new(t.v0 * scale, t.v1 * scale, t.v2 * scale, t.normal)).collect();
+    let low = |t: &Triangle| t.v0.z + t.v1.z + t.v2.z;
+    let mut order: Vec<usize> = (0..body.len()).collect();
+    order.sort_by(|&a, &b| low(&body[a]).total_cmp(&low(&body[b])));
+    let picked: Vec<usize> = order.iter().take(420).copied().step_by(60).collect();
+    let mut mesh: Vec<Triangle> =
+        body.iter().enumerate().filter(|(i, _)| !picked.contains(i)).map(|(_, t)| *t).collect();
+    let n = mesh.len();
+    for &i in &picked {
+        let t = body[i];
+        let c = (t.v0 + t.v1 + t.v2) * (1.0 / 3.0);
+        let apex = Vec3::new(c.x, c.y, c.z - 12.0 * scale);
+        for (a, b) in [(t.v0, t.v1), (t.v1, t.v2), (t.v2, t.v0)] {
+            mesh.push(Triangle::new(a, b, apex, (b - a).cross(apex - a).normalized()));
+        }
+    }
+    (mesh, n)
+}
+
+async fn id_of(app: &TestApp, relative_path: &str) -> String {
+    let (_, result) = app.get("/api/query?limit=50").await;
+    result["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["relativePath"] == relative_path)
+        .unwrap_or_else(|| panic!("{relative_path} indexed: {result}"))["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// The model's processing row of `kind` (null when there is none).
+async fn processing_of(app: &TestApp, id: &str, kind: &str) -> Value {
+    let (status, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    assert_eq!(status, StatusCode::OK);
+    p["processing"].as_array().unwrap().iter().find(|r| r["kind"] == kind).cloned().unwrap_or(Value::Null)
+}
+
+/// Whether a model has stored twin probe keys (it waits for a twin).
+async fn has_stored_probes(app: &TestApp, id: &str) -> bool {
+    let id = uuid::Uuid::parse_str(id).unwrap();
+    sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM model_twin_probes WHERE model_id = ?)")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap()
+}
+
+/// The viewer split's body and support face counts (None: nothing split off).
+async fn split_faces(app: &TestApp, id: &str) -> Option<(usize, usize)> {
+    let (status, _, payload) =
+        app.send(Request::get(format!("/api/models/{id}/geometry/split")).body(Body::empty()).unwrap()).await;
+    if status == StatusCode::NO_CONTENT {
+        return None;
+    }
+    assert_eq!(status, StatusCode::OK);
+    let u32_at = |o: usize| u32::from_le_bytes(payload[o..o + 4].try_into().unwrap()) as usize;
+    let body_len = u32_at(0);
+    let body = findamodel::geometry::mesh_transfer::decode(&payload[4..4 + body_len]).unwrap();
+    let supports = findamodel::geometry::mesh_transfer::decode(&payload[8 + body_len..]).unwrap();
+    Some((body.indices.len() / 3, supports.indices.len() / 3))
+}
+
+/// A supported ball with welded spikes, beside its twin (the ball alone, at two thirds the size):
+/// the supported model's id, the twin's, and the supported model's ball and spike face counts.
+async fn twin_pair(app: &TestApp) -> (String, String, usize, usize) {
+    let ball = bumpy_ball(3);
+    let (spiked, body_n) = welded_spiked(&ball, 1.5);
+    app.write("Bare/ball.stl", findamodel::geometry::saver::save_stl(&ball, None));
+    app.write("Bare/findamodel.yaml", "supported: false\n");
+    app.write("Mini/ball_supported.stl", findamodel::geometry::saver::save_stl(&spiked, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    (id_of(app, "Mini/ball_supported.stl").await, id_of(app, "Bare/ball.stl").await, body_n, spiked.len() - body_n)
+}
+
+#[tokio::test]
+async fn a_welded_model_is_split_by_its_twin_and_records_how() {
+    let app = TestApp::new().await;
+    let (id, twin, body_n, spikes) = twin_pair(&app).await;
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+
+    // The viewer gets the twin's split: the ball's triangles as body, the spikes as supports.
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+
+    // How it was processed: split by its twin, at its scale, after the lookup found it.
+    let (_, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    let twins = p["twins"].as_array().unwrap();
+    assert_eq!(twins.len(), 1, "{p}");
+    assert_eq!(twins[0]["twinId"], twin.as_str());
+    assert_eq!(twins[0]["relativePath"], "Bare/ball.stl");
+    assert_eq!(twins[0]["current"], true);
+    assert!((twins[0]["scale"].as_f64().unwrap() - 1.5).abs() < 1e-3, "{p}");
+    assert!(twins[0]["coverage"].as_f64().unwrap() > 0.95, "{p}");
+    let split = processing_of(&app, &id, "support_split").await;
+    assert_eq!(split["method"], "twin", "{p}");
+    assert_eq!(split["source"], "twin_lookup");
+    assert_eq!(split["detectionVersion"], findamodel::geometry::support_separation::CURRENT_SUPPORT_DETECTION_VERSION);
+    assert_eq!(split["twinVersion"], findamodel::geometry::twin::CURRENT_TWIN_VERSION);
+    assert_eq!(split["readerVersion"], findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION);
+    assert_eq!(split["detail"]["twins"][0]["twinId"], twin.as_str());
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_eq!(lookup["method"], "twin");
+    assert_eq!(lookup["detail"]["guard"], "twin");
+    assert_eq!(lookup["detail"]["verified"][0]["verdict"], "twin");
+    assert!(lookup["detail"]["split"]["seamLoops"].as_u64().unwrap() >= 3, "{lookup}");
+    // The twin itself is not supported: nothing split off, never looked up.
+    assert_eq!(processing_of(&app, &twin, "support_split").await["method"], "none");
+    assert_eq!(processing_of(&app, &twin, "twin_lookup").await, Value::Null);
+
+    // The exports take the twin's split, closed where it cuts the shell; the remeshed one records
+    // its repair.
+    let voxl = download_voxl(&app, &id).await;
+    let model = voxl_mesh_triangles(&voxl);
+    assert!(model.len() > body_n, "the body is capped");
+    assert_eq!(watertight_check(&model).boundary_edges, 0);
+    let (status, _, remeshed) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=remeshed")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(watertight_check(&voxl_mesh_triangles(&remeshed)).watertight());
+    let repair = processing_of(&app, &id, "repair").await;
+    assert_eq!(repair["method"], "remeshed");
+    assert_eq!(repair["repairVersion"], findamodel::geometry::watertight::CURRENT_REPAIR_VERSION);
+    assert!(repair["detail"]["facesIn"].as_u64().unwrap() > body_n as u64, "{repair}");
+
+    // A rescan with nothing changed keeps the twin split without looking it up again.
+    let probed = lookup["processedAt"].clone();
+    app.index_and_wait(3).await;
+    assert_eq!(processing_of(&app, &id, "twin_lookup").await["processedAt"], probed);
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+
+    let (status, _) = app.get("/api/models/00000000-0000-0000-0000-000000000000/processing").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// A smooth closed ball (Z-up) at `rings` resolution: the same surface at any resolution, so a
+/// coarser one is a finer one remeshed.
+fn smooth_ball(rings: usize) -> Vec<Triangle> {
+    let segs = 2 * rings;
+    let pi = std::f64::consts::PI;
+    let at = |i: usize, j: usize| {
+        let (th, ph) = (pi * i as f64 / rings as f64, 2.0 * pi * (j % segs) as f64 / segs as f64);
+        let r = 10.0
+            + th.sin()
+                * (1.2 * (3.0 * th).sin() * (2.0 * ph).cos()
+                    + 0.8 * (5.0 * ph + 1.0).sin()
+                    + 0.5 * (4.0 * th + 2.0 * ph).cos());
+        Vec3::new((r * th.sin() * ph.cos()) as f32, (r * th.sin() * ph.sin()) as f32, (r * th.cos()) as f32)
+    };
+    let mut faces = Vec::new();
+    for i in 0..rings {
+        for j in 0..segs {
+            let (a, b, c, d) = (at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j + 1));
+            if i > 0 {
+                faces.push([a, c, b]);
+            }
+            if i + 1 < rings {
+                faces.push([b, c, d]);
+            }
+        }
+    }
+    faces.iter().map(|&[a, b, c]| Triangle::new(a, b, c, (b - a).cross(c - a).normalized())).collect()
+}
+
+#[tokio::test]
+async fn a_welded_model_is_split_by_its_remeshed_twin() {
+    let app = TestApp::new().await;
+    // The supported file is a fine ball with welded spikes; its twin is the ball remeshed coarser,
+    // so no triangle matches and only the remeshed lookup finds it (in the same collection).
+    let (spiked, body_n) = welded_spiked(&smooth_ball(72), 1.0);
+    app.write("Bare/ball.stl", findamodel::geometry::saver::save_stl(&smooth_ball(48), None));
+    app.write("Bare/findamodel.yaml", "creator: Maker\ncollection: Balls\nsupported: false\n");
+    app.write("Mini/ball_supported.stl", findamodel::geometry::saver::save_stl(&spiked, None));
+    app.write("Mini/findamodel.yaml", "creator: Maker\ncollection: Balls\nsupported: true\n");
+    app.index_and_wait(3).await;
+    let (id, twin) = (id_of(&app, "Mini/ball_supported.stl").await, id_of(&app, "Bare/ball.stl").await);
+
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_eq!(lookup["method"], "twin_remeshed", "{lookup}");
+    let remeshed = &lookup["detail"]["remeshed"];
+    assert_eq!(remeshed["chosen"], twin.as_str(), "{lookup}");
+    assert_eq!(remeshed["verified"][0]["verdict"], "twin", "{lookup}");
+    assert!(remeshed["verified"][0]["deviationMm"]["p90"].as_f64().unwrap() < 0.01, "{lookup}");
+    assert_eq!(remeshed["verified"][0]["scale"], 1.0);
+    assert_eq!(lookup["detail"]["remeshVersion"], findamodel::geometry::remesh_twin::CURRENT_REMESH_TWIN_VERSION);
+    let split = processing_of(&app, &id, "support_split").await;
+    assert_eq!(split["method"], "twin_remeshed", "{split}");
+    assert_eq!(split["detail"]["twins"][0]["twinId"], twin.as_str());
+    // The scan stored its probe keys while it waited; its collection had a remeshed candidate, so
+    // its file was loaded rather than ruled out from the keys, and the keys went once it was split.
+    assert_eq!(lookup["detail"]["probedFrom"], "file", "{lookup}");
+    assert!(!has_stored_probes(&app, &id).await);
+    let (_, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    assert_eq!(p["twins"][0]["twinId"], twin.as_str(), "{p}");
+    assert_eq!(p["twins"][0]["current"], true, "{p}");
+
+    // The viewer takes the split: the spikes as supports, the ball (nearly all of it) as body.
+    let (body, supports) = split_faces(&app, &id).await.expect("a split");
+    assert!(supports >= (spiked.len() - body_n) && supports < (spiked.len() - body_n) + body_n / 200, "{supports}");
+    assert!(body + supports >= spiked.len(), "{body} {supports}");
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+
+    // A rescan with nothing changed keeps the split without looking it up again.
+    app.index_and_wait(3).await;
+    assert_eq!(processing_of(&app, &id, "twin_lookup").await["processedAt"], lookup["processedAt"]);
+    assert_eq!(processing_of(&app, &id, "support_split").await["method"], "twin_remeshed");
+    assert_eq!(split_faces(&app, &id).await, Some((body, supports)));
+}
+
+#[tokio::test]
+async fn a_remeshed_twin_needs_the_models_creator_and_collection() {
+    let app = TestApp::new().await;
+    let (spiked, _) = welded_spiked(&smooth_ball(72), 1.0);
+    app.write("Bare/ball.stl", findamodel::geometry::saver::save_stl(&smooth_ball(48), None));
+    app.write("Bare/findamodel.yaml", "creator: Other\ncollection: Balls\nsupported: false\n");
+    app.write("Mini/ball_supported.stl", findamodel::geometry::saver::save_stl(&spiked, None));
+    app.write("Mini/findamodel.yaml", "creator: Maker\ncollection: Balls\nsupported: true\n");
+    app.index_and_wait(3).await;
+    let id = id_of(&app, "Mini/ball_supported.stl").await;
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_ne!(lookup["method"], "twin_remeshed", "{lookup}");
+    assert_eq!(lookup["detail"]["remeshed"]["candidates"], 0, "{lookup}");
+    assert_ne!(processing_of(&app, &id, "support_split").await["method"], "twin_remeshed");
+}
+
+#[tokio::test]
+async fn deleting_a_twin_splits_its_model_again_and_a_new_twin_is_found() {
+    let app = TestApp::new().await;
+    let (id, _, body_n, spikes) = twin_pair(&app).await;
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+    assert!(!has_stored_probes(&app, &id).await, "split by its twin: it waits for none");
+
+    // The twin is deleted: its model is looked up again, finds none, and is split as the
+    // classifier splits it (here not at all).
+    std::fs::remove_file(app.models.path().join("Bare/ball.stl")).unwrap();
+    app.index_and_wait(3).await;
+    let (_, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    assert_eq!(p["twins"], json!([]), "{p}");
+    assert_ne!(processing_of(&app, &id, "support_split").await["method"], "twin", "{p}");
+    assert_eq!(processing_of(&app, &id, "twin_lookup").await["method"], "none", "{p}");
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], false);
+    assert_eq!(split_faces(&app, &id).await, None);
+    let (status, _, _) =
+        app.send(Request::get(format!("/api/models/{id}/voxl?variant=resupported")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no supports to rebuild without the twin");
+    assert!(has_stored_probes(&app, &id).await, "waiting for a twin again: its probe keys are kept");
+
+    // An unrelated model appears: the waiting model is probed again from its stored keys alone.
+    app.write("Bare/other.stl", findamodel::geometry::saver::save_stl(&bumpy_ball(9), None));
+    app.index_and_wait(3).await;
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_eq!(lookup["method"], "none", "{lookup}");
+    assert_eq!(lookup["detail"]["probedFrom"], "stored", "no candidate hit, so its file was not loaded: {lookup}");
+    assert!(lookup["detail"]["probedSince"].is_string(), "{lookup}");
+
+    // A new copy of the twin appears: its stored keys hit it, so the model is loaded, looked up
+    // against it and split again, and its keys are dropped.
+    app.write("Bare/ball_copy.stl", findamodel::geometry::saver::save_stl(&bumpy_ball(3), None));
+    app.index_and_wait(3).await;
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_eq!(lookup["method"], "twin", "{lookup}");
+    assert!(lookup["detail"]["probedSince"].is_string(), "looked up against the new sketches only: {lookup}");
+    let (_, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    assert_eq!(p["twins"][0]["relativePath"], "Bare/ball_copy.stl", "{p}");
+    assert_eq!(lookup["detail"]["probedFrom"], "file", "{lookup}");
+    assert!(!has_stored_probes(&app, &id).await);
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+    let (_, detail) = app.get(&format!("/api/models/{id}")).await;
+    assert_eq!(detail["supportSplit"], true);
+}
+
+#[tokio::test]
+async fn a_changed_twin_no_longer_splits_its_model() {
+    let app = TestApp::new().await;
+    let (id, twin, body_n, spikes) = twin_pair(&app).await;
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+    // Another sculpt in the twin's file: the twin no longer holds, so the model is split without it.
+    app.write("Bare/ball.stl", findamodel::geometry::saver::save_stl(&bumpy_ball(4), None));
+    app.index_and_wait(3).await;
+    assert_eq!(id_of(&app, "Bare/ball.stl").await, twin);
+    let (_, p) = app.get(&format!("/api/models/{id}/processing")).await;
+    assert_eq!(p["twins"], json!([]), "{p}");
+    assert_eq!(processing_of(&app, &id, "twin_lookup").await["method"], "none", "{p}");
+    assert_eq!(split_faces(&app, &id).await, None);
+}
+
+#[tokio::test]
+async fn a_waiting_model_keeps_its_probe_keys_from_the_scan_until_it_stops_waiting() {
+    let app = TestApp::new().await;
+    let (spiked, _) = welded_spiked(&bumpy_ball(5), 1.0);
+    app.write("Mini/alone.stl", findamodel::geometry::saver::save_stl(&spiked, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let id = id_of(&app, "Mini/alone.stl").await;
+    // Written by the scan, so the lookup that follows needs no load of the file.
+    assert!(has_stored_probes(&app, &id).await);
+    let lookup = processing_of(&app, &id, "twin_lookup").await;
+    assert_eq!(lookup["method"], "none", "{lookup}");
+    assert_eq!(lookup["detail"]["probedFrom"], "stored", "{lookup}");
+    // Not supported any more: it waits for no twin, and its keys go.
+    app.write("Mini/findamodel.yaml", "supported: false\n");
+    app.index_and_wait(3).await;
+    assert!(!has_stored_probes(&app, &id).await);
+}
+
+#[tokio::test]
+async fn processing_needs_a_signed_in_user() {
+    let app = TestApp::with(|s| {
+        s.mode = RuntimeMode::Desktop;
+        s.desktop_token = Some("secret".into());
+    })
+    .await;
+    let uri = "/api/models/00000000-0000-0000-0000-000000000001/processing";
+    let (status, _) = app.get(uri).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = app.get(&format!("{uri}?desktopToken=secret")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Forgets a model's data update runs, so the next trigger runs the update again.
+async fn forget_updates(app: &TestApp, id: &str) {
+    sqlx::query("DELETE FROM model_processing WHERE model_id = ? AND kind = 'model_update'")
+        .bind(uuid::Uuid::parse_str(id).unwrap())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+}
+
+/// Waits for the model's data update run (one run in the background).
+async fn update_run(app: &TestApp, id: &str) -> Value {
+    for _ in 0..200 {
+        let row = processing_of(app, id, "model_update").await;
+        if !row.is_null() {
+            return row;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    Value::Null
+}
+
+#[tokio::test]
+async fn every_trigger_runs_the_models_data_update() {
+    let app = TestApp::new().await;
+    // A supported model with welded supports and no twin: it waits for one, so a full twin search
+    // is due until one has run.
+    let (spiked, _) = welded_spiked(&bumpy_ball(5), 1.0);
+    app.write("Mini/alone.stl", findamodel::geometry::saver::save_stl(&spiked, None));
+    app.write("Mini/findamodel.yaml", "supported: true\n");
+    app.index_and_wait(3).await;
+    let id = id_of(&app, "Mini/alone.stl").await;
+    assert!(processing_of(&app, &id, "model_update").await.is_null(), "the scan runs no update");
+
+    // The model page asks for it when it opens.
+    let (status, update) = app.json("POST", &format!("/api/models/{id}/update-data"), json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(update["steps"][0]["step"], "twin_search", "{update}");
+    assert_eq!(update["steps"][0]["outcome"], "no_twin", "{update}");
+    assert_eq!(update["changed"], false);
+    let row = processing_of(&app, &id, "model_update").await;
+    assert_eq!(row["method"], "no_twin", "{row}");
+    // Searched, and nothing new since: nothing to do.
+    let (_, update) = app.json("POST", &format!("/api/models/{id}/update-data"), json!({})).await;
+    assert_eq!(update["steps"], json!([]), "{update}");
+
+    // Each export of its split, resupported or repaired data runs it first.
+    for uri in [
+        format!("/api/models/{id}/voxl?variant=resupported"),
+        format!("/api/models/{id}/voxl?variant=remeshed"),
+        format!("/api/models/{id}/geometry/split"),
+        format!("/api/models/{id}/geometry/resupported"),
+        format!("/api/models/{id}/geometry/repaired"),
+    ] {
+        forget_updates(&app, &id).await;
+        app.send(Request::get(&uri).body(Body::empty()).unwrap()).await;
+        assert_eq!(processing_of(&app, &id, "model_update").await["method"], "no_twin", "{uri}");
+    }
+    forget_updates(&app, &id).await;
+    let plate = json!({ "placements": [{ "modelId": id, "instanceIndex": 0, "xMm": 0, "yMm": 0, "angleRad": 0 }], "format": "stl" });
+    let (status, _) = app.json("POST", "/api/plate/generate", plate).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(processing_of(&app, &id, "model_update").await["method"], "no_twin", "plate export");
+
+    // Adding it to a printing list runs it in the background.
+    forget_updates(&app, &id).await;
+    let (status, _) =
+        app.json("PUT", &format!("/api/printing-lists/active/items/{id}"), json!({ "quantity": 1 })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(update_run(&app, &id).await["method"], "no_twin", "printing list");
+}
+
+#[tokio::test]
+async fn a_model_split_by_a_current_twin_is_not_searched_again() {
+    let app = TestApp::new().await;
+    let (id, _, body_n, spikes) = twin_pair(&app).await;
+    let (_, update) = app.json("POST", &format!("/api/models/{id}/update-data"), json!({})).await;
+    assert_eq!(update["steps"], json!([]), "{update}");
+    assert!(processing_of(&app, &id, "model_update").await.is_null());
+    assert_eq!(split_faces(&app, &id).await, Some((body_n, spikes)));
+    assert!(processing_of(&app, &id, "model_update").await.is_null(), "an export runs no search either");
 }

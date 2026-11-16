@@ -1,17 +1,21 @@
 //! Canonical source of truth for the scan configuration checksum, which encodes every
-//! input that affects hull generation and support detection. If a new input influences
+//! input that affects hull generation and support detection (the twin and remeshed twin versions
+//! too: the scan writes twin sketches and remeshed twin descriptors with the hulls, and twin
+//! splits follow them). If a new input influences
 //! either (an algorithm version, a mesh tolerance, a raft parameter), add it to [`compute`]
 //! so cached results are invalidated on the next scan. Do not add staleness checks
 //! elsewhere.
 
 use crate::geometry::hull::CURRENT_HULL_GENERATION_VERSION;
+use crate::geometry::remesh_twin::CURRENT_REMESH_TWIN_VERSION;
 use crate::geometry::support_separation::CURRENT_SUPPORT_DETECTION_VERSION;
+use crate::geometry::twin::CURRENT_TWIN_VERSION;
 
 /// Canonical string identifying the inputs used to produce a model's hulls and support
 /// detection. Stored on the model; a mismatch with the current value means both are stale.
 pub fn compute(raft_height_mm: f32) -> String {
     format!(
-        "hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|raft:{raft_height_mm:.4}"
+        "hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|twin:{CURRENT_TWIN_VERSION}|remesh:{CURRENT_REMESH_TWIN_VERSION}|raft:{raft_height_mm:.4}"
     )
 }
 
@@ -28,7 +32,9 @@ mod tests {
     fn produces_expected_format() {
         assert_eq!(
             compute(2.0),
-            format!("hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|raft:2.0000")
+            format!(
+                "hull:{CURRENT_HULL_GENERATION_VERSION}|supports:{CURRENT_SUPPORT_DETECTION_VERSION}|twin:{CURRENT_TWIN_VERSION}|remesh:{CURRENT_REMESH_TWIN_VERSION}|raft:2.0000"
+            )
         );
     }
 

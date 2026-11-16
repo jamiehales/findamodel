@@ -178,8 +178,16 @@ unchanged).
     facets in a row give the axis, and every facet fitting it joins that rod.
   - Else by straight stretches (`split_straight`): flat side strips joined along their long edges,
     ended by a crease across them (a mitre ring, the loop where a leg meets a shaft), one fit per
-    stretch, collinear stretches merged.
+    stretch, collinear stretches merged. The split is kept when there are two or more stretches and
+    they cover at least half of the solid's surface, not counting plates (flat faces over
+    `PLATE_FACET_MM2`, 1 mm2, that are no strip: the pads and raft of a support tree welded into one
+    shell, as Factory Fortress' Winged Hussar ed34ba2a has).
   - Motivating cases: p05_bent30, p05_bent60, r03_padshell, welded variants, and real model c550facb.
+  - A fused support side (below) when the solid is no welded union of regular rods and holds more
+    than `fused::MIN_TRIANGLES` triangles or at least `fused::MIN_CONTACTS` contacts. Straight
+    stretches read such a solid slowly (minutes on 0.1M triangles) and badly (nothing or almost
+    nothing on the Loot files). The fused reader gives the stretches and their joins; the
+    classifier routes and lays them out as any split solid's.
 - **Profile steps.** A pad welded under a post keeps its step in the profile; it does not taper.
 - **Connections.** Rays along the three axes on a jittered lattice (`RAY_PITCH_MM`) give exact
   solid intervals per ray. Two pieces overlap, abut (intervals ending and starting within
@@ -201,6 +209,55 @@ unchanged).
 | `MIN_RING` | 4 facets | Facets of distinct normals a ring must show to be a rod's, in a welded union. |
 | `TOL_S` | 0.002 | Tolerance on a facet's angle to the axis (`n.d`) in a welded union. |
 | `TOL_K` | 0.002 mm | Tolerance on a facet's offset from the axis in a welded union. |
+
+### The fused reader
+
+`fused.rs` reads a support solid welded into one shell (the support side of a twin or welded split:
+rods, braces, raft and tips one solid) from its horizontal slices.
+
+1. **Slices** every `DZ` (0.1 mm). Each crossing triangle gives a segment, chained into loops by mesh
+   edge (exact). Outer loops are blobs, inner loops their holes.
+2. **Blob graph.** Blobs of consecutive slices that overlap are linked (the solid's Reeb graph of
+   height).
+3. **Walks.** Each contact facing down or sideways seeds a walk in the blob just under its loop. The
+   walk follows the rod's core down: the mean-shift centre of the blob within `CORE_R` (1.15) of
+   the rod's radius of where the line predicts it, so a brace or branch welded on one side does not
+   pull it. At a fork it takes the blob holding the predicted core. It ends on the ground (the raft
+   band, or a blob over 30 mm2 within 6 mm above it), on a contact facing up (`FOOT_REACH_MM`: a
+   strut, `SupportBase::Model`), or at a dead end (dropped).
+4. **Tree.** Walks ending on one ground blob are a trie up from it. At each fork the child that best
+   continues the line below is the trunk; the others are branches (`SupportBase::Shaft`) at that
+   blob.
+5. **Widths at the core.** Twice the median distance from the core to the blob's edge over
+   `WIDTH_RAYS` (16) directions, corrected for lean. A weld on one side lengthens a few rays, not
+   the median, so welds do not inflate the width as the blob's area does. The shaft is the median
+   over the support's own nodes; the socket is where the width first reaches 85% of it; the tip is a
+   cone from the contact to the socket.
+6. **Braces only from the solid's leftover mesh.** Blobs no walk owns join into components. A
+   component standing on the ground and touching no support is a post. Otherwise its attachments to
+   supports are paired by the way each leaves towards the other. Blobs two supports' walks share
+   over at most 1.2 mm of height are a level bar, except within `ROOT_ZONE_MM` (2.5 mm) above the
+   raft band, where touching cone feet merge blobs. Every brace's centre line must lie inside the
+   solid (`MATERIAL_SHARE`, 90% of its samples every 0.1 mm inside a blob of their slice), so none
+   crosses an X lattice's empty space. Attachments left unpaired are counted as dangling and
+   written as nothing.
+7. **Out.** Each support's line (contact, socket, bends at `STRAIGHT_MM`, base) becomes straight
+   stretches (a cone then rods), each brace and post a rod, with their joins given explicitly
+   (`Piece::segment_links`): consecutive stretches, a branch's foot on its parent's stretch, a
+   brace's ends on their supports. `split_pieces` takes those joins instead of joining stretches
+   whose centre lines meet.
+
+The reading is deterministic: loops start at their smallest edge id, blobs are sorted, maps are
+walked in key order and every walk runs on its own (checked on 1 and 4 threads).
+
+| Constant | Value | Why |
+| --- | --- | --- |
+| `DZ` | 0.1 mm | Slice spacing. At 0.05 mm the read took twice as long and fitted worse (walk windows are counted in slices); at 0.2 mm the 0.2 mm tips blur. |
+| `MIN_TRIANGLES` | 20,000 | A solid this big that no union of regular rods reads is a fused support side. |
+| `MIN_CONTACTS` | 6 | So is a smaller one holding this many contacts. |
+| `WIDTH_RAYS` | 16 | Directions of the core width. |
+| `ROOT_ZONE_MM` | 2.5 mm | No level bar this close above the raft band (touching cone feet). |
+| `MATERIAL_SHARE` | 0.9 | Share of a brace's centre line inside the solid. |
 
 ## Preparation
 

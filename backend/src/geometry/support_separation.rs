@@ -72,13 +72,15 @@
 //! The constants' notes on styles and data read as in [`super::support_layout`]; here the guard
 //! sets (108 real models, 219 Engin3d models without supports) weigh most.
 
+pub mod welded;
+
 use rustc_hash::FxHashMap;
 
 use super::support_layout::closest_on_triangle;
 use super::{MIN_FACE_TILT, Triangle, Vec3, support_layout, to_z_up};
 
 /// Increment when the classification changes so stored detections are recomputed.
-pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 9;
+pub const CURRENT_SUPPORT_DETECTION_VERSION: i32 = 10;
 
 /// Components with at least 1/N of the seed's triangles are model parts. Styles: all, and the
 /// unsupported group (multi-part kits). Sweep: fragile: 6 or 11 each change one corpus model's
@@ -256,6 +258,9 @@ pub struct Classification {
     pub confident: bool,
     /// The support parts are clearly generated supports (see [`GENERATED_MIN_COMPONENTS`]).
     pub generated: bool,
+    /// Supports welded into the model, cut from it along its edges ([`welded`]): both sides are
+    /// open at the seams, and [`welded::closed_split`] closes them.
+    pub welded: bool,
 }
 
 impl Classification {
@@ -389,10 +394,12 @@ impl ComponentStats {
 /// Labels each triangle as model or support. `None` when the mesh has no component that
 /// classifies as support (or none that classifies as model), or when the support components
 /// are too thick to be supports (see [`MAX_THICK_SUPPORT_SHARE`]).
+/// A single closed shell is split as supports welded into the model ([`welded::classify`]).
 pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classification> {
     let Components { component_of, closed } = components(triangles);
     if closed.len() < 2 {
-        return None;
+        // One closed shell: supports welded into the model are cut from it along their seams.
+        return (closed == [true]).then(|| welded::classify(triangles, raft_height_mm)).flatten();
     }
 
     let mut stats: Vec<ComponentStats> = closed.iter().map(|&closed| ComponentStats::new(closed)).collect();
@@ -539,7 +546,7 @@ pub fn classify(triangles: &[Triangle], raft_height_mm: f32) -> Option<Classific
         *support |= stray;
     }
     let is_support = component_of.iter().map(|c| component_is_support[*c as usize]).collect();
-    Some(Classification { is_support, confident, generated })
+    Some(Classification { is_support, confident, generated, welded: false })
 }
 
 /// Whether the geometry confidently has supports.
@@ -550,9 +557,10 @@ pub fn detect(triangles: &[Triangle], raft_height_mm: f32) -> bool {
 /// Whether the triangles flagged in `is_support` rebuild into supports that account for
 /// them ([`support_layout::SupportLayout::accounts_for`]). Thin separate parts of a model
 /// without supports (rivets, spikes, straps) can classify as supports, but rebuild into next
-/// to nothing, or into supports that do not hold the model up.
+/// to nothing, or into supports that do not hold the model up. A welded split is rebuilt from
+/// its closed pieces ([`welded::closed_split`]).
 pub fn rebuilds_as_supports(triangles: &[Triangle], is_support: &[bool], raft_height_mm: f32) -> bool {
-    let (model, supports) = split(triangles, is_support);
+    let (model, supports) = welded::closed_split(triangles, is_support);
     let supports = to_z_up(&supports);
     support_layout::reconstruct(&to_z_up(&model), &supports).accounts_for(&supports, raft_height_mm)
 }

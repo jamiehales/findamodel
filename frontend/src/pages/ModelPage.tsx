@@ -21,6 +21,7 @@ import {
   useIndexModel,
   useIsModelIndexing,
   useSplitGeometry,
+  useUpdateModelData,
 } from '../lib/queries';
 import { getModelVoxlUrl } from '../lib/api';
 import ModelViewer from '../components/ModelViewer';
@@ -62,6 +63,12 @@ function ModelPage() {
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [decodedId]);
+
+  // Once per model opened: the model's data update (a twin found since the scan splits it).
+  const { mutate: updateModelData } = useUpdateModelData();
+  React.useEffect(() => {
+    if (decodedId) updateModelData(decodedId);
+  }, [decodedId, updateModelData]);
 
   const { data: model, isPending, isError } = useModel(decodedId);
   const { data: otherParts } = useModelOtherParts(decodedId);

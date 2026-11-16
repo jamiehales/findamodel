@@ -30,6 +30,8 @@ pub(super) struct RawPiece {
     pub in_model_at: Option<P>,
     pub tris: usize,
     pub segments: Vec<Segment>,
+    /// The reading's own joins between the segments, when it gives them.
+    pub segment_links: Vec<(usize, usize, P)>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +73,7 @@ impl Raw {
                     in_model_at: x.in_model_at,
                     tris: x.tris,
                     segments: x.segments.clone(),
+                    segment_links: x.segment_links.clone(),
                 })
                 .collect(),
             conns: p
@@ -99,7 +102,7 @@ pub(super) fn split_pieces(d: Raw, contacts: &[Contact]) -> Raw {
     let mut out = pieces.clone();
     // Per split piece: its stretches' ids and (a, b, radius).
     // Per split piece: its stretches' ids and (a, b, radius).
-    type Stretches = (Vec<usize>, Vec<(P, P, f64)>);
+    type Stretches = (Vec<usize>, Vec<(P, P, f64)>, Vec<(usize, usize, P)>);
     let mut new_of: std::collections::BTreeMap<usize, Stretches> = Default::default();
     for p in pieces {
         let segs = &p.segments;
@@ -124,6 +127,7 @@ pub(super) fn split_pieces(d: Raw, contacts: &[Contact]) -> Raw {
                 in_model_at: None,
                 tris: g.tris,
                 segments: Vec::new(),
+                segment_links: Vec::new(),
             };
             if k == 0 {
                 out[p.id] = q;
@@ -139,17 +143,17 @@ pub(super) fn split_pieces(d: Raw, contacts: &[Contact]) -> Raw {
             let k = argmin((0..segs.len()).map(|k| seg_dist(geo[k].0, geo[k].1, x).0 - geo[k].2));
             out[ids[k]].in_model = p.in_model;
         }
-        new_of.insert(p.id, (ids, geo));
+        new_of.insert(p.id, (ids, geo, p.segment_links.clone()));
     }
     if new_of.is_empty() {
         return d;
     }
     let pick = |pid: usize, x: P| -> usize {
-        let (ids, geo) = &new_of[&pid];
+        let (ids, geo, _) = &new_of[&pid];
         ids[argmin((0..ids.len()).map(|k| seg_dist(geo[k].0, geo[k].1, x).0 - geo[k].2))]
     };
     let touching = |pid: usize, q: &RawPiece| -> Vec<(usize, P)> {
-        let (ids, geo) = &new_of[&pid];
+        let (ids, geo, _) = &new_of[&pid];
         // Low solids, a web of bars on the plate among them, keep the nearest rule, unless the
         // other piece comes down into them from above the root zone.
         if q.width > 6.0 || (pieces[pid].lo[2] <= ROOT_TOP + 0.5 && q.hi[2] <= ROOT_TOP + 0.5) {
@@ -173,8 +177,8 @@ pub(super) fn split_pieces(d: Raw, contacts: &[Contact]) -> Raw {
             if pa.lo[2].min(pb.lo[2]) > ROOT_TOP + 0.5
                 || (pa.hi[2].max(pb.hi[2]) > ROOT_TOP + 0.5 && pa.width.max(pb.width) <= 6.0)
             {
-                let (ia, ga) = &new_of[&c.a];
-                let (ib, gb) = &new_of[&c.b];
+                let (ia, ga, _) = &new_of[&c.a];
+                let (ib, gb, _) = &new_of[&c.b];
                 for (i, gi) in ia.iter().zip(ga) {
                     for (j, gj) in ib.iter().zip(gb) {
                         let (dd, x, y) = seg_closest(gi.0, gi.1, gj.0, gj.1);
@@ -218,7 +222,16 @@ pub(super) fn split_pieces(d: Raw, contacts: &[Contact]) -> Raw {
             conns.push(c.clone());
         }
     }
-    for (ids, geo) in new_of.values() {
+    for (ids, geo, links) in new_of.values() {
+        // The reading's own joins, when it gave them.
+        if !links.is_empty() {
+            for &(i, j, at) in links {
+                if i != j && i < ids.len() && j < ids.len() {
+                    conns.push(RawConn { a: ids[i], b: ids[j], kind: ConnectionKind::Overlap, at, overlap: 1e-3 });
+                }
+            }
+            continue;
+        }
         for i in 0..ids.len() {
             for j in i + 1..ids.len() {
                 let (dd, x, y) = seg_closest(geo[i].0, geo[i].1, geo[j].0, geo[j].1);

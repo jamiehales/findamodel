@@ -122,6 +122,60 @@ pub struct ModelRepairedMesh {
     pub source: String,
 }
 
+/// One twin a supported model's split was made from ([`crate::services::twins`]): the twin's
+/// checksum then, its scale (supported over twin) and how much of it the model covers.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct ModelTwin {
+    pub model_id: Uuid,
+    pub twin_id: Uuid,
+    pub twin_checksum: String,
+    pub scale: f64,
+    pub coverage: f64,
+    pub version: i32,
+}
+
+/// The stored probe keys of a supported model waiting for a twin
+/// ([`crate::geometry::twin::StoredProbes`] in its stored form), for the content it was made from.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct ModelTwinProbes {
+    pub model_id: Uuid,
+    pub version: i32,
+    pub model_checksum: String,
+    pub probes: Vec<u8>,
+    pub written_at: DateTime<Utc>,
+}
+
+/// A model's shape descriptor for the remeshed twin lookup ([`crate::services::remesh_twins`]):
+/// [`crate::geometry::remesh_twin::Descriptor::to_bytes`] at its version.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct ModelRemeshDescriptor {
+    pub model_id: Uuid,
+    pub version: i32,
+    pub descriptor: Vec<u8>,
+    pub described_at: DateTime<Utc>,
+}
+
+/// How a model was last processed, for one kind of processing ([`crate::services::processing`]).
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct ModelProcessing {
+    pub model_id: Uuid,
+    /// support_split | twin_lookup | repair
+    pub kind: String,
+    pub method: String,
+    /// Where it ran: scan | twin_lookup | export | viewer | repair
+    pub source: String,
+    /// The model file's checksum it ran on.
+    pub source_checksum: String,
+    pub detection_version: Option<i32>,
+    pub reader_version: Option<i32>,
+    pub twin_version: Option<i32>,
+    pub repair_version: Option<i32>,
+    pub duration_ms: Option<f64>,
+    /// Kind-specific detail, JSON.
+    pub detail: Option<String>,
+    pub processed_at: DateTime<Utc>,
+}
+
 /// A model's footprint hulls, kept out of `models` so catalog queries don't read them. Each is
 /// a JSON array of [x, z] pairs on the X-Z plane (bird's eye view, Y up).
 #[derive(Debug, Clone, PartialEq, Default, sqlx::FromRow)]

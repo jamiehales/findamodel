@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import {
   fetchModels,
+  updateModelData,
   fetchModelsByIds,
   fetchModel,
   fetchModelMetadata,
@@ -592,6 +593,26 @@ export function useIsFolderIndexing(path: string): 'running' | 'queued' | null {
   if (status.queue.some((r) => r.relativeModelPath == null && r.directoryFilter === filter))
     return 'queued';
   return null;
+}
+
+/**
+ * Runs a model's data update (a twin found since the scan splits it). When the split changed, the
+ * model, its geometry and its previews are fetched again.
+ */
+export function useUpdateModelData() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => updateModelData(id),
+    onSuccess: (update, id) => {
+      if (!update.changed) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.model(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.geometry(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.splitGeometry(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.resupportedGeometry(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.repairedGeometry(id) });
+      queryClient.invalidateQueries({ queryKey: ['models'] });
+    },
+  });
 }
 
 export function useIndexModel(relativePath: string) {

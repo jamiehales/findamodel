@@ -123,16 +123,18 @@ fn main() {
             let support = load_stl(Path::new(&args[2]));
             let raft: f32 = args.get(4).map(|x| x.parse().unwrap()).unwrap_or(3.0);
             let t_read = std::time::Instant::now();
-            let classification = match args.get(5) {
+            let (classification, fused) = match args.get(5) {
                 Some(path) => {
                     let (mp, sp) = (math::points_of(&model), math::points_of(&support));
                     let t: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
                     let cs: Vec<contacts::Contact> = serde_json::from_value(t["contacts"].clone()).unwrap();
-                    let at: Vec<(math::P, f64)> = cs.iter().map(|c| (c.at, c.d)).collect();
-                    let p = pieces::read(&sp, &mp, &at, pieces::RAY_PITCH_MM);
-                    support_reader::classify::classify(&p, &cs, &mp)
+                    let r = support_reader::read_contacts(&mp, &sp, cs, raft);
+                    (r.classification, (r.pieces.fused, r.pieces.fused_used))
                 }
-                None => support_reader::read(&model, &support, raft).classification,
+                None => {
+                    let r = support_reader::read(&model, &support, raft);
+                    (r.classification, (r.pieces.fused, r.pieces.fused_used))
+                }
             };
             let read_s = t_read.elapsed().as_secs_f64();
             if let Some(prefix) = &class_out {
@@ -158,7 +160,7 @@ fn main() {
             // VOXL write, in seconds.
             println!(
                 "{}",
-                json!({ "read_s": read_s, "write_s": t_write.elapsed().as_secs_f64(), "sphere_tips": sphere })
+                json!({ "read_s": read_s, "write_s": t_write.elapsed().as_secs_f64(), "sphere_tips": sphere, "fused": fused.0, "fused_used": fused.1 })
             );
         }
         "export" => {

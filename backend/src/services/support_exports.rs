@@ -49,6 +49,15 @@ pub fn key_for(model: &ModelRow, raft_height_mm: f32, checked: bool) -> String {
     key(&model.checksum, raft_height_mm, model.calculated_supported, checked)
 }
 
+/// The key of an entry for a split made from twins ([`crate::services::twins::TwinSet::key_part`]):
+/// a twin changed or gone changes the key, so the entry made from it is not used.
+pub fn twin_key(key: String, twins: Option<&str>) -> String {
+    match twins {
+        Some(twins) => format!("{key}|twins:{twins}"),
+        None => key,
+    }
+}
+
 /// The entry file's path under the store, relative.
 pub fn relative_path(key: &str) -> String {
     let hash = hex::encode(&Sha256::digest(key.as_bytes())[..16]);
@@ -94,11 +103,24 @@ impl SupportExports {
         match export {
             None => Some(None),
             Some((mask, layout)) if mask.len() == triangles.len() => {
-                let (body, _) = support_separation::split(triangles, &mask);
+                // The body closed where a welded split cut it (the repair needs it whole).
+                let (body, _) = support_separation::welded::closed_split(triangles, &mask);
                 Some(Some((crate::geometry::to_z_up(&body), layout)))
             }
             Some(_) => None,
         }
+    }
+
+    /// The support mask stored for `key` at the current detection version, whatever the reader
+    /// version it was read with: the split a twin lookup made, for reading its supports again.
+    /// None when there is none or it is for another triangle count. Blocking.
+    pub fn read_mask(&self, key: &str, triangles: usize) -> Option<Vec<bool>> {
+        let bytes = fs::read(self.dir.join(relative_path(key))).ok()?;
+        let (header, export) = codec::decode(&bytes)?;
+        if header.key != key || header.detection_version != CURRENT_SUPPORT_DETECTION_VERSION {
+            return None;
+        }
+        export.map(|(mask, _)| mask).filter(|m| m.len() == triangles)
     }
 
     /// The reader version of the entry stored for `key`, read from its file: None when there is

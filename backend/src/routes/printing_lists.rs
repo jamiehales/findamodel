@@ -114,8 +114,11 @@ async fn upsert_item(
 ) -> AppResult<Response> {
     let model_id = parse_id(&model_id)?;
     let list_id = resolve(&state, &user, &id).await?;
-    Ok(Json(printing_lists::upsert_item(&state.db, list_id, user.caller(), model_id, body.quantity).await?)
-        .into_response())
+    let list = printing_lists::upsert_item(&state.db, list_id, user.caller(), model_id, body.quantity).await?;
+    // The model is on its way to a plate: its data updated in the background, so adding stays fast
+    // ([`crate::services::model_data`]).
+    state.models.update_model_data_in_background(model_id);
+    Ok(Json(list).into_response())
 }
 
 async fn remove_item(
