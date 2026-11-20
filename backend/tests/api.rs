@@ -95,7 +95,9 @@ impl TestApp {
         let (status, request) = self.json("POST", "/api/indexer", body).await;
         assert_eq!(status, StatusCode::OK);
         let run_id = request["runId"].as_str().unwrap().to_string();
-        for _ in 0..400 {
+        // Up to two minutes: runs that split welded models by their twins take several seconds on
+        // a debug build, more on a busy CI runner.
+        for _ in 0..4800 {
             let (_, status) = self.get("/api/indexer").await;
             let finished = status["recent"].as_array().unwrap().iter().any(|r| r["runId"] == run_id.as_str());
             if finished {
@@ -2157,7 +2159,8 @@ async fn forget_updates(app: &TestApp, id: &str) {
 
 /// Waits for the model's data update run (one run in the background).
 async fn update_run(app: &TestApp, id: &str) -> Value {
-    for _ in 0..200 {
+    // Up to a minute, for a busy CI runner.
+    for _ in 0..2400 {
         let row = processing_of(app, id, "model_update").await;
         if !row.is_null() {
             return row;
