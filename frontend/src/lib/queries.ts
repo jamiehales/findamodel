@@ -8,6 +8,7 @@ import {
 import {
   fetchModels,
   updateModelData,
+  fetchModelProcessing,
   fetchModelsByIds,
   fetchModel,
   fetchModelMetadata,
@@ -81,6 +82,7 @@ export const queryKeys = {
   model: (id: string) => ['model', id] as const,
   modelMetadata: (id: string) => ['model', id, 'metadata'] as const,
   modelOtherParts: (id: string) => ['model', id, 'other-parts'] as const,
+  modelProcessing: (id: string) => ['model', id, 'processing'] as const,
   spinMesh: (spinUrl: string) => ['spin-mesh', spinUrl] as const,
   geometry: (id: string) => ['geometry', id] as const,
   splitGeometry: (id: string) => ['split-geometry', id] as const,
@@ -253,6 +255,15 @@ export function useModelOtherParts(id: string) {
   return useQuery({
     queryKey: queryKeys.modelOtherParts(id),
     queryFn: () => fetchOtherParts(id),
+    enabled: !!id,
+  });
+}
+
+/** How a model was processed. Mount it only where it is shown, so it is fetched on demand. */
+export function useModelProcessing(id: string) {
+  return useQuery({
+    queryKey: queryKeys.modelProcessing(id),
+    queryFn: () => fetchModelProcessing(id),
     enabled: !!id,
   });
 }
@@ -605,6 +616,7 @@ export function useUpdateModelData() {
     mutationFn: (id: string) => updateModelData(id),
     onSuccess: (update, id) => {
       if (!update.changed) return;
+      // Also covers the model's other parts, metadata and processing (keys under it).
       queryClient.invalidateQueries({ queryKey: queryKeys.model(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.geometry(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.splitGeometry(id) });

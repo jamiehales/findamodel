@@ -24,6 +24,18 @@ pub struct ModelProcessingDto {
     pub processing: Vec<ProcessingEntryDto>,
     /// The twins the model's split was made from.
     pub twins: Vec<ModelTwinDto>,
+    /// The versions processing runs at now, to compare with the ones each row was made at.
+    pub current_versions: ProcessingVersionsDto,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingVersionsDto {
+    pub detection: i32,
+    pub reader: i32,
+    pub twin: i32,
+    pub remesh_twin: i32,
+    pub repair: i32,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -46,6 +58,8 @@ pub struct ProcessingEntryDto {
 #[serde(rename_all = "camelCase")]
 pub struct ModelTwinDto {
     pub twin_id: Uuid,
+    /// The twin's model name.
+    pub name: String,
     pub relative_path: String,
     /// Supported over twin.
     pub scale: f64,

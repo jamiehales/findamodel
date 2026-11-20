@@ -1908,7 +1908,15 @@ async fn a_welded_model_is_split_by_its_twin_and_records_how() {
     assert_eq!(twins.len(), 1, "{p}");
     assert_eq!(twins[0]["twinId"], twin.as_str());
     assert_eq!(twins[0]["relativePath"], "Bare/ball.stl");
+    let (_, twin_detail) = app.get(&format!("/api/models/{twin}")).await;
+    assert_eq!(twins[0]["name"], twin_detail["name"], "{p}");
     assert_eq!(twins[0]["current"], true);
+    let versions = &p["currentVersions"];
+    assert_eq!(versions["detection"], findamodel::geometry::support_separation::CURRENT_SUPPORT_DETECTION_VERSION);
+    assert_eq!(versions["reader"], findamodel::geometry::support_reader::CURRENT_SUPPORT_READER_VERSION);
+    assert_eq!(versions["twin"], findamodel::geometry::twin::CURRENT_TWIN_VERSION);
+    assert_eq!(versions["remeshTwin"], findamodel::geometry::remesh_twin::CURRENT_REMESH_TWIN_VERSION);
+    assert_eq!(versions["repair"], findamodel::geometry::watertight::CURRENT_REPAIR_VERSION);
     assert!((twins[0]["scale"].as_f64().unwrap() - 1.5).abs() < 1e-3, "{p}");
     assert!(twins[0]["coverage"].as_f64().unwrap() > 0.95, "{p}");
     let split = processing_of(&app, &id, "support_split").await;

@@ -9,6 +9,10 @@ import {
   MenuItem,
   MenuTrigger,
   Spinner,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Tag,
   TextLink,
   Tooltip,
@@ -33,6 +37,7 @@ import ModelCard from '../components/ModelCard';
 import CardGrid from '../components/CardGrid';
 import PageLayout from '../components/layouts/PageLayout';
 import ModelMetadataEditor from '../components/ModelMetadataEditor';
+import ModelProcessingPanel from '../components/ModelProcessingPanel';
 import QuantityStepper from '../components/QuantityStepper';
 import styles from './ModelPage.module.css';
 import { formatBytes } from '../lib/utils';
@@ -59,6 +64,7 @@ function ModelPage() {
   const { id } = useParams<{ id: string }>();
   const decodedId = decodeURIComponent(id ?? '');
   const [metadataOpen, setMetadataOpen] = React.useState(false);
+  const [panelTab, setPanelTab] = React.useState('details');
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -279,16 +285,30 @@ function ModelPage() {
             </Tooltip>
           </div>
 
-          {metaRows.length > 0 && (
-            <dl className={styles.kv}>
-              {metaRows.map(({ label, value, mono }) => (
-                <React.Fragment key={label}>
-                  <dt>{label}</dt>
-                  <dd className={mono ? styles.mono : undefined}>{value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          )}
+          <Tabs value={panelTab} onValueChange={setPanelTab}>
+            <TabsList aria-label="Model panel">
+              <TabsTrigger value="details" className={styles.tab}>
+                Details
+              </TabsTrigger>
+              <TabsTrigger value="processing" className={styles.tab}>
+                Processing
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="details">
+              <dl className={styles.kv}>
+                {metaRows.map(({ label, value, mono }) => (
+                  <React.Fragment key={label}>
+                    <dt>{label}</dt>
+                    <dd className={mono ? styles.mono : undefined}>{value}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+            </TabsContent>
+            {/* Mounted only while open, so the processing data is fetched on demand. */}
+            <TabsContent value="processing">
+              <ModelProcessingPanel modelId={model.id} />
+            </TabsContent>
+          </Tabs>
         </section>
       </div>
 

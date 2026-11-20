@@ -200,6 +200,7 @@ struct TwinRow {
     directory: String,
     file_name: String,
     file_type: String,
+    name: Option<String>,
     valid: bool,
     remeshed: Option<bool>,
 }
@@ -207,7 +208,7 @@ struct TwinRow {
 /// Each model's rows, checked: a twin unchanged, not supported and at the current version, and the
 /// model looked up (with this twin found) on its current content.
 const TWIN_ROWS_SQL: &str = "SELECT t.model_id, t.twin_id, t.twin_checksum, t.scale, t.coverage,
-        u.directory, u.file_name, u.file_type,
+        u.directory, u.file_name, u.file_type, u.calculated_model_name AS name,
         (t.version = ?1 AND u.checksum = t.twin_checksum AND u.effective_supported IS NOT 1
          AND l.method IN ('twin', 'twin_remeshed') AND l.source_checksum = m.checksum
          AND l.twin_version = ?1) AS valid,
@@ -286,6 +287,7 @@ pub async fn processing_of(db: &Db, model_id: Uuid) -> sqlx::Result<crate::dto::
         .into_iter()
         .map(|r| crate::dto::ModelTwinDto {
             twin_id: r.twin_id,
+            name: r.name.unwrap_or_else(|| store::file_stem(&r.file_name)),
             relative_path: if r.directory.is_empty() {
                 r.file_name
             } else {
@@ -296,7 +298,14 @@ pub async fn processing_of(db: &Db, model_id: Uuid) -> sqlx::Result<crate::dto::
             current: r.valid,
         })
         .collect();
-    Ok(crate::dto::ModelProcessingDto { processing, twins })
+    let current_versions = crate::dto::ProcessingVersionsDto {
+        detection: crate::geometry::support_separation::CURRENT_SUPPORT_DETECTION_VERSION,
+        reader: CURRENT_SUPPORT_READER_VERSION,
+        twin: CURRENT_TWIN_VERSION,
+        remesh_twin: CURRENT_REMESH_TWIN_VERSION,
+        repair: crate::geometry::watertight::CURRENT_REPAIR_VERSION,
+    };
+    Ok(crate::dto::ModelProcessingDto { processing, twins, current_versions })
 }
 
 /// Where a model's twin split comes from: its export entry, or its twins' files.

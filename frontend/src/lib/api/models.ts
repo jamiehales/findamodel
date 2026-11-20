@@ -480,3 +480,51 @@ export async function updateModelData(id: string): Promise<ModelDataUpdate> {
   if (!r.ok) throw new Error('Failed to update model data');
   return r.json();
 }
+
+/** One kind of processing a model went through (backend `services::processing`). */
+export interface ProcessingEntry {
+  /** `support_split`, `twin_lookup`, `repair` or `model_update`. */
+  kind: string;
+  method: string;
+  source: string;
+  sourceChecksum: string;
+  detectionVersion: number | null;
+  readerVersion: number | null;
+  twinVersion: number | null;
+  repairVersion: number | null;
+  durationMs: number | null;
+  /** Kind-specific detail. */
+  detail: Record<string, unknown> | null;
+  processedAt: string;
+}
+
+/** A twin the model's support split was made from. */
+export interface ModelTwin {
+  twinId: string;
+  name: string;
+  relativePath: string;
+  scale: number;
+  coverage: number;
+  /** The twin is unchanged since, so the split holds. */
+  current: boolean;
+}
+
+/** How a model was processed (`GET /api/models/{id}/processing`). */
+export interface ModelProcessing {
+  processing: ProcessingEntry[];
+  twins: ModelTwin[];
+  /** The versions processing runs at now. */
+  currentVersions: {
+    detection: number;
+    reader: number;
+    twin: number;
+    remeshTwin: number;
+    repair: number;
+  };
+}
+
+export async function fetchModelProcessing(id: string): Promise<ModelProcessing> {
+  const r = await apiFetch(`/api/models/${encodeURIComponent(id)}/processing`);
+  if (!r.ok) throw new Error('Failed to fetch model processing');
+  return r.json();
+}

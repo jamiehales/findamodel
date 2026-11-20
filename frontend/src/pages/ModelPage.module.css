@@ -63,6 +63,10 @@
   flex: 1 1 0;
 }
 
+.tab {
+  min-width: 100px;
+}
+
 .kv {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
