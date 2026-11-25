@@ -535,8 +535,12 @@ impl IndexerService {
 
     async fn cleanup_old_runs(&self) -> anyhow::Result<()> {
         let cutoff = now() - chrono::Duration::days(HISTORY_RETENTION_DAYS);
-        // Files and events cascade with their run.
-        sqlx::query("DELETE FROM index_runs WHERE requested_at < ?").bind(cutoff).execute(&self.db).await?;
+        // Files and events cascade with their run. Runs still queued or running are kept: a run
+        // re-queued after a restart keeps its original request time, which can be past the cutoff.
+        sqlx::query("DELETE FROM index_runs WHERE requested_at < ? AND status NOT IN ('queued', 'running')")
+            .bind(cutoff)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -970,6 +974,45 @@ mod tests {
         assert_eq!(status.queue.len(), 1);
         assert_eq!(status.queue[0].run_id, Some(b));
         gate.release();
+    }
+
+    #[tokio::test]
+    async fn requeued_run_older_than_the_history_window_keeps_its_row_and_events() {
+        let t = TestDb::new().await;
+        let (old, done) = (Uuid::new_v4(), Uuid::new_v4());
+        let long_ago = now() - chrono::Duration::days(HISTORY_RETENTION_DAYS + 3);
+        for (id, status) in [(old, "running"), (done, "success")] {
+            sqlx::query(
+                "INSERT INTO index_runs (id, flags, requested_at, started_at, status, processed_files)
+                 VALUES (?, 2, ?, ?, ?, 0)",
+            )
+            .bind(id)
+            .bind(long_ago)
+            .bind(long_ago)
+            .bind(status)
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+
+        let gate = Arc::new(Gate::default());
+        let sut = indexer(&t, gate.clone());
+        sut.requeue_interrupted_runs().await.unwrap();
+        gate.release();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while run(&t, old).await.is_some_and(|r| r.status != "success") && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let kept = run(&t, old).await.expect("the re-queued run is kept");
+        assert_eq!(kept.status, "success");
+        let events: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM index_run_events WHERE index_run_id = ?")
+            .bind(old)
+            .fetch_one(&t.db)
+            .await
+            .unwrap();
+        assert!(events >= 2, "the run's events are recorded, got {events}");
+        assert!(run(&t, done).await.is_none(), "finished runs past the window are still removed");
     }
 
     #[tokio::test]
