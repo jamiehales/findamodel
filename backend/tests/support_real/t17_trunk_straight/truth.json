@@ -1,0 +1,148 @@
+{
+ "case": "t17_trunk_straight",
+ "title": "A trunk set straight in Lychee (no knee, leaning from the foot)",
+ "situation": "trunk straight",
+ "scope": "structure",
+ "source": {
+  "model_id": "363c280a-d013-4882-a42d-c28a56f5f790",
+  "creator": "Death x Tiles",
+  "name": "OHS_M85_P02_05_ArmL Supported",
+  "path": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Supported.stl",
+  "lys_id": "3bf317be-85b1-4dc9-8d1a-d75bb9cf56a6",
+  "lys_path": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Lys.lys",
+  "lychee_version": "7.0.1",
+  "named": [
+   "s557"
+  ],
+  "lychee_ids": [
+   "s557"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s557",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     1.0743814874647624,
+     1.326965001171186,
+     0.0
+    ],
+    [
+     1.0743814874647624,
+     1.326965001171186,
+     0.5
+    ],
+    [
+     1.0743814874647637,
+     1.326965001171187,
+     2.027900636561732
+    ]
+   ],
+   "d": 1,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    1.0743814874647624,
+    1.326965001171186
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      1.0,
+      1.0
+     ],
+     "sides": 12,
+     "turn_deg": 12.45,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s557",
+   "end": "tip",
+   "contact": [
+    1.074381487464764,
+    1.3269650011711869,
+    5.027900636561732
+   ],
+   "axis": [
+    -4.7715944693964214e-17,
+    4.506141294730493e-17,
+    -1.0
+   ],
+   "socket": [
+    1.0743814874647637,
+    1.326965001171187,
+    2.027900636561732
+   ],
+   "contact_d": 0.5,
+   "body_d": 1,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    -0.23083390043237476,
+    -0.11709551212945835,
+    -0.9659215037725977
+   ],
+   "surface_mm": 0.030555717273675898,
+   "route": [
+    [
+     1.074381487464764,
+     1.3269650011711869,
+     5.027900636561732
+    ],
+    [
+     1.0743814874647637,
+     1.326965001171187,
+     2.027900636561732
+    ],
+    [
+     1.0743814874647624,
+     1.326965001171186,
+     0.5
+    ],
+    [
+     1.0743814874647624,
+     1.326965001171186,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.0,
+ "model_cuts": [
+  {
+   "lo": [
+    0.0744,
+    0.327,
+    4.0279
+   ],
+   "hi": [
+    2.0744,
+    2.327,
+    6.0279
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 624
+}

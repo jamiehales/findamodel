@@ -1,0 +1,177 @@
+{
+ "case": "m01_hair",
+ "title": "A hair support between two parts of the model, under 1 mm long",
+ "situation": "support between two parts of the model: hair",
+ "scope": "structure",
+ "source": {
+  "model_id": "70f1bf40-6268-4931-9559-e8916f1f8a27",
+  "creator": "Kinsfolk Miniatures",
+  "name": "Hooble Goobles - Clobba 02 (Supported)",
+  "path": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Supported/Hooble Goobles - Clobba 02 (Supported).stl",
+  "lys_id": "e5d5b65a-557a-45e0-bab7-b72f90cd9e6b",
+  "lys_path": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Woodland Hooble Goobles - Rascal Party.lys",
+  "lychee_version": "6.2.0",
+  "named": [
+   "s3357"
+  ],
+  "lychee_ids": [
+   "s3357"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "pixelate",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s3357",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     -3.221663201829074,
+     2.027824401444981,
+     10.76682368946643
+    ],
+    [
+     -3.137436073933827,
+     1.9242540784828195,
+     11.63087645619472
+    ]
+   ],
+   "d": 0.2,
+   "joints": 0,
+   "mini": true,
+   "d_tip": 0.2
+  }
+ ],
+ "tips": [
+  {
+   "support": "s3357",
+   "end": "tip",
+   "contact": [
+    -3.137436073933827,
+    1.9242540784828195,
+    11.63087645619472
+   ],
+   "axis": [
+    -0.09633615792695585,
+    0.11846025429998908,
+    -0.9882745128895385
+   ],
+   "socket": [
+    -3.137436073933827,
+    1.9242540784828195,
+    11.63087645619472
+   ],
+   "contact_d": 0.2,
+   "body_d": 1,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.03151766236496489,
+    0.1920545709497909,
+    -0.9808780141976573
+   ],
+   "surface_mm": 0.04086550442216173,
+   "route": [
+    [
+     -3.137436073933827,
+     1.9242540784828195,
+     11.63087645619472
+    ],
+    [
+     -3.137436073933827,
+     1.9242540784828195,
+     11.63087645619472
+    ],
+    [
+     -3.221663201829074,
+     2.027824401444981,
+     10.76682368946643
+    ],
+    [
+     -3.221663201829074,
+     2.027824401444981,
+     10.76682368946643
+    ]
+   ]
+  },
+  {
+   "support": "s3357",
+   "end": "base",
+   "contact": [
+    -3.221663201829074,
+    2.027824401444981,
+    10.76682368946643
+   ],
+   "axis": [
+    0.09633615792695585,
+    -0.11846025429998908,
+    0.9882745128895385
+   ],
+   "socket": [
+    -3.221663201829074,
+    2.027824401444981,
+    10.76682368946643
+   ],
+   "contact_d": 0.2,
+   "body_d": 1,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.02806516995229408,
+    0.6608719242604637,
+    0.7499737635143116
+   ],
+   "surface_mm": 0.13742438242939709,
+   "route": [
+    [
+     -3.221663201829074,
+     2.027824401444981,
+     10.76682368946643
+    ],
+    [
+     -3.221663201829074,
+     2.027824401444981,
+     10.76682368946643
+    ],
+    [
+     -3.137436073933827,
+     1.9242540784828195,
+     11.63087645619472
+    ],
+    [
+     -3.137436073933827,
+     1.9242540784828195,
+     11.63087645619472
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.0,
+ "model_cuts": [
+  {
+   "lo": [
+    -4.2217,
+    0.9243,
+    9.7668
+   ],
+   "hi": [
+    -2.1374,
+    3.0278,
+    12.6309
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

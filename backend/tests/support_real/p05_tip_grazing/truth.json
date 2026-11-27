@@ -1,0 +1,148 @@
+{
+ "case": "p05_tip_grazing",
+ "title": "A tip meeting the surface at more than 60 degrees off its normal",
+ "situation": "tip grazing",
+ "scope": "structure",
+ "source": {
+  "model_id": "a1978143-192d-436f-bddd-8da4cfaf7532",
+  "creator": "Heroes Infinite",
+  "name": "STL_Evercursed_A_base_FIX_Supported",
+  "path": "Heroes Infinite/Grim Darkness of the Expurgators Part I/Miniatures/Supported/STL_Evercursed_SUPPORTED/STL_Evercursed_A_base_FIX_Supported.stl",
+  "lys_id": "fb5426a7-5da0-4157-991c-ff53b5d35aa3",
+  "lys_path": "Heroes Infinite/Grim Darkness of the Expurgators Part I/Miniatures/Lychee/LYS_Evercursed_SUPPORTED/LYS_Evercursed_A_base_FIX_Supported.lys",
+  "lychee_version": "5.4.3",
+  "named": [
+   "s3"
+  ],
+  "lychee_ids": [
+   "s3"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s3",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -5.6519433650350965,
+     -7.26646516067354,
+     0.0
+    ],
+    [
+     -5.6519433650350965,
+     -7.26646516067354,
+     0.5
+    ],
+    [
+     -5.651943365035097,
+     -7.266465160673537,
+     2.58646212200454
+    ]
+   ],
+   "d": 1.5,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -5.6519433650350965,
+    -7.26646516067354
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s3",
+   "end": "tip",
+   "contact": [
+    -5.646492306518555,
+    -9.955821971130367,
+    5.54742990838968
+   ],
+   "axis": [
+    -0.0013627646291356158,
+    0.6723392026142075,
+    -0.7402419465962851
+   ],
+   "socket": [
+    -5.651943365035097,
+    -7.266465160673537,
+    2.58646212200454
+   ],
+   "contact_d": 0.5,
+   "body_d": 1.5,
+   "length": 4,
+   "base": "plate",
+   "normal": [
+    -0.14273945119801068,
+    0.24223799763824705,
+    -0.9596594195712891
+   ],
+   "surface_mm": 0.28047651624144815,
+   "route": [
+    [
+     -5.646492306518555,
+     -9.955821971130367,
+     5.54742990838968
+    ],
+    [
+     -5.651943365035097,
+     -7.266465160673537,
+     2.58646212200454
+    ],
+    [
+     -5.6519433650350965,
+     -7.26646516067354,
+     0.5
+    ],
+    [
+     -5.6519433650350965,
+     -7.26646516067354,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -7.1465,
+    -11.4558,
+    4.0474
+   ],
+   "hi": [
+    -4.1465,
+    -8.4558,
+    7.0474
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 305
+}

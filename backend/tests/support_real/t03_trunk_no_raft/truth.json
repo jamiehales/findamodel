@@ -1,0 +1,151 @@
+{
+ "case": "t03_trunk_no_raft",
+ "title": "An upright trunk on its own square foot, no raft",
+ "situation": "trunk no raft",
+ "scope": "structure",
+ "source": {
+  "model_id": "03587c94-3ab9-4869-bfd7-01fddc6cf418",
+  "creator": "Loot Studios",
+  "name": "FirespitterRockerboy_32mm_Base_Supported",
+  "path": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_Solid/FirespitterRockerboy_32mm_Supported_Solid/FirespitterRockerboy_32mm_Base_Supported.stl",
+  "lys_id": "58c520de-1deb-4340-953e-2478ac24a3be",
+  "lys_path": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Base_Supported.lys",
+  "lychee_version": "5.2.0",
+  "named": [
+   "s6050"
+  ],
+  "lychee_ids": [
+   "s6050"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": false
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s6050",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     10.770029263046508,
+     -8.305256938223378,
+     0.0
+    ],
+    [
+     10.770029263046508,
+     -8.305256938223378,
+     2.7204922728436003
+    ],
+    [
+     10.770029263046508,
+     -8.305256938223376,
+     24.524286737466614
+    ]
+   ],
+   "d": 1,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    10.770029263046508,
+    -8.305256938223378
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      3.0,
+      1.0
+     ],
+     "sides": 16,
+     "turn_deg": 1.0,
+     "z": [
+      0.499,
+      1.499
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s6050",
+   "end": "tip",
+   "contact": [
+    8.359650473641492,
+    -7.420590494918822,
+    26.075879266346952
+   ],
+   "axis": [
+    0.8034595964683385,
+    -0.2948888144348512,
+    -0.5171975096267796
+   ],
+   "socket": [
+    10.770029263046508,
+    -8.305256938223376,
+    24.524286737466614
+   ],
+   "contact_d": 0.3,
+   "body_d": 1,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    0.8283349285198532,
+    -0.22144872512394884,
+    -0.5146083057384395
+   ],
+   "surface_mm": 0.10842761158344673,
+   "route": [
+    [
+     8.359650473641492,
+     -7.420590494918822,
+     26.075879266346952
+    ],
+    [
+     10.770029263046508,
+     -8.305256938223376,
+     24.524286737466614
+    ],
+    [
+     10.770029263046508,
+     -8.305256938223378,
+     2.7204922728436003
+    ],
+    [
+     10.770029263046508,
+     -8.305256938223378,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 0.5,
+ "model_cuts": [
+  {
+   "lo": [
+    7.8597,
+    -7.9206,
+    25.5759
+   ],
+   "hi": [
+    8.8597,
+    -6.9206,
+    26.5759
+   ]
+  }
+ ],
+ "notes": [
+  "over the 200 KB mesh budget at the smallest cut",
+  "the model is cut round the contacts only: the supports also come within 0.35 mm of it elsewhere"
+ ],
+ "raft_triangles": 3677
+}

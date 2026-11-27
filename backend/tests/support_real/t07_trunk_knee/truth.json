@@ -1,0 +1,148 @@
+{
+ "case": "t07_trunk_knee",
+ "title": "A trunk with a knee: an upright pillar, then a leaning run to the tip",
+ "situation": "trunk knee",
+ "scope": "structure",
+ "source": {
+  "model_id": "3ccfb8c9-56c4-46cd-a8c4-7ed03b5b6ad9",
+  "creator": "Flesh of Gods",
+  "name": "STL_Necrotech-Brute_base_75MM_Supported",
+  "path": "Flesh of Gods/Necrotech Brute/75MM - Enemy - Necrotech Brute/STL_Necrotech-Brute_base_75MM_Supported.stl",
+  "lys_id": "b5cb318d-5904-4055-befc-238dd4a706a7",
+  "lys_path": "Flesh of Gods/Necrotech Brute/75MM - Enemy - Necrotech Brute/LYS_Necrotech-Brute_base_75MM_Supported.lys",
+  "lychee_version": "6.0.2",
+  "named": [
+   "s101"
+  ],
+  "lychee_ids": [
+   "s101"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s101",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     15.07650475373559,
+     13.825291973257436,
+     0.0
+    ],
+    [
+     15.07650475373559,
+     13.825291973257436,
+     6.150023018034751
+    ],
+    [
+     15.80960892567222,
+     9.651718040511819,
+     10.39249489383328
+    ]
+   ],
+   "d": 1.15,
+   "joints": 1,
+   "mini": false,
+   "foot": [
+    15.07650475373559,
+    13.825291973257436
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 18.96,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s101",
+   "end": "tip",
+   "contact": [
+    14.586877809173508,
+    9.916215224148324,
+    13.119209007302855
+   ],
+   "axis": [
+    0.407577038832904,
+    -0.08816572787883543,
+    -0.9089047044898583
+   ],
+   "socket": [
+    15.80960892567222,
+    9.651718040511819,
+    10.39249489383328
+   ],
+   "contact_d": 0.5,
+   "body_d": 1.15,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    0.40897792153819285,
+    -0.09001572551012703,
+    -0.908093733518289
+   ],
+   "surface_mm": 0.16728534178284135,
+   "route": [
+    [
+     14.586877809173508,
+     9.916215224148324,
+     13.119209007302855
+    ],
+    [
+     15.80960892567222,
+     9.651718040511819,
+     10.39249489383328
+    ],
+    [
+     15.07650475373559,
+     13.825291973257436,
+     6.150023018034751
+    ],
+    [
+     15.07650475373559,
+     13.825291973257436,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    13.0869,
+    8.4162,
+    11.6192
+   ],
+   "hi": [
+    16.0869,
+    11.4162,
+    14.6192
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 227
+}

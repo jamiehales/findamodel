@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::math::{P, add, dist, dot, mul, sub};
 use super::super::pieces::{PieceKind, SectionKind};
-use super::{End, Exception, LEVEL, MICRO_D, Owner, ROOT_TOP, Reader, Role, Step};
+use super::{
+    End, Exception, FOOT_PILLAR_COS, KNEE_DEG, KNOT_REACH_MM, LEVEL, MICRO_D, Owner, PAD_REACH_MM, PAD_START_MM,
+    ROOT_TOP, Reader, Role, SLEEVE_COS, SLEEVE_OFF, STUB_PAST_MM, Step,
+};
 
 /// A free piece's join to a claimed piece: (t on the free piece, the claim's owner, the point on
 /// the claimed piece, the claimed piece).
@@ -13,12 +16,14 @@ pub(crate) type Host = (f64, Owner, P, usize);
 
 pub(crate) type Chain = Vec<Step>;
 
+#[derive(Clone)]
 pub(crate) struct Kick {
     pub chain: Chain,
     pub host: Owner,
     pub knot: P,
 }
 
+#[derive(Clone)]
 pub(crate) struct Brace {
     pub piece: usize,
     pub lower: Host,
@@ -85,6 +90,129 @@ impl Reader<'_> {
         self.hosts_of(q).iter().any(|h| h.0 <= 0.6f64.max(2.5 * p.r))
     }
 
+    /// Base stubs: a free piece on the line of a routed rod it joins, running on past that rod's end
+    /// into another support piece, is the rod's own base and part of its support (a sleeve), not a
+    /// brace from the support to its host and not a leg. Lychee builds a branch's base as a short
+    /// capsule from the knot on the host, overlapping the branch's shaft along its line; the route
+    /// joins the host from the shaft, which leaves the capsule to no route (real cases b01_branch,
+    /// b05_branch_depth3, b09_branch_route, e02_elf_branches: 0.4 to 0.7 mm of overlap, lines
+    /// 0.00 mm apart).
+    fn base_stubs(&mut self) {
+        for q in 0..self.p.len() {
+            if !self.is_free(q) || self.p[q].l < 1e-6 || !self.on_of(q).is_empty() {
+                continue;
+            }
+            let pq = &self.p[q];
+            let mut found: Option<(usize, f64)> = None;
+            for a in pq.att.iter().filter(|a| !a.weak) {
+                let ph = &self.p[a.q];
+                if ph.ball || ph.raft || ph.claims.is_empty() || ph.l < 1e-6 || dot(pq.d, ph.d).abs() < SLEEVE_COS {
+                    continue;
+                }
+                // Both ends on the rod's line, and past exactly one of its ends.
+                let along = |x: P| dot(sub(x, ph.a), ph.d);
+                let off = |x: P| dist(x, add(ph.a, mul(ph.d, along(x))));
+                if off(pq.a).max(off(pq.b)) > SLEEVE_OFF * ph.r {
+                    continue;
+                }
+                let (far, near) = if along(pq.a) < along(pq.b) { (pq.a, pq.b) } else { (pq.b, pq.a) };
+                let (far, near, t_end) = match (along(far) < -STUB_PAST_MM, along(near) > ph.l + STUB_PAST_MM) {
+                    (true, false) => (far, near, 0.0),
+                    (false, true) => (near, far, ph.l),
+                    _ => continue,
+                };
+                if !(-STUB_PAST_MM..=ph.l + STUB_PAST_MM).contains(&along(near)) {
+                    continue;
+                }
+                // The far end lies in another piece of the same support, or in the support the
+                // rod's own hangs from. A brace carrying on in a branch's line to another support
+                // (l01_lean_shaft) ends elsewhere. No higher than a piece standing on a pad may
+                // start, the base of the last rod of a support on the plate is its root whatever
+                // it lands in (branches from inside a trunk's foot that stand on the plate
+                // themselves, b03_tree).
+                let own = self.owner_at(a.q, t_end);
+                let route = own.and_then(Owner::support).map(|s| &self.supports[s]);
+                let parent = route.and_then(|r| match r.end {
+                    End::Branch(o, _) => Some(o),
+                    _ => None,
+                });
+                let in_root = far[2] <= ROOT_TOP + PAD_START_MM
+                    && route.is_some_and(|r| r.end == End::Plate && r.path.last().is_some_and(|x| x.0 == a.q));
+                let lands = in_root
+                    || pq.att.iter().any(|b| {
+                        let pb = &self.p[b.q];
+                        if b.weak || b.q == a.q || pb.raft || pb.ball {
+                            return false;
+                        }
+                        let tb = pb.t_of(far);
+                        let hosts: Vec<Owner> = if pb.role == Some(Role::Root) {
+                            pb.owner.into_iter().collect()
+                        } else {
+                            pb.claims.iter().filter(|c| c.0 - 0.2 <= tb && tb <= c.1 + 0.2).map(|c| c.2).collect()
+                        };
+                        dist(far, pb.at(tb)) <= pb.r.max(pb.r_at(tb)) + 0.15
+                            && hosts.iter().any(|&o| Some(o) == own || Some(o) == parent)
+                    });
+                if lands {
+                    found = Some((a.q, t_end));
+                    break;
+                }
+            }
+            if let Some((h, t)) = found {
+                let o = self.owner_at(h, t);
+                self.p[q].role = Some(Role::Sleeve);
+                self.p[q].owner = o.filter(|o| matches!(o, Owner::Support(_)));
+                self.p[q].why = format!("the base of piece {h}'s rod, on its line past its end");
+            }
+        }
+    }
+
+    /// Whether `i` is an upright piece on the plate that supports own from its foot up, with a
+    /// top stretch of at least 1 mm (and its own width) that nothing owns.
+    fn free_top(&self, i: usize) -> bool {
+        let p = &self.p[i];
+        let top = p.claims.iter().map(|c| c.0.max(c.1)).fold(f64::NEG_INFINITY, f64::max);
+        p.plate
+            && !p.raft
+            && !p.ball
+            && !matches!(p.role, Some(Role::Root) | Some(Role::Sleeve))
+            && p.d[2] >= FOOT_PILLAR_COS
+            && !p.claims.is_empty()
+            && p.claims.iter().all(|c| matches!(c.2, Owner::Support(_)))
+            && top <= p.l - 1.0f64.max(2.0 * p.r)
+    }
+
+    /// The free pieces that lean up off the top of `q` at a knee: joined at its top end, rising and
+    /// turning by at most [`KNEE_DEG`].
+    fn leans_off(&self, q: usize, seen: &BTreeSet<usize>) -> Vec<super::route::Way> {
+        self.ways(q, 0.0, 1.0, self.p[q].d, true, false, None, false)
+            .into_iter()
+            .filter(|w| {
+                w.0 == 0
+                    && w.5 > 0.0
+                    && w.2 <= KNEE_DEG
+                    && self.p[w.3].d[2] > LEVEL
+                    && !seen.contains(&w.3)
+                    && self.is_free(w.3)
+            })
+            .collect()
+    }
+
+    /// The branch whose own knot both ends of a would-be brace sit at: one host hangs from the
+    /// other, and both ends are within [`KNOT_REACH_MM`] of where it does. Such a run is a second,
+    /// short way from the branch to the support it already stands on (the base and the short shaft
+    /// of a Lychee branch whose cone reaches its host itself, real cases b02_branch_fan,
+    /// p13_tips_close_missed: 0.7 to 1.2 mm long), not a brace.
+    fn at_one_knot(&self, lo: &Host, up: &Host) -> Option<Owner> {
+        [(lo, up), (up, lo)].into_iter().find_map(|(x, y)| {
+            let s = x.1.support()?;
+            match self.supports[s].end {
+                End::Branch(o, at) if o == y.1 && dist(x.2, at).max(dist(y.2, at)) <= KNOT_REACH_MM => Some(x.1),
+                _ => None,
+            }
+        })
+    }
+
     pub(super) fn rest(&mut self) {
         // Roots: a short free piece on the plate under a support that reaches the plate (its foot
         // cone or pad).
@@ -122,18 +250,27 @@ impl Reader<'_> {
                 self.p[i].owner = o.filter(|o| matches!(o, Owner::Support(_)));
             }
         }
+        self.base_stubs();
         // Plate-standing chains, straight up through free pieces. A leg can also start on a root
         // piece (the pad or foot cone under another support) and lean off it. Upright pieces first,
         // so a post is claimed before a leg leaning on it looks for its host.
         let mut pending: Vec<usize> = (0..self.p.len()).filter(|&i| self.is_free(i) && self.p[i].plate).collect();
         pending.sort_by(|&a, &b| self.p[b].d[2].total_cmp(&self.p[a].d[2]));
+        // A pillar whose foot a support owns and whose top no route uses (a branch leaves it lower
+        // down: a Lychee branch hanging from a kickstand, b13_branch_on_kickstand). Its top can
+        // still be a leg's knee: the leg then stands in the same place as the support, up the same
+        // pillar, since DragonFruit's kickstand carries no branch.
+        let spurs: BTreeSet<usize> = (0..self.p.len()).filter(|&i| self.free_top(i)).collect();
+        pending.extend(spurs.iter().copied());
         pending.extend((0..self.p.len()).filter(|&i| self.p[i].role == Some(Role::Root)));
         let mut tried: BTreeSet<usize> = BTreeSet::new();
+        let mut deferred: BTreeSet<usize> = BTreeSet::new();
         let mut changed = true;
         while changed {
             changed = false;
             for &q0 in &pending {
-                if !self.p[q0].claims.is_empty() || tried.contains(&q0) {
+                let is_spur = spurs.contains(&q0);
+                if (!self.p[q0].claims.is_empty() && !is_spur) || tried.contains(&q0) {
                     continue;
                 }
                 let is_root = self.p[q0].role == Some(Role::Root);
@@ -144,6 +281,8 @@ impl Reader<'_> {
                 let mut chain: Chain = vec![(q0, 0.0, self.p[q0].l)];
                 let mut seen = BTreeSet::from([q0]);
                 let mut top_host: Option<Host> = None;
+                // The chain's length where it turned through a knee, if it did.
+                let mut knee: Option<usize> = None;
                 loop {
                     let (q, _, t1) = *chain.last().expect("a chain has a piece");
                     let first = is_root && chain.len() == 1;
@@ -154,9 +293,15 @@ impl Reader<'_> {
                         self.hosts_of(q).into_iter().filter(|h| (h.0 - t1).abs() <= reach).collect()
                     };
                     if !hs.is_empty() {
+                        // A support or post before a leg: where a run's top meets a support at
+                        // the knot of a leg already leaning there, it leans on the support too
+                        // (two legs from one foot pad, each onto its own trunk; real model
+                        // 31676804). Left on the leg it would be a post, or a brace from the
+                        // root zone that DragonFruit cannot knot there.
+                        let leg = |x: &Host| matches!(x.1, Owner::Kick(_));
                         let mut h = hs[0];
                         for x in &hs[1..] {
-                            if (x.0 - t1).abs() < (h.0 - t1).abs() {
+                            if (leg(x), (x.0 - t1).abs()) < (leg(&h), (h.0 - t1).abs()) {
                                 h = *x;
                             }
                         }
@@ -180,6 +325,20 @@ impl Reader<'_> {
                         })
                         .collect();
                     if nxt.is_empty() {
+                        // A knee: nothing goes straight on from the top, and one free piece alone
+                        // leans up off it (a kickstand's lean onto the support it holds up).
+                        let lean = if first || knee.is_some() { Vec::new() } else { self.leans_off(q, &seen) };
+                        if let [w] = lean[..] {
+                            // The pillar ends where the lean's line leaves it, not at its own
+                            // top (a cap above the knee would bend the line back on itself).
+                            let (tq, tr) = self.axis_cross(q, w.3, w.6, w.4);
+                            let last = chain.len() - 1;
+                            chain[last].2 = tq;
+                            knee = Some(chain.len());
+                            seen.insert(w.3);
+                            chain.push((w.3, tr, self.p[w.3].l));
+                            continue;
+                        }
                         break;
                     }
                     let mut w = nxt[0];
@@ -191,14 +350,76 @@ impl Reader<'_> {
                     seen.insert(w.3);
                     chain.push((w.3, w.4, self.p[w.3].l));
                 }
+                // A lean that reaches no host yet: where its top meets a piece still waiting to be
+                // a post, the chain waits for it (once); otherwise the lean is no part of it (a
+                // brace, as before).
+                let on_a_leg = top_host.is_some_and(|h| matches!(h.1, Owner::Kick(_)));
+                if let Some(n) = knee.filter(|_| top_host.is_none() || on_a_leg) {
+                    let (q, _, t1) = *chain.last().expect("a chain has a piece");
+                    let reach = 0.6f64.max(2.5 * self.p[q].r);
+                    let waits = self.p[q].att.iter().any(|a| {
+                        !a.weak
+                            && (a.t - t1).abs() <= reach
+                            && self.hub(q as isize, a.q, a.at, false).iter().any(|&(r2, _, _)| {
+                                r2 != q && self.is_free(r2) && pending.contains(&r2) && !tried.contains(&r2)
+                            })
+                    });
+                    if waits && !on_a_leg && deferred.insert(q0) {
+                        changed = true;
+                        continue;
+                    }
+                    chain.truncate(n);
+                    let last = chain.len() - 1;
+                    chain[last].2 = self.p[chain[last].0].l;
+                    top_host = None;
+                }
                 tried.insert(q0);
                 if is_root && (top_host.is_none() || chain.len() == 1) {
                     continue;
                 }
+                // A pillar's free top is only ever a leg through a knee onto another support or a
+                // post; otherwise it stays as it was.
+                if is_spur
+                    && (knee.is_none()
+                        || top_host.is_none_or(|h| {
+                            matches!(h.1, Owner::Kick(_)) || self.p[q0].claims.iter().any(|c| c.2 == h.1)
+                        }))
+                {
+                    continue;
+                }
                 // A leg cannot lean on another leg (DragonFruit's kickstands hold up supports and
-                // posts only): it stands as a post of its own.
+                // posts only): it stands as a post of its own. One whose low end joins a
+                // support is left to be a brace from that support to the leg.
                 if top_host.is_some_and(|h| matches!(h.1, Owner::Kick(_))) {
+                    // The first free piece of the chain must itself join a support at its low end:
+                    // one that only stands on a root pad would be written as nothing.
+                    let q1 = chain[usize::from(is_root)].0;
+                    let low = 0.6f64.max(2.5 * self.p[q1].r);
+                    if self.hosts_of(q1).iter().any(|h| h.0 <= low && !matches!(h.1, Owner::Kick(_))) {
+                        continue;
+                    }
                     top_host = None;
+                }
+                // A pillar that meets a support on the plate at that support's own foot, no
+                // higher than a pad may reach, is the support's root, not a leg holding it up
+                // (the upright under a tip cone that starts in the raft band, t02_trunk_wall_raft).
+                if let Some(h) = top_host
+                    && let Owner::Support(s) = h.1
+                    && !is_root
+                    && chain.len() == 1
+                    && self.p[q0].d[2].abs() >= FOOT_PILLAR_COS
+                    && dist([h.2[0], h.2[1], 0.0], [self.p[q0].b[0], self.p[q0].b[1], 0.0]) <= self.p[q0].r + 0.05
+                    && h.2[2] <= ROOT_TOP + PAD_REACH_MM
+                    && self.supports[s].end == End::Plate
+                    && self.supports[s].path.last().is_some_and(|x| x.0 == h.3)
+                {
+                    for &(q, _, _) in &chain {
+                        self.p[q].role = Some(Role::Root);
+                        self.p[q].owner = Some(h.1);
+                        self.root_p.entry(h.1).or_default().push(q);
+                    }
+                    changed = true;
+                    continue;
                 }
                 match top_host {
                     None => {
@@ -366,17 +587,32 @@ impl Reader<'_> {
                 }
                 // A rod lying with both ends below the root top (a web of rods in the raft band) is
                 // no brace; one low end alone is still a brace (a brace landing on a pad).
-                let pairs: Vec<(Host, Host)> = seq
+                let all: Vec<(Host, Host)> = seq
                     .windows(2)
                     .filter(|w| w[0].2.2[2].max(w[1].2.2[2]) >= ROOT_TOP)
                     .map(|w| (w[0].2, w[1].2))
                     .collect();
+                // A run from a branch to its own parent with both ends at the branch's knot is the
+                // branch's base, not a brace.
+                // Only a run between those two alone: one that goes on to a third host is a brace
+                // passing the knot, and stays whole.
+                let knots: Vec<Owner> = if seq.len() == 2 {
+                    all.iter().filter_map(|(lo, up)| self.at_one_knot(lo, up)).collect()
+                } else {
+                    Vec::new()
+                };
+                let pairs: Vec<(Host, Host)> = if knots.is_empty() { all } else { Vec::new() };
                 for &(lo, up) in &pairs {
                     self.braces.push(Brace { piece: pieces[0], lower: lo, upper: up, d });
                 }
                 for &q in &pieces {
                     if !pairs.is_empty() {
                         self.p[q].role = Some(Role::Brace);
+                    } else if let Some(&o) = knots.first() {
+                        self.p[q].role = Some(Role::Sleeve);
+                        self.p[q].owner = Some(o);
+                        self.p[q].why =
+                            "between a branch and its parent at the branch's knot: the branch's base".into();
                     } else {
                         self.p[q].role = Some(Role::Loose);
                         self.p[q].why =

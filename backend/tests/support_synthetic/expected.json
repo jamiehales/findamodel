@@ -1164,7 +1164,7 @@
   "f05_branch2__n8_r0_joined": {
     "validate": true,
     "1 reader labels": true,
-    "2 layout": false,
+    "2 layout": true,
     "4a clips (nominal)": true,
     "4b loops (nominal)": true
   },

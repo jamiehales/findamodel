@@ -1,0 +1,135 @@
+{
+ "case": "t04_trunk_pixel_raft",
+ "title": "An upright trunk on a pixelated raft",
+ "situation": "trunk pixel raft",
+ "scope": "structure",
+ "source": {
+  "model_id": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+  "creator": "PiperMakes",
+  "name": "Gravtank Fullpack",
+  "path": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.stl",
+  "lys_id": "94ebf5be-b974-45d3-ad08-2200966f6c14",
+  "lys_path": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.lys",
+  "lychee_version": "3.4.0",
+  "named": [
+   "s139"
+  ],
+  "lychee_ids": [
+   "s139"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "pixelate",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s139",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -18.940886102918114,
+     -13.141727552844342,
+     0.0
+    ],
+    [
+     -18.940886102918114,
+     -13.141727552844342,
+     0.9171713550781297
+    ],
+    [
+     -18.94088610291811,
+     -13.141727552844339,
+     4.8318252811106
+    ]
+   ],
+   "d": 1.5,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -18.940886102918114,
+    -13.141727552844342
+   ],
+   "foot_pieces": []
+  }
+ ],
+ "tips": [
+  {
+   "support": "s139",
+   "end": "tip",
+   "contact": [
+    -17.446768455859285,
+    -12.094668729314927,
+    7.213270278757324
+   ],
+   "axis": [
+    -0.4980392156862746,
+    -0.3490196078431373,
+    -0.7938149992155749
+   ],
+   "socket": [
+    -18.94088610291811,
+    -13.141727552844339,
+    4.8318252811106
+   ],
+   "contact_d": 0.4,
+   "body_d": 1.5,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    -0.5000174142938332,
+    -0.35268334627171805,
+    -0.7909469278437666
+   ],
+   "surface_mm": 0.5792839979391518,
+   "route": [
+    [
+     -17.446768455859285,
+     -12.094668729314927,
+     7.213270278757324
+    ],
+    [
+     -18.94088610291811,
+     -13.141727552844339,
+     4.8318252811106
+    ],
+    [
+     -18.940886102918114,
+     -13.141727552844342,
+     0.9171713550781297
+    ],
+    [
+     -18.940886102918114,
+     -13.141727552844342,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -18.9468,
+    -13.5947,
+    5.7133
+   ],
+   "hi": [
+    -15.9468,
+    -10.5947,
+    8.7133
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 2506
+}

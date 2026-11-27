@@ -19,6 +19,7 @@
 
 mod layout;
 mod prepare;
+mod reroute;
 mod rest;
 mod route;
 mod tips;
@@ -61,6 +62,23 @@ pub const SLEEVE_COS: f64 = 0.996_194_698_091_745_5;
 pub const SLEEVE_OFF: f64 = 0.3;
 /// ... and at least this share of its volume shared with the host.
 pub const SLEEVE_SHARE: f64 = 0.6;
+/// A base stub runs at least this far past the end of the rod whose line it lies on.
+pub const STUB_PAST_MM: f64 = 0.05;
+/// A leg turns by at most this at a knee (an upright pillar, then the lean onto its host).
+pub const KNEE_DEG: f64 = 80.0;
+/// A run between a branch and its parent with both ends this close to the branch's knot is the
+/// branch's base, not a brace.
+pub const KNOT_REACH_MM: f64 = 2.0;
+/// What stands on a pad is joined to it at most this far above the root top; a pillar meeting a
+/// plate support's foot no higher is that support's root.
+pub const PAD_REACH_MM: f64 = 1.0;
+/// The pillar a plate support stands on is upright within 10 degrees (cos 10 degrees) ...
+pub const FOOT_PILLAR_COS: f64 = 0.984_807_753_012_208;
+/// ... and at most this many times as wide as the shaft (a pad or a foot cone is wider).
+pub const FOOT_PILLAR_WIDTH: f64 = 1.5;
+/// What stands on a pad starts at most this far above the root top; the base of a plate support's
+/// last rod ending no higher is its root.
+pub const PAD_START_MM: f64 = 0.6;
 /// A blunt tip (no cone) is this long: its length is arbitrary, a short one keeps the shaft on the
 /// rod.
 pub const BLUNT_MM: f64 = 0.35;
@@ -74,6 +92,23 @@ pub const VEE_MIN_COS: f64 = 0.990_268_068_741_570_3;
 /// Two foot cones in one loop are a vee unless their lines cross this far past the contact (a hub
 /// inside the model).
 pub const VEE_HUB_MM: f64 = 0.25;
+/// A route joining the piece that holds another tip where that piece is under this share of its
+/// full width joins it in the cone's body, so that tip is routed first and keeps its cone.
+pub const CONE_BODY: f64 = 0.9;
+/// A rod read in two pieces is one rod: the second piece lies within this many degrees of the
+/// first's line ...
+pub const SAME_ROD_DEG: f64 = 5.0;
+/// ... the first's end within this share of the thinner one's radius of the second's line ...
+pub const SAME_ROD_OFF: f64 = 0.3;
+/// ... and their radii where they join within this share of the wider one's (the two pieces of
+/// a tapering mini support read 0.33 and 0.38 mm where they lap, l03_leaf_on_branch).
+pub const SAME_ROD_WIDTH: f64 = 0.15;
+/// A second reading (see `reroute`) takes at most this many rounds of wishes, each read at most
+/// this many times.
+pub const REROUTE_ROUNDS: usize = 3;
+/// cos(20 degrees): a route whose stretches from a joint on turn no more than this runs straight
+/// on from there, and keeps that way in a second reading.
+pub const STRAIGHT_ON_COS: f64 = 0.939_692_620_785_908_4;
 /// Stepped tapers: a second width needs this gain in ideal overlap on a taper section ...
 pub const STEP_GAIN2: f64 = 0.08;
 /// ... a third this much more.
@@ -397,6 +432,22 @@ pub struct RouteSummary {
     pub path: Vec<Step>,
 }
 
+/// What routing and the rest stage write: kept to read a structure a second way (see `reroute`).
+#[derive(Clone)]
+pub(crate) struct Saved {
+    p: Vec<Piece>,
+    exceptions: Vec<Exception>,
+    supports: Vec<Route>,
+    consumed: BTreeMap<usize, usize>,
+    sup_of: BTreeMap<usize, usize>,
+    through: BTreeMap<usize, usize>,
+    widened: BTreeMap<usize, f64>,
+    posts: Vec<rest::Chain>,
+    kicks: Vec<rest::Kick>,
+    braces: Vec<rest::Brace>,
+    root_p: BTreeMap<Owner, Vec<usize>>,
+}
+
 /// The classifier's working state.
 pub(crate) struct Reader<'a> {
     pub p: Vec<Piece>,
@@ -413,6 +464,8 @@ pub(crate) struct Reader<'a> {
     pub consumed: BTreeMap<usize, usize>,
     /// Contact to its piece.
     pub cpiece: BTreeMap<usize, usize>,
+    /// Piece to the first contact it is the piece of.
+    pub tip_pieces: BTreeMap<usize, usize>,
     /// (contact, piece) to the contact's place along the piece.
     pub ct: BTreeMap<(usize, usize), f64>,
     /// Piece to the contacts that can end a route on it.
@@ -423,6 +476,11 @@ pub(crate) struct Reader<'a> {
     pub inside_at: BTreeMap<usize, std::collections::BTreeSet<usize>>,
     pub sup_of: BTreeMap<usize, usize>,
     pub through: BTreeMap<usize, usize>,
+    /// Contact to its loop area with the flank loops beside it added (see `route`).
+    pub widened: BTreeMap<usize, f64>,
+    /// Ways a contact's route is to take first: (contact, piece) to the piece to go on to (see
+    /// `reroute`).
+    pub prefer: BTreeMap<(usize, usize), usize>,
     pub sleeves: usize,
     pub posts: Vec<rest::Chain>,
     pub kicks: Vec<rest::Kick>,
@@ -437,9 +495,44 @@ impl<'a> Reader<'a> {
     pub fn on_of(&self, q: usize) -> &[usize] {
         self.on.get(&q).map(|v| v.as_slice()).unwrap_or(&[])
     }
+
+    /// The area of a contact's loop, with the flank loops passed through beside it.
+    pub fn loop_area(&self, ci: usize) -> f64 {
+        self.widened.get(&ci).copied().unwrap_or(self.c[ci].area)
+    }
 }
 
 impl Reader<'_> {
+    pub(super) fn save(&self) -> Saved {
+        Saved {
+            p: self.p.clone(),
+            exceptions: self.exceptions.clone(),
+            supports: self.supports.clone(),
+            consumed: self.consumed.clone(),
+            sup_of: self.sup_of.clone(),
+            through: self.through.clone(),
+            widened: self.widened.clone(),
+            posts: self.posts.clone(),
+            kicks: self.kicks.clone(),
+            braces: self.braces.clone(),
+            root_p: self.root_p.clone(),
+        }
+    }
+
+    pub(super) fn load(&mut self, s: Saved) {
+        self.p = s.p;
+        self.exceptions = s.exceptions;
+        self.supports = s.supports;
+        self.consumed = s.consumed;
+        self.sup_of = s.sup_of;
+        self.through = s.through;
+        self.widened = s.widened;
+        self.posts = s.posts;
+        self.kicks = s.kicks;
+        self.braces = s.braces;
+        self.root_p = s.root_p;
+    }
+
     /// The model's faces by box.
     pub(super) fn model_boxes(&self) -> &BoxIndex {
         self.model_boxes.get_or_init(|| BoxIndex::new(self.model, 2.0))
@@ -461,12 +554,15 @@ pub fn classify(pieces: &Pieces, contacts: &[Contact], model: &[[P; 3]]) -> Clas
         supports: Vec::new(),
         consumed: BTreeMap::new(),
         cpiece: BTreeMap::new(),
+        tip_pieces: BTreeMap::new(),
         ct: BTreeMap::new(),
         on: BTreeMap::new(),
         c_in: BTreeMap::new(),
         inside_at: BTreeMap::new(),
         sup_of: BTreeMap::new(),
         through: BTreeMap::new(),
+        widened: BTreeMap::new(),
+        prefer: BTreeMap::new(),
         sleeves: 0,
         posts: Vec::new(),
         kicks: Vec::new(),
@@ -477,8 +573,10 @@ pub fn classify(pieces: &Pieces, contacts: &[Contact], model: &[[P; 3]]) -> Clas
         seats: (0, 0),
     };
     r.prepare();
+    let unrouted = r.save();
     r.route();
     r.rest();
+    r.reroute(&unrouted);
     r.roles();
     let lay = r.export();
     let mut lay = lay;
@@ -566,7 +664,7 @@ mod tests {
     use super::super::math::P;
     use super::super::read_points;
     use super::*;
-    use crate::geometry::support_layout::SupportBase;
+    use crate::geometry::support_layout::{SupportBase, SupportPath};
 
     /// A tip cone from `socket_z` up into the model's underside at `contact` z, on a rod down to
     /// the plate.
@@ -608,6 +706,150 @@ mod tests {
         let plate = lay.supports.iter().filter(|s| matches!(s.base, SupportBase::Plate { .. })).count();
         let branch = lay.supports.iter().filter(|s| matches!(s.base, SupportBase::Shaft { parent: 0, .. })).count();
         assert_eq!((plate, branch), (1, 1));
+    }
+
+    #[test]
+    fn a_tip_joining_a_rod_from_the_side_hangs_from_the_rod_s_own_tip() {
+        // A step in the model: the leaning support's contact is the higher one, so it is first
+        // in line, yet the rod it joins is the other tip's own.
+        let mut model = boxm([-10.0, -10.0, 10.0], [1.5, 10.0, 15.0]);
+        model.extend(boxm([1.5, -10.0, 12.0], [10.0, 10.0, 15.0]));
+        let mut s = trunk(0.0, 0.0, 10.0, 8.0, 0.4);
+        s.extend(frustum([3.0, 0.0, 10.0], [3.0, 0.0, 12.2], 0.3, 0.12, 16));
+        s.extend(frustum([0.1, 0.0, 5.0], [3.0, 0.0, 10.1], 0.3, 0.3, 16));
+        let lay = read_points(&model, &s, 3.0).classification.layout;
+        assert_eq!(lay.supports.len(), 2);
+        let on_plate: Vec<&SupportPath> =
+            lay.supports.iter().filter(|s| matches!(s.base, SupportBase::Plate { .. })).collect();
+        assert_eq!(on_plate.len(), 1);
+        assert!((on_plate[0].tip.contact.z - 10.0).abs() < 0.05, "the rod's own tip stands on the plate");
+        assert!(on_plate[0].joints.is_empty(), "{:?}", on_plate[0].joints);
+        assert!(lay.supports.iter().any(|s| matches!(s.base, SupportBase::Shaft { .. })));
+    }
+
+    #[test]
+    fn a_trunk_with_a_knee_keeps_its_pillar_though_a_brace_leaves_its_socket_more_steeply() {
+        let model = slab(20.0);
+        // A trunk: a tip, a knee rod from its socket down to the top of its pillar.
+        let mut s = frustum([0.0, 0.0, 16.0], [0.0, 0.0, 20.2], 0.4, 0.12, 16);
+        s.extend(frustum([3.0, 0.0, 13.0], [0.0, 0.0, 16.05], 0.4, 0.4, 16));
+        s.extend(frustum([3.0, 0.0, 0.0], [3.0, 0.0, 13.1], 0.4, 0.4, 16));
+        // Its neighbour, and a brace from the first trunk's socket down onto the neighbour.
+        s.extend(trunk(-4.0, 0.0, 20.0, 16.0, 0.4));
+        s.extend(frustum([-4.0, 0.0, 10.0], [0.0, 0.0, 16.05], 0.4, 0.4, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(
+            (lay.supports.len(), lay.posts.len(), lay.braces.len()),
+            (2, 0, 1),
+            "{:?}",
+            r.classification.exceptions
+        );
+        assert!(lay.supports.iter().all(|s| matches!(s.base, SupportBase::Plate { .. })), "{:?}", lay.supports);
+        let knee = lay.supports.iter().find(|s| s.tip.contact.x.abs() < 0.1).expect("the trunk with the knee");
+        assert!(matches!(knee.base, SupportBase::Plate { x, .. } if (x - 3.0).abs() < 0.05), "{:?}", knee.base);
+    }
+
+    #[test]
+    fn a_branch_read_in_two_pieces_hangs_from_where_its_line_meets_the_parent_s() {
+        let model = slab(20.0);
+        let mut s = trunk(0.0, 0.0, 20.0, 16.0, 0.5);
+        s.extend(frustum([3.0, 0.0, 16.0], [3.0, 0.0, 20.2], 0.4, 0.12, 16));
+        // The branch's rod in two pieces on one line: the upper one ends at the parent's skin, the
+        // lower one carries it on to the parent's centre line.
+        s.extend(frustum([0.6, 0.0, 11.2], [3.0, 0.0, 16.05], 0.4, 0.4, 16));
+        s.extend(frustum([0.0, 0.0, 10.0], [1.0, 0.0, 12.0], 0.4, 0.4, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len()), (2, 0), "{:?}", r.classification.exceptions);
+        let branch = lay.supports.iter().find_map(|s| match s.base {
+            SupportBase::Shaft { point, .. } => Some(point),
+            _ => None,
+        });
+        let point = branch.expect("a branch");
+        assert!((point.z - 10.0).abs() < 0.3, "{point:?}");
+        assert!(r.classification.pieces.iter().all(|p| !matches!(p.role, Role::Loose | Role::Brace)));
+    }
+
+    #[test]
+    fn a_tip_on_a_pillar_s_top_keeps_it_though_a_taller_pillar_passes_nearer_its_cone() {
+        let model = slab(20.0);
+        // A leaning tip on the top of its own pillar at x = 0; a taller neighbour at x = 0.6
+        // passes the joint and lies nearer the cone's end (both within a radius of it).
+        let mut s = frustum([0.35, 0.0, 15.7], [2.5, 0.0, 20.2], 0.4, 0.12, 16);
+        s.extend(frustum([0.0, 0.0, 0.0], [0.0, 0.0, 16.0], 0.4, 0.4, 16));
+        s.extend(trunk(0.6, 2.0, 20.0, 18.0, 0.4));
+        s.extend(frustum([0.6, 0.0, 0.0], [0.6, 0.0, 18.0], 0.4, 0.4, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        let tip = lay.supports.iter().find(|s| (s.tip.contact.x - 2.4).abs() < 0.3).expect("the leaning tip");
+        assert!(matches!(tip.base, SupportBase::Plate { x, .. } if x.abs() < 0.05), "{:?}", tip.base);
+    }
+
+    #[test]
+    fn a_strut_keeps_its_span_though_a_rod_hangs_on_the_brace_at_its_socket() {
+        // A shelf over a block, a strut between them; two trunks beside the block.
+        let mut model = boxm([-10.0, -10.0, 20.0], [10.0, 10.0, 25.0]);
+        model.extend(boxm([-2.0, -2.0, 0.0], [2.0, 2.0, 10.0]));
+        let mut s = frustum([0.0, 0.0, 17.0], [0.0, 0.0, 20.2], 0.4, 0.12, 16);
+        s.extend(frustum([0.0, 0.0, 12.0], [0.0, 0.0, 17.05], 0.4, 0.4, 16));
+        s.extend(frustum([0.0, 0.0, 9.8], [0.0, 0.0, 12.05], 0.12, 0.4, 16));
+        s.extend(trunk(6.0, 0.0, 20.0, 17.0, 0.4));
+        s.extend(trunk(3.0, 6.0, 20.0, 17.0, 0.4));
+        // A brace from the strut's socket to the first trunk, and a rod from the second trunk
+        // ending on that brace, which a brace cannot host.
+        s.extend(frustum([6.0, 0.0, 13.0], [0.0, 0.0, 17.02], 0.3, 0.3, 12));
+        s.extend(frustum([3.0, 6.0, 12.0], [3.0, 0.0, 15.0], 0.3, 0.3, 12));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(lay.supports.len(), 3, "{:?}", r.classification.exceptions);
+        let strut = lay.supports.iter().find(|s| s.tip.contact.x.abs() < 0.1).expect("the strut");
+        assert!(matches!(strut.base, SupportBase::Model(_)), "{:?}", strut.base);
+        assert!(strut.joints.is_empty(), "{:?}", strut.joints);
+    }
+
+    #[test]
+    fn a_tip_keeps_to_the_rod_at_its_socket_though_a_neighbour_s_steeper_rod_stands_beside_it() {
+        let model = slab(20.0);
+        // A trunk straight down from its socket, and a second trunk further off.
+        let mut s = frustum([0.0, 0.0, 16.0], [0.8, 0.0, 20.2], 0.6, 0.12, 16);
+        s.extend(frustum([0.0, 0.0, 0.0], [0.0, 0.0, 16.05], 0.6, 0.6, 16));
+        s.extend(trunk(-4.0, 0.0, 20.0, 16.0, 0.6));
+        // A third tip whose socket stands 1.1 mm beside the first trunk's top (the rods lap), with
+        // a sloping shaft of its own down onto the second trunk.
+        s.extend(frustum([-1.1, 0.0, 15.8], [-1.3, 1.5, 20.2], 0.6, 0.12, 16));
+        s.extend(frustum([-4.0, 0.0, 11.0], [-1.1, 0.0, 15.85], 0.6, 0.6, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len()), (3, 0), "{:?}", r.classification.exceptions);
+        let point = lay.supports.iter().find_map(|s| match s.base {
+            SupportBase::Shaft { point, .. } => Some(point),
+            _ => None,
+        });
+        let point = point.expect("a branch");
+        assert!(point.x < -3.0, "the branch hangs from the second trunk by its own shaft: {point:?}");
+    }
+
+    #[test]
+    fn a_tip_whose_cone_laps_another_tip_s_cone_keeps_to_its_own_shaft() {
+        let model = slab(20.0);
+        // A trunk with a steep cone, and a second trunk beside it.
+        let mut s = frustum([0.0, 0.0, 16.0], [-0.5, 0.0, 20.2], 0.4, 0.12, 16);
+        s.extend(frustum([0.0, 0.0, 0.0], [0.0, 0.0, 16.05], 0.4, 0.4, 16));
+        s.extend(trunk(-3.0, 2.0, 20.0, 16.0, 0.4));
+        // A third tip whose socket lies in the first one's cone, 0.8 mm up it, with a shaft of
+        // its own down onto the second trunk.
+        s.extend(frustum([-0.1, 0.3, 16.8], [0.6, 2.5, 20.2], 0.4, 0.12, 16));
+        s.extend(frustum([-3.0, 2.0, 10.0], [-0.1, 0.3, 16.85], 0.3, 0.3, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len()), (3, 0), "{:?}", r.classification.exceptions);
+        let point = lay.supports.iter().find_map(|s| match s.base {
+            SupportBase::Shaft { point, .. } => Some(point),
+            _ => None,
+        });
+        let point = point.expect("a branch");
+        assert!(point.x < -2.0, "the branch hangs from the second trunk, not from the first tip's cone: {point:?}");
     }
 
     #[test]
@@ -658,6 +900,143 @@ mod tests {
         // The brace's end on the post names it by its index past the supports.
         let ends = [lay.braces[0].lower.support, lay.braces[0].upper.support];
         assert!(ends.contains(&1));
+    }
+
+    #[test]
+    fn a_pillar_with_a_lean_onto_a_trunk_is_one_leg_with_a_knee() {
+        // A Lychee kickstand: an upright pillar from the plate, then a lean from its top onto the
+        // trunk it holds up.
+        let model = slab(20.0);
+        let mut s = trunk(0.0, 0.0, 20.0, 18.0, 0.5);
+        s.extend(frustum([5.0, 0.0, 0.0], [5.0, 0.0, 8.0], 0.5, 0.5, 16));
+        s.extend(frustum([5.0, 0.0, 8.0], [0.0, 0.0, 13.0], 0.5, 0.5, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(
+            (lay.supports.len(), lay.posts.len(), lay.braces.len(), lay.kickstands.len()),
+            (1, 0, 0, 1),
+            "{:?}",
+            r.classification.exceptions
+        );
+        let k = &lay.kickstands[0];
+        assert_eq!(k.support, 0);
+        assert_eq!(k.joints.len(), 1, "{:?}", k.joints);
+        let knee = k.joints[0];
+        assert!((knee.x - 5.0).abs() < 0.1 && (knee.z - 8.0).abs() < 0.3, "{knee:?}");
+        assert!(k.knot.x.abs() < 0.1 && (k.knot.z - 13.0).abs() < 0.3, "{:?}", k.knot);
+        assert!((k.foot.x - 5.0).abs() < 0.05 && (k.foot.z - ROOT_TOP as f32).abs() < 1e-3, "{:?}", k.foot);
+    }
+
+    #[test]
+    fn a_branch_off_a_kickstand_s_pillar_leaves_the_kickstand_whole() {
+        // A Lychee branch hanging from a kickstand: the kickstand of the knee test, and a branch
+        // with its own tip leaving the pillar at 5 mm. The branch's support stands in the pillar's
+        // place, and the pillar's top and the lean are still one leg with a knee.
+        let model = slab(20.0);
+        let mut s = trunk(0.0, 0.0, 20.0, 18.0, 0.5);
+        s.extend(frustum([5.0, 0.0, 0.0], [5.0, 0.0, 8.0], 0.5, 0.5, 16));
+        s.extend(frustum([5.0, 0.0, 8.0], [0.0, 0.0, 13.0], 0.5, 0.5, 16));
+        s.extend(frustum([5.0, 0.0, 5.0], [9.0, 0.0, 18.1], 0.4, 0.4, 16));
+        s.extend(frustum([9.0, 0.0, 18.0], [9.0, 0.0, 20.2], 0.4, 0.12, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(
+            (lay.supports.len(), lay.posts.len(), lay.braces.len(), lay.kickstands.len()),
+            (2, 0, 0, 1),
+            "{:?}",
+            r.classification.exceptions
+        );
+        assert!(lay.supports.iter().all(|s| matches!(s.base, SupportBase::Plate { .. })));
+        let k = &lay.kickstands[0];
+        assert_eq!(k.joints.len(), 1, "{:?}", k.joints);
+        assert!((k.joints[0].z - 8.0).abs() < 0.3 && (k.foot.x - 5.0).abs() < 0.05, "{k:?}");
+        assert!(k.knot.x.abs() < 0.1 && (k.knot.z - 13.0).abs() < 0.3, "{:?}", k.knot);
+    }
+
+    #[test]
+    fn two_legs_meeting_at_one_knot_both_lean_on_the_trunk() {
+        // A trunk held up by two slanted legs from the plate that meet it at the same height (the
+        // lattice of kickstands under real model 31676804). The second leg's top lies in the first
+        // leg's end as well as in the trunk: it leans on the trunk, not on the other leg.
+        let model = slab(20.0);
+        let mut s = trunk(0.0, 0.0, 20.0, 18.0, 0.5);
+        s.extend(frustum([6.0, 0.0, 0.0], [0.0, 0.0, 6.0], 0.45, 0.45, 16));
+        s.extend(frustum([0.0, 6.0, 0.0], [0.0, 0.0, 6.0], 0.45, 0.45, 16));
+        s.extend(frustum([-6.0, 0.0, 0.0], [0.0, 0.0, 6.0], 0.45, 0.45, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(
+            (lay.supports.len(), lay.posts.len(), lay.braces.len(), lay.kickstands.len()),
+            (1, 0, 0, 3),
+            "{:?}",
+            r.classification.exceptions
+        );
+        assert!(lay.kickstands.iter().all(|k| k.support == 0 && k.knot.x.abs() < 0.2 && (k.knot.z - 6.0).abs() < 0.3));
+    }
+
+    #[test]
+    fn a_pillar_whose_lean_reaches_no_support_stays_a_post() {
+        // The same pillar and lean, the lean stopping in mid air 2 mm short of the trunk; a brace
+        // lower down holds the pillar to the trunk.
+        let model = slab(20.0);
+        let mut s = trunk(0.0, 0.0, 20.0, 18.0, 0.5);
+        s.extend(frustum([5.0, 0.0, 0.0], [5.0, 0.0, 8.0], 0.5, 0.5, 16));
+        s.extend(frustum([5.0, 0.0, 8.0], [2.5, 0.0, 10.5], 0.5, 0.5, 16));
+        s.extend(frustum([5.0, 0.0, 6.0], [0.0, 0.0, 4.0], 0.3, 0.3, 12));
+        let lay = read_points(&model, &s, 3.0).classification.layout;
+        assert_eq!((lay.supports.len(), lay.posts.len(), lay.kickstands.len()), (1, 1, 0));
+        assert!((lay.posts[0].top.z - 8.0).abs() < 0.3, "the post ends at the pillar's top: {:?}", lay.posts[0].top);
+        assert_eq!(lay.braces.len(), 1);
+    }
+
+    #[test]
+    fn the_base_capsule_of_a_branch_is_part_of_the_branch_not_a_brace() {
+        // A trunk and a branch whose shaft touches it, with Lychee's base capsule: a short rod on
+        // the shaft's own line from the knot on the trunk's axis, overlapping the shaft's start.
+        let model = slab(10.0);
+        let at = |t: f64| [0.1 + 2.9 * t, 0.0, 5.0 + 3.1 * t];
+        let mut s = trunk(0.0, 0.0, 10.0, 8.0, 0.4);
+        s.extend(frustum([3.0, 0.0, 8.0], [3.0, 0.0, 10.2], 0.3, 0.12, 16));
+        s.extend(frustum(at(0.15), at(1.0 + 0.03), 0.3, 0.3, 16));
+        let without = read_points(&model, &s, 3.0).classification.layout;
+        s.extend(frustum(at(-0.03), at(0.5), 0.3, 0.3, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len(), lay.kickstands.len()), (2, 0, 0));
+        assert_eq!(lay.supports.len(), without.supports.len());
+        assert!(
+            r.classification.pieces.iter().any(|p| p.role == Role::Sleeve && p.why.starts_with("the base of piece")),
+            "{:?}",
+            r.classification.pieces
+        );
+        // A brace carrying on in the branch's line to a second trunk is still a brace.
+        let mut s = trunk(0.0, 0.0, 10.0, 8.0, 0.4);
+        s.extend(trunk(-4.0, 0.0, 10.0, 8.0, 0.4));
+        s.extend(frustum([3.0, 0.0, 8.0], [3.0, 0.0, 10.2], 0.3, 0.12, 16));
+        s.extend(frustum(at(0.0), at(1.0 + 0.03), 0.3, 0.3, 16));
+        s.extend(frustum(at(-4.1 / 2.9), at(0.0), 0.3, 0.3, 16));
+        let lay = read_points(&model, &s, 3.0).classification.layout;
+        assert_eq!((lay.supports.len(), lay.braces.len()), (3, 1));
+    }
+
+    #[test]
+    fn a_plate_support_stands_on_the_pillar_under_its_tip_cone() {
+        // A short pillar on a 2 mm raft, 2.62 mm tall (0.02 mm too tall to be a pad), and a leaning
+        // tip cone whose wide end sits in the pillar's top, 0.3 mm off the pillar's line.
+        let model = slab(10.0);
+        let mut s = raft_2mm(-10.0);
+        s.extend(frustum([0.0, 0.0, 0.0], [0.0, 0.0, 2.62], 0.65, 0.65, 16));
+        s.extend(frustum([0.3, 0.0, 1.95], [2.0, 0.0, 10.2], 0.64, 0.12, 16));
+        let r = read_points(&model, &s, 3.0);
+        let lay = &r.classification.layout;
+        assert_eq!(
+            (lay.supports.len(), lay.posts.len(), lay.kickstands.len()),
+            (1, 0, 0),
+            "{:?}",
+            r.classification.exceptions
+        );
+        let SupportBase::Plate { x, y, .. } = lay.supports[0].base else { panic!("{:?}", lay.supports[0].base) };
+        assert!(x.abs() < 0.05 && y.abs() < 0.05, "the foot is the pillar's: {x} {y}");
     }
 
     #[test]

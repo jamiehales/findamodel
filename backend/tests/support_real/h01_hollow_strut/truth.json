@@ -1,0 +1,189 @@
+{
+ "case": "h01_hollow_strut",
+ "title": "A support between two inner faces of a hollow or deep recess",
+ "situation": "inside a hollow or deep recess: strut",
+ "scope": "structure",
+ "source": {
+  "model_id": "c9144c30-6aa2-4cbf-9b00-0ceedb63236c",
+  "creator": "Loot Studios",
+  "name": "OfficerChristopherSanders_75mm_Base_Supported_Hollow",
+  "path": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_Base_Supported_Hollow.stl",
+  "lys_id": "ca5ff7a9-bc32-4fa3-8043-cc94957faf65",
+  "lys_path": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_LYCHEE/OfficerChristopherSanders_75mm_LYCHEE/OfficerChristopherSanders_75mm_Base_Supported.lys",
+  "lychee_version": "5.2.2",
+  "named": [
+   "s2390"
+  ],
+  "lychee_ids": [
+   "s2390"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": false
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s2390",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     4.755957652888753,
+     22.88127187097554,
+     11.572233020410467
+    ],
+    [
+     4.18095765288875,
+     23.87720108532764,
+     15.427069157772898
+    ]
+   ],
+   "d": 1.3,
+   "joints": 0,
+   "mini": true,
+   "d_tip": 0.4
+  }
+ ],
+ "tips": [
+  {
+   "support": "s2390",
+   "end": "tip",
+   "contact": [
+    4.18095765288875,
+    23.87720108532764,
+    15.427069157772898
+   ],
+   "axis": [
+    0.14293817579765164,
+    -0.24757618282274296,
+    -0.9582665138668676
+   ],
+   "socket": [
+    4.18095765288875,
+    23.87720108532764,
+    15.427069157772898
+   ],
+   "contact_d": 0.4,
+   "body_d": 1.3,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.1207335590455927,
+    -0.4763267175684203,
+    -0.8709398749917693
+   ],
+   "surface_mm": 0.4850748160719095,
+   "route": [
+    [
+     4.18095765288875,
+     23.87720108532764,
+     15.427069157772898
+    ],
+    [
+     4.18095765288875,
+     23.87720108532764,
+     15.427069157772898
+    ],
+    [
+     4.755957652888753,
+     22.88127187097554,
+     11.572233020410467
+    ],
+    [
+     4.755957652888753,
+     22.88127187097554,
+     11.572233020410467
+    ]
+   ]
+  },
+  {
+   "support": "s2390",
+   "end": "base",
+   "contact": [
+    4.755957652888753,
+    22.88127187097554,
+    11.572233020410467
+   ],
+   "axis": [
+    -0.14293817579765164,
+    0.24757618282274296,
+    0.9582665138668676
+   ],
+   "socket": [
+    4.755957652888753,
+    22.88127187097554,
+    11.572233020410467
+   ],
+   "contact_d": 1.3,
+   "body_d": 1.3,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    0.0005508347569899382,
+    0.42344830071274836,
+    0.9059201031021205
+   ],
+   "surface_mm": 0.30247794341841605,
+   "route": [
+    [
+     4.755957652888753,
+     22.88127187097554,
+     11.572233020410467
+    ],
+    [
+     4.755957652888753,
+     22.88127187097554,
+     11.572233020410467
+    ],
+    [
+     4.18095765288875,
+     23.87720108532764,
+     15.427069157772898
+    ],
+    [
+     4.18095765288875,
+     23.87720108532764,
+     15.427069157772898
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    2.681,
+    22.3772,
+    13.9271
+   ],
+   "hi": [
+    5.681,
+    25.3772,
+    16.9271
+   ]
+  },
+  {
+   "lo": [
+    3.256,
+    21.3813,
+    10.0722
+   ],
+   "hi": [
+    6.256,
+    24.3813,
+    13.0722
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

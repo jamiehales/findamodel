@@ -1,0 +1,135 @@
+{
+ "case": "n4a_bite_the_bullet_tree",
+ "title": "Bite the Bullet: a trunk with what hangs from it",
+ "situation": "other creators: bite the bullet tree",
+ "scope": "structure",
+ "source": {
+  "model_id": "7e2dd4ca-62d5-4cee-9fb5-f5a5bef3adfc",
+  "creator": "Bite the Bullet",
+  "name": "2310_co_abberant_hybrid_b_ps",
+  "path": "Bite The Bullet/Extracted/40_23-10 BULLET HELL HEROES PT.2/_Crossovers/Crossover (CrippledGodFoundry)/Pre-Supported/2310_co_abberant_hybrid_b_ps.stl",
+  "lys_id": "19715340-e8cd-441b-95d3-8521601b7480",
+  "lys_path": "Bite The Bullet/Extracted/40_23-10 BULLET HELL HEROES PT.2/_Crossovers/Crossover (CrippledGodFoundry)/Pre-Supported/2310_co_abberant_hybrid_b_ps.lys",
+  "lychee_version": "5.2.2",
+  "named": [
+   "s20430"
+  ],
+  "lychee_ids": [
+   "s20430"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s20430",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     4.898840319926923,
+     4.411974174985726,
+     0.0
+    ],
+    [
+     4.898840319926923,
+     4.411974174985726,
+     0.5
+    ],
+    [
+     4.898840319926923,
+     4.411974174985727,
+     7.333484766153964
+    ]
+   ],
+   "d": 1.3,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    4.898840319926923,
+    4.411974174985726
+   ],
+   "foot_pieces": []
+  }
+ ],
+ "tips": [
+  {
+   "support": "s20430",
+   "end": "tip",
+   "contact": [
+    4.898839511108398,
+    3.6839166755676276,
+    10.55216963385077
+   ],
+   "axis": [
+    2.450965226139251e-07,
+    0.22062348467215143,
+    -0.9753590508172142
+   ],
+   "socket": [
+    4.898840319926923,
+    4.411974174985727,
+    7.333484766153964
+   ],
+   "contact_d": 0.33,
+   "body_d": 1.3,
+   "length": 3.3,
+   "base": "plate",
+   "normal": [
+    -1.7702377708255148e-08,
+    0.22062352472353605,
+    -0.9753590417577328
+   ],
+   "surface_mm": 0.5176608923961098,
+   "route": [
+    [
+     4.898839511108398,
+     3.6839166755676276,
+     10.55216963385077
+    ],
+    [
+     4.898840319926923,
+     4.411974174985727,
+     7.333484766153964
+    ],
+    [
+     4.898840319926923,
+     4.411974174985726,
+     0.5
+    ],
+    [
+     4.898840319926923,
+     4.411974174985726,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    3.3988,
+    2.1839,
+    9.0522
+   ],
+   "hi": [
+    6.3988,
+    5.1839,
+    12.0522
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 56
+}

@@ -178,7 +178,8 @@ impl Reader<'_> {
         }
         // DragonFruit stands the tip's disk off the surface along the surface normal, so the loop it
         // leaves is as wide as the contact whatever the lean of the tip: the loop's own width.
-        let loop_d = 2.0 * (c.area / std::f64::consts::PI).sqrt();
+        let area = self.loop_area(ci);
+        let loop_d = 2.0 * (area / std::f64::consts::PI).sqrt();
         let mut d = (loop_d / DRAWN_AREA_SHARE.sqrt()).clamp(MIN_CD, MAX_CD);
         // A ball end in the model is as wide as its ball; a loop round the ends of several welded
         // rods as wide as the widest of them.
@@ -242,7 +243,7 @@ impl Reader<'_> {
                 tip.cone_end_d = Some(ends.iter().copied().fold(f64::INFINITY, f64::min));
             }
             tip.ball_c = Some(mid);
-        } else if let Some((r, centre)) = self.rounded_end(q0, at, c.area) {
+        } else if let Some((r, centre)) = self.rounded_end(q0, at, area) {
             // A rounded rod end the model cuts is a tip: a sphere tip of the rod's width seated at
             // the dome's own depth. Not where the loop is wider than the rod (a slanted end stays a
             // sunk blunt end).

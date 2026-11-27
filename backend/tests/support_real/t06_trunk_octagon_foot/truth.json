@@ -1,0 +1,148 @@
+{
+ "case": "t06_trunk_octagon_foot",
+ "title": "A trunk on an octagon foot",
+ "situation": "trunk octagon foot",
+ "scope": "structure",
+ "source": {
+  "model_id": "9bcbf50d-10b7-46e9-80f9-24170cf9604b",
+  "creator": "Creature Caster",
+  "name": "Grail Thrall F",
+  "path": "Creature Caster/The Great Hunger/The Great Maw/Grail Thrall F/Supported/STL/Thrall F_Base32mm-sup.stl",
+  "lys_id": "1f3bab0b-8e88-41b8-a60c-d4736aa7e362",
+  "lys_path": "Creature Caster/The Great Hunger/The Great Maw/Grail Thrall F/Supported/LYS/Thrall F_Base32mm (1).lys",
+  "lychee_version": "7.5.0",
+  "named": [
+   "s2482"
+  ],
+  "lychee_ids": [
+   "s2482"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s2482",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -5.189874244962908,
+     15.444579675552262,
+     0.0
+    ],
+    [
+     -5.189874244962908,
+     15.444579675552262,
+     9.794971308305747
+    ],
+    [
+     -5.191252992530959,
+     14.439551738840116,
+     10.80500021889111
+    ]
+   ],
+   "d": 1.2,
+   "joints": 1,
+   "mini": false,
+   "foot": [
+    -5.189874244962908,
+    15.444579675552262
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s2482",
+   "end": "tip",
+   "contact": [
+    -4.430649776290522,
+    11.9553048212724,
+    12.30500021889111
+   ],
+   "axis": [
+    -0.253534405413479,
+    0.8280823058559058,
+    -0.49999999999999994
+   ],
+   "socket": [
+    -5.191252992530959,
+    14.439551738840116,
+    10.80500021889111
+   ],
+   "contact_d": 0.3,
+   "body_d": 1.2,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    -0.27438573320470394,
+    0.8567088286837448,
+    -0.4367636114296189
+   ],
+   "surface_mm": 0.3538297357221102,
+   "route": [
+    [
+     -4.430649776290522,
+     11.9553048212724,
+     12.30500021889111
+    ],
+    [
+     -5.191252992530959,
+     14.439551738840116,
+     10.80500021889111
+    ],
+    [
+     -5.189874244962908,
+     15.444579675552262,
+     9.794971308305747
+    ],
+    [
+     -5.189874244962908,
+     15.444579675552262,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -5.9306,
+    10.4553,
+    10.805
+   ],
+   "hi": [
+    -2.9306,
+    13.4553,
+    13.805
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 174
+}

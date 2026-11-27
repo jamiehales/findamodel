@@ -1,0 +1,160 @@
+{
+ "case": "p03_tip_sideways",
+ "title": "A tip reaching the model sideways",
+ "situation": "tip sideways",
+ "scope": "structure",
+ "source": {
+  "model_id": "56bf8cab-c157-4b58-8ca7-f18f80eeabde",
+  "creator": "Cast n Play",
+  "name": "STL_SW_Door_Main_Supported",
+  "path": "Cast n Play/Terrain Essentials/Sewers/Sewers_Walls/Pre-Supported/Doors/STL_SW_Door_Main_Supported.stl",
+  "lys_id": "fdf6754a-bcf8-4be4-8379-b2dec5b68044",
+  "lys_path": "Cast n Play/Terrain Essentials/Sewers/Sewers_Walls/Pre-Supported/Doors/LYS_SW_Door_Main_Supported.lys",
+  "lychee_version": "6.0.1-beta",
+  "named": [
+   "s136"
+  ],
+  "lychee_ids": [
+   "s136"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s136",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -9.055961565054139,
+     -7.472224491938276,
+     0.0
+    ],
+    [
+     -9.055961565054139,
+     -7.472224491938276,
+     0.5
+    ],
+    [
+     -9.055961565054139,
+     -7.472224491938275,
+     6.315799464055764
+    ]
+   ],
+   "d": 1.5,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -9.055961565054139,
+    -7.472224491938276
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      4.0,
+      4.0
+     ],
+     "sides": 12,
+     "turn_deg": 7.16,
+     "z": [
+      0.0,
+      0.51
+     ]
+    },
+    {
+     "d": [
+      3.5,
+      1.5
+     ],
+     "sides": 16,
+     "turn_deg": 9.16,
+     "z": [
+      0.504,
+      1.504
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s136",
+   "end": "tip",
+   "contact": [
+    -9.05817043410056,
+    -4.0081235810383715,
+    8.315799464055763
+   ],
+   "axis": [
+    0.0005522172616053524,
+    -0.8660252277249758,
+    -0.49999999999999983
+   ],
+   "socket": [
+    -9.055961565054139,
+    -7.472224491938275,
+    6.315799464055764
+   ],
+   "contact_d": 0.6,
+   "body_d": 1.5,
+   "length": 4,
+   "base": "plate",
+   "normal": [
+    0.26774634931074925,
+    -0.8094511255145563,
+    -0.5225904398608763
+   ],
+   "surface_mm": 0.18215191290102242,
+   "route": [
+    [
+     -9.05817043410056,
+     -4.0081235810383715,
+     8.315799464055763
+    ],
+    [
+     -9.055961565054139,
+     -7.472224491938275,
+     6.315799464055764
+    ],
+    [
+     -9.055961565054139,
+     -7.472224491938276,
+     0.5
+    ],
+    [
+     -9.055961565054139,
+     -7.472224491938276,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -10.5582,
+    -5.5081,
+    6.8158
+   ],
+   "hi": [
+    -7.5582,
+    -2.5081,
+    9.8158
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 521
+}

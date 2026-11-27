@@ -1,0 +1,138 @@
+{
+ "case": "t10_trunk_long_tip",
+ "title": "A trunk with a tip cone over 5 mm long",
+ "situation": "trunk long tip",
+ "scope": "structure",
+ "source": {
+  "model_id": "ade48bd9-c673-47b1-a150-6f4e1a2c0b4b",
+  "creator": "Nerikson",
+  "name": "STL_head_supported",
+  "path": "Nerikson/NK_Alyara Bust/STL/Presupported/STL_head_supported.stl",
+  "lys_id": "b0bfb3fb-f0ee-4137-af79-1cf18f217af7",
+  "lys_path": "Nerikson/NK_Alyara Bust/STL/Presupported/LYS_head_supported.lys",
+  "lychee_version": "5.4.3",
+  "named": [
+   "s6020"
+  ],
+  "lychee_ids": [
+   "s6020"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s6020",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -1.405615914634616,
+     2.791970367000158,
+     0.0
+    ],
+    [
+     -1.4056159146346148,
+     2.7919703670001574,
+     -0.10647261296066723
+    ]
+   ],
+   "d": 1.15,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -1.405615914634616,
+    2.791970367000158
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 2.02,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s6020",
+   "end": "tip",
+   "contact": [
+    -1.6179511328783924,
+    1.6737904332156264,
+    5.1081613004867625
+   ],
+   "axis": [
+    0.03978253272540913,
+    0.2094990655653162,
+    -0.9769992280535391
+   ],
+   "socket": [
+    -1.4056159146346148,
+    2.7919703670001574,
+    -0.10647261296066723
+   ],
+   "contact_d": 0.3,
+   "body_d": 1.15,
+   "length": 5.337398192050229,
+   "base": "plate",
+   "normal": [
+    0.0493064684667752,
+    0.2235351073228561,
+    -0.9734479585275703
+   ],
+   "surface_mm": 0.08786816344127922,
+   "route": [
+    [
+     -1.6179511328783924,
+     1.6737904332156264,
+     5.1081613004867625
+    ],
+    [
+     -1.4056159146346148,
+     2.7919703670001574,
+     -0.10647261296066723
+    ],
+    [
+     -1.405615914634616,
+     2.791970367000158,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -3.118,
+    0.1738,
+    3.6082
+   ],
+   "hi": [
+    -0.118,
+    3.1738,
+    6.6082
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 1224
+}

@@ -1,0 +1,189 @@
+{
+ "case": "p02_tip_wide",
+ "title": "A tip with a contact over 0.7 mm",
+ "situation": "tip wide",
+ "scope": "structure",
+ "source": {
+  "model_id": "c9144c30-6aa2-4cbf-9b00-0ceedb63236c",
+  "creator": "Loot Studios",
+  "name": "OfficerChristopherSanders_75mm_Base_Supported_Hollow",
+  "path": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_Base_Supported_Hollow.stl",
+  "lys_id": "ca5ff7a9-bc32-4fa3-8043-cc94957faf65",
+  "lys_path": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_LYCHEE/OfficerChristopherSanders_75mm_LYCHEE/OfficerChristopherSanders_75mm_Base_Supported.lys",
+  "lychee_version": "5.2.2",
+  "named": [
+   "s2393"
+  ],
+  "lychee_ids": [
+   "s2393"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": false
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s2393",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     -1.8250664693494087,
+     24.77454518119977,
+     10.688522081391824
+    ],
+    [
+     -1.8286514503140694,
+     26.118110046203746,
+     13.783261184932785
+    ]
+   ],
+   "d": 1.3,
+   "joints": 0,
+   "mini": true,
+   "d_tip": 0.4
+  }
+ ],
+ "tips": [
+  {
+   "support": "s2393",
+   "end": "tip",
+   "contact": [
+    -1.8286514503140694,
+    26.118110046203746,
+    13.783261184932785
+   ],
+   "axis": [
+    0.001062591449230789,
+    -0.3982337845342751,
+    -0.9172833388626006
+   ],
+   "socket": [
+    -1.8286514503140694,
+    26.118110046203746,
+    13.783261184932785
+   ],
+   "contact_d": 0.4,
+   "body_d": 1.3,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    0.02996845077174379,
+    -0.7714005931527959,
+    -0.6356437814073668
+   ],
+   "surface_mm": 0.3298701889802974,
+   "route": [
+    [
+     -1.8286514503140694,
+     26.118110046203746,
+     13.783261184932785
+    ],
+    [
+     -1.8286514503140694,
+     26.118110046203746,
+     13.783261184932785
+    ],
+    [
+     -1.8250664693494087,
+     24.77454518119977,
+     10.688522081391824
+    ],
+    [
+     -1.8250664693494087,
+     24.77454518119977,
+     10.688522081391824
+    ]
+   ]
+  },
+  {
+   "support": "s2393",
+   "end": "base",
+   "contact": [
+    -1.8250664693494087,
+    24.77454518119977,
+    10.688522081391824
+   ],
+   "axis": [
+    -0.001062591449230789,
+    0.3982337845342751,
+    0.9172833388626006
+   ],
+   "socket": [
+    -1.8250664693494087,
+    24.77454518119977,
+    10.688522081391824
+   ],
+   "contact_d": 1.3,
+   "body_d": 1.3,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    0.0009194948807264075,
+    0.4026508374820634,
+    0.9153531873567476
+   ],
+   "surface_mm": 0.30040640433287635,
+   "route": [
+    [
+     -1.8250664693494087,
+     24.77454518119977,
+     10.688522081391824
+    ],
+    [
+     -1.8250664693494087,
+     24.77454518119977,
+     10.688522081391824
+    ],
+    [
+     -1.8286514503140694,
+     26.118110046203746,
+     13.783261184932785
+    ],
+    [
+     -1.8286514503140694,
+     26.118110046203746,
+     13.783261184932785
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -3.3287,
+    24.6181,
+    12.2833
+   ],
+   "hi": [
+    -0.3287,
+    27.6181,
+    15.2833
+   ]
+  },
+  {
+   "lo": [
+    -3.3251,
+    23.2745,
+    9.1885
+   ],
+   "hi": [
+    -0.3251,
+    26.2745,
+    12.1885
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

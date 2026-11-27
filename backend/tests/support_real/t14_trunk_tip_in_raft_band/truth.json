@@ -1,0 +1,148 @@
+{
+ "case": "t14_trunk_tip_in_raft_band",
+ "title": "A trunk with its tip inside the raft band (contact under 3.5 mm)",
+ "situation": "trunk tip in raft band",
+ "scope": "structure",
+ "source": {
+  "model_id": "56461b4d-7394-433b-a945-e9d520fca2f0",
+  "creator": "Creature Crusade",
+  "name": "Isma'il Al-Aziz",
+  "path": "Creature Crusade/Isma'il Al-Aziz/Supported/STL/TC-Arab_Pose_03_Base-sup.stl",
+  "lys_id": "2d5c0c16-84d3-4692-b217-3894ca5670ae",
+  "lys_path": "Creature Crusade/Isma'il Al-Aziz/Supported/LYS/TC-Arab_Pose_03_Base (1).lys",
+  "lychee_version": "7.4.2",
+  "named": [
+   "s2506"
+  ],
+  "lychee_ids": [
+   "s2506"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s2506",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     0.8264363527673382,
+     10.275180436967837,
+     0.0
+    ],
+    [
+     0.8264363527673382,
+     10.275180436967837,
+     0.18049753719834172
+    ],
+    [
+     0.8264363527673381,
+     10.275180436967837,
+     0.9466956873359824
+    ]
+   ],
+   "d": 0.8,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    0.8264363527673382,
+    10.275180436967837
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      1.0,
+      1.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s2506",
+   "end": "tip",
+   "contact": [
+    0.7590290503754211,
+    11.441429278862799,
+    3.156971664304222
+   ],
+   "axis": [
+    0.026962920956766796,
+    -0.4664995367579849,
+    -0.8841103907872958
+   ],
+   "socket": [
+    0.8264363527673381,
+    10.275180436967837,
+    0.9466956873359824
+   ],
+   "contact_d": 0.26,
+   "body_d": 0.8,
+   "length": 2.5,
+   "base": "plate",
+   "normal": [
+    0.03720004018757294,
+    0.05773319912096805,
+    -0.9976387295656186
+   ],
+   "surface_mm": 0.0352801955590256,
+   "route": [
+    [
+     0.7590290503754211,
+     11.441429278862799,
+     3.156971664304222
+    ],
+    [
+     0.8264363527673381,
+     10.275180436967837,
+     0.9466956873359824
+    ],
+    [
+     0.8264363527673382,
+     10.275180436967837,
+     0.18049753719834172
+    ],
+    [
+     0.8264363527673382,
+     10.275180436967837,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -0.741,
+    9.9414,
+    1.657
+   ],
+   "hi": [
+    2.259,
+    12.9414,
+    4.657
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 455
+}

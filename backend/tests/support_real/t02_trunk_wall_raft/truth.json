@@ -1,0 +1,135 @@
+{
+ "case": "t02_trunk_wall_raft",
+ "title": "An upright trunk on a walled raft (Lychee's vector wall foundation)",
+ "situation": "trunk wall raft",
+ "scope": "structure",
+ "source": {
+  "model_id": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+  "creator": "Station Forge",
+  "name": "SUPPORTED_Angel R (repaired)",
+  "path": "Station Forge/Diorama Stands/Church 1/SUPPORTED_Angel R (repaired).stl",
+  "lys_id": "7a2c030d-cba0-49d2-8e28-03f2f2f75716",
+  "lys_path": "Station Forge/Diorama Stands/Church 1/LYS_Angel R (repaired).lys",
+  "lychee_version": "5.4.3",
+  "named": [
+   "s7"
+  ],
+  "lychee_ids": [
+   "s7"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s7",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     0.0
+    ],
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     0.5
+    ],
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     2.6190551550539385
+    ]
+   ],
+   "d": 1.3,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -1.204246353674224,
+    2.7863073635237603
+   ],
+   "foot_pieces": []
+  }
+ ],
+ "tips": [
+  {
+   "support": "s7",
+   "end": "tip",
+   "contact": [
+    -0.9080699117183685,
+    1.1682010100725295,
+    5.127841982217843
+   ],
+   "axis": [
+    -0.09872548065195187,
+    0.5393687844837436,
+    -0.8362622757213015
+   ],
+   "socket": [
+    -1.204246353674224,
+    2.7863073635237603,
+    2.6190551550539385
+   ],
+   "contact_d": 0.3,
+   "body_d": 1.3,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    -0.13589352819209827,
+    0.5458430357228857,
+    -0.8267940065991817
+   ],
+   "surface_mm": 0.03115888665579812,
+   "route": [
+    [
+     -0.9080699117183685,
+     1.1682010100725295,
+     5.127841982217843
+    ],
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     2.6190551550539385
+    ],
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     0.5
+    ],
+    [
+     -1.204246353674224,
+     2.7863073635237603,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -2.4081,
+    -0.3318,
+    3.6278
+   ],
+   "hi": [
+    0.5919,
+    2.6682,
+    6.6278
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 320
+}

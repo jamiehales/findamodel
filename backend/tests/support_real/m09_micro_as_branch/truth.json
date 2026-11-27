@@ -1,0 +1,177 @@
+{
+ "case": "m09_micro_as_branch",
+ "title": "A mini support between two parts of the model that the reader misses",
+ "situation": "support between two parts of the model: micro as branch",
+ "scope": "structure",
+ "source": {
+  "model_id": "56ea9e5a-b1da-4042-9ce5-eb02c475d44b",
+  "creator": "Heroes Infinite",
+  "name": "STL_Penitent_Monk_Banner_Supported",
+  "path": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Minis/Supported/STL_Penitent_Monk_Supported/STL_Penitent_Monk_Banner_Supported.stl",
+  "lys_id": "9ce73cea-6def-400d-949d-c1e2e47ad43c",
+  "lys_path": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Minis/Lychee/LYS_Penitent_Monk_Supported/LYS_Penitent_Monk_Banner_Supported.lys",
+  "lychee_version": "7.5.0",
+  "named": [
+   "s55"
+  ],
+  "lychee_ids": [
+   "s55"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s55",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     -1.1553994464874267,
+     2.216333024076203,
+     51.30097262304287
+    ],
+    [
+     -1.1553994464874267,
+     2.2163329405100978,
+     51.42323057715561
+    ]
+   ],
+   "d": 0.15,
+   "joints": 0,
+   "mini": true,
+   "d_tip": 0.15
+  }
+ ],
+ "tips": [
+  {
+   "support": "s55",
+   "end": "tip",
+   "contact": [
+    -1.1553994464874267,
+    2.2163329405100978,
+    51.42323057715561
+   ],
+   "axis": [
+    0.0,
+    6.835228493169044e-07,
+    -0.9999999999997664
+   ],
+   "socket": [
+    -1.1553994464874267,
+    2.2163329405100978,
+    51.42323057715561
+   ],
+   "contact_d": 0.15,
+   "body_d": 1,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.18259216318178467,
+    -0.03234720306258495,
+    -0.9826564813802554
+   ],
+   "surface_mm": 0.03861982434251422,
+   "route": [
+    [
+     -1.1553994464874267,
+     2.2163329405100978,
+     51.42323057715561
+    ],
+    [
+     -1.1553994464874267,
+     2.2163329405100978,
+     51.42323057715561
+    ],
+    [
+     -1.1553994464874267,
+     2.216333024076203,
+     51.30097262304287
+    ],
+    [
+     -1.1553994464874267,
+     2.216333024076203,
+     51.30097262304287
+    ]
+   ]
+  },
+  {
+   "support": "s55",
+   "end": "base",
+   "contact": [
+    -1.1553994464874267,
+    2.216333024076203,
+    51.30097262304287
+   ],
+   "axis": [
+    0.0,
+    -6.835228493169044e-07,
+    0.9999999999997664
+   ],
+   "socket": [
+    -1.1553994464874267,
+    2.216333024076203,
+    51.30097262304287
+   ],
+   "contact_d": 0.15,
+   "body_d": 1,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.5527389652207122,
+    0.1516426683063607,
+    0.8194413569473189
+   ],
+   "surface_mm": 0.09471536831666064,
+   "route": [
+    [
+     -1.1553994464874267,
+     2.216333024076203,
+     51.30097262304287
+    ],
+    [
+     -1.1553994464874267,
+     2.216333024076203,
+     51.30097262304287
+    ],
+    [
+     -1.1553994464874267,
+     2.2163329405100978,
+     51.42323057715561
+    ],
+    [
+     -1.1553994464874267,
+     2.2163329405100978,
+     51.42323057715561
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.25,
+ "model_cuts": [
+  {
+   "lo": [
+    -2.4054,
+    0.9663,
+    50.051
+   ],
+   "hi": [
+    0.0946,
+    3.4663,
+    52.6732
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

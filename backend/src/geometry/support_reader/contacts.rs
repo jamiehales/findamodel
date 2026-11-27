@@ -36,8 +36,21 @@ const THIN_WALL_LOOP_D: f64 = 1.5;
 const THIN_WALL_END: f64 = 3.0;
 /// Two loops of one patch this close in centre and width are one loop on a doubled surface.
 const COINCIDENT_MM: f64 = 0.03;
+/// A loop under this share of the area of a larger loop it belongs with is a nick: a pinhole a
+/// tip leaves in a neighbouring face of the model, or the sliver a second shell of the same tip
+/// cuts beside it. It is no exit from its patch and no contact of its own.
+const NICK_SHARE: f64 = 0.05;
+/// Two overlapping touches lie in one face of the model when their loops' normals are within
+/// this of each other (45 degrees) ...
+const SAME_FACE_COS: f64 = 0.7;
+/// ... and neither centre is further than this share of the wider loop's radius off the other's
+/// plane.
+const SAME_FACE_OFFSET: f64 = 0.5;
 /// Shells reaching no higher than this above the raft's top are raft and are not judged.
 pub const RAFT_BAND_MARGIN_MM: f64 = 0.5;
+/// A shell in the raft band that starts this far above the plate is not raft: it stands on the
+/// raft or on a support (the tip cone of a trunk holding the model just above the raft).
+const RAFT_CLEAR_MM: f64 = 0.3;
 /// Winding number cells: exact within, dipoles beyond [`FAR`] cell radii.
 const FINE: f64 = 2.0;
 const COARSE: f64 = 16.0;
@@ -772,6 +785,11 @@ fn call_shell(tris: Vec<[P; 3]>, model: &Model, wind: &Wind) -> ShellCall {
         patches[p].loops.push(loops.len());
         loops.push(LoopOut { points: w.points.clone(), area, normal, centre, perimeter, closed: w.closed });
     }
+    // A pinhole beside a patch's loop is no exit from the patch.
+    for p in &mut patches {
+        let widest = p.loops.iter().map(|&k| loops[k].area).fold(0.0, f64::max);
+        p.loops.retain(|&k| loops[k].area >= NICK_SHARE * widest);
+    }
     let buried = loops.is_empty() && inside.iter().all(|&x| x);
     ShellCall { patches, loops, buried, lo, hi, verts, inside }
 }
@@ -989,6 +1007,21 @@ fn overlapping_pairs(loops: &[(P, f64)]) -> Vec<(usize, usize)> {
     per_loop.into_iter().enumerate().flat_map(|(a, bs)| bs.into_iter().map(move |b| (a, b))).collect()
 }
 
+/// Whether two overlapping touch loops are one contact: several shells of one tip entering the
+/// model at one place (a cone and its ball, welded rod ends), not two tips side by side or the
+/// two ends of a hair support in a gap. They are one when one is a nick beside the other, or when
+/// the narrower loop's centre lies inside the wider loop and both lie in one face of the model.
+fn one_contact(a: &LoopOut, b: &LoopOut) -> bool {
+    if a.area.min(b.area) < NICK_SHARE * a.area.max(b.area) {
+        return true;
+    }
+    let r = eq_d(a.area.max(b.area)) / 2.0;
+    let d = sub(b.centre, a.centre);
+    len(d) < r
+        && dot(a.normal, b.normal).abs() >= SAME_FACE_COS
+        && dot(d, a.normal).abs().max(dot(d, b.normal).abs()) <= SAME_FACE_OFFSET * r
+}
+
 /// Every contact of `support` on `model` (both Z-up), ignoring shells that stay below `raft_band`.
 pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact> {
     let (model_index, wind) = rayon::join(|| Model::new(model.to_vec()), || Wind::new(model.to_vec()));
@@ -999,11 +1032,14 @@ pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact
     let mut jobs: Vec<(usize, &Patch, usize, bool)> = Vec::new();
     let mut flush_jobs: Vec<usize> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
-        if c.hi[2] <= raft_band || c.buried {
+        let in_band = c.hi[2] <= raft_band;
+        if (in_band && c.lo[2] <= RAFT_CLEAR_MM) || c.buried {
             continue;
         }
         if c.loops.is_empty() {
-            flush_jobs.push(i);
+            if !in_band {
+                flush_jobs.push(i);
+            }
             continue;
         }
         for p in &c.patches {
@@ -1065,6 +1101,9 @@ pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact
     let mut parent: Vec<u32> = (0..n as u32).collect();
     let lp = |t: &(usize, usize, P, f64, bool)| -> &LoopOut { &calls[t.0].loops[t.1] };
     for (a, b) in overlapping_pairs(&touches.iter().map(|t| (lp(t).centre, eq_d(lp(t).area))).collect::<Vec<_>>()) {
+        if !one_contact(lp(&touches[a]), lp(&touches[b])) {
+            continue;
+        }
         let (x, y) = (super::math::find(&mut parent, a as u32), super::math::find(&mut parent, b as u32));
         parent[x as usize] = y;
     }
@@ -1074,6 +1113,10 @@ pub fn read(model: &[[P; 3]], support: &[[P; 3]], raft_band: f64) -> Vec<Contact
     }
     let mut contacts: Vec<Contact> = Vec::new();
     for g in groups.values() {
+        // A nick beside the contact's loop adds nothing to it: the contact is placed and sized by
+        // its other loops.
+        let widest = g.iter().map(|&a| lp(&touches[a]).area).fold(0.0, f64::max);
+        let g: Vec<usize> = g.iter().copied().filter(|&a| lp(&touches[a]).area >= NICK_SHARE * widest).collect();
         // A side graze is clipping, not a tip.
         if g.len() == 1 && touches[g[0]].4 {
             continue;
@@ -1368,5 +1411,83 @@ pub(super) mod tests {
         let low = frustum([0.0, 0.0, 0.0], [0.0, 0.0, 2.2], 0.4, 0.15, 16);
         assert!(read(&model, &low, 3.5).is_empty());
         assert_eq!(read(&model, &low, 2.0).len(), 1);
+    }
+
+    #[test]
+    fn a_tip_cone_in_the_raft_band_standing_clear_of_the_plate_is_judged() {
+        // A trunk's tip cone holding the model 3 mm up: wholly under the band, starting on the
+        // trunk's foot at 0.6 mm (real case t14_trunk_tip_in_raft_band).
+        let model = boxm([-5.0, -5.0, 3.0], [5.0, 5.0, 6.0]);
+        let cone = frustum([0.0, 0.0, 0.6], [0.0, 0.0, 3.2], 0.4, 0.15, 16);
+        let c = read(&model, &cone, 3.5);
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert!(dist(c[0].at, [0.0, 0.0, 3.0]) < 1e-3, "{:?}", c[0].at);
+    }
+
+    #[test]
+    fn a_pinhole_beside_a_tip_s_loop_is_no_exit() {
+        // A leaning cone enters the model's underside near its side wall and its point comes out
+        // of the wall by a hair: one tip at the entry loop, not a part passing through (real
+        // cases t13_trunk_tip_missing, w03_many_shells, x16_brace_branch).
+        let model = boxm([-5.0, -5.0, 2.0], [5.0, 5.0, 6.0]);
+        let cone = frustum([-4.2, 0.0, 1.2], [-5.004, 0.0, 2.808], 0.4, 0.02, 32);
+        let c = read(&model, &cone, 0.5);
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert!(dist(c[0].at, [-4.6, 0.0, 2.0]) < 0.05, "{:?}", c[0].at);
+        assert!(!c[0].thin_wall && c[0].d > 0.4, "{:?}", c[0]);
+    }
+
+    #[test]
+    fn two_tips_side_by_side_are_two_contacts_and_a_ball_on_a_cone_is_one() {
+        let model = boxm([-5.0, -5.0, 10.0], [5.0, 5.0, 15.0]);
+        // Two cones 0.35 mm apart, each 0.4 mm wide where it enters: their loops overlap, but
+        // neither centre lies in the other's loop (real cases p12 to p14, x14).
+        let mut two = frustum([-1.0, 0.0, 6.0], [0.0, 0.0, 10.2], 0.5, 0.2, 32);
+        two.extend(frustum([1.35, 0.0, 6.0], [0.35, 0.0, 10.2], 0.5, 0.2, 32));
+        let c = read(&model, &two, 3.5);
+        assert_eq!(c.len(), 2, "{c:?}");
+        // A cone and the ball on its point enter at one place: one contact.
+        let mut one = frustum([0.0, 0.0, 6.0], [0.0, 0.0, 10.2], 0.5, 0.2, 32);
+        one.extend(ball([0.03, 0.0, 10.05], 0.3));
+        let c = read(&model, &one, 3.5);
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert_eq!(c[0].n, 2);
+    }
+
+    #[test]
+    fn the_two_ends_of_a_hair_in_a_gap_are_two_contacts() {
+        // A 0.2 mm rod across a 0.12 mm gap between two parts of the model: its loops lie one
+        // above the other, closer than they are wide (real cases m09_micro_as_branch,
+        // p06_tip_grazing_missed).
+        let mut model = boxm([-5.0, -5.0, 10.0], [5.0, 5.0, 12.0]);
+        model.extend(boxm([-5.0, -5.0, 12.12], [5.0, 5.0, 14.0]));
+        let hair = frustum([0.0, 0.0, 11.9], [0.0, 0.0, 12.22], 0.1, 0.1, 16);
+        let c = read(&model, &hair, 3.5);
+        assert_eq!(c.len(), 2, "{c:?}");
+        assert!(c.iter().any(|x| (x.at[2] - 12.0).abs() < 1e-3) && c.iter().any(|x| (x.at[2] - 12.12).abs() < 1e-3));
+    }
+
+    #[test]
+    fn loops_are_one_contact_only_in_one_face_with_a_centre_inside_the_other() {
+        let lp = |centre: P, normal: P, d: f64| LoopOut {
+            points: Vec::new(),
+            area: std::f64::consts::PI * d * d / 4.0,
+            normal,
+            centre,
+            perimeter: std::f64::consts::PI * d,
+            closed: true,
+        };
+        let up = [0.0, 0.0, 1.0];
+        let a = lp([0.0, 0.0, 0.0], up, 0.5);
+        // Concentric, and off centre but inside: one contact.
+        assert!(one_contact(&a, &lp([0.0, 0.0, 0.0], up, 0.3)));
+        assert!(one_contact(&a, &lp([0.2, 0.0, 0.0], up, 0.3)));
+        // Side by side.
+        assert!(!one_contact(&a, &lp([0.3, 0.0, 0.0], up, 0.3)));
+        // Above the other across a gap, and on a face turned 60 degrees.
+        assert!(!one_contact(&a, &lp([0.0, 0.0, 0.2], up, 0.5)));
+        assert!(!one_contact(&a, &lp([0.1, 0.0, 0.0], [0.866, 0.0, 0.5], 0.5)));
+        // A nick beside it, whichever way it faces.
+        assert!(one_contact(&a, &lp([0.26, 0.0, 0.05], [1.0, 0.0, 0.0], 0.05)));
     }
 }

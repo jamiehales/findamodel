@@ -12,6 +12,7 @@
 //!                                                           and from the cache
 //! See README.md for every command's arguments and output.
 //! support-reader build IN.voxl OUT.stl [TIP_OFFSET_MM]   the VOXL's supports as support_mesh meshes them
+//! support-reader split SUPPORTED.stl OUT_PREFIX [RAFT_MM]  a supported file split as the app splits it
 //! support-reader pieces MODEL.stl SUPPORT.stl CONTACTS.json OUT.json
 //!                                                           pieces, contacts taken from a JSON
 //!                                                           file with {"contacts": [{at, d}]}
@@ -57,6 +58,21 @@ fn load_stl(path: &Path) -> Vec<Triangle> {
             Triangle::new(p(1), p(2), p(3), p(0))
         })
         .collect()
+}
+
+fn write_stl(path: &str, triangles: &[Triangle]) {
+    let mut stl = vec![0u8; 80];
+    stl.extend_from_slice(&(triangles.len() as u32).to_le_bytes());
+    for t in triangles {
+        stl.extend_from_slice(&[0u8; 12]);
+        for p in [t.v0, t.v1, t.v2] {
+            for c in [p.x, p.y, p.z] {
+                stl.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        stl.extend_from_slice(&[0u8; 2]);
+    }
+    std::fs::write(path, stl).unwrap_or_else(|e| panic!("{path}: {e}"));
 }
 
 fn main() {
@@ -197,6 +213,28 @@ fn main() {
                 json!({ "triangles": triangles.len(), "export_s": export_s, "write_s": write_s, "cached_s": cached_s,
                         "entry_bytes": entry_bytes, "same": same,
                         "supports": export.as_ref().map(|e| e.2.supports.len()) })
+            );
+        }
+        "split" => {
+            // split SUPPORTED.stl OUT_PREFIX [RAFT_MM]: a supported file as the app loads and splits it
+            // (the loader's frame turned Z-up: plate at z = 0, XY centred on the whole mesh), written
+            // as OUT_PREFIX.model.stl and OUT_PREFIX.support.stl. One JSON line.
+            use findamodel::geometry::{support_separation, to_z_up};
+            let raft: f32 = args.get(3).map(|x| x.parse().unwrap()).unwrap_or(3.0);
+            let geometry = findamodel::geometry::loader::load_model(Path::new(&args[1]), "stl").expect("a model");
+            let triangles = &geometry.triangles;
+            let mask = support_separation::classify(triangles, raft).and_then(|c| c.mask_for(Some(true)));
+            let Some(mask) = mask else {
+                println!("{}", json!({ "triangles": triangles.len(), "split": false }));
+                return;
+            };
+            let (body, supports) = support_separation::welded::closed_split(triangles, &mask);
+            let (body, supports) = (to_z_up(&body), to_z_up(&supports));
+            write_stl(&format!("{}.model.stl", args[2]), &body);
+            write_stl(&format!("{}.support.stl", args[2]), &supports);
+            println!(
+                "{}",
+                json!({ "triangles": triangles.len(), "split": true, "model": body.len(), "support": supports.len() })
             );
         }
         "build" => {

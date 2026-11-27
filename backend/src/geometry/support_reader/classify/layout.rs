@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use super::super::math::{P, add, closest_on_tri, dist, dot, mul, pairwise_sum, sub, unit_div};
-use super::super::pieces::SectionKind;
+use super::super::pieces::{PieceKind, SectionKind};
 use super::rest::Host;
 use super::tips::{above_root, cut_from, point_along, polyline_len, simplify};
 use super::{
-    End, Exception, NARROW_CLEAR_MM, NARROW_INSIDE_MM, NARROW_MAX_MM, NARROW_MIN_D, Owner, ROOT_TOP, Reader, Role,
-    SOCKET_CLEAR_MM, SOCKET_MOVE_MM, SOCKET_SQUARE_COS, STEP_GAIN2, STEP_GAIN3, STEP_MIN_MM, STEP_SAMPLE_MM,
-    STEP_SNAP_MM, Step, seg_dist,
+    End, Exception, FOOT_PILLAR_COS, FOOT_PILLAR_WIDTH, NARROW_CLEAR_MM, NARROW_INSIDE_MM, NARROW_MAX_MM, NARROW_MIN_D,
+    Owner, ROOT_TOP, Reader, Role, SOCKET_CLEAR_MM, SOCKET_MOVE_MM, SOCKET_SQUARE_COS, STEP_GAIN2, STEP_GAIN3,
+    STEP_MIN_MM, STEP_SAMPLE_MM, STEP_SNAP_MM, Step, seg_dist,
 };
 use crate::geometry::Vec3;
 use crate::geometry::support_layout::{
@@ -215,6 +215,27 @@ impl Reader<'_> {
         self.exceptions.push(Exception { kind: "export", at, why: why.into(), contact, piece, role });
     }
 
+    /// The pillar a plate support stands on: a root piece of its own that is an upright rod about
+    /// as wide as the shaft, reaching the root top, with the support's foot `xy` inside it. The
+    /// tallest such piece.
+    fn foot_pillar(&self, si: usize, xy: [f64; 2], shaft_d: f64) -> Option<usize> {
+        let roots = self.root_p.get(&Owner::Support(si))?;
+        roots
+            .iter()
+            .copied()
+            .filter(|&q| {
+                let p = &self.p[q];
+                if p.ball || p.kind == PieceKind::Unread || p.d[2].abs() < FOOT_PILLAR_COS {
+                    return false;
+                }
+                let axis = p.at(((ROOT_TOP - p.a[2]) / p.d[2]).clamp(0.0, p.l));
+                p.hi[2] >= ROOT_TOP - 0.05
+                    && 2.0 * p.r <= FOOT_PILLAR_WIDTH * shaft_d
+                    && dist([xy[0], xy[1], 0.0], [axis[0], axis[1], 0.0]) <= p.r + 0.05
+            })
+            .max_by(|&a, &b| self.p[a].hi[2].total_cmp(&self.p[b].hi[2]).then(b.cmp(&a)))
+    }
+
     pub(super) fn export(&mut self) -> Lay {
         let mut lay = Lay::default();
         let mut lines: BTreeMap<Src, Vec<P>> = BTreeMap::new();
@@ -263,14 +284,30 @@ impl Reader<'_> {
             let base = match s.end {
                 End::Plate => {
                     // The shaft starts at the root's top; what the route does below it is the root.
-                    let above: Vec<P> = line.iter().copied().filter(|p| p[2] > ROOT_TOP + 0.05).collect();
+                    let mut above: Vec<P> = line.iter().copied().filter(|p| p[2] > ROOT_TOP + 0.05).collect();
                     let mut last = line[line.len() - 1];
                     if !above.is_empty() && above.len() < line.len() {
                         let (a, b) = (above[above.len() - 1], line[above.len()]);
                         let w = (a[2] - ROOT_TOP) / (a[2] - b[2]).max(1e-9);
                         last = add(a, mul(sub(b, a), w));
                     }
-                    let xy = [last[0], last[1]];
+                    let mut xy = [last[0], last[1]];
+                    // The support stands on the pillar under its foot, not where its last piece's
+                    // own line comes down inside that pillar (a tip cone whose wide end sits in
+                    // the pillar's top, off the pillar's line: 0.35 to 0.54 mm on p05_tip_grazing
+                    // and t02_trunk_wall_raft).
+                    if let Some(q) = self.foot_pillar(si, xy, sd) {
+                        let pp = &self.p[q];
+                        let on = |z: f64| pp.at(((z - pp.a[2]) / pp.d[2]).clamp(0.0, pp.l));
+                        let inside = |x: &P| {
+                            x[2] <= pp.hi[2] + 0.05
+                                && dist([x[0], x[1], 0.0], [on(x[2])[0], on(x[2])[1], 0.0]) <= pp.r + 0.05
+                        };
+                        let keep: Vec<P> =
+                            above.iter().enumerate().filter(|(i, x)| *i == 0 || !inside(x)).map(|(_, x)| *x).collect();
+                        above = keep;
+                        xy = [on(ROOT_TOP)[0], on(ROOT_TOP)[1]];
+                    }
                     let root_d = self.root_d(s.path[s.path.len() - 1].0, sd, Owner::Support(si));
                     line = if above.is_empty() { vec![line[0]] } else { above };
                     line.push([xy[0], xy[1], ROOT_TOP]);

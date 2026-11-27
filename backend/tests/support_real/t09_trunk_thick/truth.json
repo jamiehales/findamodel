@@ -1,0 +1,148 @@
+{
+ "case": "t09_trunk_thick",
+ "title": "A thick trunk (shaft over 1.5 mm)",
+ "situation": "trunk thick",
+ "scope": "structure",
+ "source": {
+  "model_id": "6cd5c067-ec79-4edf-a8d5-fca78eaeec72",
+  "creator": "Claymore Miniatures",
+  "name": "STL_DrowSorcerer_Base_32mm_SUP",
+  "path": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/STL Supported/STL_DrowSorcerer_Base_32mm_SUP.stl",
+  "lys_id": "679a6b3f-b319-4afd-bf65-efe955ba2cc9",
+  "lys_path": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/Lychee Files/LYS_DrowSorcerer_Base_32mm_SUP.lys",
+  "lychee_version": "5.1.0",
+  "named": [
+   "s29868"
+  ],
+  "lychee_ids": [
+   "s29868"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s29868",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     5.014854917305133,
+     -5.047426625853179,
+     0.0
+    ],
+    [
+     5.014854917305133,
+     -5.047426625853179,
+     0.35391308987682035
+    ],
+    [
+     5.014854917305134,
+     -5.047426625853181,
+     2.2591851611103166
+    ]
+   ],
+   "d": 1.7,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    5.014854917305133,
+    -5.047426625853179
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s29868",
+   "end": "tip",
+   "contact": [
+    5.0145256736755375,
+    -8.380601228065782,
+    5.9861070764130115
+   ],
+   "axis": [
+    6.584872591924345e-05,
+    0.6666349204425202,
+    -0.745384383060539
+   ],
+   "socket": [
+    5.014854917305134,
+    -5.047426625853181,
+    2.2591851611103166
+   ],
+   "contact_d": 0.5,
+   "body_d": 1.5,
+   "length": 5,
+   "base": "plate",
+   "normal": [
+    0.041418442177200206,
+    0.5967588817507115,
+    -0.801350952890963
+   ],
+   "surface_mm": 0.39105750327832844,
+   "route": [
+    [
+     5.0145256736755375,
+     -8.380601228065782,
+     5.9861070764130115
+    ],
+    [
+     5.014854917305134,
+     -5.047426625853181,
+     2.2591851611103166
+    ],
+    [
+     5.014854917305133,
+     -5.047426625853179,
+     0.35391308987682035
+    ],
+    [
+     5.014854917305133,
+     -5.047426625853179,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    3.5145,
+    -9.8806,
+    4.4861
+   ],
+   "hi": [
+    6.5145,
+    -6.8806,
+    7.4861
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 845
+}

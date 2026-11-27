@@ -6,18 +6,59 @@
 use std::collections::BTreeSet;
 
 use super::super::math::{P, dist, dot, mul, unit_div};
-use super::super::pieces::PieceKind;
+use super::super::pieces::{PieceKind, SectionKind};
 use super::{
-    DETOUR_W, End, Exception, LEVEL, NEAR_VERTICAL, Owner, ROOT_TOP, Reader, Route, SLEEVE_COS, SLEEVE_OFF,
-    SLEEVE_SHARE, Step, VEE_HUB_MM, VEE_MIN_COS,
+    CONE_BODY, DETOUR_W, End, Exception, LEVEL, NEAR_VERTICAL, Owner, ROOT_TOP, Reader, Route, SAME_ROD_DEG,
+    SAME_ROD_OFF, SAME_ROD_WIDTH, SLEEVE_COS, SLEEVE_OFF, SLEEVE_SHARE, Step, VEE_HUB_MM, VEE_MIN_COS,
 };
 
-/// A way on from a joint: (group by distance from the piece's end, class (0 down, 1 sloping
-/// down, 2 level, 2.5 an owned rod, 3 up), turn in degrees, piece, t on it, direction, t on the
-/// piece left).
+/// A way on from a joint: (group by distance from the piece's end, class (-1 the same rod going
+/// on, 0 down, 1 sloping down, 2 level, each plus `PASSING` for a rod passing by the joint and the
+/// first two plus `BESIDE` for a rod standing off the end, 2.5 an owned rod, 3 up), turn in
+/// degrees, piece, t on it, direction, t on the piece left).
 pub(super) type Way = (usize, f64, f64, usize, f64, f64, f64);
 
+/// The class of a way onto a rod an earlier route owns, or onto another tip's own piece.
+const OWNED: f64 = 2.5;
+/// The class of a way that is the same rod going on.
+const SAME_ROD: f64 = -1.0;
+/// Added to the class of a way down onto another tip's shaft standing off this rod's end by over
+/// a radius.
+const BESIDE: f64 = 1.0;
+/// Added to the class of a way down or level onto a rod that passes by the joint.
+const PASSING: f64 = 0.25;
+
 type Found = (Vec<Step>, End);
+
+/// A piece's read radius at `t`, a ball section by its own round profile.
+fn profile_r(p: &super::Piece, t: f64) -> f64 {
+    for s in &p.secs {
+        if s.t0 - 1e-6 <= t && t <= s.t1 + 1e-6 {
+            if s.k != SectionKind::Ball {
+                return s.r0 + (s.r1 - s.r0) * (t - s.t0) / (s.t1 - s.t0).max(1e-9);
+            }
+            let big = s.big_r.unwrap_or(s.r0.max(s.r1));
+            let off = t - s.tc.unwrap_or(0.5 * (s.t0 + s.t1));
+            return (big * big - off * off).max(0.0).sqrt();
+        }
+    }
+    p.r
+}
+
+/// The area two circles of radii `r0` and `r1`, `gap` apart, share.
+fn lens_area(r0: f64, r1: f64, gap: f64) -> f64 {
+    let (big, small) = (r0.max(r1), r0.min(r1));
+    if gap >= big + small {
+        return 0.0;
+    }
+    if gap <= big - small {
+        return std::f64::consts::PI * small * small;
+    }
+    let a0 = ((gap * gap + r0 * r0 - r1 * r1) / (2.0 * gap * r0)).clamp(-1.0, 1.0).acos();
+    let a1 = ((gap * gap + r1 * r1 - r0 * r0) / (2.0 * gap * r1)).clamp(-1.0, 1.0).acos();
+    let kite = ((-gap + r0 + r1) * (gap + r0 - r1) * (gap - r0 + r1) * (gap + r0 + r1)).max(0.0).sqrt();
+    r0 * r0 * a0 + r1 * r1 * a1 - 0.5 * kite
+}
 
 impl Reader<'_> {
     /// Contacts' pieces, pads and sleeves.
@@ -176,6 +217,7 @@ impl Reader<'_> {
                 }
             }
             self.cpiece.insert(ci, h.0);
+            self.tip_pieces.entry(h.0).or_insert(ci);
             self.ct.insert((ci, h.0), self.p[h.0].t_of(at));
             // Every piece the contact sits in can end a route there (several rods entering one loop).
             for h2 in &hits {
@@ -266,6 +308,29 @@ impl Reader<'_> {
         (sq, sr)
     }
 
+    /// Whether piece `r` is piece `p`'s own rod going on past `p`'s end: two rods (plain or
+    /// tapering, as a mini support's) on one line (`turn` degrees apart, `p`'s end `off` from
+    /// `r`'s line), of one width where they join (`tp` along `p`, `tr` along `r`). A tip's own
+    /// piece is never the same rod as what it stands on.
+    fn same_rod(&self, p: usize, r: usize, turn: f64, off: f64, tp: f64, tr: f64) -> bool {
+        let (pp, pr) = (&self.p[p], &self.p[r]);
+        let (rp, rr) = (pp.r_at(tp), pr.r_at(tr));
+        !pp.ball
+            && !pr.ball
+            && self.on_of(p).is_empty()
+            && turn <= SAME_ROD_DEG
+            && off <= SAME_ROD_OFF * rp.min(rr)
+            && (rp - rr).abs() <= SAME_ROD_WIDTH * rp.max(rr)
+    }
+
+    /// Whether another tip's own piece (not `from`) sits on rod `r` at `tr`, within the rod's end
+    /// reach: the rod is that tip's shaft.
+    fn another_tip_s(&self, r: usize, tr: f64, from: usize) -> bool {
+        let pr = &self.p[r];
+        let reach = 0.5f64.max(2.0 * pr.r);
+        pr.att.iter().any(|a| !a.weak && a.q != from && (a.t - tr).abs() <= reach && self.tip_pieces.contains_key(&a.q))
+    }
+
     fn way_class(v: P) -> f64 {
         if v[2] <= -NEAR_VERTICAL {
             0.0
@@ -305,6 +370,8 @@ impl Reader<'_> {
             }
         };
         let mut seen_way: BTreeSet<(usize, i8)> = BTreeSet::new();
+        // Ways classed as the same rod going on, with the class they would have otherwise.
+        let mut same: Vec<(usize, f64)> = Vec::new();
         for a in &atts {
             if start_hub.is_none() && (a.t - t) * s < -slack {
                 continue;
@@ -331,7 +398,7 @@ impl Reader<'_> {
                     // branch), whichever way it runs; it ranks after every way down or level.
                     let owned = pr.claims.iter().any(|&(lo, hi, _)| lo - 0.3 <= tr && tr <= hi + 0.3);
                     if owned && (cls == 3.0 || turn > 150.0) {
-                        cls = 2.5;
+                        cls = OWNED;
                     } else {
                         if cls == 3.0 && !allow_up {
                             continue;
@@ -347,10 +414,50 @@ impl Reader<'_> {
                         let pp = &self.p[p];
                         let end = pp.at(t_end);
                         let off = dist(end, pr.at(pr.t_of(end)));
+                        // The same rod going on: a rod read in two pieces along one line.
+                        if group == 0 && cls <= 2.0 && self.same_rod(p, r, turn, off, a.t, tr) {
+                            same.push((cands.len(), cls));
+                            cls = SAME_ROD;
+                        }
                         turn += 40.0 * (off / pr.r.max(pp.r).max(1e-6)).min(2.0);
+                        // A rod standing off this rod's end by over a radius, with another tip's
+                        // own piece on its end here, is that tip's shaft: a way down it comes after
+                        // the ways down the rods that meet this end (the shaft of the strut beside
+                        // a tip, steeper than the tip's own rod; real case b14_branch_on_strut).
+                        if group == 0
+                            && (0.0..1.0 + PASSING).contains(&cls)
+                            && off > pr.r.max(pp.r)
+                            && self.another_tip_s(r, tr, p)
+                        {
+                            cls += BESIDE;
+                        }
+                    }
+                    // Among ways of one kind, a rod that starts at this joint (the next stretch of
+                    // a line of rods joined end to end) comes before a rod passing by it.
+                    if (0.0..=2.0).contains(&cls) && tr.min(pr.l - tr) > 0.3f64.max(pr.r) {
+                        cls += PASSING;
                     }
                     cands.push((group, cls, turn, r, tr, sr, a.t));
                 }
+            }
+        }
+        // The same rod going on comes first unless it carries on past a way straight down: then it
+        // is a brace in line with this rod (a leaning shaft on a post, a brace going on to the
+        // next post: l01_lean_shaft). A branch read in two pieces ends inside its parent's rod.
+        for (k, cls) in same {
+            let (r, sr) = (cands[k].3, cands[k].5);
+            let pr = &self.p[r];
+            let far = pr.at(if sr > 0.0 { pr.l } else { 0.0 });
+            let past = cands.iter().enumerate().any(|(j, w)| {
+                let px = &self.p[w.3];
+                j != k
+                    && w.0 == 0
+                    && (0.0..1.0).contains(&w.1)
+                    && w.3 != r
+                    && dist(far, px.at(px.t_of(far))) > px.r + 0.1
+            });
+            if past {
+                cands[k].1 = cls;
             }
         }
         // A route climbing from a foot keeps to its own rod (the straightest way) rather than the
@@ -412,7 +519,33 @@ impl Reader<'_> {
             }
         }
         let vin = mul(pq.d, s);
-        let ways = self.ways(q, t, s, vin, allow_up, weak_ok, None, straight);
+        let mut ways = self.ways(q, t, s, vin, allow_up, weak_ok, None, straight);
+        // The ways down from the rod's end, for telling a foot from a rod passing through.
+        let down: Vec<Way> = ways.iter().filter(|w| w.0 == 0 && w.1 < 2.0).copied().collect();
+        // Another tip's own piece (its cone) passing by the joint is that tip's from the start:
+        // like a rod an earlier route owns, it can be joined, but only after every way down or
+        // level (tip cones lapping each other at their sockets, real model 35ba31e3). This orders
+        // the ways only: such a piece below a rod's end is still the structure going on down.
+        if !straight {
+            let mut moved = false;
+            for w in ways.iter_mut() {
+                let passing = w.1 < OWNED && (w.1 - w.1.floor() - PASSING).abs() < 1e-9;
+                if passing && self.tip_pieces.get(&w.3).is_some_and(|&c| c != ci) && w.3 != self.cpiece[&ci] {
+                    w.1 = OWNED;
+                    moved = true;
+                }
+            }
+            if moved {
+                ways.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.total_cmp(&y.1)).then(x.2.total_cmp(&y.2)));
+            }
+        }
+        // The way this contact's route is to take first here (a second reading, see `reroute`).
+        if let Some(&r) = self.prefer.get(&(ci, q))
+            && let Some(k) = ways.iter().position(|w| w.3 == r)
+        {
+            let w = ways.remove(k);
+            ways.insert(0, (0, w.1.min(1.0), w.2, w.3, w.4, w.5, w.6));
+        }
         // The rod ends in the model: that is its foot, unless the structure goes on down from this
         // joint (a stray sheet of the model across a joint: a real foot has nothing hanging below
         // it), which is tried first. A way down into another rod that ends in this same loop is not
@@ -446,7 +579,6 @@ impl Reader<'_> {
             // ... and the other cone leads to a contact of its own, so its own route builds it.
             self.leads_to_contact(r, q, &[c2, ci])
         };
-        let down: Vec<&Way> = ways.iter().filter(|w| w.0 == 0 && w.1 <= 1.0).collect();
         let through = !down.is_empty() && down.iter().any(|w| !same_foot(w));
         if foot.is_some() && !through {
             return foot;
@@ -594,16 +726,60 @@ impl Reader<'_> {
         // first walked on its own (nothing claimed yet), and its detour (route length less the
         // height it drops) lowers its place in the order.
         let mut detour: std::collections::BTreeMap<usize, f64> = Default::default();
+        // (a, b): tip a's first walk joins the cone that holds tip b, in the cone's body: past b's
+        // contact where the cone is wider than at the contact, and before its socket (where it is
+        // still under `CONE_BODY` of its full width).
+        let mut joins: BTreeSet<(usize, usize)> = BTreeSet::new();
+        // Per piece: the first walks that enter it at one of its ends and those that join it from
+        // the side, each with the stretch it runs along.
+        let mut end_on: std::collections::BTreeMap<usize, Vec<(usize, f64, f64)>> = Default::default();
+        let mut side_on: std::collections::BTreeMap<usize, Vec<(usize, f64)>> = Default::default();
         for &ci in &normal {
             let Some((path, _, _)) = self.walk(ci, false) else { continue };
+            for &(q, t0, t1) in path.iter().skip(1) {
+                let pq = &self.p[q];
+                if !pq.ball && (t1 - t0).abs() > 1e-6 {
+                    if t0.min(pq.l - t0) <= 0.3f64.max(pq.r) {
+                        end_on.entry(q).or_default().push((ci, t0, t1));
+                    } else {
+                        side_on.entry(q).or_default().push((ci, t0));
+                    }
+                }
+            }
+            for &(q, t0, _) in path.iter().skip(1) {
+                let pq = &self.p[q];
+                let full = pq.secs.iter().map(|s| s.r0.max(s.r1)).fold(0.0, f64::max);
+                if pq.ball || q == self.cpiece[&ci] || pq.r_at(t0) >= CONE_BODY * full {
+                    continue;
+                }
+                for &c2 in &normal {
+                    if c2 != ci && self.cpiece[&c2] == q && pq.r_at(t0) > 1.15 * profile_r(pq, self.ct[&(c2, q)]) {
+                        joins.insert((ci, c2));
+                    }
+                }
+            }
             let pts = self.line_of(&path);
             if pts.len() >= 2 {
                 let length: f64 = pts.windows(2).map(|w| dist(w[0], w[1])).sum();
                 detour.insert(ci, (length - (pts[0][2] - pts[pts.len() - 1][2])).max(0.0));
             }
         }
+        // A rod is its own tip's: a tip whose first walk joins a rod from the side, where another
+        // tip's first walk comes down that rod from its end, is routed after that tip, so it hangs
+        // from the rod as a branch instead of owning the rod's lower part and leaving the rod's
+        // own tip a stub.
+        for (q, sides) in &side_on {
+            for &(a, ta) in sides {
+                for &(b, t0, t1) in end_on.get(q).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    if a != b && t0.min(t1) + 0.3 < ta && ta < t0.max(t1) - 0.3 {
+                        joins.insert((a, b));
+                    }
+                }
+            }
+        }
         let key = |ci: usize| -(self.c[ci].at[2] - DETOUR_W * detour.get(&ci).copied().unwrap_or(0.0));
         normal.sort_by(|&a, &b| key(a).total_cmp(&key(b)));
+        let normal = Self::own_cone_first(&normal, &joins);
         let feet: Vec<usize> = order.iter().copied().filter(|&ci| self.start_dir(ci) > LEVEL).collect();
         let mut todo: Vec<(usize, bool)> =
             normal.iter().map(|&c| (c, false)).chain(feet.iter().map(|&c| (c, true))).collect();
@@ -623,21 +799,57 @@ impl Reader<'_> {
                     self.consumed.entry(c2).or_insert(idx);
                 }
                 let on_path: BTreeSet<usize> = path.iter().map(|x| x.0).collect();
+                // A collar round the route: a piece joined to nothing but the route's own pieces
+                // (the sleeve of a mini support), with no other contact inside it.
+                let collar = |p: usize, c2: usize| {
+                    let pp = &self.p[p];
+                    !pp.ball
+                        && self.on_of(p).iter().all(|&c| c == c2 || self.c_in.get(&(c, p)) != Some(&true))
+                        && pp.att.iter().any(|a| !a.weak)
+                        && pp.att.iter().filter(|a| !a.weak).all(|a| on_path.contains(&a.q))
+                };
+                // A contact the route runs through (its own piece on the route, not at either end
+                // of it), or one where the route's flank lies in the model: inside a piece of the
+                // route, its own piece a collar round the route.
+                let mut passed: Vec<(usize, bool)> = Vec::new();
                 for &(q, t0, t1) in &path {
-                    self.p[q].claims.push((t0.min(t1), t0.max(t1), Owner::Support(idx)));
-                    // A contact the route runs through (its own piece on the route, not at either
-                    // end of it).
-                    for &c2 in self.on.get(&q).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    for &c2 in self.on_of(q) {
+                        let own = self.cpiece.get(&c2).is_some_and(|p| on_path.contains(p));
+                        let flank = !own
+                            && self.c_in.get(&(c2, q)) == Some(&true)
+                            && self.cpiece.get(&c2).is_some_and(|&p| collar(p, c2));
                         if c2 != ci
                             && end != End::Foot(c2)
                             && !self.sup_of.contains_key(&c2)
-                            && self.cpiece.get(&c2).is_some_and(|p| on_path.contains(p))
+                            && (own || flank)
                             && t0.min(t1) - 0.05 <= self.ct[&(c2, q)]
                             && self.ct[&(c2, q)] <= t0.max(t1) + 0.05
                         {
-                            self.through.entry(c2).or_insert(idx);
+                            passed.push((c2, flank));
                         }
                     }
+                }
+                for (c2, flank) in passed {
+                    if self.through.contains_key(&c2) {
+                        continue;
+                    }
+                    self.through.insert(c2, idx);
+                    // A flank loop overlapping the loop of one of the route's own ends is part of
+                    // that end's opening in the model: the end is sized by both.
+                    if flank {
+                        let ends = [Some(ci), if let End::Foot(f) = end { Some(f) } else { None }];
+                        for e in ends.into_iter().flatten() {
+                            let (a, b) = (&self.c[e], &self.c[c2]);
+                            let gap = dist(a.at, b.at);
+                            if gap < (a.d + b.d) / 2.0 {
+                                let area = self.loop_area(e) + b.area - lens_area(a.d / 2.0, b.d / 2.0, gap);
+                                self.widened.insert(e, area.max(self.loop_area(e)));
+                            }
+                        }
+                    }
+                }
+                for &(q, t0, t1) in &path {
+                    self.p[q].claims.push((t0.min(t1), t0.max(t1), Owner::Support(idx)));
                 }
                 let _ = rnd;
                 self.supports.push(Route {
@@ -684,6 +896,40 @@ impl Reader<'_> {
         }
     }
 
+    /// The routing order with each tip's own cone kept its own: a tip whose first walk joins the
+    /// cone holding another tip in the cone's body (a mini support standing on a tip cone) goes
+    /// after that tip, so it hangs from the cone instead of taking the cone's line down and
+    /// leaving its owner a stub of a cone. `joins` holds those pairs (the tip, the cone's tip). Two
+    /// tips that each join the other's cone keep their order.
+    fn own_cone_first(order: &[usize], joins: &BTreeSet<(usize, usize)>) -> Vec<usize> {
+        let through = |a: usize, b: usize| joins.contains(&(a, b));
+        let mut out: Vec<usize> = Vec::with_capacity(order.len());
+        let mut stack: Vec<usize> = Vec::new();
+        fn place(
+            ci: usize,
+            order: &[usize],
+            through: &dyn Fn(usize, usize) -> bool,
+            out: &mut Vec<usize>,
+            stack: &mut Vec<usize>,
+        ) {
+            if out.contains(&ci) || stack.contains(&ci) {
+                return;
+            }
+            stack.push(ci);
+            for &c2 in order {
+                if c2 != ci && through(ci, c2) && !through(c2, ci) {
+                    place(c2, order, through, out, stack);
+                }
+            }
+            stack.pop();
+            out.push(ci);
+        }
+        for &ci in order {
+            place(ci, order, &through, &mut out, &mut stack);
+        }
+        out
+    }
+
     /// What the structure around an unrouted contact offers.
     fn why_no_route(&self, ci: usize) -> String {
         let q0 = self.cpiece[&ci];
@@ -714,5 +960,32 @@ impl Reader<'_> {
             "structure of {} pieces; reaches plate {plate}, a routed support {claimed}, other contacts {other}; no way on within the rules",
             seen.len()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tip_joining_another_tip_s_cone_is_routed_after_it() {
+        // Contact 0's first walk joins the cone of contact 1 (a mini support on a tip cone).
+        let mut joins: BTreeSet<(usize, usize)> = BTreeSet::from([(0, 1)]);
+        assert_eq!(Reader::own_cone_first(&[0, 1, 2], &joins), vec![1, 0, 2]);
+        // Each joins the other's cone: the order stays.
+        joins.insert((1, 0));
+        assert_eq!(Reader::own_cone_first(&[0, 1, 2], &joins), vec![0, 1, 2]);
+        // A chain: 2 joins 0's cone, 0 joins 1's.
+        let joins = BTreeSet::from([(2, 0), (0, 1)]);
+        assert_eq!(Reader::own_cone_first(&[2, 0, 1], &joins), vec![1, 0, 2]);
+    }
+
+    #[test]
+    fn the_lens_two_circles_share() {
+        let pi = std::f64::consts::PI;
+        assert_eq!(lens_area(0.3, 0.2, 0.6), 0.0);
+        assert!((lens_area(0.3, 0.2, 0.05) - pi * 0.04).abs() < 1e-12);
+        // Two unit circles one radius apart share 2 pi / 3 - sqrt(3) / 2.
+        assert!((lens_area(1.0, 1.0, 1.0) - (2.0 * pi / 3.0 - 3f64.sqrt() / 2.0)).abs() < 1e-12);
     }
 }

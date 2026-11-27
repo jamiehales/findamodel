@@ -1,0 +1,1342 @@
+{
+ "note": "The case list of the real-structure support suite. scripts/real-support-cases.py cuts each case's fixtures from the model's split meshes and its Lychee truth: scope 'structure' takes the named trunk with everything hanging from it, 'section' the named supports with the hosts under them.",
+ "models": {
+  "01a23637-6151-4ee3-b593-dd5bb1856706": {
+   "creator": "Nerikson",
+   "name": "Presupported_Elf_Mage_Body",
+   "relativePath": "Nerikson/NK_ElfMage/STL/Presupported/STL/Presupported_Elf_Mage_Body.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "385bbcc9-4f2e-4002-9030-26653f589db9",
+   "lys_path": "Nerikson/NK_ElfMage/STL/Presupported/Lychee_Chitubox/Presupported_Elf_Mage_Body.lys"
+  },
+  "02aee92b-db20-4695-8c5a-764261f995be": {
+   "creator": "MrModulork",
+   "name": "STL_SpeedkultRokkitBoyz_TorsoA_Supported",
+   "relativePath": "MrModulork/Extracted/Jetpack Orcs - Modular Kit A/Presupported/STL_SpeedkultRokkitBoyz_TorsoA_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "1dad116f-2384-4fd6-9f82-5f3f0b6ea063",
+   "lys_path": "MrModulork/Extracted/Jetpack Orcs - Modular Kit A/Lychee/LYS_SpeedkultRokkitBoyz_TorsoA_Supported.lys"
+  },
+  "03587c94-3ab9-4869-bfd7-01fddc6cf418": {
+   "creator": "Loot Studios",
+   "name": "FirespitterRockerboy_32mm_Base_Supported",
+   "relativePath": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_Solid/FirespitterRockerboy_32mm_Supported_Solid/FirespitterRockerboy_32mm_Base_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "58c520de-1deb-4340-953e-2478ac24a3be",
+   "lys_path": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Base_Supported.lys"
+  },
+  "07f6f4b2-6a9e-4ab2-9991-e04ac8a441f2": {
+   "creator": "Malediction",
+   "name": "BoneclawRaider",
+   "relativePath": "Malediction/Primal/Miniatures/BoneclawRaider/BoneclawRaider_42mm_Pose1/BoneclawRaider_42mm_Pose1_ReadyToSlice/BoneclawRaider_42mm_Pose1_Base_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "8ceb4cf3-c649-4d21-ba1d-5122ecbb39f5",
+   "lys_path": "Malediction/Primal/Miniatures/BoneclawRaider/BoneclawRaider_42mm_Pose1/BoneclawRaider_42mm_Pose1_LYCHEE/BoneclawRaider_42mm_Pose1_Base_Supported.lys"
+  },
+  "17279825-1578-43b7-9909-05e73da443e1": {
+   "creator": "Heroes Infinite",
+   "name": "STL_Railing-pilar_Supported",
+   "relativePath": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Terrain/STL_Modular_Parts_Supported/STL_Railing-pilar_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "52e3a468-af8e-4be2-95de-db69457c891e",
+   "lys_path": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Terrain/LYS_Modular_Parts_Supported/LYS_Railing-pilar_Supported.lys"
+  },
+  "203d8125-eec2-4f2e-a427-32cdd9b085fc": {
+   "creator": "Claymore Miniatures",
+   "name": "AlFanor_base_75_SUP",
+   "relativePath": "Claymore Miniatures/Al'Fanor, High Mage - M/75mm/Supported/STL Files/AlFanor_base_75_SUP.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "e9f676d5-48b8-4943-a0d5-7fa2508c6d1e",
+   "lys_path": "Claymore Miniatures/Al'Fanor, High Mage - M/75mm/Supported/Lychee Files/AlFanor_base_75_SUP.lys"
+  },
+  "2cff42b0-b6f2-45c2-b043-8bef4f0b2a37": {
+   "creator": "Loot Studios",
+   "name": "GreatRaceOfYith_42mm_Base_Supported",
+   "relativePath": "Loot Studios/Arkham Horror/Crawling Chaos/All_CrawlingChaos_42mm/All_CrawlingChaos_Monster_42mm/CrawlingChaos_Monster_42mm_ReadyToSlice/GreatRaceOfYith_42mm_ReadytoSlice/GreatRaceOfYith_42mm_Base_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "fa50bf4d-70b6-49e8-98ba-874019bac05a",
+   "lys_path": "Loot Studios/Arkham Horror/Crawling Chaos/All_CrawlingChaos_42mm/All_CrawlingChaos_Monster_42mm/CrawlingChaos_Monster_42mm_LYCHEE/GreatRaceOfYith_42mm_LYCHEE/GreatRaceOfYith_42mm_Base_Supported.lys"
+  },
+  "2d809f62-0ddd-4f98-b421-7be4cd037583": {
+   "creator": "Heroes Infinite",
+   "name": "STL_80x80-01_Supported",
+   "relativePath": "Heroes Infinite/Sisters of Eternal Mercy - Unending Pilgrimage REINFORCEMENTS/Bases/STL_Bases_SUPPORTED/STL_80x80-01_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "36e7e2da-1df0-4998-830b-3865c5051a1c",
+   "lys_path": "Heroes Infinite/Sisters of Eternal Mercy - Unending Pilgrimage REINFORCEMENTS/Bases/LYS_Bases_SUPPORTED/LYS_80x80-01_Supported.lys"
+  },
+  "303eca99-9b4d-4977-a137-2be153e947a2": {
+   "creator": "Mezgike",
+   "name": "SUPPORTED-Dredgie-01-base-detail-MEZGIKE",
+   "relativePath": "Mezgike/Dredge/Dredgies/Supported/SUPPORTED-Dredgie-01-base-detail-MEZGIKE.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "fadf8acc-ee33-4fda-9225-8e6a32862cf9",
+   "lys_path": "Mezgike/Dredge/Dredgies/Lychee/LYS-Dredgie-01-base-detail-MEZGIKE.lys"
+  },
+  "354e5d8b-8648-4a38-a742-ba7a9ffbdedd": {
+   "creator": "DM Stash",
+   "name": "75_Supported_KuthrakVa_Base",
+   "relativePath": "DM Stash/Dragonborn Pugilist - Kuthrak'Va/Supported/STL/75_Supported_KuthrakVa_Base.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "ccb7985a-2dea-41f7-b5de-43ff63eecaaf",
+   "lys_path": "DM Stash/Dragonborn Pugilist - Kuthrak'Va/Supported/LYS/75_Supported_KuthrakVa_Base.lys"
+  },
+  "35ba31e3-85a1-4354-8086-7d5697d2a92c": {
+   "creator": "Kinsfolk Miniatures",
+   "name": "Hooble Goobles - Big Clobba 02 (Supported)",
+   "relativePath": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Supported/Hooble Goobles - Big Clobba 02 (Supported).stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "e5d5b65a-557a-45e0-bab7-b72f90cd9e6b",
+   "lys_path": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Woodland Hooble Goobles - Rascal Party.lys"
+  },
+  "363c280a-d013-4882-a42d-c28a56f5f790": {
+   "creator": "Death x Tiles",
+   "name": "OHS_M85_P02_05_ArmL Supported",
+   "relativePath": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "3bf317be-85b1-4dc9-8d1a-d75bb9cf56a6",
+   "lys_path": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Lys.lys"
+  },
+  "3ccfb8c9-56c4-46cd-a8c4-7ed03b5b6ad9": {
+   "creator": "Flesh of Gods",
+   "name": "STL_Necrotech-Brute_base_75MM_Supported",
+   "relativePath": "Flesh of Gods/Necrotech Brute/75MM - Enemy - Necrotech Brute/STL_Necrotech-Brute_base_75MM_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "b5cb318d-5904-4055-befc-238dd4a706a7",
+   "lys_path": "Flesh of Gods/Necrotech Brute/75MM - Enemy - Necrotech Brute/LYS_Necrotech-Brute_base_75MM_Supported.lys"
+  },
+  "541a9684-44e4-4d80-b092-3ddb2a564937": {
+   "creator": "Creature Caster",
+   "name": "Scavenger 8 Base Supported",
+   "relativePath": "Creature Caster/Individual Models/The Procurement Guild/Scavengers/Supported/STL/Scavenger 8 Base Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "41d9a96b-1f2c-4cb8-8c06-43099e2b7ee6",
+   "lys_path": "Creature Caster/Individual Models/The Procurement Guild/Scavengers/Supported/LYS/Scavenger 8 Base Supported.lys"
+  },
+  "56461b4d-7394-433b-a945-e9d520fca2f0": {
+   "creator": "Creature Crusade",
+   "name": "Isma'il Al-Aziz",
+   "relativePath": "Creature Crusade/Isma'il Al-Aziz/Supported/STL/TC-Arab_Pose_03_Base-sup.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "2d5c0c16-84d3-4692-b217-3894ca5670ae",
+   "lys_path": "Creature Crusade/Isma'il Al-Aziz/Supported/LYS/TC-Arab_Pose_03_Base (1).lys"
+  },
+  "56bf8cab-c157-4b58-8ca7-f18f80eeabde": {
+   "creator": "Cast n Play",
+   "name": "STL_SW_Door_Main_Supported",
+   "relativePath": "Cast n Play/Terrain Essentials/Sewers/Sewers_Walls/Pre-Supported/Doors/STL_SW_Door_Main_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "fdf6754a-bcf8-4be4-8379-b2dec5b68044",
+   "lys_path": "Cast n Play/Terrain Essentials/Sewers/Sewers_Walls/Pre-Supported/Doors/LYS_SW_Door_Main_Supported.lys"
+  },
+  "56ea9e5a-b1da-4042-9ce5-eb02c475d44b": {
+   "creator": "Heroes Infinite",
+   "name": "STL_Penitent_Monk_Banner_Supported",
+   "relativePath": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Minis/Supported/STL_Penitent_Monk_Supported/STL_Penitent_Monk_Banner_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "9ce73cea-6def-400d-949d-c1e2e47ad43c",
+   "lys_path": "Heroes Infinite/Overlord Sisters of Eternal Mercy - Unending Pilgrimage (December 2025)/Minis/Lychee/LYS_Penitent_Monk_Supported/LYS_Penitent_Monk_Banner_Supported.lys"
+  },
+  "5a520797-369c-404f-af11-e999659cc974": {
+   "creator": "Bulkamancer",
+   "name": "Jinx - Broken (Arcane)",
+   "relativePath": "Bulkamancer/Jinx - Broken (Arcane)/broken_symbol_pre_supported_stl/option_2_grenade_effect.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "bf0a8bb8-5b01-429d-b792-9ef76c298537",
+   "lys_path": "Bulkamancer/Jinx - Broken (Arcane)/broken_symbol_pre_supported_lys/option_2_grenade_effect.lys"
+  },
+  "63208481-8532-4c0a-9fb3-1f0d628f6f4e": {
+   "creator": "h3LL Creator",
+   "name": "Momo Ayase",
+   "relativePath": "h3LL creator/2025 08 August/Momo Ayase/PRE Supported/PRE_Momo_Bonus_Cat.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "8d48cf43-b686-408f-a65b-4e31a5770caf",
+   "lys_path": "h3LL creator/2025 08 August/Momo Ayase/Lychee files/Momo_Bonus_Cat.lys"
+  },
+  "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8": {
+   "creator": "Station Forge",
+   "name": "SUPPORTED_Angel R (repaired)",
+   "relativePath": "Station Forge/Diorama Stands/Church 1/SUPPORTED_Angel R (repaired).stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "7a2c030d-cba0-49d2-8e28-03f2f2f75716",
+   "lys_path": "Station Forge/Diorama Stands/Church 1/LYS_Angel R (repaired).lys"
+  },
+  "6cd5c067-ec79-4edf-a8d5-fca78eaeec72": {
+   "creator": "Claymore Miniatures",
+   "name": "STL_DrowSorcerer_Base_32mm_SUP",
+   "relativePath": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/STL Supported/STL_DrowSorcerer_Base_32mm_SUP.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "679a6b3f-b319-4afd-bf65-efe955ba2cc9",
+   "lys_path": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/Lychee Files/LYS_DrowSorcerer_Base_32mm_SUP.lys"
+  },
+  "70f1bf40-6268-4931-9559-e8916f1f8a27": {
+   "creator": "Kinsfolk Miniatures",
+   "name": "Hooble Goobles - Clobba 02 (Supported)",
+   "relativePath": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Supported/Hooble Goobles - Clobba 02 (Supported).stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "e5d5b65a-557a-45e0-bab7-b72f90cd9e6b",
+   "lys_path": "Kinsfolk Miniatures/Woodland Hooble Goobles - Rascal Party/Woodland Hooble Goobles - Rascal Party.lys"
+  },
+  "71379318-1b61-4def-8b8f-422be6df4856": {
+   "creator": "Creature Crusade",
+   "name": "Al-Sayf al-Khafi, The Hidden Blade",
+   "relativePath": "Creature Crusade/Al-Sayf al-Khafi, The Hidden Blade/Supported/STL/DuneAssasines_CH03_Base-sup.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "c3b87111-8fc3-4104-8ae9-b5dbaa7fa27e",
+   "lys_path": "Creature Crusade/Al-Sayf al-Khafi, The Hidden Blade/Supported/LYS/DuneAssasines_CH03_Base (1).lys"
+  },
+  "79744c8e-1516-4a26-bfb3-aba15c2ff13a": {
+   "creator": "Malediction",
+   "name": "Husk_3",
+   "relativePath": "Malediction/Order/Husks/Husk_3/Husk3_42mm_ReadyToSLice/Husk3_42mm_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "69437365-51d0-4d20-9752-9631edd3c12e",
+   "lys_path": "Malediction/Order/Husks/Husk_3/Husk3_42mm_LYCHEE/Husk3_42mm_Supported.lys"
+  },
+  "7ada7b35-de84-43b5-b848-f6a9c5cef4a3": {
+   "creator": "DM Stash",
+   "name": "32_Supported_Skraa_Base",
+   "relativePath": "DM Stash/Black Dragonborn Barbarian - Skraa Dark-Eye/Supported/STL/32_Supported_Skraa_Base.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "11d62905-3be3-4340-b031-3cf3dc382e3e",
+   "lys_path": "DM Stash/Black Dragonborn Barbarian - Skraa Dark-Eye/Supported/LYS/32_Supported_Skraa_Base.lys"
+  },
+  "7e2dd4ca-62d5-4cee-9fb5-f5a5bef3adfc": {
+   "creator": "Bite the Bullet",
+   "name": "2310_co_abberant_hybrid_b_ps",
+   "relativePath": "Bite The Bullet/Extracted/40_23-10 BULLET HELL HEROES PT.2/_Crossovers/Crossover (CrippledGodFoundry)/Pre-Supported/2310_co_abberant_hybrid_b_ps.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "19715340-e8cd-441b-95d3-8521601b7480",
+   "lys_path": "Bite The Bullet/Extracted/40_23-10 BULLET HELL HEROES PT.2/_Crossovers/Crossover (CrippledGodFoundry)/Pre-Supported/2310_co_abberant_hybrid_b_ps.lys"
+  },
+  "7f133a72-7a53-4474-ba38-bc094efbffe9": {
+   "creator": "Dragon Trappers Lodge",
+   "name": "STL_SparrowRider_D_Stand_v01_Supported",
+   "relativePath": "Dragon Trappers Lodge/Champions of the Critterfolk Pt. 1/Sparrow Riders/Supported/D/STL_SparrowRider_D_Stand_v01_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "08913136-fef1-4840-a78b-36f7c8269fb2",
+   "lys_path": "Dragon Trappers Lodge/Champions of the Critterfolk Pt. 1/Sparrow Riders/Supported/D/LYS_SparrowRider_D_Stand_v01_Supported.lys"
+  },
+  "7f6b8909-9290-454f-9ea5-08349def5652": {
+   "creator": "Claymore Miniatures",
+   "name": "STL_RatInfestation_32mm_Supported",
+   "relativePath": "Claymore Miniatures/Rat Infestation - S/32mm/Supported/STL Files/STL_RatInfestation_32mm_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "76196354-506e-4235-9336-8cc3e150b422",
+   "lys_path": "Claymore Miniatures/Rat Infestation - S/32mm/Supported/Lychee Files/LYS_RatInfestation_32mm_Supported.lys"
+  },
+  "8342e4d2-080f-4cb1-8c57-e707f65b595a": {
+   "creator": "Brotherwise Games",
+   "name": "32_Supported_Windrunner_BaseMagic",
+   "relativePath": "Brotherwise Games/Windrunner/Supported/STL/32_Supported_Windrunner_BaseMagic.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "81329979-fcd0-4ff9-98e2-ee0c3ef27783",
+   "lys_path": "Brotherwise Games/Windrunner/Supported/LYS/32_Supported_Windrunner_BaseMagic.lys"
+  },
+  "891abe26-6182-445b-9a0e-991777cf696f": {
+   "creator": "SolGood Creations",
+   "name": "2 hollowed",
+   "relativePath": "SolGood Creations/ALL Grimdark Terrain-02/15/Pre-Supported/2 hollowed.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "8a84b163-ce4c-48df-8974-b0dd62657c7c",
+   "lys_path": "SolGood Creations/ALL Grimdark Terrain-02/15/Pre-Supported/2 hollowed.lys"
+  },
+  "9bcbf50d-10b7-46e9-80f9-24170cf9604b": {
+   "creator": "Creature Caster",
+   "name": "Grail Thrall F",
+   "relativePath": "Creature Caster/The Great Hunger/The Great Maw/Grail Thrall F/Supported/STL/Thrall F_Base32mm-sup.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "1f3bab0b-8e88-41b8-a60c-d4736aa7e362",
+   "lys_path": "Creature Caster/The Great Hunger/The Great Maw/Grail Thrall F/Supported/LYS/Thrall F_Base32mm (1).lys"
+  },
+  "a1978143-192d-436f-bddd-8da4cfaf7532": {
+   "creator": "Heroes Infinite",
+   "name": "STL_Evercursed_A_base_FIX_Supported",
+   "relativePath": "Heroes Infinite/Grim Darkness of the Expurgators Part I/Miniatures/Supported/STL_Evercursed_SUPPORTED/STL_Evercursed_A_base_FIX_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "fb5426a7-5da0-4157-991c-ff53b5d35aa3",
+   "lys_path": "Heroes Infinite/Grim Darkness of the Expurgators Part I/Miniatures/Lychee/LYS_Evercursed_SUPPORTED/LYS_Evercursed_A_base_FIX_Supported.lys"
+  },
+  "ade48bd9-c673-47b1-a150-6f4e1a2c0b4b": {
+   "creator": "Nerikson",
+   "name": "STL_head_supported",
+   "relativePath": "Nerikson/NK_Alyara Bust/STL/Presupported/STL_head_supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "b0bfb3fb-f0ee-4137-af79-1cf18f217af7",
+   "lys_path": "Nerikson/NK_Alyara Bust/STL/Presupported/LYS_head_supported.lys"
+  },
+  "b49fa848-13f2-46f1-a39e-ff8d868baa6e": {
+   "creator": "Nerikson",
+   "name": "STL_Halfling_Rogue_Base_Presupported",
+   "relativePath": "Nerikson/NK_HalflingRogue/STL/Presupported/STL/STL_Halfling_Rogue_Base_Presupported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "2ea13991-0f9a-4beb-9166-67a62abb4052",
+   "lys_path": "Nerikson/NK_HalflingRogue/STL/Presupported/Lychee/LYS_Halfling_Rogue_Base_Presupported.lys"
+  },
+  "b6d41f14-c0d5-47e1-af8b-9a6aafcff2fe": {
+   "creator": "One Page Rules",
+   "name": "STL_HEF_Base_Square_100mm_50mm_suppported",
+   "relativePath": "One Page Rules/Extracted/HEF - Bases/Supported STL/STL_HEF_Base_Square_100mm_50mm_suppported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "cf8ab731-ebb6-4ff9-9f01-ec703574b261",
+   "lys_path": "One Page Rules/Extracted/HEF - Bases/Supported LYS/LYS_HEF_Base_Square_100mm_50mm_suppported.lys"
+  },
+  "c3367585-9e09-4fce-a752-f76a558c34c3": {
+   "creator": "DM Stash",
+   "name": "32_Supported_Ark_Tentacle6",
+   "relativePath": "DM Stash/Eldritch Abomination Vessel - Ark of the Enlightened/Supported/STL/32_Supported_Ark_Tentacle6.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "0682df3d-730d-46c9-9d4f-2888b9a001e2",
+   "lys_path": "DM Stash/Eldritch Abomination Vessel - Ark of the Enlightened/Supported/LYS/32_Supported_Ark_Tentacle6.lys"
+  },
+  "c8758887-e609-47f1-b1a6-321ed4fe56b4": {
+   "creator": "Dungeon Classics",
+   "name": "STL_Yegg_Fat_Goblin_Chef_Base_v01_Supported",
+   "relativePath": "Dungeon Classics/Goblin Cook.png/Supported/STL_Yegg_Fat_Goblin_Chef_Base_v01_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "d0fba6f6-6410-43c1-9e3b-eb2fac0a945d",
+   "lys_path": "Dungeon Classics/Goblin Cook.png/Supported/LYS_Yegg_Fat_Goblin_Chef_Base_v01_Supported.lys"
+  },
+  "c9144c30-6aa2-4cbf-9b00-0ceedb63236c": {
+   "creator": "Loot Studios",
+   "name": "OfficerChristopherSanders_75mm_Base_Supported_Hollow",
+   "relativePath": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_ReadyToSlice/OfficerChristopherSanders_75mm_Base_Supported_Hollow.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "ca5ff7a9-bc32-4fa3-8043-cc94957faf65",
+   "lys_path": "Loot Studios/Sci-Fi/Horrors From Beyond (April 2024)/All_75mm_HorrorsFromBeyond/All_HorrorsFromBeyond_Adults_75mm/HorrorsFromBeyond_Adults_75mm_LYCHEE/OfficerChristopherSanders_75mm_LYCHEE/OfficerChristopherSanders_75mm_Base_Supported.lys"
+  },
+  "d2878b82-c53e-4c39-ba44-8739d80b427a": {
+   "creator": "Malediction",
+   "name": "DuskwoodProwler",
+   "relativePath": "Malediction/Legion/Miniatures/DuskwoodProwler/DuskwoodProwler_Pose2/DuskwoodProwler_42mm_Pose2_ReadytoSlice/DuskwoodProwler_42mm_Pose2_Base_Supporte.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "16aeffe2-ad18-45b1-929f-61f15d44a92c",
+   "lys_path": "Malediction/Legion/Miniatures/DuskwoodProwler/DuskwoodProwler_Pose2/DuskwoodProwler_42mm_Pose2_LYCHEE/DuskwoodProwler_42mm_Pose2_Base_Supporte.lys"
+  },
+  "d669494a-e8ba-4360-85de-7aa0bbc00c39": {
+   "creator": "The Witchguild",
+   "name": "STL_Head_Supported",
+   "relativePath": "The Witchguild/Extracted/Pumpkin Witch Figurine/STL - CUT + SUPPORTED/STL_Head_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "60ebc122-5582-46d8-a083-246da4e5ba28",
+   "lys_path": "The Witchguild/Extracted/Pumpkin Witch Figurine/LYS - CUT + HOLLOWED/LYS_Head_Supported.lys"
+  },
+  "dde67a86-f36d-45d6-a591-a958467435c5": {
+   "creator": "Nerikson",
+   "name": "Presupported_Elf_Mage_Base",
+   "relativePath": "Nerikson/NK_ElfMage/STL/Presupported/STL/Presupported_Elf_Mage_Base.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "93face8b-29d1-4f7e-95a1-265c4603fa82",
+   "lys_path": "Nerikson/NK_ElfMage/STL/Presupported/Lychee_Chitubox/Presupported_Elf_Mage_Base.lys"
+  },
+  "e1c9688c-63c1-4612-b3b2-b601dbcc94eb": {
+   "creator": "GoonMaster",
+   "name": "Pilea Cadierei 6",
+   "relativePath": "GoonMaster/Extracted/Basing Bits 199 Pilea Cadierei/Models/Supported/Basing Bits 199 Pilea Cadierei 6_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "4f5a645b-d5f5-480d-813d-9eab11ca5e78",
+   "lys_path": "GoonMaster/Extracted/Basing Bits 199 Pilea Cadierei/Models/Supported/Basing Bits 199 Pilea Cadierei 6_Lychee.lys"
+  },
+  "e369e88f-61f1-4233-b4dc-78ca91066033": {
+   "creator": "Factory Fortress",
+   "name": "STL_TCDM6004 Corpse Guard_01_arm_L_Supported",
+   "relativePath": "Trench Crusade/_PIRATED_/Black Grail/TCDM6004 Corpse Guard/Supported/STL_TCDM6004 Corpse Guard_01_arm_L_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "2aee3594-0ec7-4682-a376-8966e858129d",
+   "lys_path": "Trench Crusade/_PIRATED_/Black Grail/TCDM6004 Corpse Guard/Supported/LYS_TCDM6004 Corpse Guard_01_arm_L_Supported.lys"
+  },
+  "e461570f-3133-4cf7-b3d3-15852cf94ecf": {
+   "creator": "Brotherwise Games",
+   "name": "32_Supported_FlowingOne_Base",
+   "relativePath": "Brotherwise Games/Flowing One/Flowing One/Supported/STL/32_Supported_FlowingOne_Base.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "ed9d6b45-a45e-4bf5-9afe-d64de9fa83a7",
+   "lys_path": "Brotherwise Games/Flowing One/Flowing One/Supported/LYS/32_Supported_FlowingOne_Base.lys"
+  },
+  "e93b0704-47a3-42d5-b547-ee8dba29ae53": {
+   "creator": "Dungeon Classics",
+   "name": "STL_Drow_Male_base_Supported",
+   "relativePath": "Dungeon Classics/Drow Male/Supported/STL_Drow_Male_base_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "1740f748-bc1f-4ddb-8460-dd23d702c49e",
+   "lys_path": "Dungeon Classics/Drow Male/Supported/LYS_Drow_Male_base_Supported.lys"
+  },
+  "f5e287db-c10b-44c2-a8ee-ef4036c48c5d": {
+   "creator": "PiperMakes",
+   "name": "Gravtank Fullpack",
+   "relativePath": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "94ebf5be-b974-45d3-ad08-2200966f6c14",
+   "lys_path": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.lys"
+  },
+  "fa8dc038-d460-447e-b94c-457ed9a1314f": {
+   "creator": "Creature Caster",
+   "name": "Prowlers",
+   "relativePath": "Creature Caster/The Great Hunger/The Fast and the Ferocious/Prowlers/Supported/STL/Prowlers_CH01_Base-sup.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "18654260-a2c4-4c18-91e2-54009eeaef31",
+   "lys_path": "Creature Caster/The Great Hunger/The Fast and the Ferocious/Prowlers/Supported/LYS/Prowlers_CH01_Base (1).lys"
+  },
+  "fdba2709-3be5-4a33-9eab-fd18368d97c5": {
+   "creator": "MrModulork",
+   "name": "STL_SpeedkultRokkitBoyz_HeadA_01_Supported",
+   "relativePath": "MrModulork/Extracted/Jetpack Orcs - Modular Kit A/Presupported/STL_SpeedkultRokkitBoyz_HeadA_01_Supported.stl",
+   "raftHeightMm": 3.0,
+   "lys_id": "07221cc3-cafb-42c3-a110-d6551c45b46c",
+   "lys_path": "MrModulork/Extracted/Jetpack Orcs - Modular Kit A/Lychee/LYS_SpeedkultRokkitBoyz_HeadA_01_Supported.lys"
+  }
+ },
+ "cases": [
+  {
+   "case": "t01_trunk_web_raft",
+   "model": "354e5d8b-8648-4a38-a742-ba7a9ffbdedd",
+   "supports": [
+    "s32464"
+   ],
+   "scope": "structure",
+   "situation": "trunk web raft",
+   "title": "An upright trunk on a web raft (Lychee's triangle foundation)"
+  },
+  {
+   "case": "t02_trunk_wall_raft",
+   "model": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+   "supports": [
+    "s7"
+   ],
+   "scope": "structure",
+   "situation": "trunk wall raft",
+   "title": "An upright trunk on a walled raft (Lychee's vector wall foundation)"
+  },
+  {
+   "case": "t03_trunk_no_raft",
+   "model": "03587c94-3ab9-4869-bfd7-01fddc6cf418",
+   "supports": [
+    "s6050"
+   ],
+   "scope": "structure",
+   "situation": "trunk no raft",
+   "title": "An upright trunk on its own square foot, no raft"
+  },
+  {
+   "case": "t04_trunk_pixel_raft",
+   "model": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+   "supports": [
+    "s139"
+   ],
+   "scope": "structure",
+   "situation": "trunk pixel raft",
+   "title": "An upright trunk on a pixelated raft"
+  },
+  {
+   "case": "t05_trunk_cone_foot",
+   "model": "17279825-1578-43b7-9909-05e73da443e1",
+   "supports": [
+    "s12411"
+   ],
+   "scope": "structure",
+   "situation": "trunk cone foot",
+   "title": "An upright trunk on a cone foot"
+  },
+  {
+   "case": "t06_trunk_octagon_foot",
+   "model": "9bcbf50d-10b7-46e9-80f9-24170cf9604b",
+   "supports": [
+    "s2482"
+   ],
+   "scope": "structure",
+   "situation": "trunk octagon foot",
+   "title": "A trunk on an octagon foot"
+  },
+  {
+   "case": "t07_trunk_knee",
+   "model": "3ccfb8c9-56c4-46cd-a8c4-7ed03b5b6ad9",
+   "supports": [
+    "s101"
+   ],
+   "scope": "structure",
+   "situation": "trunk knee",
+   "title": "A trunk with a knee: an upright pillar, then a leaning run to the tip"
+  },
+  {
+   "case": "t08_trunk_long_lean",
+   "model": "6cd5c067-ec79-4edf-a8d5-fca78eaeec72",
+   "supports": [
+    "s29906"
+   ],
+   "scope": "structure",
+   "situation": "trunk long lean",
+   "title": "A trunk leaning more than 30 degrees for over 8 mm"
+  },
+  {
+   "case": "t09_trunk_thick",
+   "model": "6cd5c067-ec79-4edf-a8d5-fca78eaeec72",
+   "supports": [
+    "s29868"
+   ],
+   "scope": "structure",
+   "situation": "trunk thick",
+   "title": "A thick trunk (shaft over 1.5 mm)"
+  },
+  {
+   "case": "t10_trunk_long_tip",
+   "model": "ade48bd9-c673-47b1-a150-6f4e1a2c0b4b",
+   "supports": [
+    "s6020"
+   ],
+   "scope": "structure",
+   "situation": "trunk long tip",
+   "title": "A trunk with a tip cone over 5 mm long"
+  },
+  {
+   "case": "t12_trunk_read_as_branch",
+   "model": "e1c9688c-63c1-4612-b3b2-b601dbcc94eb",
+   "supports": [
+    "s213",
+    "s214",
+    "s216"
+   ],
+   "scope": "section",
+   "situation": "trunk read as branch",
+   "title": "A bare trunk with its two nearest neighbours (in its whole model the reader hangs it from one of them)"
+  },
+  {
+   "case": "t13_trunk_tip_missing",
+   "model": "c8758887-e609-47f1-b1a6-321ed4fe56b4",
+   "supports": [
+    "s4320"
+   ],
+   "scope": "structure",
+   "situation": "trunk tip missing",
+   "title": "A trunk whose tip the reader misses"
+  },
+  {
+   "case": "t14_trunk_tip_in_raft_band",
+   "model": "56461b4d-7394-433b-a945-e9d520fca2f0",
+   "supports": [
+    "s2506"
+   ],
+   "scope": "structure",
+   "situation": "trunk tip in raft band",
+   "title": "A trunk with its tip inside the raft band (contact under 3.5 mm)"
+  },
+  {
+   "case": "t17_trunk_straight",
+   "model": "363c280a-d013-4882-a42d-c28a56f5f790",
+   "supports": [
+    "s557"
+   ],
+   "scope": "structure",
+   "situation": "trunk straight",
+   "title": "A trunk set straight in Lychee (no knee, leaning from the foot)"
+  },
+  {
+   "case": "p01_tip_tiny",
+   "model": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+   "supports": [
+    "s14"
+   ],
+   "scope": "structure",
+   "situation": "tip tiny",
+   "title": "A tip with a contact of 0.2 mm or less"
+  },
+  {
+   "case": "p02_tip_wide",
+   "model": "c9144c30-6aa2-4cbf-9b00-0ceedb63236c",
+   "supports": [
+    "s2393"
+   ],
+   "scope": "structure",
+   "situation": "tip wide",
+   "title": "A tip with a contact over 0.7 mm"
+  },
+  {
+   "case": "p03_tip_sideways",
+   "model": "56bf8cab-c157-4b58-8ca7-f18f80eeabde",
+   "supports": [
+    "s136"
+   ],
+   "scope": "structure",
+   "situation": "tip sideways",
+   "title": "A tip reaching the model sideways"
+  },
+  {
+   "case": "p05_tip_grazing",
+   "model": "a1978143-192d-436f-bddd-8da4cfaf7532",
+   "supports": [
+    "s3"
+   ],
+   "scope": "structure",
+   "situation": "tip grazing",
+   "title": "A tip meeting the surface at more than 60 degrees off its normal"
+  },
+  {
+   "case": "p06_tip_grazing_missed",
+   "model": "02aee92b-db20-4695-8c5a-764261f995be",
+   "supports": [
+    "s47"
+   ],
+   "scope": "section",
+   "situation": "tip grazing missed",
+   "title": "A grazing tip the reader misses"
+  },
+  {
+   "case": "p07_tip_thin_wall",
+   "model": "5a520797-369c-404f-af11-e999659cc974",
+   "supports": [
+    "s2202"
+   ],
+   "scope": "structure",
+   "situation": "tip thin wall",
+   "title": "A tip on a wall under 0.6 mm thick"
+  },
+  {
+   "case": "p08_tip_thin_wall_size",
+   "model": "03587c94-3ab9-4869-bfd7-01fddc6cf418",
+   "supports": [
+    "s5850"
+   ],
+   "scope": "section",
+   "situation": "tip thin wall size",
+   "title": "A support between two parts of the model with a tip on a thin wall (sized wrongly in its whole model)"
+  },
+  {
+   "case": "p10_tip_on_edge_size",
+   "model": "354e5d8b-8648-4a38-a742-ba7a9ffbdedd",
+   "supports": [
+    "s32389"
+   ],
+   "scope": "section",
+   "situation": "tip on edge size",
+   "title": "Tips on an edge or fine detail (one is sized wrongly in its whole model)"
+  },
+  {
+   "case": "p12_tips_close",
+   "model": "e461570f-3133-4cf7-b3d3-15852cf94ecf",
+   "supports": [
+    "s736",
+    "s737"
+   ],
+   "scope": "section",
+   "situation": "tips close",
+   "title": "Two tips less than 0.5 mm apart"
+  },
+  {
+   "case": "p13_tips_close_missed",
+   "model": "3ccfb8c9-56c4-46cd-a8c4-7ed03b5b6ad9",
+   "supports": [
+    "s52",
+    "s139"
+   ],
+   "scope": "section",
+   "situation": "tips close missed",
+   "title": "Two tips less than 0.5 mm apart, one missed by the reader"
+  },
+  {
+   "case": "p14_tip_direction",
+   "model": "02aee92b-db20-4695-8c5a-764261f995be",
+   "supports": [
+    "s36"
+   ],
+   "scope": "section",
+   "situation": "tip direction",
+   "title": "A cone tip whose direction the reader gets wrong"
+  },
+  {
+   "case": "b01_branch",
+   "model": "c8758887-e609-47f1-b1a6-321ed4fe56b4",
+   "supports": [
+    "s4345"
+   ],
+   "scope": "structure",
+   "situation": "branch",
+   "title": "A trunk with one or two branches"
+  },
+  {
+   "case": "b02_branch_fan",
+   "model": "71379318-1b61-4def-8b8f-422be6df4856",
+   "supports": [
+    "s11368"
+   ],
+   "scope": "structure",
+   "situation": "branch fan",
+   "title": "A trunk with three or more branches"
+  },
+  {
+   "case": "b03_tree",
+   "model": "2d809f62-0ddd-4f98-b421-7be4cd037583",
+   "supports": [
+    "s9118"
+   ],
+   "scope": "structure",
+   "situation": "tree",
+   "title": "A whole tree: a trunk with seven or more supports hanging from it"
+  },
+  {
+   "case": "b04_branch_of_branch",
+   "model": "5a520797-369c-404f-af11-e999659cc974",
+   "supports": [
+    "s2304"
+   ],
+   "scope": "structure",
+   "situation": "branch of branch",
+   "title": "A branch of a branch"
+  },
+  {
+   "case": "b05_branch_depth3",
+   "model": "7f6b8909-9290-454f-9ea5-08349def5652",
+   "supports": [
+    "s15"
+   ],
+   "scope": "structure",
+   "situation": "branch depth3",
+   "title": "Branches three deep"
+  },
+  {
+   "case": "b06_branch_short",
+   "model": "7ada7b35-de84-43b5-b848-f6a9c5cef4a3",
+   "supports": [
+    "s59"
+   ],
+   "scope": "section",
+   "situation": "branch short",
+   "title": "A branch with a shaft under 1 mm (the cone almost on its host)"
+  },
+  {
+   "case": "b07_branch_level",
+   "model": "c8758887-e609-47f1-b1a6-321ed4fe56b4",
+   "supports": [
+    "s4321"
+   ],
+   "scope": "section",
+   "situation": "branch level",
+   "title": "A branch running nearly level"
+  },
+  {
+   "case": "b08_branch_read_as_trunk",
+   "model": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+   "supports": [
+    "s140"
+   ],
+   "scope": "section",
+   "situation": "branch read as trunk",
+   "title": "A branch the reader stands on the plate"
+  },
+  {
+   "case": "b09_branch_route",
+   "model": "fa8dc038-d460-447e-b94c-457ed9a1314f",
+   "supports": [
+    "s3120"
+   ],
+   "scope": "section",
+   "situation": "branch route",
+   "title": "A branch on a trunk (routed wrongly in its whole model)"
+  },
+  {
+   "case": "b10_branch_braced",
+   "model": "56bf8cab-c157-4b58-8ca7-f18f80eeabde",
+   "supports": [
+    "s20",
+    "s72"
+   ],
+   "scope": "section",
+   "situation": "branch braced",
+   "title": "A branch with a brace on it"
+  },
+  {
+   "case": "b12_kickstand",
+   "model": "71379318-1b61-4def-8b8f-422be6df4856",
+   "supports": [
+    "s11452"
+   ],
+   "scope": "section",
+   "situation": "kickstand",
+   "title": "A kickstand: a leg from the plate leaning on a support"
+  },
+  {
+   "case": "b13_branch_on_kickstand",
+   "model": "71379318-1b61-4def-8b8f-422be6df4856",
+   "supports": [
+    "s11389"
+   ],
+   "scope": "section",
+   "situation": "branch on kickstand",
+   "title": "A branch hanging from a kickstand"
+  },
+  {
+   "case": "b14_branch_on_strut",
+   "model": "8342e4d2-080f-4cb1-8c57-e707f65b595a",
+   "supports": [
+    "s423"
+   ],
+   "scope": "section",
+   "situation": "branch on strut",
+   "title": "A branch hanging from a support between two parts of the model"
+  },
+  {
+   "case": "l01_leaf",
+   "model": "56bf8cab-c157-4b58-8ca7-f18f80eeabde",
+   "supports": [
+    "s45"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf",
+   "title": "A mini support (a tapered rod with no cone) on a trunk"
+  },
+  {
+   "case": "l02_leaf_read_as_trunk",
+   "model": "fdba2709-3be5-4a33-9eab-fd18368d97c5",
+   "supports": [
+    "s19"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf read as trunk",
+   "title": "A mini support on a trunk (stood on the plate in its whole model)"
+  },
+  {
+   "case": "l03_leaf_on_branch",
+   "model": "7f6b8909-9290-454f-9ea5-08349def5652",
+   "supports": [
+    "s10"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf on branch",
+   "title": "A mini support on a branch"
+  },
+  {
+   "case": "l04_leaf_on_strut",
+   "model": "79744c8e-1516-4a26-bfb3-aba15c2ff13a",
+   "supports": [
+    "s146"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf on strut",
+   "title": "A mini support on a mini support between two parts of the model"
+  },
+  {
+   "case": "l05_leaf_on_leaf",
+   "model": "fdba2709-3be5-4a33-9eab-fd18368d97c5",
+   "supports": [
+    "s32"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf on leaf",
+   "title": "A mini support on a mini support"
+  },
+  {
+   "case": "l07_leaf_long",
+   "model": "d2878b82-c53e-4c39-ba44-8739d80b427a",
+   "supports": [
+    "s27"
+   ],
+   "scope": "section",
+   "situation": "mini support on a host: leaf long",
+   "title": "A mini support over 6 mm long"
+  },
+  {
+   "case": "m01_hair",
+   "model": "70f1bf40-6268-4931-9559-e8916f1f8a27",
+   "supports": [
+    "s3357"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: hair",
+   "title": "A hair support between two parts of the model, under 1 mm long"
+  },
+  {
+   "case": "m02_hair_direction",
+   "model": "dde67a86-f36d-45d6-a591-a958467435c5",
+   "supports": [
+    "s7"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: hair direction",
+   "title": "A hair support between two parts of the model that the reader misses"
+  },
+  {
+   "case": "m03_micro",
+   "model": "363c280a-d013-4882-a42d-c28a56f5f790",
+   "supports": [
+    "s564"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: micro",
+   "title": "A mini support between two parts of the model, 1 to 5 mm long"
+  },
+  {
+   "case": "m04_micro_extra_tip",
+   "model": "dde67a86-f36d-45d6-a591-a958467435c5",
+   "supports": [
+    "s4"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: micro extra tip",
+   "title": "A mini support between two parts of the model with an extra reader tip"
+  },
+  {
+   "case": "m05_micro_long",
+   "model": "79744c8e-1516-4a26-bfb3-aba15c2ff13a",
+   "supports": [
+    "s151"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: micro long",
+   "title": "A mini support between two parts of the model, over 5 mm long"
+  },
+  {
+   "case": "m06_strut",
+   "model": "35ba31e3-85a1-4354-8086-7d5697d2a92c",
+   "supports": [
+    "s1471"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: strut",
+   "title": "A cone-ended support between two parts of the model"
+  },
+  {
+   "case": "m07_strut_wrong",
+   "model": "dde67a86-f36d-45d6-a591-a958467435c5",
+   "supports": [
+    "s666"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: strut wrong",
+   "title": "A cone-ended support between two parts of the model the reader gets wrong"
+  },
+  {
+   "case": "m08_micro_missed",
+   "model": "363c280a-d013-4882-a42d-c28a56f5f790",
+   "supports": [
+    "s544"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: micro missed",
+   "title": "A mini support between two parts of the model (a tip is missed in its whole model)"
+  },
+  {
+   "case": "m09_micro_as_branch",
+   "model": "56ea9e5a-b1da-4042-9ce5-eb02c475d44b",
+   "supports": [
+    "s55"
+   ],
+   "scope": "structure",
+   "situation": "support between two parts of the model: micro as branch",
+   "title": "A mini support between two parts of the model that the reader misses"
+  },
+  {
+   "case": "x01_brace",
+   "model": "e93b0704-47a3-42d5-b547-ee8dba29ae53",
+   "supports": [
+    "s2442",
+    "s2419"
+   ],
+   "scope": "section",
+   "situation": "brace",
+   "title": "Two trunks joined by one diagonal brace"
+  },
+  {
+   "case": "x03_brace_x",
+   "model": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+   "supports": [
+    "s4",
+    "s3"
+   ],
+   "scope": "section",
+   "situation": "brace x",
+   "title": "Two trunks joined by crossed braces (an X)"
+  },
+  {
+   "case": "x04_brace_x_ends",
+   "model": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+   "supports": [
+    "s4",
+    "s5"
+   ],
+   "scope": "section",
+   "situation": "brace x ends",
+   "title": "Crossed braces the reader reads differently: one as a shaft, others where Lychee has none"
+  },
+  {
+   "case": "x05_brace_zigzag",
+   "model": "b49fa848-13f2-46f1-a39e-ff8d868baa6e",
+   "supports": [
+    "s134",
+    "s133"
+   ],
+   "scope": "section",
+   "situation": "brace zigzag",
+   "title": "Two trunks joined by a zigzag of braces"
+  },
+  {
+   "case": "x06_brace_zigzag_lost",
+   "model": "541a9684-44e4-4d80-b092-3ddb2a564937",
+   "supports": [
+    "s4639",
+    "s4649"
+   ],
+   "scope": "section",
+   "situation": "brace zigzag lost",
+   "title": "A zigzag of braces with a brace the reader loses"
+  },
+  {
+   "case": "x07_brace_ladder",
+   "model": "6b37ef0f-b6f3-4db8-bc91-0d37dfff85f8",
+   "supports": [
+    "s17",
+    "s15"
+   ],
+   "scope": "section",
+   "situation": "brace ladder",
+   "title": "Two trunks joined by parallel braces (a ladder)"
+  },
+  {
+   "case": "x09_brace_foot",
+   "model": "a1978143-192d-436f-bddd-8da4cfaf7532",
+   "supports": [
+    "s24",
+    "s27"
+   ],
+   "scope": "section",
+   "situation": "brace foot",
+   "title": "A brace with its lower end in the root zone (under 2 mm), read as a shaft"
+  },
+  {
+   "case": "x11_brace_in_root_zone",
+   "model": "07f6f4b2-6a9e-4ab2-9991-e04ac8a441f2",
+   "supports": [
+    "s855",
+    "s798"
+   ],
+   "scope": "section",
+   "situation": "brace in root zone",
+   "title": "A brace wholly in the root zone (both ends under 2 mm), beside one with its lower end there"
+  },
+  {
+   "case": "x12_brace_steep",
+   "model": "354e5d8b-8648-4a38-a742-ba7a9ffbdedd",
+   "supports": [
+    "s32633",
+    "s32634"
+   ],
+   "scope": "section",
+   "situation": "brace steep",
+   "title": "A steep brace"
+  },
+  {
+   "case": "x13_brace_long",
+   "model": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+   "supports": [
+    "s163",
+    "s132"
+   ],
+   "scope": "section",
+   "situation": "brace long",
+   "title": "A brace over 10 mm long"
+  },
+  {
+   "case": "x14_brace_short",
+   "model": "363c280a-d013-4882-a42d-c28a56f5f790",
+   "supports": [
+    "s553",
+    "s566"
+   ],
+   "scope": "section",
+   "situation": "brace short",
+   "title": "A brace under 1.5 mm long"
+  },
+  {
+   "case": "x16_brace_branch",
+   "model": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+   "supports": [
+    "s144",
+    "s143"
+   ],
+   "scope": "section",
+   "situation": "brace branch",
+   "title": "A brace between a branch and a trunk"
+  },
+  {
+   "case": "x17_brace_kickstand",
+   "model": "c3367585-9e09-4fce-a752-f76a558c34c3",
+   "supports": [
+    "s34327",
+    "s34262"
+   ],
+   "scope": "section",
+   "situation": "brace kickstand",
+   "title": "A brace between a kickstand and a trunk"
+  },
+  {
+   "case": "x18_brace_struts",
+   "model": "203d8125-eec2-4f2e-a427-32cdd9b085fc",
+   "supports": [
+    "s727",
+    "s730"
+   ],
+   "scope": "section",
+   "situation": "brace struts",
+   "title": "A brace between two supports that stand on the model"
+  },
+  {
+   "case": "x19_brace_branch_strut",
+   "model": "203d8125-eec2-4f2e-a427-32cdd9b085fc",
+   "supports": [
+    "s700",
+    "s702"
+   ],
+   "scope": "section",
+   "situation": "brace branch strut",
+   "title": "A brace between a branch and a support standing on the model"
+  },
+  {
+   "case": "x20_cage_a",
+   "model": "3ccfb8c9-56c4-46cd-a8c4-7ed03b5b6ad9",
+   "supports": [
+    "s52",
+    "s141",
+    "s169",
+    "s137"
+   ],
+   "scope": "section",
+   "situation": "cage",
+   "title": "Three or more trunks tied by braces"
+  },
+  {
+   "case": "x20_cage_b",
+   "model": "2cff42b0-b6f2-45c2-b043-8bef4f0b2a37",
+   "supports": [
+    "s7950",
+    "s7934",
+    "s7949",
+    "s7935"
+   ],
+   "scope": "section",
+   "situation": "cage",
+   "title": "Three or more trunks tied by braces"
+  },
+  {
+   "case": "h01_hollow_strut",
+   "model": "c9144c30-6aa2-4cbf-9b00-0ceedb63236c",
+   "supports": [
+    "s2390"
+   ],
+   "scope": "structure",
+   "situation": "inside a hollow or deep recess: strut",
+   "title": "A support between two inner faces of a hollow or deep recess"
+  },
+  {
+   "case": "h02_hollow_trunk",
+   "model": "dde67a86-f36d-45d6-a591-a958467435c5",
+   "supports": [
+    "s2233"
+   ],
+   "scope": "section",
+   "situation": "inside a hollow or deep recess: trunk",
+   "title": "A trunk standing inside a hollow or deep recess"
+  },
+  {
+   "case": "h03_hollow_branch",
+   "model": "203d8125-eec2-4f2e-a427-32cdd9b085fc",
+   "supports": [
+    "s694"
+   ],
+   "scope": "section",
+   "situation": "inside a hollow or deep recess: branch",
+   "title": "A branch inside a hollow or deep recess"
+  },
+  {
+   "case": "w01_welded",
+   "model": "2d809f62-0ddd-4f98-b421-7be4cd037583",
+   "supports": [
+    "s9140"
+   ],
+   "scope": "structure",
+   "situation": "shells: welded",
+   "title": "A structure from a file whose supports are welded into few shells"
+  },
+  {
+   "case": "w02_welded_braces",
+   "model": "b49fa848-13f2-46f1-a39e-ff8d868baa6e",
+   "supports": [
+    "s109",
+    "s110"
+   ],
+   "scope": "section",
+   "situation": "shells: welded braces",
+   "title": "Braced trunks from a file whose supports are welded into few shells"
+  },
+  {
+   "case": "w03_many_shells",
+   "model": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+   "supports": [
+    "s110"
+   ],
+   "scope": "structure",
+   "situation": "shells: many shells",
+   "title": "A structure from a file with many shells per support"
+  },
+  {
+   "case": "e01_elf_kickstand",
+   "model": "01a23637-6151-4ee3-b593-dd5bb1856706",
+   "supports": [
+    "s2315"
+   ],
+   "scope": "section",
+   "situation": "Nerikson's Elf Mage: kickstand",
+   "title": "Elf Mage: a kickstand"
+  },
+  {
+   "case": "e02_elf_branches",
+   "model": "01a23637-6151-4ee3-b593-dd5bb1856706",
+   "supports": [
+    "s678"
+   ],
+   "scope": "structure",
+   "situation": "Nerikson's Elf Mage: branches",
+   "title": "Elf Mage: a trunk with branches"
+  },
+  {
+   "case": "e03_elf_braces",
+   "model": "01a23637-6151-4ee3-b593-dd5bb1856706",
+   "supports": [
+    "s2159",
+    "s515"
+   ],
+   "scope": "section",
+   "situation": "Nerikson's Elf Mage: braces",
+   "title": "Elf Mage: two braced trunks"
+  },
+  {
+   "case": "e04_elf_strut",
+   "model": "01a23637-6151-4ee3-b593-dd5bb1856706",
+   "supports": [
+    "s179"
+   ],
+   "scope": "structure",
+   "situation": "Nerikson's Elf Mage: strut",
+   "title": "Elf Mage: a support between two parts of the model"
+  },
+  {
+   "case": "n1a_factory_fortress_tree",
+   "model": "e369e88f-61f1-4233-b4dc-78ca91066033",
+   "supports": [
+    "s1888"
+   ],
+   "scope": "structure",
+   "situation": "other creators: factory fortress tree",
+   "title": "Factory Fortress: a trunk with what hangs from it"
+  },
+  {
+   "case": "n2a_solgood_creations_tree",
+   "model": "891abe26-6182-445b-9a0e-991777cf696f",
+   "supports": [
+    "s43297"
+   ],
+   "scope": "structure",
+   "situation": "other creators: solgood creations tree",
+   "title": "SolGood Creations: a trunk with what hangs from it"
+  },
+  {
+   "case": "n3a_the_witchguild_tree",
+   "model": "d669494a-e8ba-4360-85de-7aa0bbc00c39",
+   "supports": [
+    "s173"
+   ],
+   "scope": "structure",
+   "situation": "other creators: the witchguild tree",
+   "title": "The Witchguild: a trunk with what hangs from it"
+  },
+  {
+   "case": "n3b_the_witchguild_braces",
+   "model": "d669494a-e8ba-4360-85de-7aa0bbc00c39",
+   "supports": [
+    "s104",
+    "s106"
+   ],
+   "scope": "section",
+   "situation": "other creators: the witchguild braces",
+   "title": "The Witchguild: two braced trunks"
+  },
+  {
+   "case": "n4a_bite_the_bullet_tree",
+   "model": "7e2dd4ca-62d5-4cee-9fb5-f5a5bef3adfc",
+   "supports": [
+    "s20430"
+   ],
+   "scope": "structure",
+   "situation": "other creators: bite the bullet tree",
+   "title": "Bite the Bullet: a trunk with what hangs from it"
+  },
+  {
+   "case": "n5a_dragon_trappers_lodge_tree",
+   "model": "7f133a72-7a53-4474-ba38-bc094efbffe9",
+   "supports": [
+    "s4541"
+   ],
+   "scope": "structure",
+   "situation": "other creators: dragon trappers lodge tree",
+   "title": "Dragon Trappers Lodge: a trunk with what hangs from it"
+  },
+  {
+   "case": "n5b_dragon_trappers_lodge_braces",
+   "model": "7f133a72-7a53-4474-ba38-bc094efbffe9",
+   "supports": [
+    "s4547",
+    "s4546"
+   ],
+   "scope": "section",
+   "situation": "other creators: dragon trappers lodge braces",
+   "title": "Dragon Trappers Lodge: two braced trunks"
+  },
+  {
+   "case": "n6a_mezgike_tree",
+   "model": "303eca99-9b4d-4977-a137-2be153e947a2",
+   "supports": [
+    "s50"
+   ],
+   "scope": "structure",
+   "situation": "other creators: mezgike tree",
+   "title": "Mezgike: a trunk with what hangs from it"
+  },
+  {
+   "case": "n7a_one_page_rules_tree",
+   "model": "b6d41f14-c0d5-47e1-af8b-9a6aafcff2fe",
+   "supports": [
+    "s29891"
+   ],
+   "scope": "structure",
+   "situation": "other creators: one page rules tree",
+   "title": "One Page Rules: a trunk with what hangs from it"
+  },
+  {
+   "case": "n7b_one_page_rules_braces",
+   "model": "b6d41f14-c0d5-47e1-af8b-9a6aafcff2fe",
+   "supports": [
+    "s30331",
+    "s29895"
+   ],
+   "scope": "section",
+   "situation": "other creators: one page rules braces",
+   "title": "One Page Rules: two braced trunks"
+  },
+  {
+   "case": "n8a_h3ll_creator_tree",
+   "model": "63208481-8532-4c0a-9fb3-1f0d628f6f4e",
+   "supports": [
+    "s14"
+   ],
+   "scope": "structure",
+   "situation": "other creators: h3ll creator tree",
+   "title": "h3LL Creator: a trunk with what hangs from it"
+  },
+  {
+   "case": "n9a_kickstand_opr",
+   "model": "b6d41f14-c0d5-47e1-af8b-9a6aafcff2fe",
+   "supports": [
+    "s30792"
+   ],
+   "scope": "section",
+   "situation": "other creators: kickstand opr",
+   "title": "One Page Rules: a kickstand"
+  }
+ ]
+}

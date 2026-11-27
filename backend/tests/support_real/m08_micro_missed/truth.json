@@ -1,0 +1,177 @@
+{
+ "case": "m08_micro_missed",
+ "title": "A mini support between two parts of the model (a tip is missed in its whole model)",
+ "situation": "support between two parts of the model: micro missed",
+ "scope": "structure",
+ "source": {
+  "model_id": "363c280a-d013-4882-a42d-c28a56f5f790",
+  "creator": "Death x Tiles",
+  "name": "OHS_M85_P02_05_ArmL Supported",
+  "path": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Supported.stl",
+  "lys_id": "3bf317be-85b1-4dc9-8d1a-d75bb9cf56a6",
+  "lys_path": "Death x Tiles/Collabs/Ghamak/898 Complete Black waste Orcs 4/898_Black_waste_orcs_Supported/OHS_M85_P02_05_ArmL Lys.lys",
+  "lychee_version": "7.0.1",
+  "named": [
+   "s544"
+  ],
+  "lychee_ids": [
+   "s544"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s544",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     3.56318496678232,
+     1.2783028593804147,
+     15.648015873114657
+    ],
+    [
+     4.5172964224942485,
+     1.2783028593804142,
+     17.138436452553048
+    ]
+   ],
+   "d": 0.25,
+   "joints": 0,
+   "mini": true,
+   "d_tip": 0.25
+  }
+ ],
+ "tips": [
+  {
+   "support": "s544",
+   "end": "tip",
+   "contact": [
+    4.5172964224942485,
+    1.2783028593804142,
+    17.138436452553048
+   ],
+   "axis": [
+    -0.5391508201950966,
+    2.509466376250536e-16,
+    -0.8422092335536073
+   ],
+   "socket": [
+    4.5172964224942485,
+    1.2783028593804142,
+    17.138436452553048
+   ],
+   "contact_d": 0.25,
+   "body_d": 0.9,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    -0.8287944332892284,
+    -0.09059907728647597,
+    -0.552169896448209
+   ],
+   "surface_mm": 0.026151337321338963,
+   "route": [
+    [
+     4.5172964224942485,
+     1.2783028593804142,
+     17.138436452553048
+    ],
+    [
+     4.5172964224942485,
+     1.2783028593804142,
+     17.138436452553048
+    ],
+    [
+     3.56318496678232,
+     1.2783028593804147,
+     15.648015873114657
+    ],
+    [
+     3.56318496678232,
+     1.2783028593804147,
+     15.648015873114657
+    ]
+   ]
+  },
+  {
+   "support": "s544",
+   "end": "base",
+   "contact": [
+    3.56318496678232,
+    1.2783028593804147,
+    15.648015873114657
+   ],
+   "axis": [
+    0.5391508201950966,
+    -2.509466376250536e-16,
+    0.8422092335536073
+   ],
+   "socket": [
+    3.56318496678232,
+    1.2783028593804147,
+    15.648015873114657
+   ],
+   "contact_d": 0.25,
+   "body_d": 0.9,
+   "length": 0.0,
+   "base": "model",
+   "normal": [
+    0.7772972695133981,
+    0.5082704161260724,
+    0.37076965746679613
+   ],
+   "surface_mm": 0.04479642794701994,
+   "route": [
+    [
+     3.56318496678232,
+     1.2783028593804147,
+     15.648015873114657
+    ],
+    [
+     3.56318496678232,
+     1.2783028593804147,
+     15.648015873114657
+    ],
+    [
+     4.5172964224942485,
+     1.2783028593804142,
+     17.138436452553048
+    ],
+    [
+     4.5172964224942485,
+     1.2783028593804142,
+     17.138436452553048
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.0,
+ "model_cuts": [
+  {
+   "lo": [
+    2.5632,
+    0.2783,
+    14.648
+   ],
+   "hi": [
+    5.5173,
+    2.2783,
+    18.1384
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

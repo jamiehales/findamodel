@@ -1,0 +1,148 @@
+{
+ "case": "t01_trunk_web_raft",
+ "title": "An upright trunk on a web raft (Lychee's triangle foundation)",
+ "situation": "trunk web raft",
+ "scope": "structure",
+ "source": {
+  "model_id": "354e5d8b-8648-4a38-a742-ba7a9ffbdedd",
+  "creator": "DM Stash",
+  "name": "75_Supported_KuthrakVa_Base",
+  "path": "DM Stash/Dragonborn Pugilist - Kuthrak'Va/Supported/STL/75_Supported_KuthrakVa_Base.stl",
+  "lys_id": "ccb7985a-2dea-41f7-b5de-43ff63eecaaf",
+  "lys_path": "DM Stash/Dragonborn Pugilist - Kuthrak'Va/Supported/LYS/75_Supported_KuthrakVa_Base.lys",
+  "lychee_version": "5.4.3",
+  "named": [
+   "s32464"
+  ],
+  "lychee_ids": [
+   "s32464"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s32464",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     12.72149051231023,
+     22.534041213234197,
+     0.0
+    ],
+    [
+     12.72149051231023,
+     22.534041213234197,
+     0.49321114591798776
+    ],
+    [
+     12.72149051231023,
+     22.534041213234193,
+     1.9778455905721826
+    ]
+   ],
+   "d": 1.5,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    12.72149051231023,
+    22.534041213234197
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      1.01
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s32464",
+   "end": "tip",
+   "contact": [
+    12.753084677124024,
+    23.994156771850584,
+    5.701696334659017
+   ],
+   "axis": [
+    -0.007898541203448326,
+    -0.3650288896540973,
+    -0.9309626860217086
+   ],
+   "socket": [
+    12.72149051231023,
+    22.534041213234193,
+    1.9778455905721826
+   ],
+   "contact_d": 0.5,
+   "body_d": 1.5,
+   "length": 4,
+   "base": "plate",
+   "normal": [
+    0.0005755832206910996,
+    -0.3430343542563786,
+    -0.9393226817786662
+   ],
+   "surface_mm": 0.07662729202088317,
+   "route": [
+    [
+     12.753084677124024,
+     23.994156771850584,
+     5.701696334659017
+    ],
+    [
+     12.72149051231023,
+     22.534041213234193,
+     1.9778455905721826
+    ],
+    [
+     12.72149051231023,
+     22.534041213234197,
+     0.49321114591798776
+    ],
+    [
+     12.72149051231023,
+     22.534041213234197,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    11.2531,
+    22.4942,
+    4.2017
+   ],
+   "hi": [
+    14.2531,
+    25.4942,
+    7.2017
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 759
+}

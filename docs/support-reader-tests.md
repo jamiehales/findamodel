@@ -35,13 +35,13 @@ Regenerate this page and its images with `python3 scripts/synthetic-catalogue.py
 
 ## Summary
 
-122 cases, 1075 variants. All cargo stages pass on 1030 of 1075 variants, on 116 of 122 base variants, and on every variant of 114 cases.
+122 cases, 1075 variants. All cargo stages pass on 1031 of 1075 variants, on 116 of 122 base variants, and on every variant of 115 cases.
 
 | Stage | Variants passing |
 | --- | --- |
 | validate | 1075 of 1075 |
 | 1 reader labels | 1056 of 1075 |
-| 2 layout | 1041 of 1075 |
+| 2 layout | 1042 of 1075 |
 | 4a clips (nominal) | 1047 of 1075 |
 | 4b loops (nominal) | 1073 of 1075 |
 
@@ -68,7 +68,7 @@ Base variant per stage (V, 1, 2, 4a, 4b on the nominal build; DragonFruit 3, 4a,
 | [f02_overlap](#f02_overlap) | Fan with the cones overlapping, no hub | pass | pass | pass | pass | pass | - | - | - | 9 of 9 |
 | [f03_two](#f03_two) | Two tips sharing one shaft | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [f04_branch](#f04_branch) | A branch off a trunk | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
-| [f05_branch2](#f05_branch2) | Branches of a branch | pass | pass | pass | pass | pass | - | - | - | 10 of 11 |
+| [f05_branch2](#f05_branch2) | Branches of a branch | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [h01_strut](#h01_strut) | Hollow-model strut between two faces | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [h02_rungs](#h02_rungs) | Hollow-model struts tied by rungs | pass | pass | pass | pass | pass | - | - | - | 11 of 11 |
 | [h03_vee](#h03_vee) | Hollow-model struts in a pair meeting at one contact | pass | pass | pass | pass | pass | - | - | - | 7 of 7 |
@@ -570,9 +570,7 @@ Branches of a branch.
 - 2 layout: 1 trunk, 2 branches, with each tip's contact, socket and width, each shaft's width, foot or parent and line, and each brace's ends.
 - 4a clips and 4b loops on the nominal build: nothing but tips inside the model, and 3 contact loop(s) at the truth's place and size.
 
-**Result.** Base variant `f05_branch2__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 10 of 11 variants.
-
-Failing variants: `n8_r0_joined` (2).
+**Result.** Base variant `f05_branch2__n8_r0_sep`: validate pass, 1 reader labels pass, 2 layout pass, 4a clips (nominal) pass, 4b loops (nominal) pass. Every cargo stage passes on 11 of 11 variants.
 
 <a id="h01_strut"></a>
 

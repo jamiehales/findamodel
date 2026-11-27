@@ -1,0 +1,160 @@
+{
+ "case": "t13_trunk_tip_missing",
+ "title": "A trunk whose tip the reader misses",
+ "situation": "trunk tip missing",
+ "scope": "structure",
+ "source": {
+  "model_id": "c8758887-e609-47f1-b1a6-321ed4fe56b4",
+  "creator": "Dungeon Classics",
+  "name": "STL_Yegg_Fat_Goblin_Chef_Base_v01_Supported",
+  "path": "Dungeon Classics/Goblin Cook.png/Supported/STL_Yegg_Fat_Goblin_Chef_Base_v01_Supported.stl",
+  "lys_id": "d0fba6f6-6410-43c1-9e3b-eb2fac0a945d",
+  "lys_path": "Dungeon Classics/Goblin Cook.png/Supported/LYS_Yegg_Fat_Goblin_Chef_Base_v01_Supported.lys",
+  "lychee_version": "6.2.0",
+  "named": [
+   "s4320"
+  ],
+  "lychee_ids": [
+   "s4320"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s4320",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     -1.0377360822841049,
+     5.788382172715016,
+     0.0
+    ],
+    [
+     -1.0377360822841049,
+     5.788382172715016,
+     0.5415491922053222
+    ],
+    [
+     -1.0377360822841086,
+     5.788382172715017,
+     2.171195160124615
+    ]
+   ],
+   "d": 1.3,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    -1.0377360822841049,
+    5.788382172715016
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      3.0,
+      3.0
+     ],
+     "sides": 12,
+     "turn_deg": 25.04,
+     "z": [
+      0.0,
+      0.51
+     ]
+    },
+    {
+     "d": [
+      2.1,
+      1.3
+     ],
+     "sides": 16,
+     "turn_deg": 4.54,
+     "z": [
+      0.504,
+      0.904
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s4320",
+   "end": "tip",
+   "contact": [
+    -1.0567528093464162,
+    3.933948231750848,
+    5.139479702194654
+   ],
+   "axis": [
+    0.005433350589230719,
+    0.5298382688469054,
+    -0.8480812977342969
+   ],
+   "socket": [
+    -1.0377360822841086,
+    5.788382172715017,
+    2.171195160124615
+   ],
+   "contact_d": 0.5,
+   "body_d": 1.3,
+   "length": 3.5,
+   "base": "plate",
+   "normal": [
+    -0.011444093561631926,
+    0.5298283030045672,
+    -0.8480277130246706
+   ],
+   "surface_mm": 0.13391932952413052,
+   "route": [
+    [
+     -1.0567528093464162,
+     3.933948231750848,
+     5.139479702194654
+    ],
+    [
+     -1.0377360822841086,
+     5.788382172715017,
+     2.171195160124615
+    ],
+    [
+     -1.0377360822841049,
+     5.788382172715016,
+     0.5415491922053222
+    ],
+    [
+     -1.0377360822841049,
+     5.788382172715016,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -2.5568,
+    2.4339,
+    3.6395
+   ],
+   "hi": [
+    0.4432,
+    5.4339,
+    6.6395
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 336
+}

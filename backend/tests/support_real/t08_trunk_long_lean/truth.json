@@ -1,0 +1,150 @@
+{
+ "case": "t08_trunk_long_lean",
+ "title": "A trunk leaning more than 30 degrees for over 8 mm",
+ "situation": "trunk long lean",
+ "scope": "structure",
+ "source": {
+  "model_id": "6cd5c067-ec79-4edf-a8d5-fca78eaeec72",
+  "creator": "Claymore Miniatures",
+  "name": "STL_DrowSorcerer_Base_32mm_SUP",
+  "path": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/STL Supported/STL_DrowSorcerer_Base_32mm_SUP.stl",
+  "lys_id": "679a6b3f-b319-4afd-bf65-efe955ba2cc9",
+  "lys_path": "Claymore Miniatures/Drow Sorcerer - M/Supported/32mm/Lychee Files/LYS_DrowSorcerer_Base_32mm_SUP.lys",
+  "lychee_version": "5.1.0",
+  "named": [
+   "s29906"
+  ],
+  "lychee_ids": [
+   "s29906"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "triangle",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s29906",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     3.9005935983793694,
+     -11.851373413343353,
+     0.0
+    ],
+    [
+     3.9005935983793694,
+     -11.851373413343353,
+     10.535708556525599
+    ],
+    [
+     4.487448861115952,
+     -5.514528701611942,
+     16.90466907641697
+    ]
+   ],
+   "d": 1.2,
+   "joints": 1,
+   "mini": false,
+   "foot": [
+    3.9005935983793694,
+    -11.851373413343353
+   ],
+   "foot_pieces": [
+    {
+     "d": [
+      2.0,
+      2.0
+     ],
+     "sides": 12,
+     "turn_deg": 29.0,
+     "z": [
+      0.0,
+      0.51
+     ]
+    }
+   ]
+  }
+ ],
+ "tips": [
+  {
+   "support": "s29906",
+   "end": "tip",
+   "contact": [
+    7.699280045318604,
+    -4.036644929394589,
+    20.440202982349707
+   ],
+   "axis": [
+    -0.6423662368405303,
+    -0.2955767544434706,
+    -0.7071067811865476
+   ],
+   "socket": [
+    4.487448861115952,
+    -5.514528701611942,
+    16.90466907641697
+   ],
+   "contact_d": 0.3,
+   "body_d": 1,
+   "length": 5,
+   "base": "plate",
+   "normal": [
+    -0.17299078673863838,
+    -0.27066726954625137,
+    -0.9470023320456629
+   ],
+   "surface_mm": 0.020922602871712735,
+   "route": [
+    [
+     7.699280045318604,
+     -4.036644929394589,
+     20.440202982349707
+    ],
+    [
+     4.487448861115952,
+     -5.514528701611942,
+     16.90466907641697
+    ],
+    [
+     3.9005935983793694,
+     -11.851373413343353,
+     10.535708556525599
+    ],
+    [
+     3.9005935983793694,
+     -11.851373413343353,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 0.5,
+ "model_cuts": [
+  {
+   "lo": [
+    7.1993,
+    -4.5366,
+    19.9402
+   ],
+   "hi": [
+    8.1993,
+    -3.5366,
+    20.9402
+   ]
+  }
+ ],
+ "notes": [
+  "the model is cut round the contacts only: the supports also come within 0.35 mm of it elsewhere"
+ ],
+ "raft_triangles": 341
+}

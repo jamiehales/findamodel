@@ -1,0 +1,135 @@
+{
+ "case": "w03_many_shells",
+ "title": "A structure from a file with many shells per support",
+ "situation": "shells: many shells",
+ "scope": "structure",
+ "source": {
+  "model_id": "f5e287db-c10b-44c2-a8ee-ef4036c48c5d",
+  "creator": "PiperMakes",
+  "name": "Gravtank Fullpack",
+  "path": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.stl",
+  "lys_id": "94ebf5be-b974-45d3-ad08-2200966f6c14",
+  "lys_path": "PiperMakes/Gravtank Fullpack/Extracted/SupportedSTLs/MissileShield/ShieldLoose_Supported.lys",
+  "lychee_version": "3.4.0",
+  "named": [
+   "s110"
+  ],
+  "lychee_ids": [
+   "s110"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": true,
+  "lychee_type": "pixelate",
+  "lychee_enabled": true
+ },
+ "counts": {
+  "trunk": 1
+ },
+ "supports": [
+  {
+   "id": "s110",
+   "kind": "trunk",
+   "role": "trunk",
+   "base": "plate",
+   "host": null,
+   "line": [
+    [
+     30.112757396697447,
+     -10.631707195580537,
+     0.0
+    ],
+    [
+     30.112757396697447,
+     -10.631707195580537,
+     0.5871357884757367
+    ],
+    [
+     30.115135288489064,
+     -10.680165736990013,
+     2.364667626222874
+    ]
+   ],
+   "d": 1.5,
+   "joints": 0,
+   "mini": false,
+   "foot": [
+    30.112757396697447,
+    -10.631707195580537
+   ],
+   "foot_pieces": []
+  }
+ ],
+ "tips": [
+  {
+   "support": "s110",
+   "end": "tip",
+   "contact": [
+    30.126899994371417,
+    -9.468401031107659,
+    5.109023268131072
+   ],
+   "axis": [
+    -0.003921568627450878,
+    -0.4039215686274511,
+    -0.9147852139693993
+   ],
+   "socket": [
+    30.115135288489064,
+    -10.680165736990013,
+    2.364667626222874
+   ],
+   "contact_d": 0.4,
+   "body_d": 1.5,
+   "length": 3,
+   "base": "plate",
+   "normal": [
+    1.5815394144824726e-05,
+    -0.4072615201823962,
+    -0.9133115864416683
+   ],
+   "surface_mm": 0.032912851142895376,
+   "route": [
+    [
+     30.126899994371417,
+     -9.468401031107659,
+     5.109023268131072
+    ],
+    [
+     30.115135288489064,
+     -10.680165736990013,
+     2.364667626222874
+    ],
+    [
+     30.112757396697447,
+     -10.631707195580537,
+     0.5871357884757367
+    ],
+    [
+     30.112757396697447,
+     -10.631707195580537,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    28.6269,
+    -10.9684,
+    3.609
+   ],
+   "hi": [
+    31.6269,
+    -7.9684,
+    6.609
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 2839
+}

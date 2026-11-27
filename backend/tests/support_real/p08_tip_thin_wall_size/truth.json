@@ -1,0 +1,188 @@
+{
+ "case": "p08_tip_thin_wall_size",
+ "title": "A support between two parts of the model with a tip on a thin wall (sized wrongly in its whole model)",
+ "situation": "tip thin wall size",
+ "scope": "section",
+ "source": {
+  "model_id": "03587c94-3ab9-4869-bfd7-01fddc6cf418",
+  "creator": "Loot Studios",
+  "name": "FirespitterRockerboy_32mm_Base_Supported",
+  "path": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_Solid/FirespitterRockerboy_32mm_Supported_Solid/FirespitterRockerboy_32mm_Base_Supported.stl",
+  "lys_id": "58c520de-1deb-4340-953e-2478ac24a3be",
+  "lys_path": "Loot Studios/Sci-Fi/Neon Shadows (March 2024)/All_32mm_NeonShadows/All_32mm_NeonShadows_LoopholesLowlifes/NeonShadows_LoopholesLowlifes_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Supported_SLICER/FirespitterRockerboy_32mm_Base_Supported.lys",
+  "lychee_version": "5.2.0",
+  "named": [
+   "s5850"
+  ],
+  "lychee_ids": [
+   "s5850"
+  ]
+ },
+ "raft_mm": 3.0,
+ "raft": {
+  "kept": false,
+  "lychee_type": "vectorielWall",
+  "lychee_enabled": false
+ },
+ "counts": {
+  "strut": 1
+ },
+ "supports": [
+  {
+   "id": "s5850",
+   "kind": "mesh_to_mesh",
+   "role": "strut",
+   "base": "model",
+   "host": null,
+   "line": [
+    [
+     -0.2272766275431748,
+     -5.205389103398563,
+     10.905026064827268
+    ],
+    [
+     -0.24014555394573328,
+     -5.173357984656688,
+     12.369938981561726
+    ]
+   ],
+   "d": 1,
+   "joints": 0,
+   "mini": false
+  }
+ ],
+ "tips": [
+  {
+   "support": "s5850",
+   "end": "tip",
+   "contact": [
+    -0.25954116043607933,
+    -4.169309233474737,
+    13.336426709244375
+   ],
+   "axis": [
+    0.013915952736952758,
+    -0.7203845352296165,
+    -0.6934352656603444
+   ],
+   "socket": [
+    -0.24014555394573328,
+    -5.173357984656688,
+    12.369938981561726
+   ],
+   "contact_d": 0.3,
+   "body_d": 1,
+   "length": 1.3937677755143913,
+   "base": "model",
+   "normal": [
+    -0.06766317488952774,
+    -0.6557229908195212,
+    -0.7519634659174415
+   ],
+   "surface_mm": 0.0386972889492603,
+   "route": [
+    [
+     -0.25954116043607933,
+     -4.169309233474737,
+     13.336426709244375
+    ],
+    [
+     -0.24014555394573328,
+     -5.173357984656688,
+     12.369938981561726
+    ],
+    [
+     -0.2272766275431748,
+     -5.205389103398563,
+     10.905026064827268
+    ],
+    [
+     -0.5670667812820431,
+     -4.780887510535362,
+     9.384997749581593
+    ]
+   ]
+  },
+  {
+   "support": "s5850",
+   "end": "base",
+   "contact": [
+    -0.5670667812820431,
+    -4.780887510535362,
+    9.384997749581593
+   ],
+   "axis": [
+    0.21048032217955712,
+    -0.26295415287473944,
+    0.9415695128141726
+   ],
+   "socket": [
+    -0.2272766275431748,
+    -5.205389103398563,
+    10.905026064827268
+   ],
+   "contact_d": 0.3,
+   "body_d": 1,
+   "length": 1.614355918027336,
+   "base": "model",
+   "normal": [
+    0.616843546162001,
+    -0.41652731421095757,
+    0.6678390794753579
+   ],
+   "surface_mm": 0.0619380702776705,
+   "route": [
+    [
+     -0.5670667812820431,
+     -4.780887510535362,
+     9.384997749581593
+    ],
+    [
+     -0.2272766275431748,
+     -5.205389103398563,
+     10.905026064827268
+    ],
+    [
+     -0.24014555394573328,
+     -5.173357984656688,
+     12.369938981561726
+    ],
+    [
+     -0.25954116043607933,
+     -4.169309233474737,
+     13.336426709244375
+    ]
+   ]
+  }
+ ],
+ "braces": [],
+ "model_cut_mm": 1.5,
+ "model_cuts": [
+  {
+   "lo": [
+    -1.7595,
+    -5.6693,
+    11.8364
+   ],
+   "hi": [
+    1.2405,
+    -2.6693,
+    14.8364
+   ]
+  },
+  {
+   "lo": [
+    -2.0671,
+    -6.2809,
+    7.885
+   ],
+   "hi": [
+    0.9329,
+    -3.2809,
+    10.885
+   ]
+  }
+ ],
+ "notes": [],
+ "raft_triangles": 0
+}

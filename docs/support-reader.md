@@ -18,7 +18,9 @@ The supports are first split from the model by `support_separation.rs`. The old 
 all; it no longer writes any layout.
 
 The synthetic test cases, with pictures and current results, are in
-[Support reader test cases](support-reader-tests.md). The round-trip tool that builds the export
+[Support reader test cases](support-reader-tests.md); the cases cut from real models, checked
+against their Lychee projects, are in
+[Support reader real-structure test cases](support-reader-real-tests.md). The round-trip tool that builds the export
 with DragonFruit and measures it is described in `backend/tools/support-reader/README.md`.
 
 ## Ground rules
@@ -49,6 +51,7 @@ These rules were set by the owner and apply to every stage.
 | Preparation | `classify/prepare.rs` | One piece per straight stretch, inline tips cut off braces, pads cut off as raft, smoothed profiles, the raft and its top, which pieces stand on the plate, every piece's joins. |
 | Routing | `classify/route.rs` | Each contact's piece, pads and sleeves, and the route of each tip down its own trunk to the plate, a footing on the model or a rod an earlier route owns. |
 | The rest and roles | `classify/rest.rs` | Roots, posts, legs, braces, late sleeves, loose and floating pieces, and the role of every piece. |
+| Second reading | `classify/reroute.rs` | Where the rest stage leaves a post, or rods hanging on a rod read as a brace: which routes took a brace for their own shaft, and the structure routed again with those told their way. |
 | Shaping | `classify/tips.rs` | Each tip's contact, socket and widths, blunt and rounded ends, sphere-tip data and ball seats, shaft and root widths. |
 | Layout | `classify/layout.rs` | The written lines, stepped tapers, narrowing beside the model, the surface normal at each contact, and the conversion to the writer's `SupportLayout`. |
 | Writing | `voxl.rs` | DragonFruit entities: roots, trunks, branches, sticks, twigs, braces, kickstands and knots, with per-segment widths and the contact placement that makes the sliced loop match the original. |
@@ -132,11 +135,26 @@ unchanged).
 - A tip resting flush (a shell with no loop, the model within `FLUSH_GAP`) is a tip.
 - A side graze (one elongated loop with the shell going on past both of its long ends) and any other
   multi-loop patch is a clip, not a contact.
-- Overlapping touches are one contact, sized by the union of their loops. A contact sits at its
-  loops' area-weighted centre, with the width of a circle of its area, and a direction away from the
-  model along the support.
+- A pinhole beside a patch's loop is no exit: a loop under `NICK_SHARE` of the area of the patch's
+  widest loop (a cone's point coming out of a neighbouring face by a hair) is left out, so the patch
+  is a touch, not a part passing through (real cases t13_trunk_tip_missing, w03_many_shells,
+  x16_brace_branch).
+- Overlapping touches are one contact, sized by the union of their loops, when they are several
+  shells of one tip entering the model at one place (a cone and its ball, welded rod ends): the
+  narrower loop's centre lies inside the wider loop, and both loops lie in one face of the model
+  (normals within 45 degrees, `SAME_FACE_COS`; neither centre further than `SAME_FACE_OFFSET` of
+  the wider loop's radius off the other's plane). A nick beside a loop (under `NICK_SHARE` of its
+  area) belongs to it whichever way it faces, and adds nothing to its size or place. Two tips side
+  by side whose loops only overlap at their rims are two contacts (real cases p12 to p14, x14:
+  centres 0.30 to 0.47 mm apart, loops 0.23 to 0.62 mm wide), and so are the two ends of a hair
+  support in a gap or a crevice (m09_micro_as_branch, p06_tip_grazing_missed). A contact sits at
+  its loops' area-weighted centre, with the width of a circle of its area, and a direction away
+  from the model along the support.
 - Shells reaching no higher than the raft band (`raft_band`: the raft height plus
-  `RAFT_BAND_MARGIN_MM`, at least 3.5 mm) are raft and give no contacts.
+  `RAFT_BAND_MARGIN_MM`, at least 3.5 mm) are raft and give no contacts, unless they start more
+  than `RAFT_CLEAR_MM` above the plate: such a shell stands on the raft or on a support (the tip
+  cone of a trunk holding the model just above the raft, t14_trunk_tip_in_raft_band) and its loops
+  are judged; it is never taken as resting flush.
 
 | Constant | Value | Why |
 | --- | --- | --- |
@@ -150,6 +168,10 @@ unchanged).
 | `THIN_WALL_END` | 3.0 mm | ... with the support ending within this past the far loop, is a tip through a thin wall. |
 | `COINCIDENT_MM` | 0.03 mm | Two loops of one patch this close in centre and width are one loop on a doubled surface. |
 | `RAFT_BAND_MARGIN_MM` | 0.5 mm | Shells no higher than this above the raft's top are raft and are not judged. |
+| `RAFT_CLEAR_MM` | 0.3 mm | A shell in the raft band starting this far above the plate is not raft. |
+| `NICK_SHARE` | 0.05 | A loop under this share of a larger loop's area is a nick: no exit from its patch, no contact of its own. Pinholes seen are under 0.2%; the narrowest second loop of two real tips is 27%. |
+| `SAME_FACE_COS` | 0.7 | Loops of one contact have normals within 45 degrees (a hair across a crevice: 60 degrees). |
+| `SAME_FACE_OFFSET` | 0.5 | ... and centres within this share of the wider loop's radius of each other's plane (a hair across a 0.13 mm gap: 1.8). |
 | `FINE`, `COARSE`, `FAR` | 2, 16, 3 | Winding number cells: exact within, dipoles beyond `FAR` cell radii. Speed only. |
 | `COL` | 2 mm | The model's column grid for box and depth queries. Speed only. |
 
@@ -332,18 +354,48 @@ split stretches again, then pads).
   entering one loop).
 - **Order.** Contacts whose piece leads down or level are routed first, highest first, each lowered
   by `DETOUR_W` times its route's detour (length less the height it drops, from a first walk with
-  nothing claimed): the tip that goes most straight down owns a shared trunk (micro cases). Contacts
+  nothing claimed): the tip that goes most straight down owns a shared trunk (micro cases). A tip's
+  own cone stays its own: a tip whose first walk joins the cone holding another tip in the cone's
+  body (past that tip's contact, where the cone is wider than at the contact and still under
+  `CONE_BODY` of its full width) is routed after that tip, so it hangs from the cone instead of
+  taking the cone's line down and leaving its owner a stub (a mini support standing on a tip cone,
+  real case l04_leaf_on_strut). A rod is its own tip's in the same way: a tip whose first walk joins
+  a rod from the side (further than the rod's radius, at least 0.3 mm, from either of its ends),
+  where another tip's first walk comes down that rod from its end and on past the join, is routed
+  after that tip, so it hangs from the rod as a branch instead of owning the rod's lower part and
+  leaving the rod's own tip a stub with a joint more (real cases h03_hollow_branch,
+  x18_brace_struts). Contacts
   on upward faces (their piece leads up past `LEVEL`) follow, as feet; they keep to their own rod
   rather than the way most nearly down. A contact that finds no route is tried again in later rounds
   (up to 4) once more routes exist to hang from.
 - **Walking.** A route runs along its piece to the end, and at each joint takes the way that best
-  continues it: joints nearest the end first; then ways within 25 degrees of straight down
-  (`NEAR_VERTICAL`), then sloping down, then level (`LEVEL`), then a rod an earlier route owns, then
-  up; within a class the least turn, with a rod beside this one's line counting 40 degrees per radius
-  it stands off. Never straight back (a turn over 150 degrees), and never up while anything else goes
+  continues it: joints nearest the end first; then the same rod going on (below); then ways within
+  25 degrees of straight down (`NEAR_VERTICAL`), then sloping down, then level (`LEVEL`), then a rod
+  an earlier route owns, then up; within a class a rod that starts at the joint before a rod passing
+  by it (the joint further than the rod's radius, at least 0.3 mm, from both of its ends), then the
+  least turn, with a rod beside this one's line counting 40 degrees per radius it stands off. A
+  leaning tip on the top of its own pillar keeps that pillar though a taller neighbour passes nearer
+  the cone's end (pillars 0.97 mm apart, real case n9a_kickstand_opr). A rod standing off this rod's
+  end by over a radius, with another tip's own piece on its end there, is that tip's shaft: a way
+  down it ranks a class lower, after the ways down the rods that meet the end (a tip beside a strut
+  took the strut's steeper shaft and left its own rods as braces, real case b14_branch_on_strut).
+  Without the other tip the rule sent routes down braces on whole models (2d809f62, 891abe26). Another tip's own piece
+  passing by the joint (its cone, where tip cones lap each other at their sockets) is that tip's
+  from the start: it ranks with the rods an earlier route owns, after every way down or level
+  (real model 35ba31e3, where routes ran down a chain of each other's cones). Never straight back (a turn over 150 degrees), and never up while anything else goes
   on. Joint balls are hubs: a route passes through a ball to the rods on it. A contact piece too
   short to have a direction (a 0.15 mm tip ball stub) is left by its joints, like a ball. Three
   passes: strict, then with near misses, then also going up; the pass is reported.
+- **The same rod going on.** A rod read in two pieces is one rod: at a rod's end, a rod of the same
+  width where they join (`SAME_ROD_WIDTH`) on the same line (`SAME_ROD_DEG`, `SAME_ROD_OFF`) is
+  taken before every other way. The rods may taper (a mini support in two pieces,
+  l03_leaf_on_branch). Lychee draws a branch as a rod from the socket and a second rod, lapping
+  it, from the parent's centre line; without this rule the route left the upper rod where it grazes
+  the parent, the knot sat up to 2 mm high and the lower rod was read as a brace (real cases
+  n3b_the_witchguild_braces, b01_branch, b09_branch_route, n1a, n5a, n8a). A piece holding a
+  contact (a tip's own piece) is never the same rod as what it stands on, and a rod that carries on past a way straight down is not the same
+  rod but a brace in line with it (a leaning shaft on a post with a brace going on to the next post,
+  l01_lean_shaft, l03_lean_ball).
 - **Ends.** A route ends at the plate (a piece standing on it), on a rod an earlier support, post or
   leg owns (a branch, at the attach point), or on a footing on the model: another contact on the
   same piece, ahead of it and within that contact's depth plus 0.6 mm of the piece's end (the route
@@ -361,8 +413,48 @@ split stretches again, then pads).
     0e4bfe5b and 8447ddb6) are not a vee;
   - the other rod leads, within 8 joins, to a contact of its own, so its own route builds it.
 - **Through contacts.** A contact on a piece a route runs through (not at either end of it) is passed
-  through: a routed support runs on through the model there, so no tip is built. It is reported as
-  an exception, as is every contact left without a route (with what its structure offers).
+  through: a routed support runs on through the model there, so no tip is built. So is a contact
+  where the route's flank lies in the model: inside a piece of the route, its own piece a collar
+  round the route (joined to nothing but the route's pieces, with no other contact inside it: the
+  sleeve of a mini support lying in the surface, real case m04_micro_extra_tip). Such a flank loop
+  overlapping the loop of one of the route's own ends is part of that end's opening, and the end is
+  sized by both (the two circles' union). Passed contacts are reported as exceptions, as is every
+  contact left without a route (with what its structure offers).
+- **Second reading** (`classify/reroute.rs`, after the rest stage). Each route takes the best way on
+  at every joint without knowing what the other routes need, so two rods that look alike at a joint
+  are taken for each other: a tip's own shaft and a brace ending at its socket. The rest stage then
+  shows the mistake, and the structure is routed again with the routes concerned told which way to
+  take:
+  - a post (a pillar on the plate with no tip) with a rod read as a brace leaving its top upwards:
+    the knee of a trunk whose route went down another rod (real case p10_tip_on_edge_size);
+  - a leg with a knee (an upright pillar and its lean, see Knees below) whose lean ends at a
+    route's socket: the same knee of a trunk, which the rest stage reads as a kickstand under the
+    trunk's tip since legs have knees (real case x12_brace_steep). A kickstand that leans on a
+    support's shaft, not on its socket, is left alone;
+  - a rod with both ends on one support: another way down for that support's route;
+  - a rod whose end hangs on a rod read as a brace: a brace cannot host it, a support's shaft can
+    (real case x16_brace_branch, where the branch's shaft and a brace leave the socket 45 degrees
+    down each and only the two braces ending on the shaft tell them apart).
+
+  From such a rod the line is followed through spare rods (up to 35 degrees off, as a brace's run)
+  to the socket of a route that leaves its tip piece another way; that route is told to take the
+  rod there. Only a socket counts: there a tip's shaft and a brace look alike, while a joint
+  further down a route moved the knots of branches along the braces beside their parents (real
+  model 01a23637) and stood branches on the pillars of posts that are not theirs.
+  A route that runs on from that joint along one straight line to the plate or to its foot on the
+  model (within `STRAIGHT_ON_COS`, a foot's own tip piece aside) keeps its way: a pillar, a strut's
+  span (real model 01a23637, where struts were sent down the braces beside them). A piece holding a
+  contact is never routed through (a collar or a flank in the model, m04_micro_extra_tip).
+
+  A second reading is kept when it leaves fewer pieces unread (the pieces of posts and legs, loose
+  and floating pieces) and no more contacts without a route. Legs count as unread so that a trunk
+  is never given up for the kickstand leaning on it. Fewer joints beats a closer fit, so a route
+  told a way may not come out with over one bend more than it had (bends as the layout keeps
+  them), or over two when it now stands on the plate and did not before (the socket and the knee
+  of a trunk first read as a stub hanging from its neighbour); a route that does was sent
+  wandering through a lattice of braces (real model 3de1d1a4) and goes back to its own way, as do
+  the routes beside whatever is newly unread when the reading is no better. Then the rest is read
+  once more. At most `REROUTE_ROUNDS` rounds of wishes, each read at most that many times.
 - **Not ported.** The prototype's opt-in switches for tips at Chitubox joint balls
   (`WELDED_SAMEFOOT`, `WELDED_FOOTPOS`) and for hair micros sharing one foot (`MICRO_SHARED_FOOT`)
   were off and are not in the port: each hair keeps its own support and lower tip, and tips at
@@ -378,6 +470,12 @@ split stretches again, then pads).
 | `DETOUR_W` | 0.5 | Routing order: height lowered by this share of the route's detour, so the most direct tip owns a shared trunk. |
 | `VEE_MIN_COS` | cos 8 degrees | The two foot cones of a vee are at least 8 degrees apart. |
 | `VEE_HUB_MM` | 0.25 mm | Two foot cones in one loop are a vee unless their lines cross this far past the contact (a hub inside the model). |
+| `CONE_BODY` | 0.9 | A route joining another tip's cone where it is under this share of its full width joins it in the cone's body, and is routed after that tip. |
+| `SAME_ROD_DEG` | 5 degrees | A rod read in two pieces: the second lies within this of the first's line ... |
+| `SAME_ROD_OFF` | 0.3 | ... the first's end within this share of the thinner one's radius of the second's line ... |
+| `SAME_ROD_WIDTH` | 0.15 | ... and their radii where they join within this share of the wider one's. |
+| `REROUTE_ROUNDS` | 3 | Rounds of a second reading, and readings per round. |
+| `STRAIGHT_ON_COS` | cos 20 degrees | A route whose stretches from a joint on turn no more than this runs straight on, and keeps that way in a second reading. |
 
 ## The rest and roles
 
@@ -385,18 +483,72 @@ split stretches again, then pads).
 
 - **Roots.** A short free piece on the plate under a support that reaches the plate (its foot cone or
   pad) is that support's root. Root pieces under a post or leg widen that post's or leg's root.
+- **Base stubs** (`base_stubs`). A free piece on the line of a routed rod it joins (within
+  `SLEEVE_COS`, both ends within `SLEEVE_OFF` of the rod's radius of its line), running on past
+  one end of that rod by more than `STUB_PAST_MM`, is that rod's own base: part of its support (a
+  sleeve), never a brace or a leg. Lychee builds a branch's base as a short capsule from the knot
+  on the host, overlapping the branch's shaft along its line; the route joins the host from the
+  shaft and leaves the capsule to no route (real cases b01_branch, b05_branch_depth3,
+  b09_branch_route, e02_elf_branches: 0.4 to 0.7 mm of overlap, lines 0.00 mm apart). The far end must lie
+  in a piece of the same support or of the support the rod's own hangs from; no higher than
+  `PAD_START_MM` above the root top (where a piece standing on a pad may start) the base of the
+  last rod of a support on the plate is its root whatever it lands in (b03_tree).
+  A brace carrying on in a branch's line to another support ends elsewhere and stays a brace
+  (l01_lean_shaft).
 - **Posts and legs.** Free pieces standing on the plate are followed straight up through free pieces
   (upright pieces first, so a post is claimed before a leg leaning on it looks for its host). A run
-  whose top leans on a support or post is a leg (a DragonFruit kickstand); otherwise a post. A leg
+  whose top leans on a support or post is a leg (a DragonFruit kickstand); otherwise a post. Where
+  the top meets a support or post and a leg already leaning there, it leans on the support or
+  post (two legs from one foot pad, each onto its own trunk: real model 31676804, where the second
+  leg was a post, or a brace from the first leg's root zone that DragonFruit knots 1.5 mm off its
+  line). A leg
   cannot lean on another leg (DragonFruit's kickstands hold up supports and posts only); it stands
-  as a post of its own. A run whose low end joins a routed support is a brace, not a leg, only when
-  it stands on the raft or lies wholly under the root top (a slanted brace landing on a pad at a
-  post's foot; bent I12, r05_padfoot).
+  as a post of its own, unless its low end itself joins a support: then it is left to be a brace
+  from that support to the leg (x17_brace_kickstand). One that only stands on a support's root pad
+  stays a post (as a brace it would have one host and be written as nothing; real models 2b73cb36,
+  af84e884). A run whose
+  low end joins a routed support is a brace, not a leg, only when it stands on the raft or lies
+  wholly under the root top (a slanted brace landing on a pad at a post's foot; bent I12,
+  r05_padfoot).
+- **Knees** (owner, 2026-11-25). Where nothing goes straight on from a run's top and one free piece
+  alone leans up off it (joined at the top end, rising, turning by at most `KNEE_DEG`), the run
+  turns into it: an upright pillar and its lean onto a support are one leg with a knee, as a Lychee
+  kickstand is and as DragonFruit builds its own (b12_kickstand, e01_elf_kickstand,
+  x17_brace_kickstand), not a post with a brace on its top. The pillar's stretch ends where the
+  lean's line crosses its own (the knee), not at its top: a cap above the knee (0.1 to 0.75 mm on
+  b12_kickstand, e01_elf_kickstand and x12_brace_steep) would bend the line back on itself. A lean
+  that reaches no support or post is no part of the run (the pillar stays a post and the lean a
+  brace, as before); where the lean's top meets a piece still waiting to become a post, the run
+  waits for it once. The layout writes the knee as a joint of the kickstand
+  (`KickstandLayout::joints`), which the VOXL writer, the export entries and the nominal build
+  already carry.
+- **A branch off a leg's pillar** (owner, 2026-11-26). An upright piece on the plate that a
+  support owns from its foot up, with a top stretch of at least 1 mm (and its own width) that no
+  route uses (a branch leaves it lower down), can still turn through a knee onto another support
+  or a post: the pillar's whole length and the lean are then one leg, standing in the same place
+  as the support that climbs the pillar's lower part. DragonFruit's kickstand carries no branch,
+  so a Lychee branch hanging from a kickstand is written as a support of its own up the pillar
+  and the kickstand whole beside it, the two coinciding from the root top to where the branch
+  leaves (b13_branch_on_kickstand: before, the lean was a brace and the pillar between the branch
+  and the knee, 3.5 mm, was not built). Without a knee onto another host the pillar stays as it
+  was.
+- **A pillar at a support's foot.** One upright piece from the plate (within `FOOT_PILLAR_COS` of
+  vertical) that meets a support standing on the plate at that support's own last piece, inside
+  the pillar's width and no higher than `PAD_REACH_MM` above the root top, is that support's root,
+  not a leg holding it up: the upright under a tip cone that starts in the raft band, which is
+  0.02 mm too tall to be a pad (t02_trunk_wall_raft). A slanted rod from one support's root zone
+  up to another support stays a leg (p01_tip_tiny, x09_brace_foot).
 - **Braces.** Free pieces join end to end into straight runs (each end goes on into at most one
   piece, the one that best continues it within 35 degrees, and only when that piece agrees). A run
   is a brace between each pair of neighbouring hosts along it (a support, post or leg), its ends
   where its centre line passes the host's. A run with both ends below the root top is a web in the
-  raft band, not a brace (z cases). A run on one support only is not writable as a brace.
+  raft band, not a brace (z cases). A run on one support only is not writable as a brace. A run
+  from a branch to the support it hangs from, with both ends within `KNOT_REACH_MM` of the branch's
+  knot, is a second short way onto the same host (the base and short shaft of a Lychee branch whose
+  cone reaches its host itself: b02_branch_fan, p13_tips_close_missed, 0.7 to 1.2 mm long), the
+  branch's base and not a brace. Only a run between those two hosts alone: a run that goes on to a
+  third host is a brace passing the knot and keeps every stretch (cutting its first stretch lost
+  4 to 7 mm braces on 13 real models).
 - **Late sleeves.** A free piece lying along the rods of the one support it touches (within 0.15 mm),
   holding no contact of its own: a coupling round a joint, a doubled stretch.
 - **Loose and floating.** Anything else, reported as an exception with its reason (for example a
@@ -411,6 +563,11 @@ split stretches again, then pads).
 | Constant | Value | Why |
 | --- | --- | --- |
 | `MICRO_D` | 0.6 mm | A strut no wider than this (median) is a micro support, which may enter the model. |
+| `STUB_PAST_MM` | 0.05 mm | A base stub runs at least this far past the end of the rod whose line it lies on. |
+| `KNEE_DEG` | 80 degrees | A leg turns by at most this at a knee (Lychee kickstands lean 45 degrees off their pillar). |
+| `KNOT_REACH_MM` | 2.0 mm | A run between a branch and its parent with both ends this close to the branch's knot is the branch's base (seen: 0.7 to 1.6 mm long; rods are about 1 mm wide, so a brace this near the knot would be solid with it). |
+| `PAD_REACH_MM` | 1.0 mm | A pillar meeting a plate support's foot at most this far above the root top is its root (the reach of what stands on a pad). |
+| `PAD_START_MM` | 0.6 mm | The base of a plate support's last rod ending at most this far above the root top is its root (where a piece standing on a pad may start). |
 
 ## Shaping
 
@@ -462,6 +619,12 @@ split stretches again, then pads).
 - **Lines.** Each support's line is simplified: bends are kept only where the line leaves the
   straight run by more than `STRAIGHT_MM`. A plate support's shaft starts at the root top; what the
   route does below it is the root.
+- **Foot pillar** (`foot_pillar`). A plate support whose foot lies inside an upright root piece of
+  its own (within `FOOT_PILLAR_COS` of vertical, reaching the root top, at most `FOOT_PILLAR_WIDTH`
+  times the shaft's width) stands on that pillar's line, and the points of its own line inside the
+  pillar are dropped. A tip cone whose wide end sits in a short pillar's top comes down inside the
+  pillar off its line, which put the foot 0.35 to 0.54 mm from the real pillar
+  (p05_tip_grazing, t02_trunk_wall_raft).
 - **Socket clearance.** DragonFruit puts a joint ball (shaft width + 0.1 mm) on the socket, so a
   socket nearer the surface than that ball's radius pokes the ball into the model. Where the shaft
   leaves the tip within 30 degrees of the surface normal (`SOCKET_SQUARE_COS`), the socket moves down
@@ -505,6 +668,8 @@ split stretches again, then pads).
 | Constant | Value | Why |
 | --- | --- | --- |
 | `STRAIGHT_MM` | 0.12 mm | Bends of a line are kept only where it leaves the straight run by more than this (fewer joints). |
+| `FOOT_PILLAR_COS` | cos 10 degrees | The pillar a plate support stands on is upright within 10 degrees ... |
+| `FOOT_PILLAR_WIDTH` | 1.5 | ... and at most this many times as wide as the shaft (a pad or a foot cone is wider). |
 | `SOCKET_CLEAR_MM` | 0.05 mm | The socket's joint ball clears the model's surface by this much ... |
 | `SOCKET_SQUARE_COS` | cos 30 degrees | ... where the shaft leaves the tip within 30 degrees of the normal ... |
 | `SOCKET_MOVE_MM` | 0.3 mm | ... where moving the socket by at most this clears it (a longer move made a real tip clip elsewhere). |
@@ -616,6 +781,16 @@ against its own labels (earlier measures flattered the reader).
   (`SYNTHETIC_UPDATE=1` rewrites the file). Tolerances are the prototype's, unchanged. See
   [Support reader test cases](support-reader-tests.md) for every case and its result;
   `scripts/synthetic-catalogue.py` regenerates that page.
+- **Real-structure suite.** `cargo test -p findamodel --test support_real` reads support structures
+  cut out of real pre-supported models whose Lychee project is known (`backend/tests/support_real/`:
+  per case the original support shells, small closed cuts of the model where the supports meet it,
+  the Lychee truth and a picture of the expected result) and checks the truth against its own
+  meshes (validate), then tips, tip shape, routes, shafts, braces and joints against the Lychee
+  truth, and 4a clips and 4b loops on the nominal build. The stage results are held to
+  `support_real/expected.json` in the same way (`REAL_UPDATE=1` rewrites it). See
+  [Support reader real-structure test cases](support-reader-real-tests.md) for every case, its
+  pictures and its result; `scripts/real-support-cases.py` cuts the cases from the case list
+  `support_real/cases.json`, and `scripts/real-support-catalogue.py` regenerates the page.
 - **DragonFruit round trip.** Stage 3 (build recall and precision) and stage 4 on DragonFruit's own
   build, and every measure above on real models, come from the round trip:
   `backend/tools/support-reader` (see its `README.md`) and `scripts/support-roundtrip.py`.
